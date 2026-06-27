@@ -13,7 +13,7 @@ Break sprint specs into sized, ordered, agent-routed tasks. Read the sprint spec
 
 ### Step 1 — Read the Sprint Spec
 
-Read the sprint file from `docs/product/phases/phase-N/sprint-X.Y.Z.md`. Extract:
+Read the sprint file from docs. Extract:
 
 - **Sprint number and title**
 - **Acceptance criteria** (the numbered or bulleted AC list)
@@ -33,8 +33,8 @@ For each task, assign the owning agent based on source directory:
 
 | Agent | Owns | Typical tasks |
 |-------|------|---------------|
-| Backend | `src/backend/` | Services, routes, seed data, indexes, audit events |
-| Frontend | `src/frontend/` | Pages, components, navigation, routes, forms |
+| Backend | the backend | Services, routes, seed data, indexes, audit events |
+| Frontend | the frontend | Pages, components, navigation, routes, forms |
 | Security | Throughout | RBAC permissions, auth middleware, data classification |
 | Compliance | Throughout | Audit trail events, legal timelines, evidence collection |
 | Infrastructure | Project root | Docker, CI/CD, deployment, monitoring |
@@ -53,17 +53,17 @@ Cross-cutting tasks get a lead agent with explicit hand-off (see CLAUDE.md Agent
 
 Always follow this implementation order:
 
-1. **Shared types** — `src/shared/src/types/` and `src/shared/src/constants/`
-2. **Build shared** — `npx tsc -p src/shared/tsconfig.json`
-3. **Backend indexes** — `src/backend/src/db/indexes.ts`
-4. **Backend seed data** — permissions in `seed-roles.ts`, sample data
-5. **Backend services** — `src/backend/src/modules/<module>/`
+1. **Shared types** — the shared types and the shared package
+2. **Build shared** — `npx tsc -p the shared packagetsconfig.json`
+3. **Backend indexes** — the data layer
+4. **Backend seed data** — permissions in `the role-seed file`, sample data
+5. **Backend services** — the backend modules
 6. **Backend routes** — route files, wired into `app.ts`
 7. **Frontend API client** — methods in `api-client.ts`
-8. **Frontend pages** — `src/frontend/src/pages/admin/<module>/`
+8. **Frontend pages** — the frontend pages
 9. **Frontend navigation** — `AdminLayout.tsx`
 10. **Frontend routes** — `App.tsx`
-11. **i18n translations** — all 16 locale files
+11. **i18n translations** — all multiple locales files
 12. **Tests** — backend service tests, frontend component tests
 13. **Documentation** — sprint release notes, doc updates
 
@@ -73,10 +73,10 @@ Output format:
 
 | # | Task | Agent | Size | Dependencies | Files |
 |---|------|-------|------|--------------|-------|
-| 1 | Add shared types for `<module>` | Backend | S | — | `src/shared/src/types/<module>.ts` |
-| 2 | Add permissions constants | Backend | S | 1 | `src/shared/src/constants/permissions.ts` |
+| 1 | Add shared types for `<module>` | Backend | S | — | the shared types |
+| 2 | Add permissions constants | Backend | S | 1 | the shared package |
 | 3 | Build shared | Backend | S | 2 | — |
-| 4 | Create `<module>` service | Backend | M | 3 | `src/backend/src/modules/<module>/<module>-service.ts` |
+| 4 | Create `<module>` service | Backend | M | 3 | the backend modules |
 | ... | ... | ... | ... | ... | ... |
 
 ### Rules
@@ -95,7 +95,7 @@ input:
   sprint_spec_path:
     type: string
     required: true
-    description: "Path to the sprint spec file (e.g., docs/product/phases/phase-N/sprint-X.Y.Z.md)"
+    description: "Path to the sprint spec file (e.g., docs)"
   max_parallel_agents:
     type: integer
     required: false

@@ -183,13 +183,13 @@ export class ExampleService {
 
 ### Indexes
 
-- Add indexes to `src/backend/src/db/indexes.ts` for every collection
+- Add indexes to the data layer for every collection
 - Minimum: compound index on `{ org_id: 1, <entity_id>: 1 }` with unique constraint
 - Add indexes for any fields used in filters or sort
 
 ### Wiring
 
-- Instantiate in `src/backend/src/app.ts`
+- Instantiate in the backend
 - Pass `db` to constructor
 - Pass service instance to route factory
 - Mount routes at `/api/v1/<module>`
@@ -234,13 +234,13 @@ inputs:
 outputs:
   service_file:
     type: file_path
-    description: "Path to the created/updated service file (src/backend/src/modules/<module>/<entity>-service.ts)"
+    description: "Path to the created/updated service file (the backend modules)"
   index_entries:
     type: array
-    description: "Index definitions added to src/backend/src/db/indexes.ts"
+    description: "Index definitions added to the data layer
   app_wiring:
     type: object
-    description: "Import and mount statements added to src/backend/src/app.ts"
+    description: "Import and mount statements added to the backend
   audit_collection:
     type: string
     description: "Name of the audit collection created (grc_<module>_audit_events)"
@@ -273,7 +273,7 @@ chain_metadata:
 
 ## Error Handling
 
-- If the module directory does not exist, create it at `src/backend/src/modules/<module>/` before writing the service file.
+- If the module directory does not exist, create it at the backend modules before writing the service file.
 - If `indexes.ts` already contains an entry for the same collection, update the existing entry rather than adding a duplicate.
 - If `app.ts` already imports or mounts a route for this module, skip wiring to avoid duplicate route registration.
 - If field names conflict with reserved MongoDB fields (`_id`, `_class`), prefix with the entity name to avoid collisions.

@@ -110,18 +110,6 @@ case "$ACTION" in
       FRONTEND_TASK="task-$(printf '%03d' $TASK_NUM)"
     fi
 
-    # I18N (depends on frontend)
-    if [ "$HAS_I18N" = true ]; then
-      TASK_NUM=$((TASK_NUM + 1))
-      I18N_DEP="${FRONTEND_TASK:-${BACKEND_TASK:-}}"
-      if [ -n "$I18N_DEP" ]; then
-        bash "$TASK_MGR" add "Add i18n translations for all 16 locales" "i18n-specialist" "$I18N_DEP"
-      else
-        bash "$TASK_MGR" add "Add i18n translations for all 16 locales" "i18n-specialist"
-      fi
-      I18N_TASK="task-$(printf '%03d' $TASK_NUM)"
-    fi
-
     # Close-out (depends on everything)
     TASK_NUM=$((TASK_NUM + 1))
     ALL_DEPS=""

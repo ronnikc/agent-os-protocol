@@ -18,9 +18,9 @@ List every file that the change will create or modify:
 ```
 | File | Change type |
 |------|-------------|
-| src/shared/src/types/tasks.ts | New file |
-| src/backend/src/modules/tasks/task-service.ts | New file |
-| src/shared/src/constants/permissions.ts | Modified — add permission constants |
+| the shared types | New file |
+| the backend modules | New file |
+| the shared package | Modified — add permission constants |
 ```
 
 ### Step 2 — Trace Import Dependents
@@ -42,9 +42,9 @@ Build an import chain: `modified file → direct importers → transitive import
 | Change type | Risk | Examples |
 |------------|------|---------|
 | New file (additive) | Low | New service, new page, new type |
-| New export from existing file | Medium | Adding to permissions.ts, adding to index.ts |
+| New export from existing file | Medium | Adding to the permissions registry, adding to index.ts |
 | Modified function signature | High | Changing service method params, changing API response shape |
-| Modified shared type | High | Changing a type in src/shared — affects both backend and frontend |
+| Modified shared type | High | Changing a type in the shared package — affects both backend and frontend |
 | Deleted export | Critical | Removing something that may be imported elsewhere |
 | Seed data change | Medium | Changing field names or values in seed files |
 | Configuration change | High | Changing app.ts wiring, route mounting, middleware order |
@@ -55,10 +55,10 @@ For each affected file, determine if tests exist and what they cover:
 
 ```
 # Find test file for a service
-Glob: src/backend/src/modules/<module>/__tests__/<service>.test.ts
+Glob: the backend modules
 
 # Find test file for a frontend page
-Glob: src/frontend/src/pages/admin/<module>/__tests__/*.test.tsx
+Glob: the frontend pages
 
 # Check if the specific function is tested
 Grep: pattern="<function-name>", path="src/**/modules/<module>/__tests__/"
@@ -77,12 +77,12 @@ Mark each affected file:
 
 Check if the change requires documentation updates:
 
-- **API changes** → `docs/backend/api-contracts.md`
-- **Data model changes** → `docs/backend/data-model.md`
-- **Permission changes** → `docs/security/permission-matrix.md`
-- **New UI pages** → `docs/frontend/ui-modules.md` or `docs/frontend/user-flows.md`
-- **New audit events** → `docs/compliance/audit-event-taxonomy.md`
-- **i18n changes** → All 16 locale files under `src/frontend/src/locales/`
+- **API changes** → the API-contract docs
+- **Data model changes** → docs
+- **Permission changes** → the access-control reference
+- **New UI pages** → docs or docs
+- **New audit events** → the audit-event reference
+- **i18n changes** → All multiple locales files under the frontend
 
 ### Step 6 — Produce Impact Matrix
 
@@ -90,11 +90,11 @@ Output the final assessment:
 
 | # | File | Change type | Risk | Test coverage | Doc impact |
 |---|------|------------|------|---------------|------------|
-| 1 | `src/shared/src/types/tasks.ts` | New file | Low | N/A | None |
-| 2 | `src/shared/src/constants/permissions.ts` | Modified export | Medium | N/A | permission-matrix.md |
-| 3 | `src/backend/src/modules/tasks/task-service.ts` | New file | Low | Uncovered (needs test) | api-contracts.md |
-| 4 | `src/backend/src/app.ts` | Modified wiring | High | Partial | None |
-| 5 | `src/frontend/src/services/api-client.ts` | Modified export | Medium | Partial | None |
+| 1 | the shared types | New file | Low | N/A | None |
+| 2 | the shared package | Modified export | Medium | N/A | access-control reference.md |
+| 3 | the backend modules | New file | Low | Uncovered (needs test) | api-contracts.md |
+| 4 | the backend | Modified wiring | High | Partial | None |
+| 5 | the frontend | Modified export | Medium | Partial | None |
 
 ### Step 7 — Risk Summary
 
@@ -109,7 +109,7 @@ Provide a brief risk summary:
 ### Rules
 
 - Always trace imports for modified shared types — they ripple across backend and frontend.
-- A change to `src/shared/src/constants/permissions.ts` affects seed data, backend RBAC checks, and frontend permission guards.
+- A change to the shared package affects seed data, backend RBAC checks, and frontend permission guards.
 - A change to `api-client.ts` method signatures affects every page that calls that method.
 - Seed data field name changes are high risk — they break the frontend if the frontend reads the old field name.
 - When risk is high on 3+ files, recommend decomposing the change into smaller increments.

@@ -31,7 +31,7 @@ Does the code do what it claims to do?
 - Edge cases handled (null, empty, boundary, MongoDB ObjectId casts)?
 - Error paths handled — `AppError(status, code, message)` with correct args?
 - Tests cover behavior, not implementation details?
-- Off-by-one, race conditions, multi-tenant data leaks?
+- Off-by-one, race conditions, workspace-scoped data leaks?
 
 ### 2. Readability & Simplicity
 
@@ -49,7 +49,7 @@ Does the change fit the system's design?
 
 - Follows existing patterns (`service-pattern`, `component-pattern`, `api-contract-validation`)?
 - New patterns introduced are justified and discussed?
-- Module boundaries respected — no crossing of `src/backend` ↔ `src/frontend` except through `src/shared`?
+- Module boundaries respected — no crossing of the backend ↔ the frontend except through the shared package?
 - Dependencies flow correctly — no circular imports?
 - Abstraction level appropriate — not over-engineered, not too coupled?
 
@@ -109,7 +109,7 @@ Label every comment so the author knows what's required vs optional. This is the
 
 | Prefix | Meaning | Author Action |
 |--------|---------|---------------|
-| **Blocker:** | Multi-tenant data leak, missing auth, broken functionality, security hole | Must fix — merge blocked |
+| **Blocker:** | Multi-workspaces data leak, missing auth, broken functionality, security hole | Must fix — merge blocked |
 | **Critical:** | Wrong field names, missing audit events, data integrity issue | Must fix before merge |
 | *(no prefix)* | Required change | Must address before merge |
 | **Nit:** | Minor, optional | Author may ignore — formatting, style preferences |
@@ -209,9 +209,9 @@ Don't silently delete things you're not sure about. Don't leave dead code lying 
 
 ```
 DEAD CODE IDENTIFIED:
-- formatLegacyDate() in src/shared/src/utils/date.ts — replaced by formatDate()
-- OldRiskCard component in src/frontend/src/components — replaced by RiskCard
-- LEGACY_API_URL in src/shared/src/config — no remaining references (verified via graph-navigator)
+- formatLegacyDate() in the shared package — replaced by formatDate()
+- OldRiskCard component in the frontend — replaced by RiskCard
+- LEGACY_API_URL in the shared package — no remaining references (verified via graph-navigator)
 → Safe to remove these?
 ```
 

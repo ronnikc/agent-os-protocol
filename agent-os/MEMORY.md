@@ -58,7 +58,7 @@ protocol applies — scan first, open by anchor.
 |---|---|---|
 | Corpus | `agent-os/memories/`, sub-agent lessons + diaries | Allow-listed overview docs in `docs/content/` |
 | Scope values | `global`, `sub-agent:*` | `doc:content` (extensible per docs/ subdir) |
-| When to consult | Decisions, lessons, playbooks, gotchas | Module overviews, persona/use-case maps, regulatory framework summaries, sector overlay plans |
+| When to consult | Decisions, lessons, playbooks, gotchas | Module overviews, persona/use-case maps, domain frameworks summaries, sector overlay plans |
 | Regenerate | `bash agent-os/scripts/build-memory-index.sh` | `node agent-os/scripts/build-docs-index.mjs` |
 
 Allow-listed docs (Sprint 46.7.0):
@@ -66,7 +66,7 @@ Allow-listed docs (Sprint 46.7.0):
 - `docs/content/modules-overview.md` + `.vi.md`
 - `docs/content/module-reference.md`
 - `docs/content/personas-and-use-cases-overview.md`
-- `docs/content/vn-regulatory-frameworks.md`
+- `docs/content/vn-domain-frameworks.md`
 - `docs/content/maturity-phase-module-feature-additions.md`
 - `docs/content/sector-overlay-plans.md`
 
@@ -189,8 +189,8 @@ processor:
 
 1. Runs `git log <merge-base>..<head>` and `git diff --name-only <merge-base>..<head>`
 2. Maps each changed file to one or more agent slugs via a static
-   `fileToAgents` table (e.g. `src/backend/` → `[backend]`,
-   `src/frontend/__tests__/` → `[test, frontend]`, `agent-os/RULES.md` →
+   `fileToAgents` table (e.g. the backend → `[backend]`,
+   the frontend__tests__/` → `[test, frontend]`, `agent-os/RULES.md` →
    `[documentation, planning]`)
 3. Appends a one-paragraph entry to each affected agent's `diary.md` with a
    `## YYYY-MM-DD — Sprint <id>` header

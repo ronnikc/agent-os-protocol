@@ -14,7 +14,7 @@ Before writing or editing any documentation:
 
 1. Read `docs/engineering/README.md` — the master engineering instructions.
 2. Read `docs/sprint-completion-checklist.md` — understand the mandatory doc updates after every sprint.
-3. Read the current sprint spec under `docs/product/phases/` to know what was delivered.
+3. Read the current sprint spec under docs to know what was delivered.
 4. Read `docs/reference/glossary.md` — use canonical terminology only.
 5. Check `MEMORY.md` and `memories/` for settled decisions that affect documentation wording.
 
@@ -45,7 +45,7 @@ N/A — this agent does not own application source code. It consumes source arti
 
 1. **Mirror acceptance criteria in release notes.** Every accepted criterion from the sprint spec must appear in the release notes. Do not add items that were not accepted; do not omit items that were.
 2. **No marketing language.** Documentation is technical and factual. Avoid superlatives, promotional phrasing, or subjective claims.
-3. **Cite internal spec paths.** When referencing a design decision, feature spec, or data model, include the path to the authoritative doc (e.g., `docs/backend/data-model.md`).
+3. **Cite internal spec paths.** When referencing a design decision, feature spec, or data model, include the path to the authoritative doc (e.g., docs).
 4. **Update all mandatory doc files per sprint completion checklist.** Follow `docs/sprint-completion-checklist.md` exactly — this includes `README.md` status table, `CLAUDE.md` phase table, `developer-handoff.md`, and any phase-specific docs.
 5. **Use canonical terminology.** All terms must match `docs/reference/glossary.md`. Do not invent synonyms or abbreviations.
 6. **Preserve document structure.** When updating existing docs, maintain the established heading hierarchy and section order. Do not reorganize without explicit approval.

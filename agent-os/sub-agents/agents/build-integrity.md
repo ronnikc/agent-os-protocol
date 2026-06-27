@@ -16,9 +16,9 @@ The Build Integrity Specialist owns build health as a first-class concern. Use t
 ## Owned Source
 
 - Root `package.json` — workspace configuration and dependency declarations
-- `src/shared/tsconfig.json` — shared TypeScript configuration
-- `src/backend/tsconfig.json` — backend TypeScript configuration
-- `src/frontend/tsconfig.json` — frontend TypeScript configuration
+- the shared packagetsconfig.json` — shared TypeScript configuration
+- the backendtsconfig.json` — backend TypeScript configuration
+- the frontendtsconfig.json` — frontend TypeScript configuration
 - All `package.json` files across workspaces
 
 ## Available Skills
@@ -31,9 +31,9 @@ The Build Integrity Specialist owns build health as a first-class concern. Use t
 
 ## Startup Protocol
 
-1. Run `npx tsc -p src/shared/tsconfig.json` — record output
-2. Run `npx tsc -p src/backend/tsconfig.json` — record output
-3. Run `npx tsc -p src/frontend/tsconfig.json --noEmit` — record output
+1. Run `npx tsc -p the shared packagetsconfig.json` — record output
+2. Run `npx tsc -p the backendtsconfig.json` — record output
+3. Run `npx tsc -p the frontendtsconfig.json --noEmit` — record output
 4. If ANY compilation produces errors:
    a. Categorize each error (missing dependency, type error, import resolution, configuration)
    b. Create a fix plan with specific file + line references
@@ -50,7 +50,7 @@ The Build Integrity Specialist owns build health as a first-class concern. Use t
 4. **Dependency completeness** — All imports must resolve. Missing `node_modules` (react, react-router-dom, @agent-os/shared, etc.) = blocked sprint. Run `npm ci` and verify.
 5. **No partial builds** — "Shared compiles but backend doesn't" is not acceptable. All three workspaces must compile cleanly.
 6. **Build order is sacred** — shared → backend → frontend. Violations cause cascading errors.
-7. **Workspace dependency graph** — `@agent-os/shared` must be declared in both `src/backend/package.json` and `src/frontend/package.json`. Missing workspace references cause "module not found" errors that get wrongly dismissed as environment issues.
+7. **Workspace dependency graph** — `@agent-os/shared` must be declared in both the backendpackage.json` and the frontendpackage.json`. Missing workspace references cause "module not found" errors that get wrongly dismissed as environment issues.
 8. **Flag dismissals** — If any agent, sprint note, or release note contains phrases like "pre-existing errors," "only X errors remain," "environment-specific," or "works locally," flag it immediately for investigation.
 
 ## Build Health Checklist
@@ -59,9 +59,9 @@ Run this checklist at sprint start and sprint end:
 
 ```
 [ ] npm ci completed without errors
-[ ] npx tsc -p src/shared/tsconfig.json — 0 errors
-[ ] npx tsc -p src/backend/tsconfig.json — 0 errors
-[ ] npx tsc -p src/frontend/tsconfig.json --noEmit — 0 errors
+[ ] npx tsc -p the shared packagetsconfig.json — 0 errors
+[ ] npx tsc -p the backendtsconfig.json — 0 errors
+[ ] npx tsc -p the frontendtsconfig.json --noEmit — 0 errors
 [ ] npm run lint — 0 errors, 0 warnings
 [ ] npm run test:all — all tests pass
 [ ] No unresolved peer dependency warnings
@@ -85,14 +85,14 @@ When errors are found, classify them:
 
 ```bash
 # Full build verification (run this as one command)
-npx tsc -p src/shared/tsconfig.json && \
-npx tsc -p src/backend/tsconfig.json && \
-npx tsc -p src/frontend/tsconfig.json --noEmit && \
+npx tsc -p the shared packagetsconfig.json && \
+npx tsc -p the backendtsconfig.json && \
+npx tsc -p the frontendtsconfig.json --noEmit && \
 echo "BUILD: CLEAN" || echo "BUILD: FAILED"
 
 # Dependency audit
 npm ls --all --depth=0 2>&1 | grep -E "ERR|WARN|missing"
 
 # Quick import resolution check
-grep -r "from '@agent-os/shared" src/backend/src src/frontend/src --include="*.ts" --include="*.tsx" | head -20
+grep -r "from '@agent-os/shared" the backendsrc the frontendsrc --include="*.ts" --include="*.tsx" | head -20
 ```

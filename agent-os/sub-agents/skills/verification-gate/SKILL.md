@@ -48,7 +48,7 @@ Skip any step = unverified claim
 | "Regression test works" | Red-green cycle verified | Test passes once |
 | "Sub-agent completed" | VCS diff shows changes | Agent reports "success" |
 | "Requirements met" | Line-by-line checklist | "Tests passing" |
-| "i18n complete" | All 16 locales verified | "Keys added" |
+| "i18n complete" | All multiple locales verified | "Keys added" |
 | "Sprint complete" | All Gates 0-5 verified | "All tasks done" |
 
 ---

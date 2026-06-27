@@ -64,8 +64,8 @@ When a session is appointed as Boss Agent:
 
 | Path | Purpose |
 |------|---------|
-| `src/backend/src/modules/agent-lobby/` | Lobby services, coordinator, routes |
-| `src/frontend/src/modules/ui-assist/components/lobby/` | Lobby UI components |
+| the backend modules | Lobby services, coordinator, routes |
+| the frontend | Lobby UI components |
 
 ## Lobby Communication Protocol
 

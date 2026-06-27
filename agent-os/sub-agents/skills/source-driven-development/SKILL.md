@@ -25,9 +25,9 @@ DETECT ──→ FETCH ──→ IMPLEMENT ──→ CITE
 Read the dependency files this project uses:
 
 ```
-src/backend/package.json   → Express, Mongoose, MongoDB driver, Zod, bcrypt, helmet
-src/frontend/package.json  → React, Vite, Tailwind, react-router, useLocale custom hooks
-src/shared/package.json    → Zod, ulid, shared types
+the backendpackage.json   → Express, Mongoose, MongoDB driver, Zod, bcrypt, helmet
+the frontendpackage.json  → React, Vite, Tailwind, react-router, useLocale custom hooks
+the shared packagepackage.json    → Zod, ulid, shared types
 package.json (root)        → Vitest, Playwright, Husky, ESLint, Prettier
 ```
 
@@ -35,8 +35,8 @@ State what you found explicitly in your first response:
 
 ```
 STACK DETECTED:
-- React 19.x (src/frontend/package.json)
-- Express 4.x + native MongoDB driver (src/backend/package.json)
+- React 19.x (the frontendpackage.json)
+- Express 4.x + native MongoDB driver (the backendpackage.json)
 - Vitest 1.x with @vitest/ui (root package.json)
 → Fetching official docs for the relevant patterns.
 ```
@@ -140,7 +140,7 @@ Honesty about what you couldn't verify is more valuable than false confidence.
 
 Before treating any framework call as "verified," also confirm:
 
-- **Real source over docs:** read `src/shared/src/types/<module>.ts`, the real service file, and the real route file before calling/mocking them. Docs tell you the framework API; project source tells you our types and method names.
+- **Real source over docs:** read the shared types, the real service file, and the real route file before calling/mocking them. Docs tell you the framework API; project source tells you our types and method names.
 - **MongoDB ObjectId casting:** every `_id` use in TypeScript needs `as unknown as string`, never `as string` (Incident 14 in SUB-AGENTS.md).
 - **Express params:** `req.params.x` is `string | string[]` — narrow with `as string` before passing to a service.
 - **Shared type alignment:** every field a service writes to MongoDB must exist in the shared type definition (verified by build-validation).
@@ -244,7 +244,7 @@ output:
 - The version each citation applies to matches the version in the project's `package.json`
 - Any pattern that could not be verified is explicitly flagged as UNVERIFIED in the output
 - Conflicts between official docs and existing project code were surfaced to the user, not silently resolved
-- Real source files (`src/shared/src/types/*`, real service/route files) were read before mocking or calling
+- Real source files (the shared types, real service/route files) were read before mocking or calling
 
 ## Chain Metadata
 

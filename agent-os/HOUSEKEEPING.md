@@ -141,19 +141,19 @@ These must match between STATE.md and README.md. Run the verification commands (
 
 | Metric | STATE.md field | README.md field | Verification command |
 |--------|---------------|-----------------|---------------------|
-| Backend modules | Codebase Metrics table | Codebase Stats table | `ls -d src/backend/src/modules/*/ \| wc -l` |
-| Backend services | Codebase Metrics table | Codebase Stats table | `find src/backend/src/modules -name '*-service.ts' \| wc -l` |
-| Route files | Codebase Metrics table | Codebase Stats table | `find src/backend/src/modules -name 'routes.ts' \| wc -l` |
-| Frontend pages | Codebase Metrics table | Codebase Stats table | `find src/frontend/src/pages/admin -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' \| wc -l` |
-| Shared type files | Codebase Metrics table | Codebase Stats table | `find src/shared/src/types -name '*.ts' ! -name 'index.ts' \| wc -l` |
-| API client methods | Codebase Metrics table | Codebase Stats table | `grep -cE '(async \|= async )' src/frontend/src/services/api-client.ts` |
+| Backend modules | Codebase Metrics table | Codebase Stats table | `ls -d the backend modules \| wc -l` |
+| Backend services | Codebase Metrics table | Codebase Stats table | `find the backend -name '*-service.ts' \| wc -l` |
+| Route files | Codebase Metrics table | Codebase Stats table | `find the backend -name 'routes.ts' \| wc -l` |
+| Frontend pages | Codebase Metrics table | Codebase Stats table | `find the frontend pages -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' \| wc -l` |
+| Shared type files | Codebase Metrics table | Codebase Stats table | `find the shared package -name '*.ts' ! -name 'index.ts' \| wc -l` |
+| API client methods | Codebase Metrics table | Codebase Stats table | `grep -cE '(async \|= async )' the frontend |
 | Permissions | Codebase Metrics table | Codebase Stats table | `grep -oP "'[a-z][a-z_.:]+'..." \| sort -u \| wc -l` |
-| MongoDB collections | Codebase Metrics table | Codebase Stats table | `grep -oP 'grc_[a-z_]+' src/backend/src/db/indexes.ts \| sort -u \| wc -l` |
+| MongoDB collections | Codebase Metrics table | Codebase Stats table | `grep -oP 'grc_[a-z_]+' the data layer \| sort -u \| wc -l` |
 | Test files | Codebase Metrics table | Codebase Stats table | `find src -name '*.test.ts' -o -name '*.test.tsx' \| wc -l` |
 | Documentation files | Codebase Metrics table | Codebase Stats table | `find docs -name '*.md' \| wc -l` |
 | Product docs | N/A | Documentation Coverage table | `find docs/product -name '*.md' \| wc -l` |
 | Release notes | N/A | Documentation Coverage table | `find docs/release-notes -name '*.md' ! -name 'README.md' ! -name 'index.md' \| wc -l` |
-| Frontend page groups | N/A | Codebase Stats table | `ls -d src/frontend/src/pages/admin/*/ \| wc -l` |
+| Frontend page groups | N/A | Codebase Stats table | `ls -d the frontend pages \| wc -l` |
 
 ---
 

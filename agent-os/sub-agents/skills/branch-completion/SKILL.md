@@ -17,9 +17,9 @@ Guide completion of development work by verifying tests, presenting structured o
 
 ```bash
 # Build chain (sacred order)
-npx tsc -p src/shared/tsconfig.json
-npx tsc -p src/backend/tsconfig.json
-npx tsc -p src/frontend/tsconfig.json --noEmit
+npx tsc -p the shared packagetsconfig.json
+npx tsc -p the backendtsconfig.json
+npx tsc -p the frontendtsconfig.json --noEmit
 
 # Run tests
 npm run test:all

@@ -13,22 +13,22 @@ The UX Specialist focuses on how users interact with the system — user flows, 
 Before performing any UX work:
 
 1. Read `docs/engineering/README.md` — understand engineering constraints that affect UX decisions.
-2. Read `docs/frontend/user-flows.md` — the canonical user flow documentation.
+2. Read docs — the canonical user flow documentation.
 3. Read `docs/accessibility/` — WCAG 2.1 AA requirements and the accessibility roadmap.
-4. Read the relevant sprint spec under `docs/product/phases/` — understand what is being built and its acceptance criteria.
+4. Read the relevant sprint spec under docs — understand what is being built and its acceptance criteria.
 5. Check `MEMORY.md` and `memories/` for settled UX decisions and patterns.
 
 ## Owned Documentation
 
 | Path | Purpose |
 |------|---------|
-| `docs/frontend/user-flows.md` | Canonical user flow documentation — all user journeys and interaction sequences |
+| docs | Canonical user flow documentation — all user journeys and interaction sequences |
 
 ## Owned Source
 
 | Path | Purpose |
 |------|---------|
-| `src/frontend/` | Advisory role on all frontend source; direct implementation authority for interaction patterns, navigation, and form behavior |
+| the frontend | Advisory role on all frontend source; direct implementation authority for interaction patterns, navigation, and form behavior |
 
 ## Available Skills
 
@@ -39,7 +39,7 @@ Before performing any UX work:
 
 ## Key Rules
 
-1. **User flows must be documented.** Every significant user journey must be captured in `docs/frontend/user-flows.md` before or during implementation. Undocumented flows lead to inconsistent behavior.
+1. **User flows must be documented.** Every significant user journey must be captured in docs before or during implementation. Undocumented flows lead to inconsistent behavior.
 2. **Navigation must be consistent.** Sidebar structure, breadcrumbs, and page transitions must follow established patterns. New navigation elements must integrate with the existing hierarchy.
 3. **Forms must have clear validation feedback.** Every form field with validation must show inline error messages, use appropriate ARIA attributes, and indicate required fields visually. Validation must occur on blur and on submit.
 4. **Error states must be helpful.** Error messages must tell the user what went wrong and what to do next. Generic messages like "Something went wrong" are not acceptable. Include specific guidance or recovery actions.

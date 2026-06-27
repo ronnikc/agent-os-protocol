@@ -75,7 +75,7 @@ To run a single shard:
   bash agent-os/scripts/run-frontend-tests-ci.sh 3
 
 For single-file tests (unchanged):
-  npx vitest run --config src/frontend/vitest.config.ts src/frontend/src/path/to/file.test.tsx
+  npx vitest run --config vitest.config.ts path/to/file.test.tsx
 FEEDBACK
       exit 2
     fi
@@ -102,7 +102,7 @@ Correct patterns:
   npm run test:all 2>&1 | tee tmp/test-all.log
 
   # Single file (no log needed):
-  npx vitest run src/backend/src/modules/localization/__tests__/my-service.test.ts
+  npx vitest run path/to/my-service.test.ts
 
 After running, check results:  tail -20 tmp/test-backend.log
 FEEDBACK

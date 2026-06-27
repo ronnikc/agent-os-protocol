@@ -164,7 +164,7 @@ input:
   test_file_path:
     type: string
     required: true
-    description: "Path to the test file (e.g., src/backend/src/__tests__/modules/<module>/<name>.test.ts)"
+    description: "Path to the test file (e.g., the backend)"
   implementation_file_path:
     type: string
     required: true

@@ -34,15 +34,15 @@ Build order is **sacred**: shared → backend → frontend.
 
 ```bash
 # Step 2a: Shared (must succeed before backend/frontend)
-npx tsc -p src/shared/tsconfig.json
+npx tsc -p the shared packagetsconfig.json
 # Expected: 0 errors
 
 # Step 2b: Backend (depends on shared)
-npx tsc -p src/backend/tsconfig.json
+npx tsc -p the backendtsconfig.json
 # Expected: 0 errors
 
 # Step 2c: Frontend (depends on shared)
-npx tsc -p src/frontend/tsconfig.json --noEmit
+npx tsc -p the frontendtsconfig.json --noEmit
 # Expected: 0 errors
 ```
 
@@ -52,12 +52,12 @@ npx tsc -p src/frontend/tsconfig.json --noEmit
 
 ```bash
 # Verify workspace references
-cat src/backend/package.json | grep "@agent-os/shared"
-cat src/frontend/package.json | grep "@agent-os/shared"
+cat the backendpackage.json | grep "@agent-os/shared"
+cat the frontendpackage.json | grep "@agent-os/shared"
 # Both must show: "@agent-os/shared": "workspace:*"
 
 # Verify no phantom dependencies (imports without package.json entries)
-npx tsc -p src/backend/tsconfig.json --listFiles 2>/dev/null | grep "node_modules" | \
+npx tsc -p the backendtsconfig.json --listFiles 2>/dev/null | grep "node_modules" | \
   sed 's|.*/node_modules/||' | cut -d'/' -f1-2 | sort -u
 ```
 
@@ -65,7 +65,7 @@ npx tsc -p src/backend/tsconfig.json --listFiles 2>/dev/null | grep "node_module
 
 ```bash
 # Check for broken imports in backend
-grep -rn "from '\." src/backend/src --include="*.ts" | \
+grep -rn "from '\." the backendsrc --include="*.ts" | \
   while read line; do
     file=$(echo "$line" | cut -d: -f1)
     import=$(echo "$line" | grep -oP "from '\K[^']+")
@@ -77,7 +77,7 @@ grep -rn "from '\." src/backend/src --include="*.ts" | \
   done
 
 # Same for frontend
-grep -rn "from '\." src/frontend/src --include="*.ts" --include="*.tsx" | \
+grep -rn "from '\." the frontendsrc --include="*.ts" --include="*.tsx" | \
   while read line; do
     file=$(echo "$line" | cut -d: -f1)
     import=$(echo "$line" | grep -oP "from '\K[^']+")
@@ -124,7 +124,7 @@ npm ci
 ### Missing workspace reference
 
 ```json
-// In src/backend/package.json or src/frontend/package.json
+// In the backendpackage.json or the frontendpackage.json
 {
   "dependencies": {
     "@agent-os/shared": "workspace:*"
@@ -136,16 +136,16 @@ npm ci
 
 ```bash
 # Rebuild shared before checking backend/frontend
-npx tsc -p src/shared/tsconfig.json
+npx tsc -p the shared packagetsconfig.json
 ```
 
 ### Type mismatch after shared changes
 
 ```bash
 # Rebuild shared, then check consumers
-npx tsc -p src/shared/tsconfig.json
-npx tsc -p src/backend/tsconfig.json 2>&1 | head -20
-npx tsc -p src/frontend/tsconfig.json --noEmit 2>&1 | head -20
+npx tsc -p the shared packagetsconfig.json
+npx tsc -p the backendtsconfig.json 2>&1 | head -20
+npx tsc -p the frontendtsconfig.json --noEmit 2>&1 | head -20
 ```
 
 ---

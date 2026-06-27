@@ -16,13 +16,13 @@ Validate sprint specification files against the 9 structural checks defined in G
 Execute the lint script against the target sprint spec file(s):
 
 ```bash
-bash agent-os/scripts/lint-sprint-spec.sh docs/product/phases/phase-N/sprint-X.Y.Z.md
+bash agent-os/scripts/lint-sprint-spec.sh docs
 ```
 
 For batch validation of all specs in a phase:
 
 ```bash
-bash agent-os/scripts/lint-sprint-spec.sh docs/product/phases/phase-N/sprint-*.md
+bash agent-os/scripts/lint-sprint-spec.sh docs
 ```
 
 **Note:** Sub-sprint files (X.Y.Z.N pattern) are automatically skipped — they have lighter structural requirements.
@@ -57,7 +57,7 @@ For each failed check:
 After fixes, re-run the lint script to confirm all 9 checks pass:
 
 ```bash
-bash agent-os/scripts/lint-sprint-spec.sh docs/product/phases/phase-N/sprint-X.Y.Z.md
+bash agent-os/scripts/lint-sprint-spec.sh docs
 # Expected: → PASS (all 9 checks)
 ```
 

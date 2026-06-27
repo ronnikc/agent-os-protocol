@@ -10,7 +10,7 @@ The Planning Specialist decomposes sprint specs into concrete, routable tasks fo
 
 ## Owned Documentation
 
-- `docs/product/phases/` — all phase and sprint specification files (read-only)
+- docs — all phase and sprint specification files (read-only)
 - `docs/sprint-completion-checklist.md` — post-sprint checklist (reference)
 - `SPRINTS.md` — sprint execution playbook (reference)
 
@@ -35,13 +35,13 @@ N/A — this agent is a read-only orchestrator. It does not own or modify any so
 
 ## Startup Protocol
 
-1. Read the target sprint spec from `docs/product/phases/phase-N/sprint-X.Y.Z.md`
+1. Read the target sprint spec from docs
 2. Read `docs/engineering/README.md` for implementation constraints
-3. Read `sub-agents/memories/vn-regulatory-domain-knowledge.md` — understand which laws drive each module for regulatory sprint decomposition
+3. Read `sub-agents/memories/vn-domain-domain-knowledge.md` — understand which laws drive each module for domain sprint decomposition
 4. Read `SPRINTS.md` for execution order and guardrails
 4. **Verify Gate -2 compliance (BLOCKING)** — before decomposing any sprint spec, verify it passes all 9 structural checks. Run `bash agent-os/scripts/lint-sprint-spec.sh <sprint-spec.md>`. If Gate -2 fails, return the spec to the Product Specialist with specific failures to fix. Do NOT proceed with decomposition on a spec that fails Gate -2.
 5. **Verify user validation alignment** — confirm the sprint spec declares persona(s) served, use case(s) improved, user pain removed, and acceptance proof. If missing, flag as a blocker and invoke the User Validation Specialist before proceeding.
-6. For regulatory framework sprints: confirm the User Validation Specialist has completed the persona/use case coverage assessment (see `sub-agents/agents/user-validation.md` → Framework Intake Trigger)
+6. For domain frameworks sprints: confirm the User Validation Specialist has completed the persona/use case coverage assessment (see `sub-agents/agents/user-validation.md` → Framework Intake Trigger)
 7. Identify all acceptance criteria from the sprint spec
 7. Break acceptance criteria into discrete tasks, each scoped to a single agent
 8. For each task, produce:
@@ -62,7 +62,7 @@ N/A — this agent is a read-only orchestrator. It does not own or modify any so
 6. **No code modification** — this agent reads specs and produces plans. It never writes source code.
 7. **Follow the module checklist** — reference the "Checklist for Adding a New Sprint Module" in CLAUDE.md when decomposing module-creation sprints.
 8. **User validation gate** — do not decompose a sprint that lacks user validation alignment (persona served, use case improved, user pain removed, acceptance proof). Flag it as incomplete and require the sprint contract to be updated first.
-9. **Regulatory framework intake gate** — for any sprint adding a new regulatory framework, verify that the User Validation Specialist has completed the persona/use case coverage assessment. Do not proceed until confirmed.
+9. **Domain framework intake gate** — for any sprint adding a new domain frameworks, verify that the User Validation Specialist has completed the persona/use case coverage assessment. Do not proceed until confirmed.
 10. **Gate -2 pre-decomposition gate (R-27)** — do not decompose a sprint spec that has not passed Gate -2 (`agent-os/scripts/lint-sprint-spec.sh`). Missing C.1 API Contract Trace, C.2 Form Completeness Gate, accessibility sections, or Out of Scope tables indicate the spec is incomplete and will produce incomplete task breakdowns. Return to Product Specialist with specific failures.
 
 ## Handoff Protocol

@@ -16,7 +16,7 @@ ADRs capture reasoning behind significant technical decisions. Highest-value doc
 ### When to Write an ADR
 
 - Choosing a framework, library, or major dependency
-- Designing a data model or schema (especially multi-tenant scoping rules)
+- Designing a data model or schema (especially workspace-scoped scoping rules)
 - Selecting an authentication or authorization strategy
 - Deciding on an API architecture (REST shape, error envelope, pagination contract)
 - Choosing between build tools, hosting, infrastructure
@@ -27,7 +27,7 @@ ADRs capture reasoning behind significant technical decisions. Highest-value doc
 
 ```
 docs/decisions/
-  ADR-0001-multi-tenant-org-scoping.md
+  ADR-0001-workspace-scoped-org-scoping.md
   ADR-0002-mongodb-as-primary-store.md
   ADR-0003-i18n-key-structure.md
   ...
@@ -79,7 +79,7 @@ The chosen approach, stated clearly. One paragraph. No "we will probably."
 - Owners, dates, sprint task IDs for any work this decision creates.
 
 ## References
-- Sprint spec: docs/product/phases/...
+- Sprint spec: docs
 - Source documentation: <full URL>
 - Incident or user-validation report (if applicable)
 ```
@@ -158,7 +158,7 @@ These comments save future agents from re-investigating Chesterton fences.
 /**
  * Create a new risk for the given organization.
  *
- * @param org_id - Tenant scope; service rejects writes that don't match the caller's org_id
+ * @param org_id - Workspace scope; service rejects writes that don't match the caller's org_id
  * @param input  - Risk creation data (title required, severity defaults to 'medium')
  * @returns      - The created risk with server-generated _id and timestamps
  * @throws {AppError} 422 VALIDATION_ERROR — input fails schema validation
@@ -179,7 +179,7 @@ The TypeScript types + JSDoc together serve as API documentation. No separate Sw
 
 ### REST Contract Documentation
 
-For the public API surface (what `api-contract-validation` enforces), document the contract once per resource in `docs/backend/api-contracts.md`. Include:
+For the public API surface (what `api-contract-validation` enforces), document the contract once per resource in the API-contract docs. Include:
 
 - Endpoint and verb
 - Required permission
@@ -257,7 +257,7 @@ This codebase relies heavily on agent-readable documentation. Special considerat
 - **AGENTS.md** — agent-specific protocols.
 - **agent-os/RULES.md** — non-negotiable rules. Whisper-injected on every prompt.
 - **agent-os/SUB-AGENTS.md** — agent roster, routing, parallelism.
-- **Sprint specs** in `docs/product/phases/` — agents read the spec before writing code.
+- **Sprint specs** in docs — agents read the spec before writing code.
 - **ADRs** in `docs/decisions/` — prevent re-deciding the same architectural questions.
 - **Inline gotcha comments** — prevent agents falling into known traps.
 
@@ -274,7 +274,7 @@ When you make a decision that future agents will need, ask: "Where will the next
 | "Nobody reads docs" | Agents do. Future engineers do. Your 3-months-later self does. |
 | "ADRs are overhead" | A 10-minute ADR prevents a 2-hour debate about the same decision six months later. |
 | "Comments get outdated" | Comments on **why** are stable. Comments on **what** get outdated — that's why you only write the former. |
-| "It's just an internal tool" | This is a GRC platform with regulated users. Decisions need traceability. |
+| "It's just an internal tool" | This is a platform with regulated users. Decisions need traceability. |
 
 ---
 

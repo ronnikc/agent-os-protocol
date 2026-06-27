@@ -3,7 +3,7 @@
 > **Last updated:** 2026-04-04
 > **Sprint:** 17.8.0
 > **See also:** [UI-ASSIST.md](UI-ASSIST.md) for interaction rules, button behavior, and response formatting
-> **Extension:** [Agent Lobby](sub-agents/agents/boss-agent.md) extends UI Assist for multi-session coordination via the Agent Lobby (`src/backend/src/modules/agent-lobby/`)
+> **Extension:** [Agent Lobby](sub-agents/agents/boss-agent.md) extends UI Assist for multi-session coordination via the Agent Lobby (the backend modules)
 > **Localhost panel:** `npm run agent-os-panel` provides a standalone Assist tab (Chat, Tasks, Sprint sub-views) that connects to the relay at `ws://localhost:4722`
 
 ## Prerequisites

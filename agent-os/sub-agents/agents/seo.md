@@ -13,9 +13,9 @@ The SEO Specialist ensures every page has proper meta information for search eng
 Before performing any SEO work:
 
 1. Read `docs/engineering/README.md` — the master engineering instructions.
-2. Read `docs/frontend/ui-modules.md` — understand the page structure and routing to identify which pages need meta tags.
-3. Review existing `<head>` tag patterns in `src/frontend/` — understand how meta tags and titles are currently managed.
-4. Read the relevant sprint spec under `docs/product/phases/` — confirm which pages are being added or modified.
+2. Read docs — understand the page structure and routing to identify which pages need meta tags.
+3. Review existing `<head>` tag patterns in the frontend — understand how meta tags and titles are currently managed.
+4. Read the relevant sprint spec under docs — confirm which pages are being added or modified.
 5. Check `MEMORY.md` and `memories/` for settled decisions on meta tag patterns, title formats, or structured data schemas.
 
 ## Owned Documentation
@@ -26,7 +26,7 @@ N/A — this agent does not own dedicated documentation files. It consults front
 
 | Path | Purpose |
 |------|---------|
-| `src/frontend/` (meta/head tags) | Page titles, meta descriptions, Open Graph tags, structured data, canonical URLs — specifically the `<head>` and meta-related code in page components and layout files |
+| the frontend (meta/head tags) | Page titles, meta descriptions, Open Graph tags, structured data, canonical URLs — specifically the `<head>` and meta-related code in page components and layout files |
 
 ## Available Skills
 

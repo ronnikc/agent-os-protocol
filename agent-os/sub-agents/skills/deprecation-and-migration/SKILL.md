@@ -153,14 +153,14 @@ Phase 4: New 100%, old idle
 Phase 5: Remove old
 ```
 
-Use existing project feature flags (`src/shared/src/config/feature-flags.ts`) plus per-org rollout for safe progression.
+Use existing project feature flags (the shared package) plus per-org rollout for safe progression.
 
 ### Adapter
 
 Create an adapter that translates old-interface calls to the new implementation. Consumers keep the old interface while you migrate the backend.
 
 ```typescript
-// src/backend/src/modules/risks/legacy-risk-adapter.ts
+// the backend modules
 // Adapter: presents the old interface, calls the new service.
 // @deprecated Direct callers should migrate to riskService. See ADR-0042.
 export class LegacyRiskService implements OldRiskAPI {
@@ -218,8 +218,8 @@ When deprecating something in this codebase, coordinate with:
 | Backend service or module | Test Specialist (rewrite tests against new), Build Integrity (verify no broken imports), Documentation Specialist (ADR + release notes) |
 | API endpoint | API Specialist (contract migration), Frontend Specialist (consumer migration), Documentation Specialist (api-contracts.md) |
 | Frontend component | Frontend Specialist (replace consumers), Test Specialist (component test rewrite), Accessibility Specialist (WCAG re-audit on replacement), I18N Specialist (locale-key cleanup) |
-| Permission / role | Security Specialist (RBAC matrix), seed-roles.ts owner |
-| i18n keys | I18N Specialist (clean across 16 locales), Test Specialist (mock cleanup) |
+| Permission / role | Security Specialist (RBAC matrix), the role-seed file owner |
+| i18n keys | I18N Specialist (clean across multiple locales), Test Specialist (mock cleanup) |
 | Domain-specific system | Domain Specialist + User Validation Specialist |
 
 ---

@@ -14,7 +14,7 @@ Before performing any UI Assist work:
 
 1. Read `docs/engineering/README.md` — the master engineering instructions.
 2. Read `UI-ASSIST.md` — the governing interaction rules, button behavior, response formatting, and lessons learned.
-3. Read `docs/product/phases/phase-15/sprint-17.8.0.md` — the Sprint 17.8.0 spec that defines the UI Assist system.
+3. Read docs — the Sprint 17.8.0 spec that defines the UI Assist system.
 4. Read `memories/engineering-code-patterns.md` — backend and frontend code conventions that apply to UI Assist modules.
 5. Check `MEMORY.md` and `memories/` for settled decisions on relay server behavior and overlay interaction patterns.
 
@@ -22,15 +22,15 @@ Before performing any UI Assist work:
 
 | Path | Purpose |
 |------|---------|
-| `docs/product/phases/phase-15/sprint-17.8.0.md` | Sprint 17.8.0 spec — the defining specification for the UI Assist system |
+| docs | Sprint 17.8.0 spec — the defining specification for the UI Assist system |
 | `UI-ASSIST.md` | Interaction rules, button behavior, response formatting, lessons learned |
 
 ## Owned Source
 
 | Path | Purpose |
 |------|---------|
-| `src/frontend/src/modules/ui-assist/` | Overlay components, prompt input, response display, agent session UI |
-| `src/backend/src/modules/ui-assist/` | Native relay server, Claude Code handler, audit logging for agent interactions |
+| the frontend | Overlay components, prompt input, response display, agent session UI |
+| the backend modules | Native relay server, Claude Code handler, audit logging for agent interactions |
 | `agent-os/agent-os-panel/tabs/assist.js` | Agent OS Panel Assist tab — standalone Chat/Tasks/Sprint views connecting to relay |
 | `agent-os/agent-os-panel/tabs/lobby.js` | Agent OS Panel Lobby tab — agent presence, floor control, multi-panel roster |
 | `agent-os/agent-os-panel/tabs/messages.js` | Agent OS Panel Messages tab — filtered message bus view + send |

@@ -5,7 +5,7 @@ When to use: When verifying that all routes enforce RBAC correctly per the permi
 Version: 1.0.0
 Last updated: 2026-03-10
 
-Verify RBAC enforcement per docs/security/permission-matrix.md. Every route must use requirePermission middleware. Permission strings must exist in permissions.ts. Role-to-permission mappings must be correct per tier (free/starter/professional/enterprise). Cross-reference seed-roles.ts for permission seeding.
+Verify RBAC enforcement per the access-control reference. Every route must use requirePermission middleware. Permission strings must exist in the permissions registry. Role-to-permission mappings must be correct per tier (per tier). Cross-reference the role-seed file for permission seeding.
 
 ---
 
@@ -15,10 +15,10 @@ Every API route that performs a state-changing or data-access operation must enf
 
 ## Reference Documents
 
-- **Permission matrix:** `docs/security/permission-matrix.md`
-- **Permission constants:** `src/shared/src/constants/permissions.ts`
-- **Role seed data:** `src/backend/src/db/seed-roles.ts`
-- **Auth middleware:** `src/backend/src/middleware/auth.ts`
+- **Permission matrix:** the access-control reference
+- **Permission constants:** the shared package
+- **Role seed data:** the data layer
+- **Auth middleware:** the backend
 
 ## Verification Workflow
 
@@ -28,10 +28,10 @@ For each module, list all route handlers:
 
 ```bash
 # Find all route files
-find src/backend/src/modules -name 'routes.ts'
+find the backend -name 'routes.ts'
 
 # List all route handlers in a module
-grep -nE 'router\.(get|post|put|patch|delete)' src/backend/src/modules/<module>/routes.ts
+grep -nE 'router\.(get|post|put|patch|delete)' the backend modules
 ```
 
 ### Step 2: Verify requirePermission Middleware
@@ -41,26 +41,26 @@ Every route handler must include `requirePermission` in its middleware chain:
 ```bash
 # Check for routes WITHOUT requirePermission
 # Lines with router.get/post/put/patch/delete that do NOT contain requirePermission
-grep -nE 'router\.(get|post|put|patch|delete)' src/backend/src/modules/<module>/routes.ts | grep -v 'requirePermission'
+grep -nE 'router\.(get|post|put|patch|delete)' the backend modules | grep -v 'requirePermission'
 ```
 
 Any route that appears in this output is a security gap unless it is explicitly documented as public (e.g., health check, public intake form).
 
 ### Step 3: Verify Permission Strings Exist
 
-Every permission string used in `requirePermission('some.permission')` must be defined in `permissions.ts`:
+Every permission string used in `requirePermission('some.permission')` must be defined in the permissions registry:
 
 ```bash
 # Extract permission strings used in route files
-grep -roP "requirePermission\('([^']+)'\)" src/backend/src/modules/ | grep -oP "'[^']+'" | sort -u
+grep -roP "requirePermission\('([^']+)'\)" the backend modules | grep -oP "'[^']+'" | sort -u
 
-# Extract permission strings defined in permissions.ts
-grep -oP "'[a-z][a-z_.:]+'|\"[a-z][a-z_.:]+" src/shared/src/constants/permissions.ts | tr -d "'" | tr -d '"' | sort -u
+# Extract permission strings defined in the permissions registry
+grep -oP "'[a-z][a-z_.:]+'|\"[a-z][a-z_.:]+" the shared package | tr -d "'" | tr -d '"' | sort -u
 
 # Find permissions used but not defined (security gap)
 comm -23 \
-  <(grep -roP "requirePermission\('([^']+)'\)" src/backend/src/modules/ | grep -oP "'[^']+'" | tr -d "'" | sort -u) \
-  <(grep -oP "'[a-z][a-z_.:]+'|\"[a-z][a-z_.:]+" src/shared/src/constants/permissions.ts | tr -d "'" | tr -d '"' | sort -u)
+  <(grep -roP "requirePermission\('([^']+)'\)" the backend modules | grep -oP "'[^']+'" | tr -d "'" | sort -u) \
+  <(grep -oP "'[a-z][a-z_.:]+'|\"[a-z][a-z_.:]+" the shared package | tr -d "'" | tr -d '"' | sort -u)
 ```
 
 Any output from the `comm` command indicates a permission string used in routes but not defined in the constants file.
@@ -77,11 +77,11 @@ Permissions are organized by subscription tier. Each permission must appear in t
 | Enterprise | `ENTERPRISE_PERMISSIONS` | All features including admin |
 
 ```bash
-# Check tier arrays in permissions.ts
-grep -A 50 'FREE_PERMISSIONS' src/shared/src/constants/permissions.ts
-grep -A 50 'STARTER_PERMISSIONS' src/shared/src/constants/permissions.ts
-grep -A 50 'PROFESSIONAL_PERMISSIONS' src/shared/src/constants/permissions.ts
-grep -A 50 'ENTERPRISE_PERMISSIONS' src/shared/src/constants/permissions.ts
+# Check tier arrays in the permissions registry
+grep -A 50 'FREE_PERMISSIONS' the shared package
+grep -A 50 'STARTER_PERMISSIONS' the shared package
+grep -A 50 'PROFESSIONAL_PERMISSIONS' the shared package
+grep -A 50 'ENTERPRISE_PERMISSIONS' the shared package
 ```
 
 Verify that:
@@ -91,15 +91,15 @@ Verify that:
 
 ### Step 5: Verify Role-to-Permission Mapping
 
-Check that `seed-roles.ts` assigns the correct permissions to each role:
+Check that `the role-seed file` assigns the correct permissions to each role:
 
 ```bash
-# Review role definitions in seed-roles.ts
-grep -n 'role:' src/backend/src/db/seed-roles.ts
-grep -n 'permissions:' src/backend/src/db/seed-roles.ts
+# Review role definitions in the role-seed file
+grep -n 'role:' the data layer
+grep -n 'permissions:' the data layer
 
 # Verify the allPermissions array includes new permissions
-grep -c 'allPermissions' src/backend/src/db/seed-roles.ts
+grep -c 'allPermissions' the data layer
 ```
 
 ### Step 6: Verify Frontend Permission Guards
@@ -108,10 +108,10 @@ Frontend components should also check permissions before rendering protected UI 
 
 ```bash
 # Find permission checks in frontend
-grep -rn 'hasPermission\|checkPermission\|usePermission' src/frontend/src/
+grep -rn 'hasPermission\|checkPermission\|usePermission' the frontend
 
 # Find admin pages that might lack permission checks
-find src/frontend/src/pages/admin -name '*.tsx' -exec grep -L 'permission' {} \;
+find the frontend pages -name '*.tsx' -exec grep -L 'permission' {} \;
 ```
 
 ## Bulk Verification (All Modules)
@@ -119,13 +119,13 @@ find src/frontend/src/pages/admin -name '*.tsx' -exec grep -L 'permission' {} \;
 ```bash
 # Count routes vs permission checks across all modules
 echo "Total routes:"
-grep -rcE 'router\.(get|post|put|patch|delete)' src/backend/src/modules/ | awk -F: '{sum+=$2} END {print sum}'
+grep -rcE 'router\.(get|post|put|patch|delete)' the backend modules | awk -F: '{sum+=$2} END {print sum}'
 
 echo "Routes with requirePermission:"
-grep -rcE 'requirePermission' src/backend/src/modules/*/routes.ts | awk -F: '{sum+=$2} END {print sum}'
+grep -rcE 'requirePermission' the backend modules | awk -F: '{sum+=$2} END {print sum}'
 
 # Find modules with unprotected routes
-for f in $(find src/backend/src/modules -name 'routes.ts'); do
+for f in $(find the backend -name 'routes.ts'); do
   total=$(grep -cE 'router\.(get|post|put|patch|delete)' "$f" 2>/dev/null || echo 0)
   protected=$(grep -c 'requirePermission' "$f" 2>/dev/null || echo 0)
   if [ "$total" != "$protected" ]; then
@@ -136,18 +136,18 @@ done
 
 ## Output Format
 
-| Module | Route | Method | Permission | In permissions.ts | In seed-roles.ts | Tier | Status |
+| Module | Route | Method | Permission | In the permissions registry | In the role-seed file | Tier | Status |
 |--------|-------|--------|------------|-------------------|------------------|------|--------|
 | tickets | /api/v1/tickets | POST | tickets.create | Yes | Yes | Starter | Pass |
 | tickets | /api/v1/tickets/:id | DELETE | tickets.delete | Yes | No | — | Fail |
 
 ## Common Issues
 
-1. **Permission defined but not seeded** — Permission exists in `permissions.ts` but is missing from `seed-roles.ts` `allPermissions` array. Users cannot access the route.
+1. **Permission defined but not seeded** — Permission exists in the permissions registry but is missing from `the role-seed file` `allPermissions` array. Users cannot access the route.
 2. **Route without middleware** — Route handler missing `requirePermission`. Any authenticated user can access it.
 3. **Tier escalation** — Write permission incorrectly placed in Free tier instead of Starter or higher.
 4. **Frontend/backend mismatch** — Frontend shows a button but the backend rejects the request because the user's role lacks the permission.
-5. **Stale permissions after module rename** — Permission string updated in routes but not in `permissions.ts` or `seed-roles.ts`.
+5. **Stale permissions after module rename** — Permission string updated in routes but not in the permissions registry or `the role-seed file`.
 
 ## Input Schema
 
@@ -196,7 +196,7 @@ output:
     description: "Routes missing requirePermission middleware"
   undefined_permissions:
     type: array
-    description: "Permission strings used in routes but not defined in permissions.ts"
+    description: "Permission strings used in routes but not defined in the permissions registry"
   summary:
     type: string
     description: "Overall RBAC verification assessment"
@@ -205,7 +205,7 @@ output:
 ## Quality Gate
 
 - Every route handler has been checked for requirePermission middleware — no routes skipped.
-- All permission strings used in routes exist in permissions.ts and seed-roles.ts.
+- All permission strings used in routes exist in the permissions registry and the role-seed file.
 - Tier assignments have been verified (no write/delete in Free tier, admin only in Enterprise).
 - Frontend permission guards have been cross-referenced with backend route permissions (if check_frontend=true).
 
@@ -226,7 +226,7 @@ chain_metadata:
 
 ## Error Handling
 
-- If permissions.ts cannot be parsed (syntax error), halt verification and report the parse failure.
+- If the permissions registry cannot be parsed (syntax error), halt verification and report the parse failure.
 - If a route file uses dynamic permission strings (computed at runtime), flag them for manual review rather than marking as "Fail."
-- If seed-roles.ts structure has changed (e.g., different array names), attempt to detect the new structure before falling back to manual inspection.
+- If the role-seed file structure has changed (e.g., different array names), attempt to detect the new structure before falling back to manual inspection.
 - If frontend permission check patterns differ from the expected hasPermission/checkPermission/usePermission, broaden the search pattern and note reduced confidence.

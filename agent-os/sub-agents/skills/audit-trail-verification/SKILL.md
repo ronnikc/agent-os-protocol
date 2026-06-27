@@ -5,13 +5,13 @@ When to use: When verifying that all state-changing operations emit audit events
 Version: 1.0.0
 Last updated: 2026-03-10
 
-Verify audit events are emitted for every state-changing operation. Cross-reference service files against docs/compliance/audit-event-taxonomy.md. Check event type, payload structure (actor, org, timestamp), and ensure sensitive fields are excluded from logs.
+Verify audit events are emitted for every state-changing operation. Cross-reference service files against the audit-event reference. Check event type, payload structure (actor, org, timestamp), and ensure sensitive fields are excluded from logs.
 
 ---
 
 ## Core Rule
 
-Every state-changing operation in the platform must emit an audit event. This is non-negotiable for a compliance platform.
+Every state-changing operation in the platform must emit an audit event. This is non-negotiable for a platform.
 
 State-changing operations include:
 - Create, update, delete of any entity
@@ -26,7 +26,7 @@ State-changing operations include:
 The authoritative source for audit event types and their required payloads is:
 
 ```
-docs/compliance/audit-event-taxonomy.md
+the audit-event reference
 ```
 
 All audit events must match the taxonomy. Do not invent ad-hoc event types.
@@ -35,14 +35,14 @@ All audit events must match the taxonomy. Do not invent ad-hoc event types.
 
 ### Step 1: Identify State-Changing Operations
 
-For each service file in `src/backend/src/modules/<module>/`:
+For each service file in the backend modules:
 
 ```bash
 # Find all service files in a module
-find src/backend/src/modules/<module> -name '*-service.ts'
+find the backend modules -name '*-service.ts'
 
 # Look for state-changing methods (create, update, delete, transition, etc.)
-grep -nE '(async\s+)(create|update|delete|remove|archive|activate|deactivate|approve|reject|submit|assign|revoke|transition|close|resolve|escalate)' src/backend/src/modules/<module>/*-service.ts
+grep -nE '(async\s+)(create|update|delete|remove|archive|activate|deactivate|approve|reject|submit|assign|revoke|transition|close|resolve|escalate)' the backend modules
 ```
 
 ### Step 2: Verify Audit Calls Exist
@@ -51,7 +51,7 @@ For each state-changing method found, verify it calls `auditService.log`:
 
 ```bash
 # Check for auditService.log calls in service files
-grep -n 'auditService.log' src/backend/src/modules/<module>/*-service.ts
+grep -n 'auditService.log' the backend modules
 
 # Cross-reference: methods without audit calls
 # Compare the count of state-changing methods vs audit calls
@@ -63,10 +63,10 @@ Each `auditService.log` call must use an event type from the taxonomy:
 
 ```bash
 # Extract event types used in service files
-grep -oP "eventType:\s*'[^']+'" src/backend/src/modules/<module>/*-service.ts
+grep -oP "eventType:\s*'[^']+'" the backend modules
 
 # Cross-reference with taxonomy
-# Each extracted event type must exist in docs/compliance/audit-event-taxonomy.md
+# Each extracted event type must exist in the audit-event reference
 ```
 
 ### Step 4: Verify Payload Structure
@@ -95,7 +95,7 @@ Audit logs must NOT contain:
 
 ```bash
 # Check for potential sensitive field logging
-grep -nE '(password|secret|token|apiKey|creditCard|ssn)' src/backend/src/modules/<module>/*-service.ts | grep -i audit
+grep -nE '(password|secret|token|apiKey|creditCard|ssn)' the backend modules | grep -i audit
 ```
 
 ## Bulk Verification (All Modules)
@@ -104,13 +104,13 @@ To verify audit coverage across the entire backend:
 
 ```bash
 # Count state-changing methods across all modules
-grep -rnE '(async\s+)(create|update|delete|remove|archive|activate|deactivate|approve|reject|submit|assign|revoke|transition|close|resolve|escalate)' src/backend/src/modules/ | wc -l
+grep -rnE '(async\s+)(create|update|delete|remove|archive|activate|deactivate|approve|reject|submit|assign|revoke|transition|close|resolve|escalate)' the backend modules | wc -l
 
 # Count audit calls across all modules
-grep -rn 'auditService.log' src/backend/src/modules/ | wc -l
+grep -rn 'auditService.log' the backend modules | wc -l
 
 # Find service files with no audit calls (potential gaps)
-for f in $(find src/backend/src/modules -name '*-service.ts'); do
+for f in $(find the backend -name '*-service.ts'); do
   count=$(grep -c 'auditService.log' "$f" 2>/dev/null || echo 0)
   if [ "$count" = "0" ]; then
     echo "NO AUDIT CALLS: $f"
@@ -149,7 +149,7 @@ input:
   taxonomy_path:
     type: string
     required: false
-    default: "docs/compliance/audit-event-taxonomy.md"
+    default: "the audit-event reference"
     description: "Path to the audit event taxonomy reference document"
 ```
 

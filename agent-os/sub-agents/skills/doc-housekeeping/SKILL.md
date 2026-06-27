@@ -16,7 +16,7 @@ Post-sprint documentation updates covering 9 mandatory files, conditional update
 | 1 | `docs/release-notes/{X.Y.Z}.md` | Create per-sprint release note |
 | 2 | `docs/release-notes/README.md` | Add to version history table |
 | 3 | `docs/developer-handoff.md` | Add sprint to priority matrix |
-| 4 | `docs/product/phases/phase-{N}/README.md` | Mark sprint as Complete |
+| 4 | docs | Mark sprint as Complete |
 | 5 | `CLAUDE.md` → Implementation Status | Update phase-level status |
 | 6 | `README.md` → Sprint table | Mark as Delivered |
 | 7 | `README.md` → Codebase Stats | Update all stale metrics |
@@ -27,12 +27,12 @@ Post-sprint documentation updates covering 9 mandatory files, conditional update
 
 | Trigger | Files to update |
 |---------|----------------|
-| New API endpoints | `docs/backend/api-contracts.md`, `docs/user-guide/api-reference.md` |
-| New permissions | `docs/security/permission-matrix.md` |
-| New collections | `docs/backend/data-model.md`, `src/backend/src/db/indexes.ts` |
+| New API endpoints | the API-contract docs, `docs/user-guide/api-reference.md` |
+| New permissions | the access-control reference |
+| New collections | docs, the data layer |
 | New shared types | `docs/reference/json-schemas.md` |
 | New user-facing module | `docs/user-guide/README.md`, `docs/training/admin-guide.md` |
-| New user-facing features | `src/backend/src/db/seed-sample-data.ts` (help articles) |
+| New user-facing features | the data layer (help articles) |
 | Last sprint of phase | See phase-completion items below |
 
 ## Codebase Stats Verification Commands
@@ -40,10 +40,10 @@ Post-sprint documentation updates covering 9 mandatory files, conditional update
 Run before pushing to verify README stats match reality:
 
 ```bash
-ls -d src/backend/src/modules/*/ | wc -l          # Backend modules
-find src/backend/src/modules -name '*-service.ts' | wc -l  # Services
-find src/frontend/src/pages/admin -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' | wc -l  # Admin pages
-grep -cE '(async |= async )' src/frontend/src/services/api-client.ts  # API methods
+ls -d the backend modules | wc -l          # Backend modules
+find the backend -name '*-service.ts' | wc -l  # Services
+find the frontend pages -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' | wc -l  # Admin pages
+grep -cE '(async |= async )' the frontend  # API methods
 find docs -name '*.md' | wc -l                     # Doc files
 ```
 

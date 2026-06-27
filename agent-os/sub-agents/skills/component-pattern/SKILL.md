@@ -5,7 +5,7 @@ When to use: When implementing a new frontend page component or reviewing an exi
 Version: 1.0.0
 Last updated: 2026-03-10
 
-Frontend component implementation pattern for this project. Use `const { t } = useLocale()` for all text. CSS classes use `grc-` prefix (layout classes use `dm-` prefix). Pages use apiClient via named import. Forms validate with Zod. Navigation in AdminLayout.tsx. Routes in App.tsx. Semantic HTML first, ARIA supplementary.
+Frontend component implementation pattern for this project. Use `const { t } = useLocale()` for all text. CSS classes use `aos-` prefix (layout classes use `dm-` prefix). Pages use apiClient via named import. Forms validate with Zod. Navigation in AdminLayout.tsx. Routes in App.tsx. Semantic HTML first, ARIA supplementary.
 
 ---
 
@@ -92,7 +92,7 @@ export function ExamplesPage() {
     <main className="dm-page" role="main">
       <header className="dm-header">
         <h1>{t.examples.title}</h1>
-        <button onClick={() => setShowForm(true)} className="grc-btn grc-btn-primary">
+        <button onClick={() => setShowForm(true)} className="aos-btn aos-btn-primary">
           {t.examples.add_button}
         </button>
       </header>
@@ -155,13 +155,13 @@ export function ExamplesPage() {
 - Use `const { t } = useLocale()` at the top of every component
 - Keys follow the pattern: `t.<module>.<element>` (e.g., `t.governance.vendors.title`)
 - Never use `langKey` pattern or direct EN/VI lookups
-- See **I18N.md** for full rules
+- See **localization** for full rules
 
 ### CSS Classes
 
 - Layout classes: `dm-page`, `dm-header`, `dm-filters`, `dm-form`, `dm-table`
-- Component classes: `grc-btn`, `grc-btn-primary`, `grc-badge`, `grc-card`
-- Always use the `grc-` prefix for new component-specific classes
+- Component classes: `aos-btn`, `aos-btn-primary`, `aos-badge`, `aos-card`
+- Always use the `aos-` prefix for new component-specific classes
 - Never use inline styles for layout
 
 ### Exports
@@ -195,13 +195,13 @@ export function ExamplesPage() {
 
 ### Navigation
 
-- Add menu item to `src/frontend/src/layouts/AdminLayout.tsx`
-- Add route to `src/frontend/src/App.tsx`
+- Add menu item to the frontend
+- Add route to the frontend
 - Use consistent path pattern: `/admin/<module>`
 
 ### API Client
 
-- All API calls go through `apiClient` (in `src/frontend/src/services/api-client.ts`)
+- All API calls go through `apiClient` (in the frontend)
 - Method naming: `list<Module>`, `create<Module>`, `update<Module>`, `delete<Module>`, `get<Module>`
 - Methods accept filter objects and return `{ data, total, page, page_size }`
 
@@ -210,7 +210,7 @@ export function ExamplesPage() {
 - [ ] `useLocale()` initialized, all strings from `t.*`
 - [ ] `apiClient` used via named import
 - [ ] `usePageTitle()` set
-- [ ] CSS classes use `dm-` for layout, `grc-` for components
+- [ ] CSS classes use `dm-` for layout, `aos-` for components
 - [ ] Named function export (not default)
 - [ ] Semantic HTML with supplementary ARIA
 - [ ] `ScreenReaderOnly` live region for loading/count
@@ -219,7 +219,7 @@ export function ExamplesPage() {
 - [ ] Form resets after submit
 - [ ] Navigation item added to AdminLayout.tsx
 - [ ] Route added to App.tsx
-- [ ] i18n keys added to all 16 locale files
+- [ ] i18n keys added to all multiple locales files
 
 ## Input Schema
 
@@ -254,10 +254,10 @@ inputs:
 outputs:
   page_file:
     type: file_path
-    description: "Path to the created page component (src/frontend/src/pages/admin/<module>/<PageName>.tsx)"
+    description: "Path to the created page component (the frontend pages)"
   api_client_methods:
     type: array
-    description: "Methods added to src/frontend/src/services/api-client.ts"
+    description: "Methods added to the frontend
   nav_entry:
     type: object
     description: "Menu item added to AdminLayout.tsx"
@@ -266,7 +266,7 @@ outputs:
     description: "Route element added to App.tsx"
   i18n_keys:
     type: array
-    description: "List of i18n keys added across all 16 locale files"
+    description: "List of i18n keys added across all multiple locales files"
 ```
 
 ## Quality Gate
@@ -294,6 +294,6 @@ chain_metadata:
 ## Error Handling
 
 - If the apiClient method does not exist yet, stub it with a TODO comment and flag it in the output so the backend skill can create it.
-- If i18n keys are missing from any of the 16 locale files, list the missing locales in the output rather than silently skipping them.
+- If i18n keys are missing from any of the multiple locales files, list the missing locales in the output rather than silently skipping them.
 - If AdminLayout.tsx or App.tsx have merge conflicts or unexpected structure, report the conflict and do not force-write.
 - If the module uses a non-standard layout (e.g., wizard flow instead of table), fall back to the closest existing pattern and document the deviation.

@@ -13,23 +13,23 @@ The Research Specialist investigates questions about the codebase, specification
 All documentation directories (read-only access):
 
 - `docs/engineering/` — master engineering instructions
-- `docs/backend/` — API specs, data models, services
-- `docs/frontend/` — UI modules, user flows, components
-- `docs/compliance/` — regulatory frameworks, audit requirements
+- docs — API specs, data models, services
+- docs — UI modules, user flows, components
+- docs — domain frameworks, audit requirements
 - `docs/security/` — threat models, access control, RBAC
 - `docs/infrastructure/` — deployment, CI/CD, monitoring
 - `docs/testing/` — test strategy, coverage metrics
 - `docs/reference/` — glossary, ID conventions, JSON schemas
-- `docs/product/phases/` — all phase and sprint specs
+- docs — all phase and sprint specs
 - `memories/` — decisions, patterns, lessons learned
 
 ## Owned Source
 
 All source directories (read-only access):
 
-- `src/backend/` — backend services, routes, seed data
-- `src/frontend/` — frontend pages, components, layouts
-- `src/shared/` — shared types, constants, utilities
+- the backend — backend services, routes, seed data
+- the frontend — frontend pages, components, layouts
+- the shared package — shared types, constants, utilities
 
 ## Available Skills
 

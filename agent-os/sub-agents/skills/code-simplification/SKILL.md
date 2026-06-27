@@ -106,7 +106,7 @@ BEFORE SIMPLIFYING, ANSWER:
 | `requirePermission(...) as any` | Express middleware type compat — RBAC contract |
 | `enforceOrgScope` middleware on every route | Multi-tenancy isolation — never remove |
 | Service constructor takes `db` and `org_id` separately | Auditable scoped writes |
-| `useLocale()` instead of inline strings | i18n contract — 16 locales |
+| `useLocale()` instead of inline strings | i18n contract — multiple locales |
 | `auditLog()` calls in service methods | Compliance audit trail |
 | `AppError(status, code, message)` | Three-arg form is required by error-handler middleware |
 
@@ -158,7 +158,7 @@ FOR EACH SIMPLIFICATION:
 4. Tests fail → revert and reconsider
 ```
 
-After all simplifications in a batch, run the full frontend test suite (`cd src/frontend && npx vitest run`) — incident 15 showed individual files mask cross-module regressions.
+After all simplifications in a batch, run the full frontend test suite (`cd the frontend && npx vitest run`) — incident 15 showed individual files mask cross-module regressions.
 
 **The Rule of 500:** If a refactoring would touch more than 500 lines, invest in automation (codemods, sed scripts, AST transforms) rather than making the changes by hand. Manual edits at that scale are error-prone and exhausting to review.
 

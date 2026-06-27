@@ -393,23 +393,6 @@ run_close_gates() {
     warn "process-spawn-requests.mjs not found — memory v2 drain skipped"
   fi
 
-  # ── E6: Codebase Stats (informational) ──
-  echo ""
-  echo "=== E6: Codebase Stats (verify README.md matches) ==="
-
-  BACKEND_MODULES=$(ls -d src/backend/src/modules/*/ 2>/dev/null | wc -l | tr -d ' ')
-  SERVICES=$(find src/backend/src/modules -name '*-service.ts' 2>/dev/null | wc -l | tr -d ' ')
-  ROUTES=$(find src/backend/src/modules -name 'routes.ts' 2>/dev/null | wc -l | tr -d ' ')
-  PAGES=$(find src/frontend/src/pages/admin -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' 2>/dev/null | wc -l | tr -d ' ')
-  TESTS=$(find src -name '*.test.ts' -o -name '*.test.tsx' 2>/dev/null | wc -l | tr -d ' ')
-
-  echo "  Backend modules: $BACKEND_MODULES"
-  echo "  Services: $SERVICES"
-  echo "  Route files: $ROUTES"
-  echo "  Frontend pages: $PAGES"
-  echo "  Test files: $TESTS"
-  manual "Verify README.md Codebase Stats match the numbers above"
-
   # ── E11: Self-Verification Checklist Items ──
   echo ""
   echo "=== E11: Self-Verification Checklist (manual items) ==="

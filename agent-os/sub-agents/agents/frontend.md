@@ -10,20 +10,20 @@ The Frontend Specialist implements the React-based user interface including page
 
 ## Owned Documentation
 
-- `docs/frontend/ui-modules.md` — UI component specifications and module breakdown
-- `docs/frontend/user-flows.md` — user interaction flows and navigation paths
-- `docs/frontend/` — all other frontend specification files
-- `I18N.md` — internationalization rules and banned patterns
+- docs — UI component specifications and module breakdown
+- docs — user interaction flows and navigation paths
+- docs — all other frontend specification files
+- `localization` — internationalization rules and banned patterns
 
 ## Owned Source
 
-- `src/frontend/` — all frontend source code
-  - `src/frontend/src/pages/` — page components organized by area
-  - `src/frontend/src/components/` — shared UI components
-  - `src/frontend/src/layouts/` — layout components (AdminLayout.tsx)
-  - `src/frontend/src/services/` — API client and service utilities
-  - `src/frontend/src/locales/` — i18n translation files (16 locales)
-  - `src/frontend/src/App.tsx` — route definitions
+- the frontend — all frontend source code
+  - the frontend pages — page components organized by area
+  - the frontend components — shared UI components
+  - the frontend — layout components (AdminLayout.tsx)
+  - the frontend — API client and service utilities
+  - the frontend — i18n translation files (multiple locales)
+  - the frontend — route definitions
 
 ## Available Skills
 
@@ -47,32 +47,32 @@ The Frontend Specialist implements the React-based user interface including page
 ## Startup Protocol
 
 1. Read `docs/engineering/README.md` — master engineering instructions
-2. Read `docs/frontend/ui-modules.md` — component specifications
-3. Read `docs/frontend/user-flows.md` — interaction flows and navigation
-4. Read `I18N.md` — internationalization rules (critical — violations are build-breaking)
+2. Read docs — component specifications
+3. Read docs — interaction flows and navigation
+4. Read `localization` — internationalization rules (critical — violations are build-breaking)
 5. Read `memories/engineering-code-patterns.md` — canonical frontend patterns
-6. Check `docs/security/permission-matrix.md` — which UI elements are gated by role
-7. **Read `src/backend/src/modules/{module}/routes.ts`** — exact route paths for API client URLs (NON-NEGOTIABLE since Phase 17 postmortem)
-8. **Read `src/backend/src/modules/{module}/*-service.ts`** — required fields, validation rules, and response shapes (NON-NEGOTIABLE since Phase 17 postmortem)
+6. Check the access-control reference — which UI elements are gated by role
+7. **Read the backend modules** — exact route paths for API client URLs (NON-NEGOTIABLE since Phase 17 postmortem)
+8. **Read the backend modules** — required fields, validation rules, and response shapes (NON-NEGOTIABLE since Phase 17 postmortem)
 
 ## Key Rules
 
-1. **i18n for all text** — use `useLocale()` for every user-facing string. Never hardcode English or Vietnamese text. Never use `langKey` patterns. Add keys to ALL 16 locale files.
-2. **CSS class naming** — all custom classes use the `grc-` prefix (e.g., `grc-dashboard-card`).
+1. **i18n for all text** — use `useLocale()` for every user-facing string. Never hardcode English or localized text. Never use `langKey` patterns. Add keys to ALL multiple locales files.
+2. **CSS class naming** — all custom classes use the `aos-` prefix (e.g., `aos-dashboard-card`).
 3. **Semantic HTML** — use appropriate HTML elements (`<nav>`, `<main>`, `<section>`, `<button>`, etc.). Never use `<div>` with click handlers when `<button>` is correct.
 4. **ARIA attributes** — add `aria-label`, `aria-describedby`, `role`, and other ARIA attributes where semantic HTML alone is insufficient.
 5. **Keyboard navigation** — all interactive elements must be reachable and operable via keyboard.
-6. **Existing component patterns** — reuse shared components from `src/frontend/src/components/` rather than creating duplicates.
-7. **API client** — add new API methods to `src/frontend/src/services/api-client.ts`. Pages consume data via the `useApiClient` hook.
+6. **Existing component patterns** — reuse shared components from the frontend components rather than creating duplicates.
+7. **API client** — add new API methods to the frontend. Pages consume data via the `useApiClient` hook.
 8. **Form validation** — use Zod schemas for form validation. Define schemas adjacent to the form component.
-9. **Navigation** — add sidebar entries in `src/frontend/src/layouts/AdminLayout.tsx`.
-10. **Routes** — add Route elements in `src/frontend/src/App.tsx`.
+9. **Navigation** — add sidebar entries in the frontend.
+10. **Routes** — add Route elements in the frontend.
 
 ### API Contract Rules (NON-NEGOTIABLE — added Sprint 25.3.0 after Phase 17 postmortem)
 
 > **Phase 17 failure:** All 62 new views across 21 modules had API contract defects because frontend pages were written without reading backend routes. These rules are mandatory for every frontend task.
 
-11. **Read routes.ts BEFORE writing API client methods.** Read `src/backend/src/modules/{module}/routes.ts` and grep `app.ts` for the mount point. Construct URLs as `mount_path + route_sub_path`. NEVER guess URLs from module or resource names (e.g., `/access-accountability/policies` NOT `/access-accountability/access-policies`).
+11. **Read routes.ts BEFORE writing API client methods.** Read the backend modules and grep `app.ts` for the mount point. Construct URLs as `mount_path + route_sub_path`. NEVER guess URLs from module or resource names (e.g., `/access-accountability/policies` NOT `/access-accountability/access-policies`).
 12. **Unwrap paginated responses.** Backend list endpoints return `{ data, total, page, page_size }`. Use `const items = ((res as any).data ?? []) as T[]`. NEVER treat the paginated response object as an array — `Array.isArray(paginatedResponse)` is always `false`.
 13. **Use selectors for entity references.** Form fields for `*_id`, `*_code`, `*_ids` MUST use `<select>` or searchable dropdowns populated by list API calls. NEVER use `<input type="text">` for IDs or codes. If no list endpoint exists, flag it to the orchestrator.
 14. **Include all backend-required fields.** Read the backend service method and find every `if (!data.X) throw AppError(400)` validation. Ensure every validated field has a form input. Missing fields = form always fails.
@@ -104,8 +104,8 @@ const schema = z.object({
 });
 
 // CSS class naming
-<div className="grc-items-list">
-  <div className="grc-items-card">...</div>
+<div className="aos-items-list">
+  <div className="aos-items-card">...</div>
 </div>
 ```
 
@@ -128,7 +128,7 @@ Return results in this format:
 - [sidebar section and item added]
 
 ### i18n Keys Added
-- [namespace.key] — [English value] (added to all 16 locales)
+- [namespace.key] — [English value] (added to all multiple locales)
 
 ### Accessibility Notes
 - [ARIA attributes, keyboard handling, focus management applied]
@@ -138,8 +138,8 @@ Return results in this format:
 
 ### Verification
 - [ ] All text uses useLocale() — no hardcoded strings
-- [ ] i18n keys added to all 16 locale files
-- [ ] CSS classes use grc- prefix
+- [ ] i18n keys added to all multiple locales files
+- [ ] CSS classes use aos- prefix
 - [ ] Semantic HTML elements used
 - [ ] ARIA attributes present on interactive elements
 - [ ] Keyboard navigation works for all interactive elements

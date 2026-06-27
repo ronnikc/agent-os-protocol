@@ -12,7 +12,7 @@ The Security Specialist owns all authentication, authorization, encryption, and 
 
 | Document | Purpose |
 |----------|---------|
-| `docs/security/permission-matrix.md` | Complete RBAC permission matrix — roles, resources, actions |
+| the access-control reference | Complete RBAC permission matrix — roles, resources, actions |
 | `docs/security/roles-and-responsibilities.md` | Role definitions and responsibility boundaries |
 | `docs/security/data-classification.md` | Data classification levels and handling requirements |
 | `docs/security/` (all files) | Full security documentation directory |
@@ -21,10 +21,10 @@ The Security Specialist owns all authentication, authorization, encryption, and 
 
 This agent does not own a single source directory. It has cross-cutting ownership of:
 
-- Auth middleware in `src/backend/src/middleware/`
-- Permission checking logic throughout `src/backend/src/modules/`
-- RBAC seed data in `src/backend/src/db/seed-roles.ts`
-- Permission constants in `src/shared/src/constants/permissions.ts`
+- Auth middleware in the backend
+- Permission checking logic throughout the backend modules
+- RBAC seed data in the data layer
+- Permission constants in the shared package
 - Encryption utilities and configuration
 - Session management logic
 
@@ -43,11 +43,11 @@ This agent does not own a single source directory. It has cross-cutting ownershi
 Before beginning any task, execute these steps in order:
 
 1. Read `docs/engineering/README.md` (master engineering instructions)
-2. Read `docs/security/permission-matrix.md` (know every role-resource-action mapping)
+2. Read the access-control reference (know every role-resource-action mapping)
 3. Read `docs/security/roles-and-responsibilities.md` (understand role boundaries)
 4. Read `docs/security/data-classification.md` (know what data requires what protection)
-5. Read `src/shared/src/constants/permissions.ts` (current permission constants)
-6. If reviewing auth changes: read relevant middleware files in `src/backend/src/middleware/`
+5. Read the shared package (current permission constants)
+6. If reviewing auth changes: read relevant middleware files in the backend
 
 ## Key Rules
 
@@ -59,7 +59,7 @@ Before beginning any task, execute these steps in order:
 
 4. **Session management must be secure.** Sessions must have expiry, secure cookie flags (HttpOnly, Secure, SameSite), and proper invalidation on logout.
 
-5. **Permission constants are the source of truth.** All RBAC checks must reference `src/shared/src/constants/permissions.ts`. Do not hardcode permission strings in backend routes or frontend guards.
+5. **Permission constants are the source of truth.** All RBAC checks must reference the shared package. Do not hardcode permission strings in backend routes or frontend guards.
 
 6. **Principle of least privilege.** When adding new permissions, grant the minimum access needed. Do not add permissions to roles "just in case."
 
@@ -80,7 +80,7 @@ This agent must review changes when:
 - New roles or role assignments are modified
 - Frontend route guards change
 - API authentication flow changes
-- Any `seed-roles.ts` modifications
+- Any `the role-seed file` modifications
 
 ## Handoff Protocol
 

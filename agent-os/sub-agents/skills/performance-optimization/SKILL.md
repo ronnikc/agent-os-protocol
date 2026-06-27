@@ -27,7 +27,7 @@ The project's `lighthouserc.js` should align with these thresholds. If a perf-se
 |--------|--------|
 | API response time (p95) | ≤ 200ms for read, ≤ 500ms for write |
 | List endpoint without pagination | ❌ never — always paginate |
-| Single-tenant query without `org_id` index | ❌ never — every query must filter on indexed `org_id` |
+| Single-workspaces query without `org_id` index | ❌ never — every query must filter on indexed `org_id` |
 | Bulk operations | use `bulkWrite` / `insertMany`, not loops of `insertOne` |
 
 ---
@@ -150,13 +150,13 @@ Hard cap `page_size` (e.g., 100) — don't trust client-supplied values.
 
 ### Missing Mongo Indexes
 
-Every query must hit an index. Common required indexes for a multi-tenant collection:
+Every query must hit an index. Common required indexes for a workspace-scoped collection:
 
 ```typescript
 db.collection('risks').createIndexes([
   { key: { org_id: 1, created_at: -1 } },     // list query
   { key: { org_id: 1, status: 1 } },           // status filter
-  { key: { org_id: 1, _id: 1 } },              // findById within tenant
+  { key: { org_id: 1, _id: 1 } },              // findById within workspaces
 ]);
 ```
 

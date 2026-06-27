@@ -13,7 +13,7 @@ Quick triage scan for the 7 systemic anti-patterns discovered across 22 modules 
 
 ## Workflow
 
-1. **Receive scope** — module directory path(s) to scan (e.g., `src/frontend/src/pages/admin/incidents/`).
+1. **Receive scope** — module directory path(s) to scan (e.g., the frontend pages).
 
 2. **Run triage grep scans** — execute the 7 pattern scans below against the scoped files.
 
@@ -133,7 +133,7 @@ grep -rn 'showModal\|isModalOpen\|modalOpen' --include="*.tsx" <module_path>
 module_paths:
   type: list[string]
   required: true
-  description: Directory paths to scan (e.g., ["src/frontend/src/pages/admin/incidents/"])
+  description: Directory paths to scan (e.g., ["the frontend pages)
 full_review:
   type: boolean
   required: false
@@ -205,7 +205,7 @@ The full Production Readiness Checklist is defined in the Product QA Specialist 
 | D | Permissions & Security | D-1 to D-3 |
 | E | API Integration & Error Handling | E-1 to E-4 |
 | F | Workflow & Business Logic | F-1 to F-6 |
-| G | Regulatory Data Integrity | G-1 to G-4 |
+| G | Domain Data Integrity | G-1 to G-4 |
 | H | Evidence Generation | H-1 to H-8 |
 
 This scan covers a subset of items from sections A, B, C, and D. Sections E, F, G, and H require specialist review — they cannot be scanned with grep.
