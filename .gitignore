@@ -1,0 +1,47 @@
+# ── Dependencies ──
+node_modules/
+.pnp
+.pnp.js
+
+# ── Build output ──
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# ── Environment / secrets (BYOK keys stay local) ──
+.env
+.env.local
+.env.*.local
+
+# ── Logs ──
+logs/
+*.log
+npm-debug.log*
+
+# ── Agent OS runtime state (regenerated — never committed) ──
+agent-os/observations/*
+!agent-os/observations/.gitkeep
+agent-os/shared-memory/state/*
+!agent-os/shared-memory/state/.gitkeep
+agent-os/logs/
+agent-os/graph.json
+agent-os/.graph-modified-files
+agent-os/.graph-stale
+agent-os/facts.jsonl
+agent-os/scheduled/state/*
+!agent-os/scheduled/state/.gitkeep
+
+# ── Trained agent packs (user-local by default; opt-in to commit) ──
+agent-os/training/inbox/
+agent-os/training/reviewed/
+agent-os/training/rejected/
+agent-os/sub-agents/skills/trained/
+agent-os/memories/trained/
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp

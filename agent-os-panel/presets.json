@@ -1,0 +1,27 @@
+{
+  "sprint-full": {
+    "name": "Full Sprint Team",
+    "agents": ["backend", "frontend", "i18n", "accessibility", "code-review", "security", "sprint-gate-enforcer"],
+    "description": "Standard sprint execution team (7 agents)"
+  },
+  "sprint-light": {
+    "name": "Light Sprint (Backend Only)",
+    "agents": ["backend", "code-review", "sprint-gate-enforcer"],
+    "description": "Backend-only sprint without frontend (3 agents)"
+  },
+  "qa-sweep": {
+    "name": "QA Sweep Team",
+    "agents": ["product-qa", "accessibility", "i18n", "security", "code-review"],
+    "description": "Full quality assurance sweep (5 agents)"
+  },
+  "planning": {
+    "name": "Planning Team",
+    "agents": ["planning", "research", "graph-navigator"],
+    "description": "Sprint planning and decomposition (3 agents)"
+  },
+  "frontend-only": {
+    "name": "Frontend Sprint",
+    "agents": ["frontend", "accessibility", "i18n", "code-review", "sprint-gate-enforcer"],
+    "description": "Frontend-focused sprint (5 agents)"
+  }
+}

@@ -1,0 +1,66 @@
+{
+  "version": "1.0.0",
+  "description": "Scheduled Quality Assurance System — runs three daily tasks to maintain code quality through automated PR review, fix sprint generation, and fix sprint execution.",
+  "schedules": {
+    "graph-update": {
+      "interval": "daily",
+      "time_local": "03:00",
+      "_time_note": "GMT+7 local time. Synced 2026-04-13 with the real Claude Scheduled Cloud cron (was 04:00 / 04:10 / 04:30 — stale since the 2026-04-11 rebalance to 03:00 / 04:00 / 05:00).",
+      "prompt": "prompts/graph-update.md",
+      "enabled": true,
+      "description": "Update dependency graph via graph-update.sh to keep codebase intelligence current"
+    },
+    "pr-quality-review": {
+      "interval": "daily",
+      "time_local": "04:00",
+      "_time_note": "GMT+7 local time",
+      "prompt": "prompts/pr-quality-review.md",
+      "enabled": true,
+      "description": "Review merged PRs using Agent OS specialist agents, generate fix-sprint specs for issues found. Catch-up mode (2026-04-11): extended lookback with per-run cap lets the pipeline gradually clear a multi-week backlog without overwhelming any single run.",
+      "settings": {
+        "lookback_hours": 504,
+        "max_prs_per_run": 20,
+        "min_severity_for_fix_sprint": "medium",
+        "max_findings_per_sprint": 50,
+        "skip_already_reviewed": true
+      }
+    },
+    "fix-sprint-executor": {
+      "interval": "daily",
+      "time_local": "05:00",
+      "_time_note": "GMT+7 local time. 60-minute gap after Task B ensures B's output lands before C reads state.",
+      "prompt": "prompts/fix-sprint-executor.md",
+      "enabled": true,
+      "description": "Execute pending fix-sprints, commit to branch, open PR for human review",
+      "settings": {
+        "max_sprints_per_run": 1,
+        "require_clean_build": true,
+        "require_tests_pass": true,
+        "_require_tests_pass_note": "Step 6 runs tests scoped to files changed by the fix sprint (not full suite). Pre-existing failures in untouched modules are Task B's territory.",
+        "auto_pr": true
+      }
+    }
+  },
+  "agent_routing": {
+    "src/backend/**": {
+      "lead": "backend",
+      "supporting": ["security", "code-review"]
+    },
+    "src/frontend/**": {
+      "lead": "frontend",
+      "supporting": ["accessibility", "code-review", "i18n"]
+    },
+    "src/shared/**": {
+      "lead": "code-review",
+      "supporting": ["backend", "frontend"]
+    },
+    "docs/**": {
+      "lead": "documentation",
+      "supporting": ["compliance"]
+    },
+    "agent-os/**": {
+      "lead": "planning",
+      "supporting": ["code-review"]
+    }
+  }
+}

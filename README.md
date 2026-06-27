@@ -5,14 +5,14 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Status: **Sprint 0 — planning complete, implementation pending**
+&nbsp;Status: **Phase 1 landed — Local Mode runs (Panel + relay)**
 
-> 🚧 **Project status.** This repository currently contains the **finalized plan** for an
-> independent fork of the Agent OS Protocol. The product described below is the **target**.
-> Nothing here is built yet — see **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the
-> phase-by-phase build plan and **[`planning.md`](planning.md)** for the charter. Commands and
-> features are marked **(planned)** or by the phase that delivers them. This banner is removed
-> once Phase 1 lands a runnable local mode.
+> 🚧 **Project status.** The platform is mid-fork. **Phase 1 is complete: the Agent OS Panel
+> and relay run locally** (`npm run agent-os-panel`). Later capabilities — Swarm Mode, the
+> hosted lobby, agent identity, additional runtime adapters, `/train`, and Loop Mode — are
+> marked **(planned)** or by the phase that delivers them. See
+> **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
+> **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
 
 ---
 
@@ -257,7 +257,7 @@ npm install
 
 ## Quick start
 
-> **(planned — available after Phase 1.)** These are the target commands.
+> **Local Mode works today** (`npm run agent-os-panel`). Swarm Mode (`--lobby`) lands in Phase 7.
 
 ```bash
 # Local Mode — Panel + relay + built-in local lobby
@@ -336,6 +336,6 @@ keep the platform **product-neutral** — no domain-specific branding or content
 
 Licensed under the **Apache License 2.0**.
 
-Copyright © 2026 **Gothar.dk // Ronni K. Gothard Christiansen**.
+Copyright © 2026 **Gothard.dk // Ronni K. Gothard Christiansen**.
 
 See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) *(added in Phase 1)*.
