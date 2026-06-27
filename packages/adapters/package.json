@@ -1,0 +1,17 @@
+{
+  "name": "@agent-os/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent OS Protocol — runtime adapters (Claude CLI first) + the adapter registry.",
+  "license": "Apache-2.0",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-os/protocol-core": "*",
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0"
+  }
+}
