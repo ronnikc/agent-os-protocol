@@ -246,6 +246,14 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Exit:** fresh clone runs local mode + connects to configured lobby; all checks pass;
   zero AesirX/ComplianceOne runtime refs; `grc-suite` untouched.
 
+### Phase 11 — Loop / Autonomous Iterative Execution (locked late phase, §12B)
+- Ship + harden Loop Mode: the `LoopSpec`/`ExitCriterion` engine, `loop-orchestrator` Boss
+  skill, convergence/regression/budget safety, scheduler-driven unattended runs (Scheduled-QA
+  preset as the first shipped loop), Panel loop view. (Schema + `create-loop` skill seeded in
+  Phase 4; local MVP + swarm in Phase 7.)
+- **Exit:** a loop converges on a real work item against measurable exit criteria; respects
+  iteration/budget caps + human checkpoints; is fully auditable + stoppable; works local + swarm.
+
 ---
 
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)
@@ -646,12 +654,76 @@ ExitCriterion =
   (needs the unified lobby).
 - **Swarm + unattended/cron + cost budgets** → **Phase 7 → 6** (fuel/cost) → scheduler wire-up;
   ship the Scheduled-QA preset last.
-- Recommend tracking this as a dedicated **Phase 11 — Loop / Autonomous Iterative Execution**
-  in the final sprint sequence so it isn't rushed into the core fork.
+- **Locked (Ronni): Phase 11 — Loop / Autonomous Iterative Execution** — a dedicated late
+  phase after the core fork, so it isn't rushed (schema + `create-loop` skill still seeded in
+  Phase 4; local MVP + swarm built in Phase 7; full feature shipped + hardened in Phase 11).
 
 ---
 
 ## 13. Testing & Verification Plan (charter §21.13, §18)
+
+> **Ronni's directive: verify each flow is *functional* as we build it** — not just that code
+> compiles. Every phase must trace the flows it touches **end-to-end** — origin → API →
+> persistence → lobby → **Boss pulled in?** → **Boss pulls in named sub-agents?** → execution
+> → status back to the UI — and prove data + control actually flow.
+
+### 13.1 Functional Flow Verification (end-to-end, per flow)
+
+**The real mechanism today** (confirmed in source, so tests assert real hops):
+`POST /api/tasks` builds a canonical task, **and only if `assigned_to` is set AND a lobby is
+active** does it `proxyToStaging(/api/v1/agent-lobby/lobbies/:id/tasks)` — then always appends
+`tasks.jsonl` + `broadcastWs('task-created')`. The Sprint planner instead broadcasts
+`POST /api/messages {to:'*'}`. The panel-server tracks `lobbyBossAgentId`
+(`is_boss || agent_role==='boss-agent'`) and relays `lobby-message` / `lobby-task-update` to the
+UI. The Boss then runs its **Dispatch Flow** (`boss-agent.md:90-124`): decompose → brief →
+"any hands?" → assign each task to a **specific** specialist (**never `*`**) → require ACK/NACK
+→ track → monitor (2× ETA ping, 2 min reassign) → aggregate → report.
+
+**Flow inventory (each must be traced & asserted):**
+
+| Flow | Trigger | Hops | Boss pulled in? | Sub-agents pulled in? |
+|---|---|---|---|---|
+| **Create Task** | Tasks tab / Gantt "Create Task" → `POST /api/tasks` | task (`nextTaskId`, canonical schema) → [assigned+lobby → proxy to `/lobbies/:id/tasks`] → `tasks.jsonl` → WS `task-created` | **Only if assigned + lobby active** | Via Boss → named specialist (ACK) |
+| **Create Sprint** | Sprint planner → N×`POST /api/tasks` + `POST /api/messages {to:'*'}` | broadcast briefing → lobby → Boss | **Yes** (briefing) | Boss decomposes → assigns each to a specialist |
+| **Create Phase** | §12A `POST /api/phases` (replaces the prose "mkdir" instruction) | write `phase-N/README.md` front-matter → single reader → Gantt | Optional (when sprints/work follow) | n/a until sprints added |
+| **Create from UI Assist** | overlay request → relay → canonical `Task` → lobby | relay lobby client → **same** `Task` → Boss | **Yes** (same path) | **Same** Boss dispatch (no separate model) |
+| **Status round-trip** | sub-agent completes → lobby `lobby-task-update` | → `broadcastWs` → Tasks/Gantt/Lobby tabs | Boss aggregates + reports | — |
+
+**Assertions per scenario:** (a) canonical `Task`/`Sprint`/`Phase` persisted with stable
+id + valid `WorkItemStatus` (§12A); (b) the Boss actually **receives** the work; (c) the Boss
+dispatches to the **named** specialist and gets an **ACK**; (d) lifecycle transitions
+(assignment → ACK → progress → completion) propagate back and render live in **all** tabs;
+(e) the same canonical record flows unchanged across origin → lobby → back.
+
+**Gaps these tests must catch (already visible in source):**
+- **Local vs swarm divergence** — an assigned task only reaches a Boss when a lobby is active;
+  pure local mode without a lobby silently writes `tasks.jsonl` and **no Boss is pulled in**.
+  The unified **Local Agent Mode (built-in local lobby)** must close this; every flow test runs
+  in **both** local and swarm modes.
+- **Broadcast anti-pattern regression** — guard the documented 2026-04-06 live failure (Boss
+  broadcast 5 reviews to `*` → no ACK, no completion, double-send). A test asserts the Boss
+  **never** dispatches a task to `*` and that an unassigned/broadcast task does not silently die.
+- **Schema carriage** — assert no id/format mutation across hops (origin → lobby → UI).
+- **Duplicate dispatch** — Boss must not re-dispatch an already-assigned task (rule 5).
+
+**Harness:**
+- **UI hops** → Playwright against the Panel (Chromium preinstalled): create via the real UI,
+  assert `tasks.jsonl` + WS events + tab render.
+- **Lobby / Boss / sub-agent chain** → integration harness with a **scripted Boss** + **stub
+  specialist agents** on a local lobby; drive a task through assignment → ACK → completion and
+  assert lobby state + status round-trip. The LLM/runtime is mocked **via the adapter interface**
+  (§8) so runs are deterministic.
+- **UI Assist** → relay integration test: simulate an overlay request; assert it yields a
+  canonical `Task` and enters the **same** Boss path.
+- **Real smoke** → a local-mode `npm run agent-os-panel` run with one real relay agent appointed
+  Boss + one specialist executing a trivial task end-to-end (per the `verify` / `run` skills).
+
+**Per-phase rule (process — Ronni's "verify each part as we build"):** a phase is **not done**
+until the flows it touches pass functional verification, with a short **flow-trace artifact**
+(the hop-by-hop assertion log) attached to phase close-out — alongside the build/unit/grep
+gates below. In **Phase 11**, these flow tests double as Loop Mode **exit criteria**.
+
+### 13.2 Build / unit / static gates
 
 ```bash
 npm install && npm run typecheck && npm run lint && npm test
