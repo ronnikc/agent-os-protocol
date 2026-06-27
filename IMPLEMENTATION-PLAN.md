@@ -37,6 +37,10 @@ Three findings shape the whole plan:
 3. **Agent OS Panel and Agent OS UI Assist are both first-class, in-scope deliverables**
    of the fork (confirmed per Ronni's directive). They are treated as Layer 2 (Local
    Control Plane) and a cross-cutting integration product, respectively — see §4, §9, §12.
+   Two corrections folded in per Ronni: the Panel's **generic scheduler** (the
+   `agent-os/scheduled/` system behind the Scheduled tab) is **kept** (only its
+   ComplianceOne state/prompts reset, §7a), and the Panel's **agent-lobby logic is the
+   clone source** for the new Vercel remote-swarm app `apps/lobby-web` (§9).
 
 **Copyright/licensing (per Ronni's directive):** every `AesirX.io Ltd.` copyright header
 and the proprietary `LICENSE.md` will be replaced with
@@ -83,9 +87,10 @@ Sprint 0 (`planning.md`, `IMPLEMENTATION-PLAN.md`).
 | Sub-agents | `agent-os/sub-agents/**` | **35 agent defs**, **79 skills**, `templates/`, `diary-routing.yaml`, per-agent memories | Curate (see §7 roster) |
 | Scripts | `agent-os/scripts/**` | ~60 scripts + `hooks/` (28), `load/`, `codemods/`, `help/` | Curate generic vs ComplianceOne |
 | Memory system | `agent-os/memories/**` | INDEX.aaak, decisions/patterns/lessons/playbooks, `closed/` | Copy framework, drop content, regenerate index |
-| Runtime state | `observations/`, `shared-memory/`, `logs/`, `registries/`, `spawn-requests-archive/`, `scheduled/` | Session/QA state | **Do not fork** — ship empty scaffolds |
+| **Scheduling system** | `agent-os/scheduled/**` (config.json, prompts/, templates/, daily runner) + panel-server `/api/scheduled/*` + `tabs/scheduled.js` | **Generic Agent OS scheduler** — powers the panel Scheduled tab (3 tasks: graph update, PR review, fix-sprint exec) | **KEEP engine** + neutralize prompts; `state/` regenerated |
+| Runtime state | `observations/`, `shared-memory/`, `logs/`, `registries/`, `spawn-requests-archive/`, `scheduled/state/` | Session/QA state | **Do not fork** — ship empty scaffolds |
 | Generated graphs | `agent-os/graph.json` (459 KB), `.graph-modified-files` (437 KB), `facts.jsonl`, `embeddings.config.jsonl` | Derived artifacts | **Do not fork** — regenerate |
-| Lobby backend | `src/backend/src/modules/agent-lobby/**` (ComplianceOne app) | Lobby REST/WS routes | Reference only → reimplement in `packages/lobby-server` |
+| **Lobby logic (swarm source)** | `src/backend/src/modules/agent-lobby/**` (7 files: coordinator, message/request/session/task services, `relay-lobby-bridge.ts`, routes) + panel lobby client (`agent-os-panel-server.ts`: `discoverLobbyId`/`lobby-register`/`lobby-heartbeat`/`localLobbyAgents`) + `tabs/lobby.js` + relay client | **Reference implementation of the lobby** | **Clone/port** → `packages/lobby-server` + `apps/lobby-web` (Vercel swarm) |
 
 **Source-of-truth answer to Open Q#2:** the relay is at
 `src/backend/src/modules/ui-assist/relay-server.ts` (moved into the backend module tree,
@@ -144,6 +149,7 @@ agent-os-protocol/
     sub-agents/  (generic roster + new agents + skills + templates)
     memories/    (framework only; trained content user-local)
     scripts/     (generic infra: graph, facts, shared-mem, lobby, memory-index, hooks, load)
+    scheduled/   (generic scheduler: config, prompts, templates — powers panel Scheduled tab)
     training/    (inbox/ reviewed/ rejected/ packs/  — /train workspace)
     observations/  shared-memory/   (empty scaffolds, .gitkeep)
   agent-os-panel/                # ── Layer 2: Local Control Plane (UI) ──
@@ -294,11 +300,21 @@ any `AesirX`/`proprietary and confidential` reappearance.
   no-skip-failures, scope-detector, session-*, graph-*, memory-index-staleness,
   reuse-guard, pre-compact-save, observation-capture, etc. (review each for ComplianceOne paths).
 - **Sub-agents:** generic agent defs + `templates/` + `diary-routing.yaml` + generic skills.
+- **Scheduling engine (generic — Ronni's correction):** `agent-os/scheduled/{config.json,
+  templates/,process-spawn-requests-daily.sh}` + the 3 default task prompts
+  (`graph-update.md`, `pr-quality-review.md`, `fix-sprint-executor.md`) **with repo refs
+  made configurable** (drop grc-suite / Vietnam / GMT+7 specifics → target repo + timezone
+  become config). This powers the Panel **Scheduled tab**, so preserve panel-server
+  `SCHEDULED_DIR` + `/api/scheduled/*` endpoints + WS `scheduled-start/done/trigger` events
+  + `tabs/scheduled.js` (252 L). The persistent state-branch workflow (`claude/scheduled-state`)
+  becomes a configurable branch name.
 
 ### 7b. REGENERATE FRESH (never fork generated state)
 - `graph.json`, `.graph-modified-files`, `.graph-stale`, `facts.jsonl`,
   `embeddings.config.jsonl` → rebuild via `graph-build.sh` / `facts-rebuild.sh` / memory-index.
-- `observations/**`, `shared-memory/**`, `logs/**`, `registries/**` → empty `.gitkeep` scaffolds.
+- `observations/**`, `shared-memory/**`, `logs/**`, `registries/**`, `scheduled/state/**`
+  → empty `.gitkeep` scaffolds (the scheduling **engine** is kept — §7a — only its
+  ComplianceOne state, e.g. `pending-fix-sprints.json` with grc-suite PR URLs, resets).
 - `memories/INDEX.aaak*` + indexes → rebuild from kept memories.
 - **STATE.md** → author fresh neutral state (do **not** copy ComplianceOne sprint state).
 
@@ -318,9 +334,11 @@ any `AesirX`/`proprietary and confidential` reappearance.
 - **Hooks (drop):** `forseti-brand-purity.sh` (replace w/ generic copyright hook),
   `help-emit-check.sh`, `i18n-stub-detector.sh`, `lint-vi-narrative`, ComplianceOne
   sprint-spec hooks (review).
-- **Wholesale:** `agent-os/scheduled/**` (ComplianceOne Scheduled QA),
-  `spawn-requests-archive/**`, `memories/closed/**` (Forseti plans), root `packs/**`,
-  and the entire ComplianceOne app `src/**` (except the relay extraction).
+- **Wholesale:** `spawn-requests-archive/**`, `memories/closed/**` (Forseti plans),
+  root `packs/**`, and the entire ComplianceOne app `src/**` (except the relay extraction
+  + the `agent-lobby` module, which is *ported*, not run — see §9).
+  *(Correction: the `scheduled/` **engine is KEPT** — §7a — it is generic Agent OS
+  scheduling used by the Panel; only its ComplianceOne state/prompt refs are reset.)*
 
 ### 7d. NEVER TOUCH
 - **Everything under `grc-suite-test/`** (read-only source) and any AesirX production repo.
@@ -357,10 +375,18 @@ install; one adapter's failure never breaks the panel; relay protocol stays stab
 
 ## 9. Lobby Platform Plan (charter §21.9)
 
-**Source basis:** current lobby is documented in `LOBBY-PROTOCOL.md` (boss floor control,
-hand-raise, 5 phases, task lifecycle) and implemented via shell scripts (`lobby-*.sh`) +
-the ComplianceOne backend `agent-lobby` routes + panel `lobby` tab + relay client. The
-independent platform reimplements the *protocol* cleanly in `packages/lobby-server`.
+**Source basis — what the Vercel swarm app clones (Ronni's directive):** the **Panel is the
+reference lobby implementation**. Port from:
+(a) backend `src/backend/src/modules/agent-lobby/**` — 7 files: `lobby-coordinator.ts`,
+`lobby-message-service.ts`, `lobby-request-service.ts`, `lobby-session-service.ts`,
+`lobby-task-service.ts`, `relay-lobby-bridge.ts`, `routes.ts`;
+(b) panel-server lobby client — `discoverLobbyId`, `lobby-register`/`lobby-heartbeat`
+(25 s send / 90 s stale) over `/api/v1/agent-lobby/ws/agent`, `LOBBY_STATE_FILE`,
+`localLobbyAgents` map, + `tabs/lobby.js` (256 L);
+(c) the relay's lobby client; (d) protocol in `LOBBY-PROTOCOL.md` + `lobby-*.sh`.
+The independent platform reimplements this cleanly in `packages/lobby-server` (durable)
+and **`apps/lobby-web` (Vercel remote swarm mode)**, keeping the Panel as a first-class
+client of the new lobby URL.
 
 - **Hosting (Open Q#5):** `apps/lobby-web` = **Next.js on Vercel** for control-plane REST
   (create/join/roster/messages/tasks) + **SSE** for fan-out. **Do not rely on Vercel
