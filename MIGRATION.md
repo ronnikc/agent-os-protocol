@@ -39,6 +39,19 @@ never modified. The extraction copied generic infrastructure and neutralized it;
 content was dropped (not carried), and runtime/generated state was regenerated rather than
 forked. See `IMPLEMENTATION-PLAN.md` §7 (extraction manifest) for the file-level disposition.
 
+## Governance docs disposition
+
+- **Copied + brand-neutralized:** `RULES.md`, `SPRINTS.md`, `SUB-AGENTS.md`, `MEMORY.md`,
+  `LOBBY-PROTOCOL.md`, `UI-ASSIST.md`, `UI-ASSIST-GUIDE.md`, `ETHICS.md`, `SOUL.md`,
+  `HOUSEKEEPING.md`, `sprints-reference.md`, `whisper-rules.md`. Product-specific rules were
+  removed (e.g. the regulatory/AI-advisor rule block and the AI-advisor agent family).
+- **Rewritten fresh:** `ARCHITECTURE.md` (now describes the four-layer Agent OS Protocol
+  platform, not the original GRC application).
+- **Dropped (original-application-specific, not platform governance):** `REUSE.md` (a reusable
+  infrastructure inventory for the GRC app) and `I18N.md` (a 16-locale internationalization
+  regime for the GRC app). A generic localization guide may be reintroduced later if needed.
+- **Regenerated, not copied:** `STATE.md` (carried the original sprint/phase state).
+
 ## Third-party material
 
 Any third-party components retained during extraction keep their upstream license notices
