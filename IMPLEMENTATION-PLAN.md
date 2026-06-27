@@ -1,0 +1,532 @@
+# IMPLEMENTATION-PLAN.md — Agent OS Protocol (Independent Fork)
+
+> **Status:** Sprint 0 deliverable — **final implementation plan, pending Ronni's approval.**
+> **No implementation beyond planning docs has been performed.**
+> **Repository:** `github.com/ronnikc/agent-os-protocol` · branch `claude/new-session-pxa8cs`
+> **Charter:** see [`planning.md`](planning.md) (the source brief this plan answers).
+> **Author / Copyright holder of the new platform:** Gothar.dk // Ronni K. Gothard Christiansen.
+> **Boundary:** `grc-suite-test` is **read-only source**. Nothing in it will be modified.
+
+This document answers all 15 required outputs (charter §21) and all 10 open questions
+(charter §20), grounded in a real inspection of the source repository.
+
+---
+
+## 0. Executive Summary
+
+The single most important discovery: **`agent-os-protocol` is currently an empty git
+repository (0 files, no commits).** It is *not* a partial or full copy of the Agent OS
+code. Therefore the fork is a **curated extraction** from `grc-suite-test/agent-os/**`
+(plus the relay) into a clean, ComplianceOne-free, personally-owned repository — **not**
+a "copy everything then scrub" exercise.
+
+Three findings shape the whole plan:
+
+1. **The Claude CLI flow is already ~95% decoupled.** The relay (`relay-server.ts`,
+   1,267 lines) has only **two** ComplianceOne touchpoints — both *type-only* imports —
+   and one branded system prompt. The panel server (2,820 lines) imports only `ws` and
+   couples through **one** hardcoded relay path. The panel UI has **one** ComplianceOne
+   string. Preserving the working local flow is low-risk.
+
+2. **~96% of ComplianceOne "references" live in regenerable artifacts**, not
+   hand-authored files: `graph.json` (959 matches), `.graph-modified-files` (5,416),
+   `observations/index.md` (2,034), memory indexes, registries, scheduled state. These
+   are **regenerated from the codebase and must never be forked.** Dropping them removes
+   the vast bulk of the neutralization burden at zero cost.
+
+3. **Agent OS Panel and Agent OS UI Assist are both first-class, in-scope deliverables**
+   of the fork (confirmed per Ronni's directive). They are treated as Layer 2 (Local
+   Control Plane) and a cross-cutting integration product, respectively — see §4, §9, §12.
+
+**Copyright/licensing (per Ronni's directive):** every `AesirX.io Ltd.` copyright header
+and the proprietary `LICENSE.md` will be replaced with
+**`Copyright (c) 2026 Gothar.dk // Ronni K. Gothard Christiansen`** and the
+**Apache License 2.0** (see §6). All `AesirX` / `ComplianceOne` /
+`Forseti` branding and domain content is planned for **complete removal** from the
+default distribution (§3, §7).
+
+---
+
+## 1. Repository Confirmation & Boundary Check (charter §21.1)
+
+Run at session start (charter §0/§3 — non-negotiable):
+
+| Check | Result |
+|---|---|
+| `pwd` (target) | `/home/user/agent-os-protocol` |
+| `git remote -v` (target) | `origin … /ronnikc/agent-os-protocol` ✅ correct repo |
+| `git status` (target) | `On branch claude/new-session-pxa8cs` · **No commits yet** · clean |
+| Target file count | **0** (empty repo — fork not yet started) |
+| `grc-suite-test` remote | `origin … /ronnikc/grc-suite-test` (read-only source) |
+| `grc-suite-test` status | **clean**, `claude/new-session-pxa8cs` — **untouched and will remain so** |
+
+**Boundary verdict:** ✅ Active repo is the independent `agent-os-protocol`. `grc-suite-test`
+is present only as read-only reference. No write, rename, move, lint, or format will ever
+target it. The safety check (`pwd` / `git remote -v` / `git status --short`) will be
+re-run at the start of every phase; any `grc-suite` remote/path = **stop**.
+
+---
+
+## 2. Current File Inventory (charter §21.2)
+
+**Target (`agent-os-protocol/`):** empty except the two planning docs added by this
+Sprint 0 (`planning.md`, `IMPLEMENTATION-PLAN.md`).
+
+**Fork source (`grc-suite-test/`, read-only)** — the Agent OS material to extract:
+
+| Area | Path | Contents | Disposition |
+|---|---|---|---|
+| Governance docs | `agent-os/*.md` | 18 files: RULES, SPRINTS, SUB-AGENTS, ARCHITECTURE, MEMORY, LOBBY-PROTOCOL, UI-ASSIST(+GUIDE), ETHICS, SOUL, HOUSEKEEPING, REUSE, I18N, STATE, README, sprints-reference, whisper-rules | Copy + neutralize (except STATE → regenerate) |
+| Panel UI | `agent-os/agent-os-panel/**` | `app.js`, `index.html`, `styles.css`, `presets.json`, `favicon.ico`, `lib/marked.umd.js`, 11 `tabs/*.js` | Copy + 1-string fix |
+| Panel server | `agent-os/scripts/agent-os-panel-server.ts` (2,820 L), `agent-os-panel-tray.ts` | Localhost control plane | Copy + relay-path fix + header |
+| Relay | `src/backend/src/modules/ui-assist/relay-server.ts` (1,267 L) | Claude CLI bridge + lobby client | Extract + localize 2 types + de-brand |
+| Sub-agents | `agent-os/sub-agents/**` | **35 agent defs**, **79 skills**, `templates/`, `diary-routing.yaml`, per-agent memories | Curate (see §7 roster) |
+| Scripts | `agent-os/scripts/**` | ~60 scripts + `hooks/` (28), `load/`, `codemods/`, `help/` | Curate generic vs ComplianceOne |
+| Memory system | `agent-os/memories/**` | INDEX.aaak, decisions/patterns/lessons/playbooks, `closed/` | Copy framework, drop content, regenerate index |
+| Runtime state | `observations/`, `shared-memory/`, `logs/`, `registries/`, `spawn-requests-archive/`, `scheduled/` | Session/QA state | **Do not fork** — ship empty scaffolds |
+| Generated graphs | `agent-os/graph.json` (459 KB), `.graph-modified-files` (437 KB), `facts.jsonl`, `embeddings.config.jsonl` | Derived artifacts | **Do not fork** — regenerate |
+| Lobby backend | `src/backend/src/modules/agent-lobby/**` (ComplianceOne app) | Lobby REST/WS routes | Reference only → reimplement in `packages/lobby-server` |
+
+**Source-of-truth answer to Open Q#2:** the relay is at
+`src/backend/src/modules/ui-assist/relay-server.ts` (moved into the backend module tree,
+**not** `scripts/relay-server.ts`).
+
+---
+
+## 3. AesirX / ComplianceOne / Forseti Reference Audit (charter §21.3)
+
+Counts from `grep -RniF` across `grc-suite-test/agent-os/`:
+
+| Term | Matches | Where they live |
+|---|---:|---|
+| `grc-suite` | 7,473 | ~96% in `.graph-modified-files`, `graph.json`, `observations/index.md` (generated) |
+| `Forseti` | 534 | `closed/` memories, Forseti agents (`ai-advisor`, `redline-review`, …), `seed-forseti-api-key.ts`, `forseti-brand-purity.sh` |
+| `AesirX` | 110 | Copyright headers (9 files), STATE.md, governance docs, relay |
+| `ComplianceOne` / `complianceone` | 103 / 103 | STATE.md, SUB-AGENTS.md, RULES.md, README, relay system prompt |
+| `vn-grc` | 850 | Generated graphs + the 2 relay type imports |
+| `complianceone.demo.aesirx.io` | 14 | Hardcoded lobby URL in relay + docs |
+| Domain (`PDPL`/`DPIA`/`DSAR`/`Decree`/`MPS`/`Vietnam`) | ~1,200 | Regulatory skills, packs, memories, STATE.md |
+| `regulatory` / `compliance` (words) | ~2,050 | Domain skills + governance examples |
+
+**Key audit insight:** the headline 7,473 figure is misleading — the hand-authored,
+must-edit surface is small and concentrated. Hotspot hand-authored files: STATE.md (73),
+`closed/FORSETI-FAMILY-…` (44), `INDEX.aaak.jsonl` (23), `protected-event-taxonomy.v1.json`
+(20), `help/manual-labels.json` (16), `assemble-manual.ts` (12), the Forseti agent defs
+(5–9 each), SUB-AGENTS.md (8), RULES.md (7), `forseti-brand-purity.sh` (7), REUSE.md (5).
+
+**Classification policy** (charter §6 table) is applied per-occurrence:
+branding→rename, ComplianceOne agents→retire/convert, domain skills→drop (or optional
+pack), generated artifacts→regenerate, history→`MIGRATION.md`.
+
+**Acceptance gate** (charter §6 / §18) — after Phase 1–2 this must return nothing
+runtime, only documented historical notes in `MIGRATION.md`:
+
+```bash
+grep -RniE "AesirX|ComplianceOne|complianceone\.demo|grc-suite|Forseti" . \
+  --exclude-dir=.git --exclude-dir=node_modules
+```
+
+---
+
+## 4. Proposed Target Architecture (charter §21.4)
+
+Four conceptual layers (charter §5), realized as an **npm-workspaces monorepo**
+(answer to Open Q#3 — see §20). Panel and UI Assist are first-class.
+
+```
+agent-os-protocol/
+  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  MIGRATION.md
+  LICENSE + NOTICE  (Apache-2.0, © Gothar.dk // Ronni K. Gothard Christiansen)
+  .env.example   package.json (workspaces)
+  agent-os/                      # ── Layer 1: Protocol Core ──
+    RULES.md SPRINTS.md SUB-AGENTS.md ARCHITECTURE.md MEMORY.md
+    LOBBY-PROTOCOL.md UI-ASSIST.md ETHICS.md SOUL.md HOUSEKEEPING.md REUSE.md
+    sub-agents/  (generic roster + new agents + skills + templates)
+    memories/    (framework only; trained content user-local)
+    scripts/     (generic infra: graph, facts, shared-mem, lobby, memory-index, hooks, load)
+    training/    (inbox/ reviewed/ rejected/ packs/  — /train workspace)
+    observations/  shared-memory/   (empty scaffolds, .gitkeep)
+  agent-os-panel/                # ── Layer 2: Local Control Plane (UI) ──
+    index.html app.js styles.css presets.json tabs/ lib/
+  packages/                      # ── Layers 3 & 4 ──
+    protocol-core/               # shared protocol types (lobby msgs, hand-raise, agent card)
+    relay/                       # extracted relay-server (runtime-agnostic core)
+    lobby-client/   lobby-server/
+    adapters/
+      claude-cli/ codex-cli/ opencode/ cursor-cli/ hermes-agent/ openclaw/
+      openai-compatible/ anthropic-compatible/
+    identity-concordium/
+    ui-assist-core/  ui-assist-embed/  (ui-assist-react/next/vue later)
+  apps/
+    lobby-web/                   # Vercel-hosted remote lobby (Next.js)
+  scripts/                       # repo-level (panel server launcher, build, release)
+  docs/                          # getting-started, architecture, lobby-hosting, identity, …
+```
+
+**Protocol stability principle (charter §5/§12):** the relay and lobby speak one stable
+internal protocol (`packages/protocol-core`); every CLI/API is a swappable **adapter**.
+Nothing is hardwired to Claude CLI.
+
+**Phasing note:** Phase 1 keeps a *minimal* layout (working `agent-os/` + `agent-os-panel/`
++ relay) so the local flow boots immediately; `packages/` and `apps/` are introduced
+incrementally (Phase 4+). Charter §16: "do not over-engineer the first pass."
+
+---
+
+## 5. Phase-by-Phase Plan (charter §21.5)
+
+Each phase re-runs the boundary check first. Phases 0–3 are pure
+fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new platform.
+
+### Phase 0 — Discovery, Safety, Planning ✅ (this document)
+- Boundary confirmed; inventory + audit complete; plan written. **No code changes.**
+- **Exit:** repo inventory ✅, grep report ✅, final plan ✅, `grc-suite` untouched ✅.
+
+### Phase 1 — Repo Isolation, Branding & Copyright Neutralization
+- Extract the **copy-then-neutralize** set (§7 manifest) into `agent-os/` + `agent-os-panel/`.
+- Replace **all** `Copyright (c) 2026 AesirX.io Ltd. All rights reserved.` +
+  `proprietary and confidential` headers → `Copyright (c) 2026 Gothar.dk // Ronni K.
+  Gothard Christiansen` (+ `SPDX-License-Identifier: Apache-2.0`). Replace `LICENSE.md`
+  with the **Apache-2.0** `LICENSE` + `NOTICE`; set `package.json` license/author (§6).
+- Replace `complianceone.demo.aesirx.io` → configurable `AGENT_OS_LOBBY_URL`; add `.env.example`.
+- De-brand relay system prompt ("AesirX ComplianceOne GRC platform" → neutral).
+- New `README.md`, `CLAUDE.md`, `MIGRATION.md`.
+- **Exit:** local panel starts; Claude relay works; `grep` gate (§3) clean of runtime refs.
+
+### Phase 2 — Generic Agent Roster & Domain Specialist Model
+- Apply roster transformation (§7): keep/generalize generic agents; retire Forseti/
+  ComplianceOne agents; add **Domain Specialist, Identity, Lobby Architect, Runtime
+  Adapter, UI Assist Integration, Training** agents. Update `presets.json`, routing tables.
+- **Exit:** agent list project-neutral; no default agent carries AesirX memories/skills.
+
+### Phase 3 — `/train [agent]` Command (design + first impl)
+- Training inbox/review/activation tree (§11); skill-draft generator; source metadata;
+  `--dry-run`; secret detection; pack activate/deactivate.
+- **Exit:** dry-run shows planned writes; reviewable drafts created; core rules untouched.
+
+### Phase 4 — Runtime Adapter Abstraction
+- Define `AgentRuntimeAdapter` (charter §12) in `packages/protocol-core`; extract relay
+  into `packages/relay` + `adapters/claude-cli`; add panel runtime detection/selector.
+- **Exit:** Claude CLI works *through* the adapter; relay protocol stable; adapter docs.
+
+### Phase 5 — Additional CLI Adapter Spikes
+- **Codex CLI first** (Open Q#4), then OpenCode, Cursor, Hermes, OpenClaw. Per-runtime
+  discovery spike (§8) + compatibility matrix.
+- **Exit:** ≥1 new runtime PoC (Codex); others documented with blockers.
+
+### Phase 6 — API Provider (Fuel) Layer
+- `ModelProviderAdapter` (charter §13): OpenAI-compatible + Anthropic-compatible; BYOK
+  local-only; validation; streaming; per-agent provider selection.
+- **Exit:** API provider fuels a generic agent in local mode; **no keys ever sent to lobby**.
+
+### Phase 7 — Independent Lobby Platform
+- `apps/lobby-web` (Next.js on Vercel) + `packages/lobby-server`/`lobby-client`; durable
+  store; public/private flows; server-side boss/floor control; Node WS fallback (§9).
+- **Exit:** panel connects to new lobby URL; local mode intact; messages lobby-scoped.
+
+### Phase 8 — Concordium Agent Registry Integration
+- Identity Agent flows; Agent Card schema; registry-reference storage (non-secret);
+  verification via indexer/API; private-lobby access policies; roster identity badges (§10).
+- **Exit:** a lobby can require verified identity; refs verify/fail; **no keys stored/sent**.
+
+### Phase 9 — UI Assist Integration Package
+- Neutral `ui-assist-core` + `ui-assist-embed`; framework guides (React/Next/Vue/Svelte/
+  plain JS/Laravel/WordPress/Joomla); Integration Agent; secure panel/relay/lobby connect (§12).
+- **Exit:** a dev can add UI Assist to a fresh app from docs; no ComplianceOne UI text.
+
+### Phase 10 — Launch Readiness
+- README/install/quick-start/examples/security/adapter-matrix/lobby-hosting/training guides;
+  first release tag.
+- **Exit:** fresh clone runs local mode + connects to configured lobby; all checks pass;
+  zero AesirX/ComplianceOne runtime refs; `grc-suite` untouched.
+
+---
+
+## 6. Copyright, Licensing & Attribution (Ronni's directive)
+
+**Locked:** copyright holder for the new platform =
+**`Gothar.dk // Ronni K. Gothard Christiansen`**.
+
+| Item | Current (source) | New (independent repo) |
+|---|---|---|
+| Per-file header (9 `.ts` + relay) | `// Copyright (c) 2026 AesirX.io Ltd. All rights reserved.`<br>`// This source code is proprietary and confidential.` | `// SPDX-License-Identifier: Apache-2.0`<br>`// Copyright (c) 2026 Gothar.dk // Ronni K. Gothard Christiansen` |
+| Root license | `LICENSE.md` — AesirX **proprietary** | `LICENSE` (full **Apache-2.0** text) + `NOTICE` (attribution), same holder |
+| Relay system prompt | "embedded in the AesirX ComplianceOne GRC platform" | neutral ("Agent OS UI Assist developer tool") |
+| 3rd-party MIT attributions (Hemant Naik, in regulatory skills) | present | moot — those skills are **dropped**; if any generic skill is kept, preserve its upstream MIT notice in `references/` + `MIGRATION.md` |
+
+**License — LOCKED: Apache License 2.0** (per Ronni's directive). Apache-2.0 fits a
+public, personally-owned platform: permissive adoption **plus** an explicit patent grant
+and a `NOTICE` mechanism. Phase 1 will add:
+- `LICENSE` — the **full, verbatim Apache-2.0 text**.
+- `NOTICE` — `Agent OS Protocol — Copyright (c) 2026 Gothar.dk // Ronni K. Gothard
+  Christiansen`, plus any retained third-party attributions.
+- Per-file SPDX header `// SPDX-License-Identifier: Apache-2.0` + the copyright line.
+- `package.json` `"license": "Apache-2.0"` and matching `"author"`.
+
+**Third-party compatibility:** any code/skill retained from an MIT-licensed upstream
+(e.g. the dropped Hemant-Naik regulatory skills, should a *generic* one be kept) is
+MIT→Apache-2.0 compatible; its original MIT notice is preserved in `references/` and
+listed in `NOTICE` + `MIGRATION.md`.
+
+**Enforcement:** a generic `copyright-header` hook (adapted from the retired
+`forseti-brand-purity.sh`) will assert the new header on new source files and fail CI on
+any `AesirX`/`proprietary and confidential` reappearance.
+
+---
+
+## 7. Extraction Manifest — Files to Change / Drop / Never Touch (charter §21.6, §21.7)
+
+### 7a. COPY → NEUTRALIZE (hand-authored, generic value)
+- **Governance:** RULES, SPRINTS, SUB-AGENTS, ARCHITECTURE, MEMORY, LOBBY-PROTOCOL,
+  UI-ASSIST(+GUIDE), ETHICS, SOUL, HOUSEKEEPING, REUSE (+ I18N→optional). Strip
+  ComplianceOne nouns; keep generic patterns.
+- **Panel UI:** all of `agent-os-panel/**` (1 string fix; presets already generic).
+- **Panel server:** `agent-os-panel-server.ts` + `-tray.ts` — repoint the hardcoded relay
+  path (lines ~500, ~2655) to `packages/relay` (Phase 4) or interim local path (Phase 1).
+- **Relay:** `relay-server.ts` — localize the 2 `import('@vn-grc/shared')` types
+  (`LobbyToAgentMessage`, `HandRaiseCategory`) into `packages/protocol-core`; de-brand
+  prompt + URL + header.
+- **Generic scripts:** `graph-*`, `facts-*`, `shared-mem-*`, `lobby-*`, `embeddings-*`,
+  `build-memory-index.*`, `build-docs-index.mjs`, `session-summary.sh`, `runtime-verify.sh`,
+  `render-spawn-prompt.sh`, `process-spawn-requests.*`, `install-claude-hooks.sh`,
+  `mcp-*.sh`, `load/`.
+- **Generic hooks** (most of `scripts/hooks/`): block-no-verify, build-order-guard,
+  no-skip-failures, scope-detector, session-*, graph-*, memory-index-staleness,
+  reuse-guard, pre-compact-save, observation-capture, etc. (review each for ComplianceOne paths).
+- **Sub-agents:** generic agent defs + `templates/` + `diary-routing.yaml` + generic skills.
+
+### 7b. REGENERATE FRESH (never fork generated state)
+- `graph.json`, `.graph-modified-files`, `.graph-stale`, `facts.jsonl`,
+  `embeddings.config.jsonl` → rebuild via `graph-build.sh` / `facts-rebuild.sh` / memory-index.
+- `observations/**`, `shared-memory/**`, `logs/**`, `registries/**` → empty `.gitkeep` scaffolds.
+- `memories/INDEX.aaak*` + indexes → rebuild from kept memories.
+- **STATE.md** → author fresh neutral state (do **not** copy ComplianceOne sprint state).
+
+### 7c. DROP (ComplianceOne / Forseti — do not fork)
+- **Agents (retire):** `ai-advisor`, `ai-prompt-engineering`, `cost-governance`*,
+  `tool-call-quality`, `redline-review`, `tips-widget`, `help-center-content`.
+  (*`cost-governance` may be *re-introduced generically* in Phase 6 for API-fuel budgets.)
+- **Agents (convert→generic):** `compliance`→**Domain Specialist**, `legal`→Policy/Legal
+  Research (optional), `content-marketing`→fold into Content, `i18n`→Localization.
+- **Skills (drop):** `cmmc`, `dora`, `dpdpa`, `eu-eprivacy`, `eu-nis2`, `fedramp`,
+  `gdpr-compliance`, `iso*`, `nist-*`, `pci-*`, `swift-csp`, `soc2`, `content-compliance-audit`,
+  `help-article-authoring`, + all regulatory/help skills. (Optional future "domain packs.")
+- **Scripts (drop):** `help/**`, `build-vn-banking-form-sections.mjs`, `seed-forseti-api-key.ts`,
+  `check-i18n-completeness.*`, `lint-vi-narrative.mjs`, `strip-14-locale-help-content.py`,
+  `regen-taxonomy-registry.mjs`, `migrate-pack-fields-to-locale-maps.py`,
+  `audit-pack-locale-coverage.py`, `populate-platform-integration.mjs`, `build-runtime-skills.ts`.
+- **Hooks (drop):** `forseti-brand-purity.sh` (replace w/ generic copyright hook),
+  `help-emit-check.sh`, `i18n-stub-detector.sh`, `lint-vi-narrative`, ComplianceOne
+  sprint-spec hooks (review).
+- **Wholesale:** `agent-os/scheduled/**` (ComplianceOne Scheduled QA),
+  `spawn-requests-archive/**`, `memories/closed/**` (Forseti plans), root `packs/**`,
+  and the entire ComplianceOne app `src/**` (except the relay extraction).
+
+### 7d. NEVER TOUCH
+- **Everything under `grc-suite-test/`** (read-only source) and any AesirX production repo.
+- No symlinks/submodules/scripts that write back to `grc-suite`.
+- No parent-directory-level commands that could touch both repos.
+
+**Files to preserve exactly to keep the Claude CLI flow working (Open Q#10):**
+`relay-server.ts` (with the 2 type imports localized + de-branded), `agent-os-panel-server.ts`
+(relay path repointed), all of `agent-os-panel/**`, and the `relay` / `agent-os-panel` /
+`agent-os-panel-tray` npm scripts + deps (`ws`, `@anthropic-ai/claude-agent-sdk`, `tsx`).
+
+---
+
+## 8. Runtime Adapter Compatibility Matrix (charter §21.8)
+
+> Capability cells for non-Claude runtimes are **provisional** and must be confirmed in
+> each Phase-5 discovery spike against the live docs in charter §23 before coding.
+
+| Runtime | Phase | Install/Auth | Interactive | Headless | JSON/NDJSON | Resume | MCP | Status |
+|---|---|---|---|---|---|---|---|---|
+| **Claude CLI / Code** | 4 | Claude Max login / API key | ✅ | ✅ | ✅ | ✅ | ✅ | **Working today** (relay) → adapter |
+| **Codex CLI** | 5 (1st) | `npm i -g`; OpenAI auth | ? | likely | likely | ? | ? | PoC target |
+| **OpenCode** | 5 | per docs | ? | ? | ? | ? | ? | Spike |
+| **Cursor CLI** | 5 | Cursor auth | ? | ? | ? | ? | ? | Spike |
+| **Hermes Agent** | 5 | Nous auth | ? | ? | ? | ? | ? | Spike (after discovery) |
+| **OpenClaw** | 5 | per docs | ? | ? | ? | ? | ? | Spike (after discovery) |
+| **OpenAI-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
+| **Anthropic-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
+
+**Adapter acceptance (charter §12):** feature-flagged; missing runtime → panel explains
+install; one adapter's failure never breaks the panel; relay protocol stays stable.
+
+---
+
+## 9. Lobby Platform Plan (charter §21.9)
+
+**Source basis:** current lobby is documented in `LOBBY-PROTOCOL.md` (boss floor control,
+hand-raise, 5 phases, task lifecycle) and implemented via shell scripts (`lobby-*.sh`) +
+the ComplianceOne backend `agent-lobby` routes + panel `lobby` tab + relay client. The
+independent platform reimplements the *protocol* cleanly in `packages/lobby-server`.
+
+- **Hosting (Open Q#5):** `apps/lobby-web` = **Next.js on Vercel** for control-plane REST
+  (create/join/roster/messages/tasks) + **SSE** for fan-out. **Do not rely on Vercel
+  in-memory function state or WS** (WS is beta — charter §10). Ship a **portable Node WS
+  server** fallback (`packages/lobby-server` standalone) for low-latency floor control.
+- **Durable store (Open Q#6):** **Upstash Redis** first (serverless-friendly: roster,
+  presence, message stream, task queue, identity bindings), with optional Postgres
+  (Neon/Supabase) for the durable **event log** (private accountability, charter §19).
+- **Schemas:** implement charter §10 types (`Lobby`, `AgentParticipant`,
+  `ConcordiumAgentRef`, `LobbyMessage`) in `packages/protocol-core`.
+- **Capabilities:** create/join/leave/list/send/broadcast, appoint boss, hand-raise, floor
+  control, task create/handoff, identity verify, invite/allowlist, public/private switch,
+  session persistence, abuse controls, event log.
+- **Security (charter §10/§19):** boss/floor enforced **server-side**; private lobbies deny
+  unverified agents; public lobbies rate-limit; messages lobby-scoped; **no secrets/keys in
+  lobby**; display name ≠ identity.
+
+---
+
+## 10. Concordium Agent Registry Integration Plan (charter §21.10)
+
+> **Must verify before coding** (charter §11/§23): Agent Registry ref, CIS-8004, CIS-8,
+> Agent Card format, MCP service, indexer, Concordium JS SDK.
+
+- **Fastest safe path (Open Q#7):** **read-only verification via indexer/API first**
+  (look up a registry reference, return verified/failed/pending). Use the JS SDK for Agent
+  Card **hashing/integrity** only. **Defer on-chain writes**; registration is
+  user-driven/wallet-side. This keeps Agent OS free of private keys entirely.
+- **Identity Agent** (new, §11-roster): explains setup, drafts + validates Agent Card,
+  links local profile ↔ registry ref, prepares (not submits) registration payloads.
+- **Agent Card schema** (charter §11): name, description, capabilities, runtime, owner
+  policy, optional contact URL, supported protocols, allowed scopes, version, timestamps,
+  hashable content — **no secrets.**
+- **Private-lobby policy ladder:** none → any registered → allowlisted → verified
+  human-link → (future) org-link. Roster shows: unverified / registry-verified /
+  human-linked / org-linked / failed.
+- **Privacy principle (charter §11):** accountability, not doxxing — verify the anchor
+  without exposing the human identity to every participant.
+
+---
+
+## 11. `/train [agent]` Plan (charter §21.11)
+
+- **Syntax:** `/train [agent-slug]` (+ future `--source`, `--skill`, `--pack`, `--mode
+  append|review`, `--dry-run`).
+- **Inputs:** Markdown, text, code, API docs, patterns, checklists, playbooks, skill dirs,
+  JSON/YAML packs.
+- **Output tree** (charter §9):
+  `agent-os/training/{inbox,reviewed,rejected,packs}` +
+  `sub-agents/skills/trained/[slug]/[skill]/{SKILL.md,references/,metadata.json}` +
+  `memories/trained/[slug]/{diary.md,facts.jsonl}`.
+- **Safety (charter §9):** never overwrite core rules; trained content separated from core;
+  source metadata + dates; explicit review→activate; reversible packs; **secret detection**
+  rejects files with keys/tokens/passwords/`.env`; never train base agents on proprietary
+  AesirX/ComplianceOne material.
+- **Storage (Open Q#8):** trained packs **user-local by default** (gitignore
+  `training/inbox`, `training/reviewed`, `memories/trained/`, `skills/trained/`); explicit
+  opt-in to commit a reviewed pack. Core distribution ships **empty** training scaffolding.
+- **Acceptance:** `--dry-run` shows planned writes only; deterministic skill paths;
+  unrelated agents untouched.
+
+---
+
+## 12. UI Assist Integration Plan (charter §21.12) — confirmed in-scope
+
+- **Packages:** `ui-assist-core` (transport/event contract/session) + `ui-assist-embed`
+  (script tag) first; `ui-assist-react` / `-next` / `-vue` later. (Open Q#9: **repo-local
+  embeddable script first**, npm publish at Phase 9/10.)
+- **Integration Agent** (new): detects target project type; emits embed
+  script/component scaffolding; install checks; event contract; secure connect to local
+  panel/relay or remote lobby; theming.
+- **Framework targets:** plain JS, React, Next.js, Vue, Svelte, Laravel/Blade, WordPress,
+  Joomla.
+- **Safety (charter §14):** UI Assist cannot edit a project without explicit permission;
+  file/route awareness only where the user allows; product-neutral copy (de-brand the relay
+  system prompt + any ComplianceOne UI strings).
+- **Relay reuse:** the extracted, de-branded relay already implements the browser↔Claude
+  bridge — UI Assist embeds connect to it (local) or to the lobby (remote).
+
+---
+
+## 13. Testing & Verification Plan (charter §21.13, §18)
+
+```bash
+npm install && npm run typecheck && npm run lint && npm test
+npm run agent-os-panel -- --no-relay        # panel only
+npm run agent-os-panel                       # panel + relay (local mode)
+```
+- **Per-phase manual QA (charter §18):** panel opens; local mode starts; relay auto-starts;
+  agent joins roster; Messages/Tasks/Lobby tabs update; swarm mode accepts new lobby URL;
+  invalid URL fails gracefully; adapter detection shows missing runtimes; training dry-run
+  writes nothing unexpected; private-lobby identity failure is visible.
+- **Grep gates (must be clean / justified):**
+  ```bash
+  grep -RniE "AesirX|ComplianceOne|complianceone\.demo|grc-suite|Forseti" . \
+    --exclude-dir=.git --exclude-dir=node_modules
+  grep -RniE "PDPL|DPIA|TIA|MPS|DSR|DSAR|Vietnam|Decree" agent-os agent-os-panel docs packages apps \
+    --exclude-dir=.git --exclude-dir=node_modules
+  ```
+- **New CI hooks:** copyright-header check + the two grep gates run on every commit.
+
+---
+
+## 14. Risks & Mitigations (charter §21.14)
+
+| # | Risk | Likelihood | Impact | Mitigation |
+|---|---|---|---|---|
+| R1 | Accidental write to `grc-suite-test` | Low | **Critical** | Boundary check every phase; all writes absolute-pathed to `agent-os-protocol`; no parent-dir commands; read-only discipline |
+| R2 | Relay type extraction breaks Claude flow | Low | High | Port `LobbyToAgentMessage`/`HandRaiseCategory` to `protocol-core`; smoke-test relay after Phase 1 *and* Phase 4 |
+| R3 | Forking generated artifacts re-imports 1000s of refs | Med | Med | **Never fork** graphs/observations/state — regenerate (§7b) |
+| R4 | Missed branding/copyright slips into release | Med | Med | grep gates + copyright hook in CI; `MIGRATION.md` whitelists documented history only |
+| R5 | Vercel WS beta blocks real-time lobby | Med | Med | SSE + durable Redis; portable Node WS fallback (§9) |
+| R6 | Concordium scope creep / key handling | Med | High | Read-only indexer verification first; **no keys** in Agent OS; defer on-chain writes |
+| R7 | Monorepo refactor destabilizes panel | Med | Med | Keep Phase 1 minimal; introduce `packages/` only at Phase 4; preserve npm scripts |
+| R8 | Apache-2.0 notice/attribution compliance | Low | Low | **License locked: Apache-2.0**; `LICENSE`+`NOTICE` added Phase 1; retain third-party notices; SPDX headers enforced by CI hook |
+| R9 | Dropping a skill/agent that was actually generic | Low | Low | Classification table reviewed before deletion; nothing deleted from source (drop = "don't copy") |
+
+---
+
+## 15. Exact First Sprint Recommendation (charter §21.15, §22)
+
+**Sprint 0 — Independent Agent OS Protocol Planning & Boundary Lock** *(this sprint)*
+- ✅ Repo confirmed; ✅ inventory + audit; ✅ `planning.md` + `IMPLEMENTATION-PLAN.md`
+  written; ✅ `grc-suite` untouched; ✅ **license locked: Apache-2.0.** **Awaiting Ronni's
+  approval to begin Sprint 1.**
+
+**Then Sprint 1 — Isolation, Branding & Copyright Neutralization** (Phase 1 above):
+the first *implementation* sprint, gated on approval. Deliverables: extract
+copy-then-neutralize set, apply Gothar.dk copyright + chosen license, configurable lobby
+URL + `.env.example`, de-branded relay, new README/CLAUDE/MIGRATION, **panel + Claude
+relay verified working**, grep gate clean.
+
+---
+
+## 16. Answers to the 10 Open Questions (charter §20)
+
+1. **Full copy or panel-only?** Neither — **empty repo, no commits.** Fork = curated
+   extraction from `grc-suite-test/agent-os/**` + relay.
+2. **Relay location?** `src/backend/src/modules/ui-assist/relay-server.ts` (moved into the
+   backend module); self-contained except 2 type-only imports.
+3. **Simple Node or monorepo?** **npm-workspaces monorepo**, introduced *incrementally*
+   (minimal Phase 1 → `packages/`+`apps/` from Phase 4).
+4. **First adapter after Claude CLI?** **Codex CLI.**
+5. **Minimal Vercel lobby?** Next.js REST + **SSE** + durable Redis; **no** reliance on
+   Vercel WS/in-memory state; portable Node WS fallback.
+6. **Durable store first?** **Upstash Redis** (state/presence/queue) + optional Postgres
+   (event log).
+7. **Fastest registry verification?** **Indexer/API read-only** first; SDK for card hashing;
+   defer on-chain writes.
+8. **Trained packs committed/ignored/local?** **User-local by default** (gitignored);
+   explicit opt-in to commit reviewed packs; core ships empty scaffolding.
+9. **UI Assist npm now or repo-local?** **Repo-local embeddable script first**, npm at
+   Phase 9/10.
+10. **Files to preserve for Claude CLI flow?** relay (types localized + de-branded),
+    `agent-os-panel-server.ts` (relay path repointed), all `agent-os-panel/**`, and the
+    `relay`/`agent-os-panel`/`agent-os-panel-tray` scripts + deps.
+
+---
+
+## 17. Confirmations Requested From Ronni Before Implementation
+
+1. **Approve this plan** (or request changes) — implementation starts only after approval.
+2. Anything to **keep** that §7c currently drops (e.g., keep a generalized "compliance"
+   skill as an optional domain pack)?
+
+*License is decided (Apache-2.0) — no longer an open question.*
+
+*No changes have been made to `grc-suite-test`. Only `planning.md` and this file have been
+added to `agent-os-protocol`.*
