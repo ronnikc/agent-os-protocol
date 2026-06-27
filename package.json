@@ -4,7 +4,7 @@
   "private": true,
   "description": "An open, runtime-agnostic operating system for agentic software development — orchestrate specialized AI agents locally or across an accountable remote swarm.",
   "license": "Apache-2.0",
-  "author": "Gothar.dk // Ronni K. Gothard Christiansen (https://gothar.dk)",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen (https://gothard.dk)",
   "homepage": "https://github.com/ronnikc/agent-os-protocol#readme",
   "repository": {
     "type": "git",

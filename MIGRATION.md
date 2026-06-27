@@ -14,7 +14,7 @@ content from, that original product.
 
 The independent platform:
 
-- Is owned and maintained by **Gothar.dk // Ronni K. Gothard Christiansen**.
+- Is owned and maintained by **Gothard.dk // Ronni K. Gothard Christiansen**.
 - Is licensed under the **Apache License 2.0** (the original internal code was proprietary).
 - Carries **no** product-specific branding, agents, skills, memories, regulatory/domain
   content, staging URLs, or copyright headers from the original project.
@@ -25,7 +25,7 @@ The independent platform:
 
 | Area | Original (internal) | Independent platform |
 |---|---|---|
-| Copyright | `AesirX.io Ltd.`, "proprietary and confidential" | `Gothar.dk // Ronni K. Gothard Christiansen`, Apache-2.0 + SPDX headers |
+| Copyright | `AesirX.io Ltd.`, "proprietary and confidential" | `Gothard.dk // Ronni K. Gothard Christiansen`, Apache-2.0 + SPDX headers |
 | License | Proprietary | Apache-2.0 (`LICENSE` + `NOTICE`) |
 | Lobby URL | Hardcoded product staging URL | Configurable `AGENT_OS_LOBBY_URL` (empty = Local Mode) |
 | Agents | Included product-specific/domain agents | Generic roster + a trainable Domain Specialist |

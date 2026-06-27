@@ -4,7 +4,7 @@
 > **No implementation beyond planning docs has been performed.**
 > **Repository:** `github.com/ronnikc/agent-os-protocol` · branch `claude/new-session-pxa8cs`
 > **Charter:** see [`planning.md`](planning.md) (the source brief this plan answers).
-> **Author / Copyright holder of the new platform:** Gothar.dk // Ronni K. Gothard Christiansen.
+> **Author / Copyright holder of the new platform:** Gothard.dk // Ronni K. Gothard Christiansen.
 > **Boundary:** `grc-suite-test` is **read-only source**. Nothing in it will be modified.
 
 This document answers all 15 required outputs (charter §21) and all 10 open questions
@@ -44,7 +44,7 @@ Three findings shape the whole plan:
 
 **Copyright/licensing (per Ronni's directive):** every `AesirX.io Ltd.` copyright header
 and the proprietary `LICENSE.md` will be replaced with
-**`Copyright (c) 2026 Gothar.dk // Ronni K. Gothard Christiansen`** and the
+**`Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen`** and the
 **Apache License 2.0** (see §6). All `AesirX` / `ComplianceOne` /
 `Forseti` branding and domain content is planned for **complete removal** from the
 default distribution (§3, §7).
@@ -141,7 +141,7 @@ Four conceptual layers (charter §5), realized as an **npm-workspaces monorepo**
 ```
 agent-os-protocol/
   README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  MIGRATION.md
-  LICENSE + NOTICE  (Apache-2.0, © Gothar.dk // Ronni K. Gothard Christiansen)
+  LICENSE + NOTICE  (Apache-2.0, © Gothard.dk // Ronni K. Gothard Christiansen)
   .env.example   package.json (workspaces)
   agent-os/                      # ── Layer 1: Protocol Core ──
     RULES.md SPRINTS.md SUB-AGENTS.md ARCHITECTURE.md MEMORY.md
@@ -191,7 +191,7 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 ### Phase 1 — Repo Isolation, Branding & Copyright Neutralization
 - Extract the **copy-then-neutralize** set (§7 manifest) into `agent-os/` + `agent-os-panel/`.
 - Replace **all** `Copyright (c) 2026 AesirX.io Ltd. All rights reserved.` +
-  `proprietary and confidential` headers → `Copyright (c) 2026 Gothar.dk // Ronni K.
+  `proprietary and confidential` headers → `Copyright (c) 2026 Gothard.dk // Ronni K.
   Gothard Christiansen` (+ `SPDX-License-Identifier: Apache-2.0`). Replace `LICENSE.md`
   with the **Apache-2.0** `LICENSE` + `NOTICE`; set `package.json` license/author (§6).
 - Replace `complianceone.demo.aesirx.io` → configurable `AGENT_OS_LOBBY_URL`; add `.env.example`.
@@ -259,11 +259,11 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)
 
 **Locked:** copyright holder for the new platform =
-**`Gothar.dk // Ronni K. Gothard Christiansen`**.
+**`Gothard.dk // Ronni K. Gothard Christiansen`**.
 
 | Item | Current (source) | New (independent repo) |
 |---|---|---|
-| Per-file header (9 `.ts` + relay) | `// Copyright (c) 2026 AesirX.io Ltd. All rights reserved.`<br>`// This source code is proprietary and confidential.` | `// SPDX-License-Identifier: Apache-2.0`<br>`// Copyright (c) 2026 Gothar.dk // Ronni K. Gothard Christiansen` |
+| Per-file header (9 `.ts` + relay) | `// Copyright (c) 2026 AesirX.io Ltd. All rights reserved.`<br>`// This source code is proprietary and confidential.` | `// SPDX-License-Identifier: Apache-2.0`<br>`// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen` |
 | Root license | `LICENSE.md` — AesirX **proprietary** | `LICENSE` (full **Apache-2.0** text) + `NOTICE` (attribution), same holder |
 | Relay system prompt | "embedded in the AesirX ComplianceOne GRC platform" | neutral ("Agent OS UI Assist developer tool") |
 | 3rd-party MIT attributions (Hemant Naik, in regulatory skills) | present | moot — those skills are **dropped**; if any generic skill is kept, preserve its upstream MIT notice in `references/` + `MIGRATION.md` |
@@ -272,7 +272,7 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 public, personally-owned platform: permissive adoption **plus** an explicit patent grant
 and a `NOTICE` mechanism. Phase 1 will add:
 - `LICENSE` — the **full, verbatim Apache-2.0 text**.
-- `NOTICE` — `Agent OS Protocol — Copyright (c) 2026 Gothar.dk // Ronni K. Gothard
+- `NOTICE` — `Agent OS Protocol — Copyright (c) 2026 Gothard.dk // Ronni K. Gothard
   Christiansen`, plus any retained third-party attributions.
 - Per-file SPDX header `// SPDX-License-Identifier: Apache-2.0` + the copyright line.
 - `package.json` `"license": "Apache-2.0"` and matching `"author"`.
@@ -774,7 +774,7 @@ npm run agent-os-panel                       # panel + relay (local mode)
 
 **Then Sprint 1 — Isolation, Branding & Copyright Neutralization** (Phase 1 above):
 the first *implementation* sprint, gated on approval. Deliverables: extract
-copy-then-neutralize set, apply Gothar.dk copyright + chosen license, configurable lobby
+copy-then-neutralize set, apply Gothard.dk copyright + chosen license, configurable lobby
 URL + `.env.example`, de-branded relay, new README/CLAUDE/MIGRATION, **panel + Claude
 relay verified working**, grep gate clean.
 

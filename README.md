@@ -336,6 +336,6 @@ keep the platform **product-neutral** — no domain-specific branding or content
 
 Licensed under the **Apache License 2.0**.
 
-Copyright © 2026 **Gothar.dk // Ronni K. Gothard Christiansen**.
+Copyright © 2026 **Gothard.dk // Ronni K. Gothard Christiansen**.
 
 See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) *(added in Phase 1)*.
