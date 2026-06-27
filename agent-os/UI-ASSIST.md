@@ -3,7 +3,7 @@
 > **Last updated:** 2026-04-04
 > **Purpose:** Rules specific to AI assistant interactions through the UI Assist overlay embedded in Agent OS Protocol.
 > **Sub-agent:** The **UI Assist Specialist** ([sub-agents/agents/ui-assist.md](sub-agents/agents/ui-assist.md)) handles overlay development.
-> **Extension:** The **Agent Lobby** ([sub-agents/agents/boss-agent.md](sub-agents/agents/boss-agent.md)) extends UI Assist for multi-session coordination — see `src/backend/src/modules/agent-lobby/` and `src/frontend/src/modules/ui-assist/components/lobby/`.
+> **Extension:** The **Agent Lobby** ([sub-agents/agents/boss-agent.md](sub-agents/agents/boss-agent.md)) extends UI Assist for multi-session coordination — see the backend modules and the frontend.
 > **Localhost access:** The Agent OS Panel (`npm run agent-os-panel`) provides a standalone Assist tab with Chat, Tasks, and Sprint sub-views that connect to the relay server at `ws://localhost:4722`. The panel's Assist tab follows the same interaction rules as the platform overlay.
 > **When to update:**
 > - Interaction anti-pattern discovered (user confusion, wasted clicks, noise)

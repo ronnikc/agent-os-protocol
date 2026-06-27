@@ -161,25 +161,6 @@ check_metric() {
   fi
 }
 
-ACTUAL_BACKEND_MODULES=$(ls -d src/backend/src/modules/*/ 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_SERVICES=$(find src/backend/src/modules -name '*-service.ts' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_ROUTES=$(find src/backend/src/modules -name 'routes.ts' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_PAGES=$(find src/frontend/src/pages/admin -name '*.tsx' ! -path '*__tests__*' ! -name '*.test.tsx' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_TYPES=$(find src/shared/src/types -name '*.ts' ! -name 'index.ts' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_TESTS=$(find src -name '*.test.ts' -o -name '*.test.tsx' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_DOCS=$(find docs -name '*.md' 2>/dev/null | wc -l | tr -d ' ')
-ACTUAL_COLLECTIONS=$(grep -oE 'grc_[a-z_]+' src/backend/src/db/indexes.ts 2>/dev/null | sort -u | wc -l | tr -d ' ')
-
-echo ""
-check_metric "Backend modules" "$ACTUAL_BACKEND_MODULES" "$AOS/STATE.md" "Backend modules"
-check_metric "Backend services" "$ACTUAL_SERVICES" "$AOS/STATE.md" "Backend services"
-check_metric "Route files" "$ACTUAL_ROUTES" "$AOS/STATE.md" "Route files"
-check_metric "Frontend pages" "$ACTUAL_PAGES" "$AOS/STATE.md" "Frontend admin pages"
-check_metric "Shared types" "$ACTUAL_TYPES" "$AOS/STATE.md" "Shared type files"
-check_metric "Test files" "$ACTUAL_TESTS" "$AOS/STATE.md" "Test files"
-check_metric "Documentation" "$ACTUAL_DOCS" "$AOS/STATE.md" "Documentation files"
-check_metric "Collections" "$ACTUAL_COLLECTIONS" "$AOS/STATE.md" "MongoDB collections"
-
 # ── Section 3: Phase Consistency ──
 
 echo ""

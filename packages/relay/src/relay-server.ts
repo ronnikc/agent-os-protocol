@@ -11,10 +11,10 @@
  * Replaces the need for `npx @react-grab/provider-claude-code`.
  *
  * Usage:
- *   npx tsx src/backend/src/modules/ui-assist/relay-server.ts [--port 4722] [--cwd /path/to/repo]
+ *   npx tsx packages/relay/src/relay-server.ts [--port 4722] [--cwd /path/to/repo]
  *
  * Agent Lobby integration (optional):
- *   npx tsx src/backend/src/modules/ui-assist/relay-server.ts \
+ *   npx tsx packages/relay/src/relay-server.ts \
  *     --lobby https://your-lobby.example.com \
  *     --agent-name "claude-frontend-1"
  *

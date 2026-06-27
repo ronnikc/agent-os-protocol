@@ -43,7 +43,7 @@ Sequential planning: when planning >3 sprints, write and verify one spec at a ti
 Before writing ANY code, confirm:
 
 1. Sprint spec exists with acceptance criteria
-2. Work file created (`docs/product/phases/phase-N/sprint-X.Y.Z-workfile.md`)
+2. Work file created (docs)
 3. If i18n keys added: I18N Specialist agent planned
 4. Close-out planned as part of sprint scope
 5. Sub-agent assignment planned (see SUB-AGENTS.md)
@@ -53,7 +53,7 @@ Before writing ANY code, confirm:
 
 ## Step A — Lock the Sprint Contract
 
-Sprint spec (`docs/product/phases/phase-{N}/sprint-{X.Y.Z}.md`) must contain:
+Sprint spec (docs) must contain:
 
 1. **Goal** — one sentence
 2. **Acceptance criteria** — 5-10 testable items (definition of done)
@@ -71,7 +71,7 @@ Before writing any implementation plan, the planning agent MUST:
 2. For each new piece of infrastructure the sprint touches (export, download, audit, file upload, permission check, pagination, search, API client method, form, modal, toast, error handler, loading state, date formatter, i18n hook, status badge, DB index, pack installer), find the matching entry
 3. Record in the sprint spec:
    - **Reusing**: `UnifiedExportService` for PDF/CSV export — no new export service needed
-   - **No match**: creating `RegulatorySearchIndex` — no existing full-text regulatory search exists (nearest: `useFormFilterData` covers form-level filters only, not cross-framework content search)
+   - **No match**: creating `FullTextSearchIndex` — no existing full-text domain search exists (nearest: `useFormFilterData` covers form-level filters only, not cross-document content search)
 4. Sub-agents receive the reuse check as part of their prompt context
 
 Failure to complete the reuse check before implementation is a gate violation equivalent to skipping C.1 API Contract Trace.
@@ -93,25 +93,25 @@ Default is "deferred improvement" — justify scope boundaries explicitly.
 Implementation order (prevents rework):
 
 ### B1. Shared types
-- Create/update `src/shared/src/types/{module}.ts`, export from index
-- Add permissions to `src/shared/src/constants/permissions.ts`
-- Build: `npx tsc -p src/shared/tsconfig.json`
+- Create/update the shared types, export from index
+- Add permissions to the shared package
+- Build: `npx tsc -p the shared packagetsconfig.json`
 
 ### B2. Backend
-- Database indexes in `src/backend/src/db/indexes.ts`
-- Services in `src/backend/src/modules/{module}/`
-- Routes in `src/backend/src/modules/{module}/routes.ts`
-- Wire into `src/backend/src/app.ts`
-- Build: `npx tsc -p src/backend/tsconfig.json`
+- Database indexes in the data layer
+- Services in the backend modules
+- Routes in the backend modules
+- Wire into the backend
+- Build: `npx tsc -p the backendtsconfig.json`
 
 ### B3. Frontend
 - **Complete C.1 API Contract Trace BEFORE writing API client methods**
-- API client methods in `src/frontend/src/services/api-client.ts`
-- Pages in `src/frontend/src/pages/admin/{module}/`
+- API client methods in the frontend
+- Pages in the frontend pages
 - Entity reference fields: use `<select>` or searchable dropdown, never free text
 - Required fields: match backend validation
 - Navigation in `AdminLayout.tsx`, routes in `App.tsx`
-- Build: `npx tsc -p src/frontend/tsconfig.json --noEmit`
+- Build: `npx tsc -p the frontendtsconfig.json --noEmit`
 
 ### B4. Tests
 - Write tests as you touch logic (not after). Unit + integration as applicable.
@@ -153,8 +153,8 @@ Implementation order (prevents rework):
 For EVERY endpoint a page will call:
 
 ```
-1. Mount point: grep "[module]" src/backend/src/app.ts -> /api/v1/[module]
-2. Route path:  read src/backend/src/modules/[module]/routes.ts -> router.[method]('/[sub-path]')
+1. Mount point: grep "[module]" the backend -> /api/v1/[module]
+2. Route path:  read the backend modules -> router.[method]('/[sub-path]')
 3. Full URL:    /api/v1/[module]/[sub-path]
 4. Request body: read service method params
 5. Required fields: grep "if (!data." in service
@@ -190,7 +190,7 @@ Single-commit sprints acceptable when small. Commit message: 1-2 sentences on "w
 
 ### D.5 Pre-Commit Verification (BLOCKING)
 
-1. **i18n:** `grep -r 'TODO: translate' src/shared/src/i18n/` returns zero + `check-i18n-completeness.sh` passes
+1. **i18n:** `grep -r 'TODO: translate' localization returns zero + `check-i18n-completeness.sh` passes
 2. **Docs:** branch has changes to all 9 mandatory doc items from E3
 3. **No deferred markers:** `FIXME|HACK|XXX` in modified files returns zero
 4. **Stats current:** README codebase stats match reality, governance file dates set to today
@@ -221,7 +221,7 @@ Produce table: AC# | Criterion | Status | Evidence. Must appear in release notes
 | 1 | `docs/release-notes/{X.Y.Z}.md` | Create |
 | 2 | `docs/release-notes/README.md` | Add to version history |
 | 3 | `docs/developer-handoff.md` | Add to priority matrix |
-| 4 | `docs/product/phases/phase-{N}/README.md` | Mark sprint Complete |
+| 4 | docs | Mark sprint Complete |
 | 5 | `CLAUDE.md` -> Implementation Status | Update phase status |
 | 6 | `README.md` -> Sprint table | Mark Delivered |
 | 7 | `README.md` -> Codebase Stats | Update metrics (run E6 commands) |
@@ -229,7 +229,7 @@ Produce table: AC# | Criterion | Status | Evidence. Must appear in release notes
 | 9 | All modified governance files | Set "Last updated" to today |
 
 ### E4. Conditional updates
-New API endpoints -> `api-contracts.md`, `api-reference.md`. New permissions -> `permission-matrix.md`. New collections -> `data-model.md`. New user-facing module -> `user-guide/README.md`, `getting-started.md`, `admin-guide.md`. New features -> help articles in `seed-sample-data.ts`. Last sprint of phase -> E5 phase-completion items.
+New API endpoints -> `api-contracts.md`, `api-reference.md`. New permissions -> `access-control reference.md`. New collections -> `data-model.md`. New user-facing module -> `user-guide/README.md`, `getting-started.md`, `admin-guide.md`. New features -> help articles in `seed-sample-data.ts`. Last sprint of phase -> E5 phase-completion items.
 
 ### E5. Phase-completion updates
 Update README phase status, codebase stats, API modules table, documentation coverage, `docs/product/README.md`, `CLAUDE.md` status.
@@ -351,4 +351,4 @@ Close-out:
 4. Work file must have: Lessons Learned section (populated during sprint, not deferred), sub-agent usage record, Deferred/Not-Done section.
 5. Minimum 2 numbered lessons per sprint if >5 files or >1 module or sub-agents used.
 
-Work file location: `docs/product/phases/phase-{N}/sprint-{X.Y.Z}-workfile.md`
+Work file location: docs

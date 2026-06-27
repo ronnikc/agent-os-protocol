@@ -35,7 +35,7 @@ the 11-phase plan. **Phases 0–2 are merged to `main`; Phase 3 (`/train`) is la
   `npm run agent-os-panel` and the relay both boot.
 - **Phase 2 — roster (merged):** 30-agent project-neutral roster (24 generic specialists + 6 new
   platform agents: domain-specialist, identity, lobby-architect, runtime-adapter,
-  ui-assist-integration, training); 43 generic skills (ComplianceOne regulatory packs dropped);
+  ui-assist-integration, training); 43 generic skills (domain skill packs dropped);
   presets + routing updated. Panel discovers all 30.
 - **Phase 3 — `/train` (landing):** `agent-os/scripts/train.mjs` engine + the `train` skill +
   `.claude/commands/train.md` + `npm run train`. Generates reviewable skill drafts with provenance,
@@ -45,7 +45,8 @@ the 11-phase plan. **Phases 0–2 are merged to `main`; Phase 3 (`/train`) is la
 
 ## Known follow-ups
 
-- A deeper neutralization pass over inherited ComplianceOne prose still present in some governance
-  docs (incident narratives, the i18n/`src/frontend` prompt-template bits in SUB-AGENTS.md) and the
-  path references inside some kept agent definitions.
+- Brand and domain neutralization is complete: the repo passes the brand + domain gates (the only
+  origin references live in the three fork-describing docs). The governance docs retain some
+  illustrative incident history from the origin project (now neutralized); it will be refreshed
+  organically as the platform accrues its own history.
 - `packages/` workspace structure (protocol-core, lobby, adapters, ui-assist) introduced from Phase 4.

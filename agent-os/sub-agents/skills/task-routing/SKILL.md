@@ -17,10 +17,10 @@ Use the source directory to determine the owning agent:
 
 | Source directory | Agent |
 |-----------------|-------|
-| `src/shared/` | Backend (shared types are backend-owned) |
-| `src/backend/` | Backend |
-| `src/frontend/` | Frontend |
-| `docs/compliance/` | Compliance |
+| the shared package | Backend (shared types are backend-owned) |
+| the backend | Backend |
+| the frontend | Frontend |
+| docs | Compliance |
 | `docs/security/` | Security |
 | Project root (Docker, CI) | Infrastructure |
 
@@ -39,7 +39,7 @@ Before writing code:
 1. Read docs/engineering/README.md
 2. Read your owned specs listed above
 3. Check docs/reference/id-conventions.md and docs/reference/json-schemas.md
-4. Check docs/security/permission-matrix.md for RBAC implications
+4. Check the access-control reference for RBAC implications
 
 Task: [SPECIFIC TASK DESCRIPTION]
 Sprint: [SPRINT NUMBER]
@@ -57,7 +57,7 @@ Expected output:
 
 Never ask an agent to "explore" or "find" files. Provide exact paths:
 
-- **Good:** "Create `src/backend/src/modules/tasks/task-service.ts`"
+- **Good:** "Create the backend modules"
 - **Bad:** "Create a task service somewhere in the backend"
 
 ### Step 4 — Identify Cross-Cutting Concerns
@@ -78,7 +78,7 @@ Tell agents exactly what to produce:
 - **Code tasks:** "Create the file with the complete implementation. Do not leave TODO comments."
 - **Seed tasks:** "Add entries to the existing array. Field names must match the frontend rendering."
 - **Test tasks:** "Create a test file with at least one test per public method. Use existing mock factories."
-- **i18n tasks:** "Add keys to all 16 locale files. Use the exact key path specified."
+- **i18n tasks:** "Add keys to all multiple locales files. Use the exact key path specified."
 
 ### Step 6 — Respect Parallelism Limits
 

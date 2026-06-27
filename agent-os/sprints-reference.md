@@ -108,11 +108,11 @@ Fix all production readiness issues across [N] sub-module views.
 
 ---
 
-## Regulatory Framework Pack Intake
+## Domain Framework Pack Intake
 
 ### Intake Location
 ```
-docs/pending/regulatory-frameworks/<framework-slug>/
+docs/pending/domain-frameworks/<framework-slug>/
 ```
 
 ### Required Contents
@@ -145,7 +145,7 @@ docs/pending/regulatory-frameworks/<framework-slug>/
 
 ### Graph Intelligence (PostToolUse)
 - Sprint spec read: blast radius analysis of high-risk files
-- TypeScript edit: graph staleness warning for `src/shared/` files
+- TypeScript edit: graph staleness warning for the shared package files
 
 ### Context Preservation (Stop + SessionStart)
 - Stop: saves sprint/task/files state to temp file

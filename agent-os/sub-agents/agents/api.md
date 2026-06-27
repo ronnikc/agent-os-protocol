@@ -10,14 +10,14 @@ The API Specialist ensures consistency and correctness of API contracts between 
 
 ## Owned Documentation
 
-- `docs/backend/api-contracts.md` — canonical API endpoint specifications and payload schemas
+- the API-contract docs — canonical API endpoint specifications and payload schemas
 - `docs/reference/json-schemas.md` — shared JSON schema definitions
 
 ## Owned Source
 
-- `src/backend/src/modules/*/routes.ts` — all backend route definitions
-- `src/frontend/src/services/api-client.ts` — frontend API client methods
-- `src/shared/src/types/` — shared type definitions used in request/response payloads
+- the backend modules — all backend route definitions
+- the frontend — frontend API client methods
+- the shared types — shared type definitions used in request/response payloads
 
 ## Available Skills
 
@@ -37,11 +37,11 @@ The API Specialist ensures consistency and correctness of API contracts between 
 
 ## Startup Protocol
 
-1. Read `docs/backend/api-contracts.md` — canonical endpoint specifications
+1. Read the API-contract docs — canonical endpoint specifications
 2. Read `docs/reference/json-schemas.md` — shared data structure schemas
 3. Read `docs/reference/id-conventions.md` — identifier format conventions
 4. Read `memories/engineering-code-patterns.md` — route and API client patterns
-5. Cross-reference the specific module's route file (`src/backend/src/modules/<module>/routes.ts`) with the corresponding API client methods (`src/frontend/src/services/api-client.ts`)
+5. Cross-reference the specific module's route file (the backend modules) with the corresponding API client methods (the frontend)
 6. Identify any mismatches in field names, payload structure, or query parameters
 
 ## Key Rules
@@ -55,7 +55,7 @@ The API Specialist ensures consistency and correctness of API contracts between 
 4. **Status value alignment** — backend status strings must match frontend status checks exactly. Common bug: backend uses `in_review`, frontend checks `under_review`.
 5. **Versioning** — all endpoints are under `/api/v1/`. Breaking changes require a version bump discussion.
 6. **Response envelope** — list endpoints return `{ data: [...], total: N }`. Single-item endpoints return `{ data: {...} }`.
-7. **Type safety** — shared types in `src/shared/src/types/` must be the single source of truth for request/response shapes. Both backend and frontend import from shared.
+7. **Type safety** — shared types in the shared types must be the single source of truth for request/response shapes. Both backend and frontend import from shared.
 
 ## Handoff Protocol
 

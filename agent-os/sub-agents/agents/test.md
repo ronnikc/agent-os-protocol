@@ -17,9 +17,9 @@ The Test Specialist designs and implements automated tests across the backend, f
 
 ## Owned Source
 
-- `src/backend/src/__tests__/` — backend unit and integration tests
-- `src/frontend/src/__tests__/` — frontend component and integration tests
-- `src/shared/src/__tests__/` — shared utility and type tests
+- the backend — backend unit and integration tests
+- the frontend — frontend component and integration tests
+- the shared package — shared utility and type tests
 - Test configuration files at project root (`vitest.config.ts`, etc.)
 
 ## Available Skills
@@ -42,7 +42,7 @@ The Test Specialist designs and implements automated tests across the backend, f
 4. Read `docs/engineering/README.md` — master engineering instructions
 4b. **For E2E work:** Read `sub-agents/memories/e2e-testing-lessons.md` — CRITICAL lessons from Sprint 35-36 E2E push. Contains navigation patterns, selector hierarchy, auth patterns, and banned anti-patterns.
 5. Identify the module or feature under test and read its service, route, and component files
-6. **Read the shared type definitions** — `src/shared/src/types/<module>.ts` for every type the service uses. Verify that every field the service writes to MongoDB is declared in the shared type interface. If a field is missing from the type, add it before writing tests.
+6. **Read the shared type definitions** — the shared types for every type the service uses. Verify that every field the service writes to MongoDB is declared in the shared type interface. If a field is missing from the type, add it before writing tests.
 7. Check existing test files in the module for established patterns and fixtures
 8. Verify coverage thresholds: backend 60% statements, frontend 55% statements
 9. Read `sub-agents/memories/build-integrity-lessons.md` — check for recent incidents involving test failures from cross-agent changes (i18n, route messages, type modifications)
@@ -63,7 +63,7 @@ The Test Specialist designs and implements automated tests across the backend, f
 11. **Self-verification is mandatory** — after writing test files, run `tsc --noEmit` on the relevant workspace AND `vitest run` on the specific test file. Do not return results until both pass with zero errors.
 12. **Mock completeness for API client** (Sprint 26.4.1) — when a component adds new `apiClient.methodName()` calls, the test mock MUST include every method the component uses. Missing mocks cause `TypeError: apiClient.X is not a function` across ALL tests in the file, not just the tests that exercise the new feature. When reviewing PRs, grep the component for `apiClient.` calls and verify each one exists in the test mock. Default mock: `vi.fn().mockResolvedValue({ data: [], total: 0 })`.
 13. **Verify endpoint return semantics in test data** (Sprint 26.4.1) — mock return values should match real endpoint response shapes. Don't assume from endpoint names — read the backend service's list/get method to understand what `{ data: [...] }` actually contains. Test data that doesn't match real shapes gives false confidence.
-14. **Evidence integrity testing** — this is a GRC platform where evidence is generated as a byproduct of operational work. Tests must verify evidence flows, not just functional correctness. For state-changing operations, verify: (a) audit events are emitted with correct actor, timestamp, and before/after state, (b) contributor lineage is preserved — no anonymous mutations, (c) cross-module links are created (e.g., incident → breach notification), (d) evidence export includes all required fields. A test suite that verifies "the API returns 200" but doesn't verify "the audit trail is complete" is insufficient. See `sub-agents/memories/platform-mission-evidence-by-design.md`.
+14. **Evidence integrity testing** — this is a platform where evidence is generated as a byproduct of operational work. Tests must verify evidence flows, not just functional correctness. For state-changing operations, verify: (a) audit events are emitted with correct actor, timestamp, and before/after state, (b) contributor lineage is preserved — no anonymous mutations, (c) cross-module links are created (e.g., incident → breach notification), (d) evidence export includes all required fields. A test suite that verifies "the API returns 200" but doesn't verify "the audit trail is complete" is insufficient. See `sub-agents/memories/platform-mission-evidence-by-design.md`.
 
 ## Patterns
 
@@ -172,21 +172,21 @@ When modifying tests for an existing module (not creating new tests from scratch
 ```bash
 # ── Full suite runs (MUST use | tee) ──────────────────────────
 # Backend tests:
-npx vitest run --config src/backend/vitest.config.ts 2>&1 | tee tmp/test-backend.log
+npx vitest run --config the backendvitest.config.ts 2>&1 | tee tmp/test-backend.log
 
 # Frontend tests:
-npx vitest run --config src/frontend/vitest.config.ts 2>&1 | tee tmp/test-frontend.log
+npx vitest run --config the frontendvitest.config.ts 2>&1 | tee tmp/test-frontend.log
 
 # Check results from the log (do NOT re-run the suite):
 tail -20 tmp/test-backend.log
 grep -E "FAIL|×" tmp/test-frontend.log
 
 # ── Single-file targeted runs (no log required) ──────────────
-npx vitest run src/backend/src/modules/localization/__tests__/my-service.test.ts
-npx vitest run --config src/frontend/vitest.config.ts src/pages/admin/localization/__tests__/MyPage.test.tsx
+npx vitest run the backend modules
+npx vitest run --config the frontendvitest.config.ts src/pages/admin/localization/__tests__/MyPage.test.tsx
 
 # ── WRONG patterns (blocked by hook) ─────────────────────────
 # npx vitest run --reporter=dot                     # No log file
 # npx vitest run --config vite.config.ts             # Wrong config (build, not test)
-# npx vitest run src/frontend/...                    # Missing frontend config
+# npx vitest run the frontend...                    # Missing frontend config
 ```

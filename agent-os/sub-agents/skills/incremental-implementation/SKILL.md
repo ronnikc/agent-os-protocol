@@ -53,7 +53,7 @@ Slice 3: API client method (frontend services/api-client.ts)
 Slice 4: Frontend page/component (useLocale, semantic HTML, accessibility)
     → component test updated, full frontend vitest pass
 
-Slice 5: Seed data + i18n keys across 16 locales
+Slice 5: Seed data + i18n keys across multiple locales
     → seed runs, i18n keys present in every locale, runtime check
 ```
 
@@ -144,7 +144,7 @@ After each increment, the project must build (`tsc`) and existing tests must pas
 If a feature isn't ready for users but you need to merge increments:
 
 ```typescript
-// In src/shared/src/config/feature-flags.ts (existing pattern)
+// In the shared package (existing pattern)
 export const FEATURE_FLAGS = {
   RISK_BULK_IMPORT: process.env.FEATURE_RISK_BULK_IMPORT === 'true',
 } as const;
@@ -188,22 +188,22 @@ After each slice, run the verification stack — same as the Self-Verification G
 
 ```bash
 # 1. Shared types if modified
-npx tsc -p src/shared/tsconfig.json
+npx tsc -p the shared packagetsconfig.json
 
 # 2. Backend types if modified
-npx tsc -p src/backend/tsconfig.json --noEmit
+npx tsc -p the backendtsconfig.json --noEmit
 
 # 3. Frontend types if modified
-npx tsc -p src/frontend/tsconfig.json --noEmit
+npx tsc -p the frontendtsconfig.json --noEmit
 
 # 4. Specific test file for the slice
 npx vitest run path/to/affected.test.ts
 
 # 5. Full frontend test suite at the END of all slices (Incident 15)
-cd src/frontend && npx vitest run
+cd the frontend && npx vitest run
 
 # 6. If backend files modified
-cd src/backend && npx vitest run
+cd the backend && npx vitest run
 
 # 7. Lint + format
 npm run lint && npm run format:check
@@ -220,10 +220,10 @@ When a slice triggers cross-agent work, surface it BEFORE proceeding:
 | Slice changes | Coordinate with | Why |
 |--------------|-----------------|-----|
 | Backend service/route | Test Specialist | Service tests need updating before merge |
-| Frontend component text | Test Specialist + I18N | Component test mocks + 16 locale files |
+| Frontend component text | Test Specialist + I18N | Component test mocks + multiple locales files |
 | Route response messages | Test Specialist | grep test assertions for old strings (Incident 14) |
 | Shared type modification | Backend + Frontend + Test | Test factory Zod validation catches mismatches |
-| New permission | Security + Backend (seed-roles.ts) | Permission seeding required before route gate works |
+| New permission | Security + Backend (the role-seed file) | Permission seeding required before route gate works |
 
 ---
 
@@ -334,7 +334,7 @@ output:
 - No commit mixes refactor + feature work
 - Every cross-agent coordination trigger from SUB-AGENTS.md § 3 was honored before merge
 - Feature flag in place if the work merges before being user-ready
-- Full frontend test suite green after the final slice (`cd src/frontend && npx vitest run`)
+- Full frontend test suite green after the final slice (`cd the frontend && npx vitest run`)
 - Backend test suite green if backend layers were touched
 - All `noticed_but_not_touched` items are listed in output, not silently fixed
 

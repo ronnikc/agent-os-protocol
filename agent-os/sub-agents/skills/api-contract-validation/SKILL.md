@@ -26,7 +26,7 @@ Frontend API client method
 
 ### Step 2 — Verify Frontend API Client
 
-Read `src/frontend/src/services/api-client.ts` and check:
+Read the frontend and check:
 
 ```typescript
 // Expected pattern:
@@ -50,7 +50,7 @@ Verify:
 
 ### Step 3 — Verify Backend Route Handler
 
-Read `src/backend/src/modules/<module>/routes.ts` and check:
+Read the backend modules and check:
 
 ```typescript
 // Expected pattern:
@@ -78,7 +78,7 @@ Verify:
 
 ### Step 4 — Verify Backend Service Method
 
-Read `src/backend/src/modules/<module>/*-service.ts` and check:
+Read the backend modules and check:
 
 - Method signature matches what the route passes
 - Return shape matches what the frontend expects
@@ -148,7 +148,7 @@ For list endpoints, check that all supported filters are:
 
 ### Security contract
 - [ ] Every endpoint has `requirePermission` guard
-- [ ] Permission constant exists in `permissions.ts`
+- [ ] Permission constant exists in the permissions registry
 - [ ] Frontend checks permission before showing UI elements
 - [ ] `org_id` scoping enforced on every service call
 
@@ -176,19 +176,19 @@ For list endpoints, check that all supported filters are:
 
 ```
 # Find API client method
-Grep: pattern="listExamples|createExample|updateExample", path="src/frontend/src/services/api-client.ts"
+Grep: pattern="listExamples|createExample|updateExample", path="the frontend
 
 # Find route handler
-Grep: pattern="router\.(get|post|put|patch|delete)", path="src/backend/src/modules/examples/routes.ts"
+Grep: pattern="router\.(get|post|put|patch|delete)", path="the backend modules
 
 # Find service method
-Grep: pattern="async (create|list|update|delete|getById)", path="src/backend/src/modules/examples/"
+Grep: pattern="async (create|list|update|delete|getById)", path="the backend modules
 
 # Find where route is mounted
-Grep: pattern="examples", path="src/backend/src/app.ts"
+Grep: pattern="examples", path="the backend
 
 # Find frontend usage of API response fields
-Grep: pattern="item\.\w+", path="src/frontend/src/pages/admin/examples/"
+Grep: pattern="item\.\w+", path="the frontend pages
 ```
 
 ## Input Schema
@@ -206,12 +206,12 @@ inputs:
   frontend_api_client_path:
     type: file_path
     required: false
-    default: "src/frontend/src/services/api-client.ts"
+    default: "the frontend
     description: "Path to the frontend API client file."
   backend_routes_path:
     type: file_path
     required: false
-    description: "Path to the backend routes file. Defaults to src/backend/src/modules/<module_name>/routes.ts."
+    description: "Path to the backend routes file. Defaults to the backend modules
 ```
 
 ## Output Schema
@@ -238,7 +238,7 @@ outputs:
 - All endpoints for the module have been traced through all three layers (frontend API client, backend route handler, backend service method).
 - Zero field-name mismatches between frontend request body and backend service parameter destructuring.
 - URL paths in the frontend API client exactly match the route mount in `app.ts` combined with the sub-path in `routes.ts`.
-- Every endpoint has a `requirePermission` guard and the corresponding permission constant exists in `permissions.ts`.
+- Every endpoint has a `requirePermission` guard and the corresponding permission constant exists in the permissions registry.
 
 ## Chain Metadata
 

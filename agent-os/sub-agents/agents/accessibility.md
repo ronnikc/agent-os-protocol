@@ -16,7 +16,7 @@ The Accessibility Specialist ensures every UI component and page in the platform
 | `docs/accessibility/testing-guide.md` | Developer testing guide — axe-core, keyboard, screen reader, contrast, zoom |
 | `docs/accessibility/wcag-compliance-report.md` | Formal WCAG 2.1 AA compliance report (summary section for quick reference) |
 | `docs/accessibility/page-audit-inventory.md` | All 213 pages with module, remediation sprint, and pass status |
-| `docs/frontend/accessibility-guide.md` | Component usage guide with accessible patterns |
+| docs | Component usage guide with accessible patterns |
 
 ## Owned Source
 
@@ -24,16 +24,16 @@ This agent has cross-cutting ownership of accessibility throughout the frontend:
 
 | Path | Purpose |
 |------|---------|
-| `src/frontend/src/hooks/useFocusTrap.ts` | Keyboard focus containment for modals/dropdowns |
-| `src/frontend/src/hooks/useAnnounce.ts` | Programmatic screen reader announcements via `aria-live` |
-| `src/frontend/src/hooks/usePageTitle.ts` | Dynamic `<title>` per page |
-| `src/frontend/src/components/ScreenReaderOnly.tsx` | Visually hidden, screen-reader accessible text |
-| `src/frontend/src/components/AccessibleIconButton.tsx` | Icon buttons with required `ariaLabel` prop |
-| `src/frontend/src/components/SkipToContent.tsx` | Keyboard skip link in AdminLayout |
-| `src/frontend/src/components/AccessibleModal.tsx` | Modal with `role="dialog"`, `aria-modal`, focus trap, Escape close |
-| `src/frontend/src/styles/global.css` | Design system with WCAG AA-compliant color tokens |
-| `src/frontend/src/styles/high-contrast.css` | High-contrast theme overrides |
-| `src/frontend/src/test-utils/a11y-helpers.ts` | `renderAndCheckA11y()` and `checkA11y()` test helpers |
+| the frontend | Keyboard focus containment for modals/dropdowns |
+| the frontend | Programmatic screen reader announcements via `aria-live` |
+| the frontend | Dynamic `<title>` per page |
+| the frontend components | Visually hidden, screen-reader accessible text |
+| the frontend components | Icon buttons with required `ariaLabel` prop |
+| the frontend components | Keyboard skip link in AdminLayout |
+| the frontend components | Modal with `role="dialog"`, `aria-modal`, focus trap, Escape close |
+| the frontend | Design system with WCAG AA-compliant color tokens |
+| the frontend | High-contrast theme overrides |
+| the frontend | `renderAndCheckA11y()` and `checkA11y()` test helpers |
 
 ## Available Skills
 
@@ -63,18 +63,18 @@ Phase 11 (Sprints 12.5.0-13.0.0) established these accessibility primitives. The
 
 | Hook | Import | Usage |
 |------|--------|-------|
-| `useFocusTrap` | `src/frontend/src/hooks/useFocusTrap.ts` | Wrap modal/dropdown content. Traps Tab/Shift+Tab. Escape exits. |
-| `useAnnounce` | `src/frontend/src/hooks/useAnnounce.ts` | `const { announce } = useAnnounce()` then `announce('N items found')` for dynamic content updates |
-| `usePageTitle` | `src/frontend/src/hooks/usePageTitle.ts` | Call in every page component: `usePageTitle('Page Name')` |
+| `useFocusTrap` | the frontend | Wrap modal/dropdown content. Traps Tab/Shift+Tab. Escape exits. |
+| `useAnnounce` | the frontend | `const { announce } = useAnnounce()` then `announce('N items found')` for dynamic content updates |
+| `usePageTitle` | the frontend | Call in every page component: `usePageTitle('Page Name')` |
 
 ### Components
 
 | Component | Import | Usage |
 |-----------|--------|-------|
-| `<AccessibleModal>` | `src/frontend/src/components/AccessibleModal.tsx` | All modals/dialogs. Has `role="dialog"`, `aria-modal="true"`, focus trap, Escape close, focus restoration |
-| `<AccessibleIconButton>` | `src/frontend/src/components/AccessibleIconButton.tsx` | All icon-only buttons. TypeScript enforces `ariaLabel` prop at compile time |
-| `<ScreenReaderOnly>` | `src/frontend/src/components/ScreenReaderOnly.tsx` | Visually hidden text for screen readers (status indicators, color-only info) |
-| `<SkipToContent>` | `src/frontend/src/components/SkipToContent.tsx` | Already in AdminLayout. Visible on focus, skips to `#main-content` |
+| `<AccessibleModal>` | the frontend components | All modals/dialogs. Has `role="dialog"`, `aria-modal="true"`, focus trap, Escape close, focus restoration |
+| `<AccessibleIconButton>` | the frontend components | All icon-only buttons. TypeScript enforces `ariaLabel` prop at compile time |
+| `<ScreenReaderOnly>` | the frontend components | Visually hidden text for screen readers (status indicators, color-only info) |
+| `<SkipToContent>` | the frontend components | Already in AdminLayout. Visible on focus, skips to `#main-content` |
 
 ### CSS Utilities
 

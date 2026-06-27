@@ -24,11 +24,11 @@ Run through each section for every file in the changeset.
 
 ```
 # Verify: no default imports of apiClient
-Grep: pattern="import apiClient from", path="src/frontend/"
+Grep: pattern="import apiClient from", path="the frontend"
 # Should return 0 results
 
 # Verify: all AppError imports use named import
-Grep: pattern="import { AppError }", path="src/backend/"
+Grep: pattern="import { AppError }", path="the backend"
 ```
 
 ### 2. Error Handling
@@ -41,19 +41,19 @@ Grep: pattern="import { AppError }", path="src/backend/"
 
 ```
 # Find raw Error throws (should be 0 in service files)
-Grep: pattern="throw new Error\(", path="src/backend/src/modules/"
+Grep: pattern="throw new Error\(", path="the backend modules
 ```
 
 ### 3. RBAC on Every Endpoint
 
 - [ ] Every route has `requirePermission(Permission.XXX) as any`
-- [ ] Permission constant exists in `src/shared/src/constants/permissions.ts`
-- [ ] Permission is seeded in `src/backend/src/db/seed-roles.ts`
+- [ ] Permission constant exists in the shared package
+- [ ] Permission is seeded in the data layer
 - [ ] Middleware chain: `router.use(authenticate as any, enforceOrgScope as any, adminRateLimiter)`
 
 ```
 # Find routes without requirePermission
-Grep: pattern="router\.(get|post|put|patch|delete)\([^)]*\n[^r]*(?!requirePermission)", path="src/backend/src/modules/", multiline=true
+Grep: pattern="router\.(get|post|put|patch|delete)\([^)]*\n[^r]*(?!requirePermission)", path="the backend modules, multiline=true
 ```
 
 ### 4. Audit Events on State Changes
@@ -66,28 +66,28 @@ Grep: pattern="router\.(get|post|put|patch|delete)\([^)]*\n[^r]*(?!requirePermis
 
 ```
 # Find service methods that don't call auditLog
-Grep: pattern="async (create|update|delete)", path="src/backend/src/modules/<module>/*-service.ts"
+Grep: pattern="async (create|update|delete)", path="the backend modules
 # Then verify each method calls this.auditLog()
 ```
 
 ### 5. i18n via useLocale (No Hardcoded Strings)
 
 - [ ] Every page component calls `const { t } = useLocale()`
-- [ ] All visible text uses `t.*` keys — no hardcoded English or Vietnamese strings
+- [ ] All visible text uses `t.*` keys — no hardcoded English or localized strings
 - [ ] No `langKey` pattern (banned)
 - [ ] No direct EN/VI conditional lookups (banned)
-- [ ] i18n keys added to ALL 16 locale files
+- [ ] i18n keys added to ALL multiple locales files
 - [ ] Key paths follow `t.<module>.<element>` convention
 
 ```
 # Find hardcoded strings in JSX (potential violations)
-Grep: pattern=">[A-Z][a-z]+ [a-z]+<", path="src/frontend/src/pages/"
+Grep: pattern=">[A-Z][a-z]+ [a-z]+<", path="the frontend pages
 
 # Find langKey usage (banned)
-Grep: pattern="langKey", path="src/frontend/"
+Grep: pattern="langKey", path="the frontend"
 
 # Find direct locale conditionals (banned)
-Grep: pattern="locale.*===.*'en'|locale.*===.*'vi'", path="src/frontend/"
+Grep: pattern="locale.*===.*'en'|locale.*===.*'vi'", path="the frontend"
 ```
 
 ### 6. Mock Method Names Match Real Signatures
@@ -98,10 +98,10 @@ Grep: pattern="locale.*===.*'en'|locale.*===.*'vi'", path="src/frontend/"
 
 ```
 # List all mocked apiClient methods
-Grep: pattern="apiClient:\s*\{", path="src/frontend/src/pages/", -A=20
+Grep: pattern="apiClient:\s*\{", path="the frontend pages, -A=20
 
 # Compare with real methods
-Grep: pattern="async \w+\(", path="src/frontend/src/services/api-client.ts"
+Grep: pattern="async \w+\(", path="the frontend
 ```
 
 ### 7. Field Name Consistency (Seed → Service → API → Frontend)
@@ -113,9 +113,9 @@ Grep: pattern="async \w+\(", path="src/frontend/src/services/api-client.ts"
 
 ```
 # Trace a field from seed to frontend
-Grep: pattern="risk_level", path="src/backend/src/db/seed-"
-Grep: pattern="risk_level", path="src/backend/src/modules/<module>/"
-Grep: pattern="risk_level", path="src/frontend/src/pages/admin/<module>/"
+Grep: pattern="risk_level", path="the data layer
+Grep: pattern="risk_level", path="the backend modules
+Grep: pattern="risk_level", path="the frontend pages
 ```
 
 ### 8. No TODO/FIXME/HACK/XXX in Sprint Code
@@ -140,7 +140,7 @@ Grep: pattern="TODO|FIXME|HACK|XXX", path="src/"
 ### 10. Frontend Component Patterns
 
 - [ ] Named function export (not default)
-- [ ] CSS classes use `dm-` for layout, `grc-` for components
+- [ ] CSS classes use `dm-` for layout, `aos-` for components
 - [ ] `usePageTitle()` called
 - [ ] Semantic HTML (`<main>`, `<header>`, `<section>`, `<table>`)
 - [ ] ARIA attributes on interactive elements
@@ -169,15 +169,15 @@ For a single file, run all relevant checks:
 
 ```
 # Backend service file
-Read: src/backend/src/modules/<module>/<service>.ts
+Read: the backend modules
 Check: AppError import, constructor pattern, org_id first param, auditLog calls, as any casts
 
 # Frontend page file
-Read: src/frontend/src/pages/admin/<module>/<Page>.tsx
+Read: the frontend pages
 Check: useLocale, apiClient named import, no hardcoded strings, semantic HTML, ARIA
 
 # Test file
-Read: src/backend/src/modules/<module>/__tests__/<service>.test.ts
+Read: the backend modules
 Check: createMockDb, mock method names, beforeEach reset, audit verification
 ```
 

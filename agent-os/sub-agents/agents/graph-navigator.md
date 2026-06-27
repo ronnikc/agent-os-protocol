@@ -68,7 +68,7 @@ Before returning results:
 2. **Always verify graph freshness** — stale graph data produces wrong impact assessments
 3. **Spot-check results** — grep-verify at least 2 files before reporting counts
 4. **Report transitive impact** — direct importers are obvious; value comes from 2nd and 3rd level dependents
-5. **Flag shared type changes** — any change to `src/shared/` has high blast radius by definition (R-11)
+5. **Flag shared type changes** — any change to the shared package has high blast radius by definition (R-11)
 
 ---
 

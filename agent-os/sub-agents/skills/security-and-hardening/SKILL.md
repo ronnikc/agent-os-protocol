@@ -21,17 +21,17 @@ OWASP Top 10 prevention discipline for the Agent OS Protocol codebase. Treat eve
 - **Set security headers** via `helmet` (CSP, HSTS, X-Frame-Options, X-Content-Type-Options)
 - **Use `httpOnly`, `secure`, `sameSite` cookies** for sessions
 - **Run `npm audit` before every release** as part of `release-checklist`
-- **Verify `enforceOrgScope` middleware** is on every authenticated route — multi-tenant isolation
+- **Verify `enforceOrgScope` middleware** is on every authenticated route — workspace-scoped isolation
 
 ### Ask First (Requires Human Approval)
 
 - Adding new authentication flows or changing auth logic
-- Storing new categories of sensitive data (PII, payment info, GRC evidence files)
+- Storing new categories of sensitive data (PII, payment info, platform evidence files)
 - Adding new external service integrations
 - Changing CORS configuration
 - Adding file upload handlers
 - Modifying rate limiting (`adminRateLimiter`)
-- Granting new permissions or roles in `seed-roles.ts`
+- Granting new permissions or roles in `the role-seed file`
 - Disabling any helmet directive
 
 ### Never Do
@@ -72,7 +72,7 @@ router.patch(
 );
 ```
 
-Cross-tenant access is the #1 multi-tenant bug. `enforceOrgScope` + service signature `(org_id, ...)` together prevent it. Never bypass either. See `rbac-verification` for the full RBAC checklist.
+Cross-workspaces access is the #1 workspace-scoped bug. `enforceOrgScope` + service signature `(org_id, ...)` together prevent it. Never bypass either. See `rbac-verification` for the full RBAC checklist.
 
 ### A02: Cryptographic Failures
 

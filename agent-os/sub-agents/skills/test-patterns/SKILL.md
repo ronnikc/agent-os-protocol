@@ -17,12 +17,12 @@ When modifying backend route response messages (e.g., changing `'System archived
 
 1. **Search for the old string in test files:**
    ```bash
-   grep -rn "old_message_string" src/backend/src/modules/<module>/__tests__/
+   grep -rn "old_message_string" the backend modules
    ```
 2. **Update every test assertion** that matches the old string
 3. **Run vitest** on the affected test file to verify:
    ```bash
-   npx vitest run src/backend/src/modules/<module>/__tests__/routes.test.ts
+   npx vitest run the backend modules
    ```
 4. **Report test results** in your return output — "tsc passes" is NOT sufficient for route changes
 
@@ -38,7 +38,7 @@ When changing api-client method return types (e.g., adding `PaginatedResponse<T>
 
 1. **Search for mock patterns:**
    ```bash
-   grep -rn "methodName.*mock" src/frontend/src/pages/admin/*/__tests__/
+   grep -rn "methodName.*mock" the frontend pages
    ```
 2. **If the component does `res.data`**, wrap mock return values:
    - Before: `mockResolvedValue([item])`
@@ -230,7 +230,7 @@ apiClient: { listExamples: vi.fn() }
 
 ### Use createMockDb for Backend Tests
 
-Always use the shared `createMockDb` utility from `src/backend/src/test-utils/mock-db.ts`. This provides an in-memory mock with `_collections` and `_store` arrays.
+Always use the shared `createMockDb` utility from the backend. This provides an in-memory mock with `_collections` and `_store` arrays.
 
 ```typescript
 import { createMockDb, type MockDb } from '../../../test-utils/mock-db.js';
@@ -313,17 +313,17 @@ render(<WorkflowEditor rules={[]} onChange={onChange as any} />);
 
 When running tests with V8 coverage provider and encountering `ENOENT: coverage-N.json` errors, use `--maxConcurrency=1` to serialize coverage file writes. This is a known race condition in the V8 coverage provider.
 
-### Frontend Tests Must Run from src/frontend/ (Sprint 20.2.0)
+### Frontend Tests Must Run from the frontend (Sprint 20.2.0)
 
-The root `vitest.config.ts` only includes backend and shared test paths. Frontend tests are NOT discovered when running `npx vitest` from the repo root. Always run frontend tests from the `src/frontend/` directory:
+The root `vitest.config.ts` only includes backend and shared test paths. Frontend tests are NOT discovered when running `npx vitest` from the repo root. Always run frontend tests from the frontend directory:
 
 ```bash
-cd src/frontend && npx vitest run src/pages/admin/...
+cd the frontend && npx vitest run src/pages/admin/...
 ```
 
 Or specify the config explicitly:
 ```bash
-npx vitest run --config src/frontend/vitest.config.ts src/frontend/src/pages/...
+npx vitest run --config the frontendvitest.config.ts the frontend pages
 ```
 
 ### Mock DB Does Not Support $elemMatch (Sprint 20.5.0)
@@ -368,7 +368,7 @@ const mockFind = vi.fn().mockReturnValue({
 - [ ] Backend sub-agent prompts MUST explicitly request test file creation with path and minimum test count — agents omit tests when not explicitly listed as a deliverable (Sprint 21.5.0 lesson: 43 tests written manually after agent skipped test file)
 - [ ] After i18n agent completes, verify EN values match expected UI text — agent tends to use brief labels ("Create Review") instead of full descriptive text ("Create Security Review") (Sprint 21.6.0 lesson)
 - [ ] Every vitest function used in the file MUST be imported — check for `vi` in the import when `vi.mock()` or `vi.fn()` is used (Sprint 22.4.0 lesson: missing `vi` import passed vitest hoisting but failed tsc)
-- [ ] Before asserting any field on a result object, verify that field exists in the shared type definition (`src/shared/src/types/`) — if the service writes it but the type doesn't declare it, add it to the type FIRST (Sprint 22.4.0 lesson: `created_by` in service but not in `DsrResponseTemplate`)
+- [ ] Before asserting any field on a result object, verify that field exists in the shared type definition (the shared types) — if the service writes it but the type doesn't declare it, add it to the type FIRST (Sprint 22.4.0 lesson: `created_by` in service but not in `DsrResponseTemplate`)
 - [ ] MongoDB `_id` casts MUST use `as unknown as string` — never `as string` directly (ObjectId is not assignable to string)
 - [ ] Express `req.params.*` MUST be narrowed with `as string` before passing to service methods (type is `string | string[]`)
 - [ ] **Self-verification gate**: after writing test files, agent MUST run `tsc --noEmit` AND `vitest run [file]` — do NOT return until both pass with zero errors
@@ -380,7 +380,7 @@ inputs:
   test_target:
     type: string
     required: true
-    description: "Path to the service or component file to test (e.g., 'src/backend/src/modules/tasks/task-service.ts')."
+    description: "Path to the service or component file to test (e.g., 'the backend modules)."
   test_type:
     type: enum
     required: true
@@ -402,7 +402,7 @@ inputs:
 outputs:
   test_file:
     type: file_path
-    description: "Path to the created test file (e.g., src/backend/src/modules/<module>/__tests__/<entity>-service.test.ts)"
+    description: "Path to the created test file (e.g., the backend modules)"
   test_count:
     type: integer
     description: "Total number of test cases written"

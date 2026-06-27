@@ -24,13 +24,13 @@ Skills reference real method names from source code. Verify they still exist.
 
 ```
 # Check service-pattern.md references against real services
-Grep: pattern="async (create|update|delete|get|list|find)", path="src/backend/src/modules/", head_limit=20
+Grep: pattern="async (create|update|delete|get|list|find)", path="the backend modules, head_limit=20
 
 # Check test-patterns.md mock methods against real api-client.ts
-Grep: pattern="async \w+\(", path="src/frontend/src/services/api-client.ts", head_limit=30
+Grep: pattern="async \w+\(", path="the frontend, head_limit=30
 
 # Check component-pattern.md hook references
-Grep: pattern="export function use\w+", path="src/frontend/src/hooks/", head_limit=20
+Grep: pattern="export function use\w+", path="the frontend, head_limit=20
 ```
 
 For each skill, verify:
@@ -46,7 +46,7 @@ Skills contain code examples. Verify they reflect current patterns.
 - [ ] `component-pattern.md` — `useLocale()`, `apiClient` named import, CSS class prefixes? Still the convention?
 - [ ] `test-patterns.md` — `createMockDb`, `vi.mock` patterns, `beforeEach` reset? Still how tests are written?
 - [ ] `seed-data.md` — permission seeding pattern, collection naming? Still current?
-- [ ] `regulatory-pack.md` — framework seed structure, form template format? Match latest seed files?
+- [ ] `domain-pack.md` — framework seed structure, form template format? Match latest seed files?
 
 ### 3. Skill Redundancy Check
 

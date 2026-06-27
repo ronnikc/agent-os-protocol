@@ -54,7 +54,6 @@ export function fileToAgents(path) {
   if (path.startsWith('src/shared/src/types/')) return ['backend', 'frontend'];
   if (path.startsWith('src/shared/')) return ['backend', 'frontend'];
   if (path.startsWith('docs/security/'))            return ['security'];
-  if (path.startsWith('docs/compliance/'))          return ['compliance'];
   if (path.startsWith('docs/legal/'))               return ['legal'];
   if (path.startsWith('docs/accessibility/'))       return ['accessibility'];
   if (path.startsWith('docs/release-notes/'))       return ['release', 'documentation'];

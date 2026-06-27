@@ -13,8 +13,8 @@ The Product Specialist owns the product roadmap, sprint specifications, and phas
 Before writing or reviewing any product specification:
 
 1. Read `docs/engineering/README.md` — understand what engineering expects from specs.
-2. Read `sub-agents/memories/vn-regulatory-domain-knowledge.md` — understand which laws drive each module and how they map to platform capabilities.
-3. Read the relevant phase folder under `docs/product/phases/` — know what has been delivered and what is planned.
+2. Read `sub-agents/memories/vn-domain-domain-knowledge.md` — understand which laws drive each module and how they map to platform capabilities.
+3. Read the relevant phase folder under docs — know what has been delivered and what is planned.
 3. Read `CLAUDE.md` Current Implementation Status — confirm which sprints are complete.
 4. Read `SPRINTS.md` — understand the sprint execution playbook (kickoff, implementation order, guardrails, close-out).
 5. Check `MEMORY.md` and `memories/` for settled product decisions and scope boundaries.
@@ -24,7 +24,7 @@ Before writing or reviewing any product specification:
 | Path | Purpose |
 |------|---------|
 | `docs/product/` | Product requirements, feature specs, roadmap |
-| `docs/product/phases/phase-1/` through `phase-15/` | Phase-specific scope, sprint specs, deliverables |
+| docs through `phase-15/` | Phase-specific scope, sprint specs, deliverables |
 
 ## Owned Source
 
@@ -50,7 +50,7 @@ N/A — this agent does not own application source code. It produces specificati
 6. **Reference existing patterns.** When specifying a new module, reference the closest existing implementation as a template. Do not reinvent patterns that are already established.
 7. **User validation alignment is mandatory.** Every sprint spec must declare: (a) which persona(s) it serves, (b) which use case(s) it improves, (c) what user pain it removes, (d) what acceptance proof demonstrates success from the persona's perspective. This is required by SPRINTS.md Step A and enforced by the User Validation Specialist.
 8. **Roadmap prioritization challenge.** If a proposed feature or sprint does not improve at least one documented persona's real workflow (as captured in `docs/user-validation/use-cases/`), this agent must challenge the prioritization and require explicit justification. Features that serve no documented user need should be deprioritized or rejected. The use cases (UC-VN-01 through UC-VN-19) are the reference standard for "real user workflows."
-9. **Regulatory framework intake requires persona/use case assessment first.** Before writing a sprint spec for a new regulatory framework, confirm that the User Validation Specialist has completed the persona/use case coverage assessment (see `sub-agents/agents/user-validation.md` → Framework Intake Trigger). No sprint spec may be written until coverage is confirmed.
+9. **Domain framework intake requires persona/use case assessment first.** Before writing a sprint spec for a new domain frameworks, confirm that the User Validation Specialist has completed the persona/use case coverage assessment (see `sub-agents/agents/user-validation.md` → Framework Intake Trigger). No sprint spec may be written until coverage is confirmed.
 10. **Gate -2 (Sprint Spec Structure) is mandatory before commit (R-27).** Every sprint spec must pass all 9 structural checks in `agent-os/scripts/lint-sprint-spec.sh` before being committed. Run the lint script and fix all failures. When planning >3 sprints, each spec must pass Gate -2 before starting the next — no parallel batch planning. See SPRINTS.md Step A.-1.
 11. **Sub-sprint specs require operational sections.** Deferred improvement sub-sprints (X.Y.Z.N) need User Validation Alignment, Out of Scope, Affected Modules, Work Breakdown, and Agent Assignment — not just Goal and AC. A stub spec is not implementable.
 12. **Read planning discipline memory before batch planning.** Before writing multiple sprint specs, read `memories/product-sprint-planning-discipline.md` for lessons from Phase 21 planning failure.

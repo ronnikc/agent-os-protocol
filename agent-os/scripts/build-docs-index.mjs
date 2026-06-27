@@ -24,13 +24,7 @@ const MAX_ENTITIES_PER_RECORD = 8;
 // reference content. Sprint specs, release notes, and per-module deep-dives
 // are intentionally excluded — too volatile and too detailed for L2 lookup.
 const DOCS = [
-  'docs/content/modules-overview.md',
-  'docs/content/modules-overview.vi.md',
-  'docs/content/module-reference.md',
-  'docs/content/personas-and-use-cases-overview.md',
-  'docs/content/vn-regulatory-frameworks.md',
-  'docs/content/maturity-phase-module-feature-additions.md',
-  'docs/content/sector-overlay-plans.md',
+  // Add docs/ overview files to index here (none yet).
 ];
 
 // Parsing primitives — kept identical to build-memory-index.mjs so the two
@@ -119,7 +113,7 @@ function processFile(file, updated) {
   const content = readFileSync(join(REPO_ROOT, file), 'utf8');
   const lines = content.split(/\r?\n/);
   // Scope keyed off the docs/ subdirectory — `doc:content` for this allow-list,
-  // future expansions (docs/security/, docs/compliance/) get their own scope.
+  // future expansions (other docs/ subdirs) get their own scope.
   const m = file.match(/^docs\/([^\/]+)\//);
   const scope = m ? `doc:${m[1]}` : 'doc';
 

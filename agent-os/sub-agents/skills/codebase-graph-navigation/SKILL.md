@@ -32,7 +32,7 @@ To understand a file's role in the codebase:
 
 ```bash
 # Find all files that depend on this file
-bash agent-os/scripts/graph-query.sh "src/shared/src/types/tasks.ts"
+bash agent-os/scripts/graph-query.sh "the shared types
 
 # Find all dependents of a module (pattern match)
 bash agent-os/scripts/graph-query.sh "permissions"
@@ -83,8 +83,8 @@ Format results as:
 
 | File | Dependents | Risk | Review Group |
 |------|-----------|------|-------------|
-| `src/shared/src/types/tasks.ts` | 12 | High | shared-types |
-| `src/backend/src/modules/tasks/task-service.ts` | 3 | Medium | tasks-module |
+| the shared types | 12 | High | shared-types |
+| the backend modules | 3 | Medium | tasks-module |
 
 ### Integration with Impact Analysis Skill
 
@@ -98,7 +98,7 @@ This skill provides the graph data that the `impact-analysis` skill consumes:
 
 - Always rebuild graph before major decisions (sprint planning, large refactors)
 - Cross-verify graph counts with grep for high-risk assessments
-- Shared type files (`src/shared/`) always have high blast radius — flag them
+- Shared type files (the shared package) always have high blast radius — flag them
 - Configuration files (app.ts, routes.ts) are high-risk graph nodes
 - Test files are excluded from the dependency graph — they are consumers, not dependencies
 

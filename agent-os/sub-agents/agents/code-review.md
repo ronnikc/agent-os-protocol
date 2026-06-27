@@ -18,9 +18,9 @@ The Code Review Specialist performs systematic code reviews against the project'
 
 Throughout (read-only reviewer) — this agent reviews code across all source directories but does not own or modify any:
 
-- `src/backend/` — reviews service patterns, route middleware, audit events
-- `src/frontend/` — reviews component patterns, i18n usage, accessibility
-- `src/shared/` — reviews type definitions, constant exports, schema consistency
+- the backend — reviews service patterns, route middleware, audit events
+- the frontend — reviews component patterns, i18n usage, accessibility
+- the shared package — reviews type definitions, constant exports, schema consistency
 
 ## Available Skills
 
@@ -41,9 +41,9 @@ Throughout (read-only reviewer) — this agent reviews code across all source di
 
 1. Read `docs/engineering/README.md` — master engineering instructions
 2. Read `memories/engineering-code-patterns.md` — canonical code patterns for all layers
-3. Read `docs/security/permission-matrix.md` — RBAC requirements for endpoints and UI elements
-4. Read `docs/compliance/audit-event-taxonomy.md` — required audit events for state changes
-5. Read `I18N.md` — internationalization rules and banned patterns
+3. Read the access-control reference — RBAC requirements for endpoints and UI elements
+4. Read the audit-event reference — required audit events for state changes
+5. Read `localization` — internationalization rules and banned patterns
 6. Read `docs/reference/id-conventions.md` — identifier format conventions
 7. Identify the files under review and their owning agent domain
 8. Cross-reference changed files against their specification documents
@@ -52,15 +52,15 @@ Throughout (read-only reviewer) — this agent reviews code across all source di
 
 1. **Pattern compliance** — verify all code follows the canonical patterns in `memories/engineering-code-patterns.md`. Flag deviations with specific references to the pattern document.
 2. **RBAC on endpoints** — every backend route must use `requirePermission` middleware with the correct permission constant. Flag any unprotected routes.
-3. **Audit events on state changes** — every create, update, delete, or status-change operation must emit an audit event per `docs/compliance/audit-event-taxonomy.md`. Flag missing events.
-4. **i18n violations** — no hardcoded English or Vietnamese text in frontend components. All user-facing strings must use `useLocale()`. No `langKey` patterns. Keys must exist in all 16 locale files.
+3. **Audit events on state changes** — every create, update, delete, or status-change operation must emit an audit event per the audit-event reference. Flag missing events.
+4. **i18n violations** — no hardcoded English or localized text in frontend components. All user-facing strings must use `useLocale()`. No `langKey` patterns. Keys must exist in all multiple locales files.
 5. **Hardcoded strings** — flag any string literals that should be i18n keys, configuration values, or constants.
 6. **Import correctness** — verify imports reference the correct module paths, shared types are imported from `@shared/`, and there are no circular dependencies.
 7. **Error handling consistency** — backend must use `AppError` for all error conditions. Frontend must handle API errors gracefully with user-facing messages.
 8. **No security weakening** — flag any code that disables authentication, skips permission checks, weakens validation, or exposes sensitive data.
 9. **Mock signature fidelity** — in test files, verify that mocks match the real method names and signatures exactly.
 10. **Field name contracts end-to-end** — trace data fields from seed data through backend service, API response, and frontend rendering. Flag any mismatches in field names or types.
-11. **Evidence by design** — every state-changing operation must produce structured, attributed evidence as a byproduct of the user's work. Audit events must include sufficient context to serve as standalone regulatory proof: actor identity, timestamp, before/after state, and framework linkage where applicable. Code that mutates compliance-relevant state without producing traceable evidence is incomplete — not just missing a log call, but failing the platform's core mission. See `sub-agents/memories/platform-mission-evidence-by-design.md`.
+11. **Evidence by design** — every state-changing operation must produce structured, attributed evidence as a byproduct of the user's work. Audit events must include sufficient context to serve as standalone domain proof: actor identity, timestamp, before/after state, and framework linkage where applicable. Code that mutates compliance-relevant state without producing traceable evidence is incomplete — not just missing a log call, but failing the platform's core mission. See `sub-agents/memories/platform-mission-evidence-by-design.md`.
 
 ## Review Checklist
 
@@ -74,12 +74,12 @@ For every review, systematically check:
 - [ ] `requirePermission` middleware on all routes
 - [ ] Audit events emitted for state changes
 - [ ] Database indexes added for new query patterns
-- [ ] Permissions seeded in `seed-roles.ts`
+- [ ] Permissions seeded in `the role-seed file`
 
 ### Frontend
 - [ ] All text uses `useLocale()` — no hardcoded strings
-- [ ] i18n keys added to all 16 locale files
-- [ ] CSS classes use `grc-` prefix
+- [ ] i18n keys added to all multiple locales files
+- [ ] CSS classes use `aos-` prefix
 - [ ] Semantic HTML elements used
 - [ ] ARIA attributes on interactive elements
 - [ ] Keyboard navigation works
@@ -88,7 +88,7 @@ For every review, systematically check:
 - [ ] Navigation added to `AdminLayout.tsx`
 
 ### Shared
-- [ ] Types exported from `src/shared/src/types/index.ts`
+- [ ] Types exported from the shared types
 - [ ] ID conventions followed per `docs/reference/id-conventions.md`
 - [ ] JSON schemas consistent with `docs/reference/json-schemas.md`
 

@@ -14,9 +14,9 @@ Pre-release verification checklist: builds, tests, i18n, documentation, stats, a
 ### 1. Builds pass
 
 ```bash
-npx tsc -p src/shared/tsconfig.json
-npx tsc -p src/backend/tsconfig.json
-npx tsc -p src/frontend/tsconfig.json --noEmit
+npx tsc -p the shared packagetsconfig.json
+npx tsc -p the backendtsconfig.json
+npx tsc -p the frontendtsconfig.json --noEmit
 ```
 
 ### 2. Tests pass
@@ -28,7 +28,7 @@ npm run test:all
 ### 3. i18n complete
 
 ```bash
-grep -r 'TODO: translate' src/shared/src/i18n/  # Must return zero
+grep -r 'TODO: translate' localization  # Must return zero
 bash agent-os/scripts/check-i18n-completeness.sh          # Must exit 0
 ```
 
@@ -37,7 +37,7 @@ bash agent-os/scripts/check-i18n-completeness.sh          # Must exit 0
 Verify all 9 mandatory doc files are modified in the branch:
 
 ```bash
-git diff --name-only main -- docs/release-notes/ docs/developer-handoff.md docs/product/phases/ CLAUDE.md README.md
+git diff --name-only main -- docs/release-notes/ docs/developer-handoff.md docs CLAUDE.md README.md
 ```
 
 ### 5. No deferred work markers

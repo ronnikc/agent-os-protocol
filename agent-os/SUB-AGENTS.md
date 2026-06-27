@@ -43,12 +43,12 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
-| **Planning Specialist** | `planning` | Sprint planning, work breakdown, task decomposition | `docs/product/phases/` | N/A |
+| **Planning Specialist** | `planning` | Sprint planning, work breakdown, task decomposition | docs | N/A |
 | **Research Specialist** | `research` | Codebase research, spec analysis, impact assessment | All (read-only) | All (read-only) |
-| **Backend Specialist** | `backend` | API, data model, services, multi-tenancy | `docs/backend/` | `src/backend/` |
-| **Frontend Specialist** | `frontend` | UI components, user flows, bilingual PWA | `docs/frontend/` | `src/frontend/` |
-| **API Specialist** | `api` | API contracts, endpoint design, payload validation | `docs/backend/api-contracts.md` | `src/backend/src/modules/*/routes.ts` |
-| **Test Specialist** | `test` | Unit/integration/E2E tests, coverage, mocks | `docs/testing/` | `src/*/__tests__/` |
+| **Backend Specialist** | `backend` | API, data model, services, workspace isolation | docs | the backend |
+| **Frontend Specialist** | `frontend` | UI components, user flows, web UI | docs | the frontend |
+| **API Specialist** | `api` | API contracts, endpoint design, payload validation | the API-contract docs | the backend modules |
+| **Test Specialist** | `test` | Unit/integration/E2E tests, coverage, mocks | `docs/testing/` | the tests |
 | **Code Review Specialist** | `code-review` | Code quality, pattern compliance, security review | `docs/engineering/` | Throughout |
 | **Build Integrity Specialist** | `build-integrity` | Build health, TypeScript compilation, dependency resolution, zero-tolerance for pre-existing errors | Build configs, `package.json` files | All `tsconfig.json`, all `package.json` |
 | **Graph Navigator** | `graph-navigator` | Dependency graph, blast radius, import chains, structural codebase intelligence | `agent-os/graph.json` | Read-only across `src/` |
@@ -80,8 +80,8 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
 | **Product Specialist** | `product` | Roadmap, feature specs, phase gates, sprint specs | `docs/product/` | N/A |
-| **UX Specialist** | `ux` | User experience, interaction design, usability, user flows | `docs/frontend/user-flows.md` | `src/frontend/` |
-| **Design Specialist** | `design` | Visual design, component design, design system | `docs/frontend/ui-modules.md` | `src/frontend/src/components/` |
+| **UX Specialist** | `ux` | User experience, interaction design, usability, user flows | docs | the frontend |
+| **Design Specialist** | `design` | Visual design, component design, design system | docs | the frontend components |
 | **UI Assist Specialist** | `ui-assist` | WebSocket relay, Claude Code integration, overlay | Sprint 17.8.0 spec | `src/*/modules/ui-assist/` |
 | **User Validation Specialist** | `user-validation` | Persona and use case validation for sprint planning and acceptance criteria | `docs/user-validation/` | N/A (cross-cutting review) |
 | **Product QA Specialist** | `product-qa` | Code-level production readiness review against personas and use cases. Reads every page, walks workflows, reports findings. | `docs/user-validation/` (read-only) | frontend pages (read-only) |
@@ -177,7 +177,7 @@ When one agent's changes require another agent's involvement, these triggers are
 
 ```
 1. Planning Specialist → reads sprint spec → produces task breakdown
-2. User Validation Specialist → validates sprint against personas and use cases (if regulatory/workflow sprint)
+2. User Validation Specialist → validates sprint against personas and use cases (if domain/workflow sprint)
 3. Each task → routed to owning agent (with explicit file lists)
 4. Accessibility Specialist → reviews all UI changes
 5. Test Specialist → verifies coverage thresholds
@@ -273,9 +273,9 @@ When one agent's changes require another agent's involvement, these triggers are
 After every agent completes work, the **orchestrator** MUST:
 
 1. **Check the agent's self-verification results** — if the agent didn't report tsc/vitest output, treat its work as unverified
-2. **Re-run `tsc --noEmit`** on the relevant workspace — rebuild shared first (`npx tsc -p src/shared/tsconfig.json`), then check backend/frontend. Never rely on cached builds
-3. **Re-run the FULL frontend test suite** (`cd src/frontend && npx vitest run`) — NOT just affected test files. Running only specific files misses cross-module regressions. Mandatory before ANY commit (~2.5 min locally)
-3B. **If backend files were modified** (services, routes, middleware): run `cd src/backend && npx vitest run` (full backend suite, not just affected modules). Backend cross-module dependencies can be as dangerous as frontend ones — a service return type change can invalidate sibling service mocks.
+2. **Re-run `tsc --noEmit`** on the relevant workspace — rebuild shared first (`npx tsc -p the shared packagetsconfig.json`), then check backend/frontend. Never rely on cached builds
+3. **Re-run the FULL frontend test suite** (`cd the frontend && npx vitest run`) — NOT just affected test files. Running only specific files misses cross-module regressions. Mandatory before ANY commit (~2.5 min locally)
+3B. **If backend files were modified** (services, routes, middleware): run `cd the backend && npx vitest run` (full backend suite, not just affected modules). Backend cross-module dependencies can be as dangerous as frontend ones — a service return type change can invalidate sibling service mocks.
 4. **If backend routes were modified:** run `npx vitest run` on `__tests__/routes.test.ts` in EVERY module where route response strings changed — tsc does NOT catch test assertion mismatches (Incident 14)
 5. **Spot-check type alignment** — for any new service method, verify the shared type definition includes ALL fields the service writes to MongoDB
 6. **Never accept "pre-existing error" from agents** — verify independently via git blame (Incident 14)
@@ -304,7 +304,7 @@ After each sprint that used sub-agents:
 1. Update `sub-agents/memories/build-integrity-lessons.md` with new build integrity incidents
 2. Update `sub-agents/skills/test-patterns/SKILL.md` if new mock patterns discovered
 3. Update `sub-agents/memories/crash-prevention.md` with new crash incidents or parallelism problems
-4. Update agent-specific domain memories (e.g., `regulatory-phase16.md`, `accessibility-phase11.md`)
+4. Update agent-specific domain memories (e.g., `domain-phase16.md`, `accessibility-phase11.md`)
 5. Update agent definition files if startup protocol needs new steps
 6. Update `sub-agents/memories/README.md` — bump dates for modified files
 7. If no sub-agent lessons exist, explicitly confirm: "Sub-agents were used — no new agent-specific lessons to write back"
@@ -373,7 +373,7 @@ You are the [AGENT NAME] for Agent OS Protocol.
 3a. Memory retrieval contract (MEMORY.md): scan `INDEX.aaak.jsonl` first by literal anchor. If the literal scan misses for paraphrase / synonym / different framing of the same concept AND `MEMORY_SEMANTIC_RECALL` is `on` or `byok`, run `bash agent-os/scripts/embeddings-recall.sh "<query>" --top 5` (add `--corpus index` or `--corpus diaries` to narrow). Open the returned `ref` files the same way you would after a literal hit. Only fall through to grep / Explore once both have been tried.
 4. Read docs/engineering/README.md (for code tasks)
 5. Read the ACTUAL source types for every interface you will use, mock, or test:
-   - Read src/shared/src/types/<module>.ts before referencing any type
+   - Read the shared types before referencing any type
    - Read the real service file before writing mocks or tests
    - Read the real route file before wiring new endpoints
    - NEVER guess field names, method names, or type shapes
@@ -394,20 +394,20 @@ You are the [AGENT NAME] for Agent OS Protocol.
 
 ## Self-Verification Gate (BLOCKING — do not return without completing)
 After writing ALL files, you MUST run these commands and fix any errors before returning:
-1. npx tsc -p src/shared/tsconfig.json (if shared types were modified)
-2. npx tsc -p src/backend/tsconfig.json --noEmit (if backend files were modified)
-3. npx tsc -p src/frontend/tsconfig.json --noEmit (if frontend files were modified)
+1. npx tsc -p the shared packagetsconfig.json (if shared types were modified)
+2. npx tsc -p the backendtsconfig.json --noEmit (if backend files were modified)
+3. npx tsc -p the frontendtsconfig.json --noEmit (if frontend files were modified)
 4. npx vitest run [specific test file] (if test files were written)
-5. **FULL frontend test suite** (`cd src/frontend && npx vitest run`) — MANDATORY, not optional. Do NOT run only affected test files. The full suite catches cross-file regressions that individual file runs miss. (~2.5 min locally — no valid reason to skip it. Incident 15: i18n text changes broke 13 test files across 6 modules, but only running individual files masked the scope.)
+5. **FULL frontend test suite** (`cd the frontend && npx vitest run`) — MANDATORY, not optional. Do NOT run only affected test files. The full suite catches cross-file regressions that individual file runs miss. (~2.5 min locally — no valid reason to skip it. Incident 15: i18n text changes broke 13 test files across 6 modules, but only running individual files masked the scope.)
 6. If i18n keys or component text were modified:
    a. Find ALL test files with partial i18n mocks (tests that define `t: { ... }` inline instead of using `shared.en`)
    b. For EACH component whose text changed, read the test mock and verify ALL `t.xxx.yyy.zzz` keys used in the component exist in the mock
    c. Update test assertions that reference old hardcoded text to match the new i18n values
    d. The I18N Specialist agent MUST coordinate with the Test Agent to update test mocks — i18n changes without test mock updates are a gate failure
 7. If backend route response messages were modified (error codes, success messages, status strings):
-   a. grep -rn "old_message_string" src/backend/src/modules/<module>/__tests__/ for EVERY changed string
+   a. grep -rn "old_message_string" the backend modules for EVERY changed string
    b. Update ALL test assertions to match the new message strings
-   c. npx vitest run src/backend/src/modules/<module>/__tests__/routes.test.ts
+   c. npx vitest run the backend modules
 8. If variables were renamed in .map() callbacks, destructuring, or loop bodies:
    a. Verify ALL references to the old variable name within the same scope are updated
    b. Never leave orphaned variable references — tsc will catch some but JSX interpolation of void/undefined may not error clearly

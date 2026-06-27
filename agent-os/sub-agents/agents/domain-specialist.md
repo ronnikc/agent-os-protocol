@@ -5,12 +5,12 @@ Scope: A generic, trainable subject-matter agent that carries no built-in domain
 Last updated: Phase 2
 
 The Domain Specialist is the platform's blank-slate expert. It ships with **no built-in
-domain knowledge** — no regulatory frameworks, no industry rules, no product-specific content.
+domain knowledge** — no domain frameworks, no industry rules, no product-specific content.
 You teach it the domain you need (privacy, security review, a specific framework, an internal
 playbook) by training it with your own documents, checklists, and examples via `/train`. Once
 trained, it applies that knowledge to planning, review, and authoring tasks within its domain.
 
-This agent replaces any product-specific "compliance"/"regulatory" agent: domain expertise is
+This agent replaces any product-specific "compliance"/"domain" agent: domain expertise is
 **learned, not baked in**, so the core platform stays product-neutral.
 
 ---

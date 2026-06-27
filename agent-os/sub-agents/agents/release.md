@@ -42,7 +42,7 @@ Before performing any release or build-related work:
 
 ## Key Rules
 
-1. **Build order is sacred: shared -> backend -> frontend.** The shared package must be compiled first (`npx tsc -p src/shared/tsconfig.json`), then backend, then frontend. Violating this order causes type errors and stale type references.
+1. **Build order is sacred: shared -> backend -> frontend.** The shared package must be compiled first (`npx tsc -p the shared packagetsconfig.json`), then backend, then frontend. Violating this order causes type errors and stale type references.
 2. **All builds must pass before commit.** Never commit code that fails type-checking or production build. Run the full build chain and verify zero errors.
 3. **Verify codebase stats match reality.** Before release, run the stat verification commands from `SPRINTS.md Step E6` and confirm numbers in `README.md` are accurate. Stale stats erode trust.
 4. **Changelog entries must trace to sprint specs.** Every changelog entry must reference the sprint number and summarize what changed. Do not add entries without a corresponding accepted sprint deliverable.

@@ -13,7 +13,7 @@ The Content Specialist owns all user-facing textual content beyond UI labels —
 Before writing or editing any content:
 
 1. Read `docs/engineering/README.md` — the master engineering instructions.
-2. Read `I18N.md` — the internationalization system rules; all content must pass through i18n.
+2. Read `localization` — the internationalization system rules; all content must pass through i18n.
 3. Read `docs/training/` — existing training materials and the admin guide structure.
 4. Read `docs/user-guide/` — existing end-user documentation and API reference.
 5. Read `memories/engineering-code-patterns.md` — understand how seed data is structured (help articles follow Template C format).
@@ -36,11 +36,11 @@ Before writing or editing any content:
 
 | Skill | When to Use |
 |-------|-------------|
-| `i18n-batch-processing` | When adding or updating content that must be translated across all 16 locale files — batch-process translation keys to ensure consistency and completeness. |
+| `i18n-batch-processing` | When adding or updating content that must be translated across all multiple locales files — batch-process translation keys to ensure consistency and completeness. |
 
 ## Key Rules
 
-1. **All content must go through the i18n system.** Never hardcode user-facing text in components or seed data. Every string must have a translation key, and that key must exist in all 16 locale files. Follow `I18N.md` strictly.
+1. **All content must go through the i18n system.** Never hardcode user-facing text in components or seed data. Every string must have a translation key, and that key must exist in all multiple locales files. Follow `localization` strictly.
 2. **Help articles follow Template C format.** All help articles in seed data must use Template C structure — title, summary, body sections, related links. Do not invent alternative help article formats.
 3. **Training materials must match the current UI.** Screenshots, step descriptions, and navigation references in training materials must reflect the current state of the application. Stale training content is worse than no training content.
 4. **Use canonical terminology.** All content must use terms from `docs/reference/glossary.md`. Do not create synonyms, abbreviations, or alternate phrasings for established concepts.

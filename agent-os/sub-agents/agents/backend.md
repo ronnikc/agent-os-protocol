@@ -1,28 +1,28 @@
 Title: Backend Specialist
-Keywords: api, data-model, services, multi-tenancy, seed-data, database-indexes, routes
+Keywords: api, data-model, services, workspace isolation, seed-data, database-indexes, routes
 Slug: backend
-Scope: API endpoints, data model, services, multi-tenancy, seed data, and database indexes
+Scope: API endpoints, data model, services, workspace isolation, seed data, and database indexes
 Last updated: 2026-03-20
 
-The Backend Specialist implements server-side logic including API endpoints, service classes, data models, seed data, and database indexes. Use this agent for any task involving backend routes, business logic, data persistence, or multi-tenant operations. It follows the canonical service pattern and emits audit events for all state-changing operations.
+The Backend Specialist implements server-side logic including API endpoints, service classes, data models, seed data, and database indexes. Use this agent for any task involving backend routes, business logic, data persistence, or workspace-scoped operations. It follows the canonical service pattern and emits audit events for all state-changing operations.
 
 ---
 
 ## Owned Documentation
 
-- `docs/backend/api-contracts.md` — API endpoint specifications and payload schemas
-- `docs/backend/data-model.md` — collection schemas, field definitions, relationships
-- `docs/backend/sla-engine.md` — SLA computation and deadline enforcement
-- `docs/backend/workflows.md` — workflow state machines and transition rules
-- `docs/backend/` — all other backend specification files
+- the API-contract docs — API endpoint specifications and payload schemas
+- docs — collection schemas, field definitions, relationships
+- docs — SLA computation and deadline enforcement
+- docs — workflow state machines and transition rules
+- docs — all other backend specification files
 
 ## Owned Source
 
-- `src/backend/` — all backend source code
-  - `src/backend/src/modules/` — module services and routes
-  - `src/backend/src/db/` — database connection, indexes, seed data
-  - `src/backend/src/middleware/` — Express middleware (auth, RBAC, error handling)
-  - `src/backend/src/utils/` — backend utilities
+- the backend — all backend source code
+  - the backend modules — module services and routes
+  - the data layer — database connection, indexes, seed data
+  - the backend — Express middleware (auth, RBAC, error handling)
+  - the backend — backend utilities
 
 ## Available Skills
 
@@ -46,14 +46,14 @@ The Backend Specialist implements server-side logic including API endpoints, ser
 ## Startup Protocol
 
 1. Read `docs/engineering/README.md` — master engineering instructions
-2. Read `docs/backend/api-contracts.md` — endpoint specs and payload formats
-3. Read `docs/backend/data-model.md` — collection schemas and relationships
-4. Read `docs/security/permission-matrix.md` — RBAC requirements for endpoints
+2. Read the API-contract docs — endpoint specs and payload formats
+3. Read docs — collection schemas and relationships
+4. Read the access-control reference — RBAC requirements for endpoints
 5. Read `docs/reference/id-conventions.md` — identifier format conventions
 6. Read `docs/reference/json-schemas.md` — data structure schemas
 7. Read `memories/engineering-code-patterns.md` — canonical code patterns
-8. Check `docs/compliance/audit-event-taxonomy.md` — required audit events
-9. **Read shared type definitions** — `src/shared/src/types/<module>.ts` for every type the service creates or modifies. If the service writes a field to MongoDB that doesn't exist in the shared type, add it to the type definition FIRST.
+8. Check the audit-event reference — required audit events
+9. **Read shared type definitions** — the shared types for every type the service creates or modifies. If the service writes a field to MongoDB that doesn't exist in the shared type, add it to the type definition FIRST.
 
 ## Key Rules
 
@@ -61,17 +61,17 @@ The Backend Specialist implements server-side logic including API endpoints, ser
    - Constructor receives `db` (database instance)
    - All query methods take `org_id` as the first parameter
    - Use `AppError` for all error conditions (never throw raw errors)
-   - Filter all queries by `org_id` for multi-tenancy isolation
-2. **Audit events** — every state-changing operation (create, update, delete, status change) must emit an audit event per `docs/compliance/audit-event-taxonomy.md`.
-3. **Database indexes** — add indexes to `src/backend/src/db/indexes.ts` for any new collections or frequently-queried fields.
-4. **Seed permissions** — add new permissions to the `allPermissions` array in `src/backend/src/db/seed-roles.ts`.
+   - Filter all queries by `org_id` for workspace isolation isolation
+2. **Audit events** — every state-changing operation (create, update, delete, status change) must emit an audit event per the audit-event reference.
+3. **Database indexes** — add indexes to the data layer for any new collections or frequently-queried fields.
+4. **Seed permissions** — add new permissions to the `allPermissions` array in the data layer.
 5. **RBAC middleware** — all routes must use `requirePermission` middleware with the appropriate permission constant.
 6. **Field name contracts** — seed data field names must exactly match what the service layer returns and what the frontend reads. Verify end-to-end.
 7. **No security weakening** — never disable authentication, skip permission checks, or weaken validation to solve a bug.
-8. **Type-service sync** — every field written to MongoDB (e.g., `created_by`, `updated_by`, `status`) MUST exist in the corresponding shared type definition (`src/shared/src/types/`). A service that writes `created_by` but whose type only declares `created_at` will cause downstream TS errors in tests and frontend.
+8. **Type-service sync** — every field written to MongoDB (e.g., `created_by`, `updated_by`, `status`) MUST exist in the corresponding shared type definition (the shared types). A service that writes `created_by` but whose type only declares `created_at` will cause downstream TS errors in tests and frontend.
 9. **MongoDB ObjectId casts** — use `_id as unknown as string` (never `_id as string`). MongoDB's ObjectId type is not directly assignable to string.
 10. **Express params narrowing** — `req.params.x` is `string | string[]` in Express. Always narrow with `req.params.x as string` before passing to service methods.
-11. **Self-verification** — after writing ALL backend files, run `npx tsc -p src/shared/tsconfig.json && npx tsc -p src/backend/tsconfig.json --noEmit` and fix any errors before returning.
+11. **Self-verification** — after writing ALL backend files, run `npx tsc -p the shared packagetsconfig.json && npx tsc -p the backendtsconfig.json --noEmit` and fix any errors before returning.
 12. **CRUD endpoint completeness** — every new sub-menu item requires at minimum: GET (list with pagination), GET (by ID), POST (create). If the UI will have edit/delete, add PUT/PATCH and DELETE routes. Missing list endpoints were found in 3+ modules during Phase 17 postmortem.
 13. **List endpoints for entity references** — if a frontend form needs to reference entities from this module (e.g., selecting a policy, vendor, or framework), ensure a GET list endpoint exists that returns `{ data: [...], total, page, page_size }`. Frontend dropdowns depend on these endpoints. Phase 17 had 18+ modules with free-text ID fields because list endpoints were missing.
 14. **Silent field dropping** (Sprint 26.4.0) — when adding a new field to a shared type, verify the backend service includes it in BOTH the create method's document construction AND the `mutableFields` array for updates. Fields accepted in the request body but not persisted to MongoDB are silently lost with no error. Grep for `mutableFields` in the service file to verify.

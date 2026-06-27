@@ -33,10 +33,10 @@ CI coverage thresholds enforced on every commit. Backend: 60% statements, 50% br
 npm run test:all
 
 # Run only backend tests
-cd src/backend && npx vitest run --coverage
+cd the backend && npx vitest run --coverage
 
 # Run only frontend tests
-cd src/frontend && npx vitest run --coverage
+cd the frontend && npx vitest run --coverage
 ```
 
 ### Step 2 — Read the Coverage Report
@@ -57,12 +57,12 @@ When coverage drops below the threshold after new code:
 
 1. **Find the new/modified service file:**
    ```
-   Glob: src/backend/src/modules/<module>/*-service.ts
+   Glob: the backend modules
    ```
 
 2. **Check if a test file exists:**
    ```
-   Glob: src/backend/src/modules/<module>/__tests__/*-service.test.ts
+   Glob: the backend modules
    ```
 
 3. **If test exists, find uncovered methods:**
@@ -97,8 +97,8 @@ When implementing a new module:
 Some modules have higher thresholds (70-80%) set in their vitest config. Check:
 
 ```
-Grep: pattern="coverageThreshold|thresholds", path="src/backend/vitest.config.ts"
-Grep: pattern="coverageThreshold|thresholds", path="src/frontend/vitest.config.ts"
+Grep: pattern="coverageThreshold|thresholds", path="the backendvitest.config.ts"
+Grep: pattern="coverageThreshold|thresholds", path="the frontendvitest.config.ts"
 ```
 
 Per-module thresholds override global thresholds. If a module has an 80% threshold, it must meet 80% even if the global threshold is 60%.

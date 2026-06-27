@@ -26,19 +26,19 @@ Find files by name or directory structure:
 
 ```
 # Find all service files
-Glob: src/backend/src/modules/**/*-service.ts
+Glob: the backend modules
 
 # Find all page components
-Glob: src/frontend/src/pages/admin/**/*.tsx
+Glob: the frontend pages
 
 # Find all test files for a module
-Glob: src/backend/src/modules/<module>/**/*.test.ts
+Glob: the backend modules
 
 # Find all seed files
-Glob: src/backend/src/db/seed-*.ts
+Glob: the data layer
 
 # Find all locale files
-Glob: src/frontend/src/locales/*/common.json
+Glob: the frontend
 ```
 
 ### Step 3 — Use Grep for Content
@@ -50,16 +50,16 @@ Search file contents for patterns:
 Grep: pattern="TaskStatus", path="src/"
 
 # Find all audit event emissions
-Grep: pattern="auditLog\(", path="src/backend/"
+Grep: pattern="auditLog\(", path="the backend"
 
 # Find all route registrations
-Grep: pattern="router\.(get|post|put|patch|delete)", path="src/backend/src/modules/<module>/"
+Grep: pattern="router\.(get|post|put|patch|delete)", path="the backend modules
 
 # Find permission checks
-Grep: pattern="requirePermission", path="src/backend/src/modules/<module>/"
+Grep: pattern="requirePermission", path="the backend modules
 
 # Find i18n key usage
-Grep: pattern="t\('module_name\.", path="src/frontend/"
+Grep: pattern="t\('module_name\.", path="the frontend"
 ```
 
 ### Step 4 — Use Read for Verification
@@ -93,15 +93,15 @@ For a complete module understanding, trace:
 
 | Layer | What to find | How |
 |-------|-------------|-----|
-| Types | Shared type definitions | `Glob: src/shared/src/types/<module>.ts` |
-| Permissions | Permission constants | `Grep: pattern="<MODULE>", path="src/shared/src/constants/permissions.ts"` |
-| Service | Business logic | `Glob: src/backend/src/modules/<module>/*-service.ts` |
-| Routes | API endpoints | `Glob: src/backend/src/modules/<module>/routes.ts` |
-| App wiring | Route mounting | `Grep: pattern="<module>", path="src/backend/src/app.ts"` |
-| API client | Frontend API calls | `Grep: pattern="<module>", path="src/frontend/src/services/api-client.ts"` |
-| Pages | UI components | `Glob: src/frontend/src/pages/admin/<module>/*.tsx` |
-| Navigation | Menu entries | `Grep: pattern="<module>", path="src/frontend/src/layouts/AdminLayout.tsx"` |
-| Routes | Frontend routes | `Grep: pattern="<module>", path="src/frontend/src/App.tsx"` |
+| Types | Shared type definitions | `Glob: the shared types |
+| Permissions | Permission constants | `Grep: pattern="<MODULE>", path="the shared package |
+| Service | Business logic | `Glob: the backend modules |
+| Routes | API endpoints | `Glob: the backend modules |
+| App wiring | Route mounting | `Grep: pattern="<module>", path="the backend |
+| API client | Frontend API calls | `Grep: pattern="<module>", path="the frontend |
+| Pages | UI components | `Glob: the frontend pages |
+| Navigation | Menu entries | `Grep: pattern="<module>", path="the frontend |
+| Routes | Frontend routes | `Grep: pattern="<module>", path="the frontend |
 | Tests | Test files | `Glob: src/**/modules/<module>/**/*.test.ts` |
 
 ### Step 7 — Return Structured Findings
@@ -110,8 +110,8 @@ Format results as:
 
 | File | Line | Code | Assessment |
 |------|------|------|------------|
-| `src/backend/src/modules/tasks/task-service.ts` | 42 | `async create(org_id: string, data: CreateTaskInput)` | Service method follows pattern |
-| `src/frontend/src/pages/admin/tasks/TasksPage.tsx` | 15 | `const { t } = useLocale()` | i18n correctly initialized |
+| the backend modules | 42 | `async create(org_id: string, data: CreateTaskInput)` | Service method follows pattern |
+| the frontend pages | 15 | `const { t } = useLocale()` | i18n correctly initialized |
 
 ### Search Strategy Tips
 
@@ -132,7 +132,7 @@ input:
   scope:
     type: string
     required: false
-    description: "Directory or module to constrain the search (e.g., src/backend/src/modules/tasks)"
+    description: "Directory or module to constrain the search (e.g., the backend modules)"
   depth:
     type: enum[shallow, deep]
     required: false

@@ -45,9 +45,9 @@ Before defining tasks, map out which files will be created or modified:
 ### Task N: [Component Name]
 
 **Files:**
-- Create: `src/backend/src/modules/<module>/<name>-service.ts`
-- Modify: `src/backend/src/app.ts` (wire service + routes)
-- Test: `src/backend/src/__tests__/modules/<module>/<name>-service.test.ts`
+- Create: the backend modules
+- Modify: the backend (wire service + routes)
+- Test: the backend
 
 **Acceptance criteria:** [verbatim from sprint spec]
 
@@ -55,14 +55,14 @@ Before defining tasks, map out which files will be created or modified:
   [Exact test code following test-patterns skill]
 
 - [ ] **Step 2: Run test to verify it fails**
-  Run: `npx vitest run src/backend/src/__tests__/modules/<module>/<name>-service.test.ts`
+  Run: `npx vitest run the backend
   Expected: FAIL with "function not defined" or similar
 
 - [ ] **Step 3: Write minimal implementation**
   [Exact implementation code following service-pattern / component-pattern]
 
 - [ ] **Step 4: Run test to verify it passes**
-  Run: `npx vitest run src/backend/src/__tests__/modules/<module>/<name>-service.test.ts`
+  Run: `npx vitest run the backend
   Expected: PASS
 
 - [ ] **Step 5: Commit**
@@ -75,7 +75,7 @@ For each task, include:
 - **Exact file paths** — never "create a service somewhere"
 - **Complete code** — not "add validation" but the actual validation code
 - **Exact test commands** with expected output
-- **Build verification** — `npx tsc -p src/shared/tsconfig.json` etc.
+- **Build verification** — `npx tsc -p the shared packagetsconfig.json` etc.
 - **Pattern references** — which skill to follow (service-pattern, component-pattern, etc.)
 
 ### Step 5 — Plan Review
@@ -160,7 +160,7 @@ input:
   sprint_spec_path:
     type: string
     required: true
-    description: "Path to the sprint spec file (e.g., docs/product/phases/phase-N/sprint-X.Y.Z.md)"
+    description: "Path to the sprint spec file (e.g., docs)"
   task_list:
     type: array
     items:
