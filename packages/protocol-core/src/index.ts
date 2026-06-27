@@ -4,6 +4,7 @@
 /** Agent OS Protocol — shared protocol types. */
 
 export * from './work-items.js';
+export * from './work-item-format.js';
 export * from './runtime-adapter.js';
 export * from './model-provider.js';
 export * from './lobby-protocol.js';
