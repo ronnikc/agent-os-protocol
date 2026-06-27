@@ -30,7 +30,8 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 import { query, type Options, type SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { LobbyToAgentMessage, HandRaiseCategory } from './lobby-types.js';
+import type { LobbyToAgentMessage, HandRaiseCategory } from '@agent-os/protocol-core';
+import { runtimeRegistry } from '@agent-os/adapters';
 
 // ── Constants ──
 
@@ -715,17 +716,6 @@ async function discoverActiveLobby(
   }
 }
 
-// Verify Claude CLI is available
-function verifyClaudeCli(): boolean {
-  try {
-    const claudePath = resolveClaudePath();
-    execSync(`${claudePath} --version`, { encoding: 'utf8', stdio: 'pipe' });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 const { port, cwd, lobbyBaseUrl, agentName, agentRole } = parseArgs();
 relayCwd = cwd;
 
@@ -747,12 +737,13 @@ if (agentRole) {
 }
 
 log('info', 'Checking Claude CLI availability…');
-if (!verifyClaudeCli()) {
-  log('error', 'Claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code');
+const claudeDetect = await runtimeRegistry.get('claude-cli')!.detect();
+if (!claudeDetect.installed) {
+  log('error', claudeDetect.message ?? 'Claude CLI not found.');
   log('error', 'Then authenticate with: claude login');
   process.exit(1);
 }
-log('info', 'Claude CLI found');
+log('info', `Claude CLI found${claudeDetect.version ? ` (${claudeDetect.version})` : ''}`);
 
 startRelayServer(port);
 
