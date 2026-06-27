@@ -629,8 +629,10 @@ ExitCriterion =
   improvement** (anti-churn).
 - **Regression guard:** never accept an iteration that flips a previously-passing criterion to fail.
 - **Approval checkpoints:** irreversible actions (commit/merge/deploy/scope-change) stay
-  **human-gated by default** — consistent with `boss-agent.md`'s "no autonomous approvals";
-  fully-unattended runs require **explicit per-loop opt-in** + an allowlist of safe actions.
+  **human-gated by default** — consistent with `boss-agent.md`'s "no autonomous approvals".
+  **Unattended swarm loops are OFF by default (Ronni, locked)** — they can only be enabled by an
+  explicit, clearly-labelled Panel **mode-changer button** (per loop) plus an allowlist of safe
+  actions; the Panel always shows whether a loop is running **attended** or **unattended**.
 - **Durable event log + kill switch:** every iteration audited (durable store in swarm, §9);
   a human can pause/stop any loop from the Panel.
 - **Identity-gated in swarm:** unattended swarm loops run only with verified agents in private
@@ -646,7 +648,8 @@ ExitCriterion =
   swarm). **The Scheduled QA System becomes the first shipped Loop preset** ("continuous
   quality loop") — proving the feature on a known workload.
 - **Panel:** a Loop view (start/pause/stop, iteration count, per-criterion pass/fail, budget
-  burn, approve-checkpoint), live via the existing WS event bus.
+  burn, approve-checkpoint) **+ a clear Attended ⇄ Unattended mode-changer button (unattended
+  OFF by default)**, live via the existing WS event bus.
 
 ### Where it lands in the phases
 - **`LoopSpec`/`ExitCriterion` schema + `create-loop` skill** → **Phase 4** (with the §12A schema).
