@@ -561,6 +561,96 @@ multi-syntax guesser; the 7-format reader exists only as a migration aid.
 
 ---
 
+## 12B. Loop Mode — Iterative / Autonomous Execution (Boss-driven) — recommended new feature
+
+**Ronni's proposal: yes, add it** — as a **complement to**, not a replacement for, Sprint Mode.
+The circular *plan → build → test → reflect → fix → repeat-until-done* pattern is already
+latent in this codebase in three places; Loop Mode **generalizes** them into one feature:
+
+| Already exists | What it proves |
+|---|---|
+| `SOUL.md` — *"Define success criteria. Loop until verified."* | The loop philosophy is already doctrine |
+| **Scheduled QA System** (`scheduled/`: graph → PR-review → fix-sprint executor, daily) | An **unattended improvement loop already runs** — just cron+PR-bound, not Boss-driven |
+| Boss `monitor→reassign` primitive + gate skills (`verification-gate`, `sprint-gate-enforcement`, `runtime-verification`, `production-readiness-scan`, `coverage-enforcement`, `review-request/reception`) | The control primitive + machine-checkable exit criteria already exist |
+
+### Two execution modes, one work-item schema
+
+- **Sprint Mode** (today): linear, human-gated delivery — plan → decompose → execute → gates → close-out.
+- **Loop Mode** (new): the Boss runs a **control loop over a work item** (task / sprint / phase)
+  until **explicit exit criteria** pass or a budget is exhausted. Attended or **unattended**;
+  **local or swarm**. Both modes share the §12A `Phase/Sprint/Task` schema and the same gate skills.
+
+### The loop contract (extends the §12A schema)
+
+A work item gains an optional `loop` block:
+
+```ts
+LoopSpec {
+  goal: string
+  exitCriteria: ExitCriterion[]        // ALL must pass to converge (reuse gate skills)
+  maxIterations: number                // hard cap — no infinite loops
+  budget: { tokens?: number; wallClockMin?: number; costUSD?: number }
+  strategy: 'fix-forward' | 'tdd' | 'review-driven' | 'custom'
+  approvalCheckpoints: ('commit'|'merge'|'deploy'|'scope-change')[]  // default: all (human-gated)
+  onConverge: 'stop' | 'handoff' | 'open-pr'
+  onExhaust:  'stop-and-report' | 'escalate-to-human'
+}
+ExitCriterion =
+  | { type: 'gate'; skill: 'build-validation'|'verification-gate'|'coverage-enforcement'|... ; threshold? }
+  | { type: 'tests'; mustPass: true }
+  | { type: 'review'; approver: 'code-review'|'product-qa'|'human' }
+  | { type: 'assertion'; expr: string }     // custom, machine-checkable
+```
+
+> **"Until perfection" must be operationalized.** Per SOUL.md, weak criteria ("make it
+> perfect") cause endless churn. Loop Mode **requires** measurable `exitCriteria`; the loop
+> converges only when they all pass, and otherwise stops at `maxIterations`/`budget`.
+
+### One iteration (Boss-orchestrated, over the lobby)
+
+`Assess` (gap vs exit criteria) → `Delegate` (assign work to lobby sub-agents — local or swarm)
+→ `Verify` (run the gate skills) → `Reflect` (diff result vs criteria; write an observation)
+→ `Decide` (converged? continue? regressed? escalate?). This maps directly onto the existing
+5 lobby phases + the gate skills — no new coordination protocol needed.
+
+### Safety (mandatory for unattended operation)
+
+- **Hard caps:** `maxIterations` + token/time/cost `budget` (ties to §6 API-fuel + a generic
+  `cost-governance` agent) — loop halts and reports on exhaustion.
+- **Convergence/stall detection:** stop if N consecutive iterations show **no criterion
+  improvement** (anti-churn).
+- **Regression guard:** never accept an iteration that flips a previously-passing criterion to fail.
+- **Approval checkpoints:** irreversible actions (commit/merge/deploy/scope-change) stay
+  **human-gated by default** — consistent with `boss-agent.md`'s "no autonomous approvals";
+  fully-unattended runs require **explicit per-loop opt-in** + an allowlist of safe actions.
+- **Durable event log + kill switch:** every iteration audited (durable store in swarm, §9);
+  a human can pause/stop any loop from the Panel.
+- **Identity-gated in swarm:** unattended swarm loops run only with verified agents in private
+  lobbies (§10).
+
+### Surfaces
+
+- **Authoring:** a `create-loop` skill (pairs with §12A's `create-phase/sprint/task`) so exit
+  criteria are defined correctly and machine-checkably.
+- **Boss capability:** a `loop-orchestrator` skill on the Boss Agent (drives iterations,
+  budgets, convergence, checkpoints).
+- **Unattended driver:** the kept scheduler (§7a) triggers loops on a cadence (Vercel Cron in
+  swarm). **The Scheduled QA System becomes the first shipped Loop preset** ("continuous
+  quality loop") — proving the feature on a known workload.
+- **Panel:** a Loop view (start/pause/stop, iteration count, per-criterion pass/fail, budget
+  burn, approve-checkpoint), live via the existing WS event bus.
+
+### Where it lands in the phases
+- **`LoopSpec`/`ExitCriterion` schema + `create-loop` skill** → **Phase 4** (with the §12A schema).
+- **Local-mode Loop MVP** (Boss + gate-skill exit criteria over the local lobby) → **Phase 7**
+  (needs the unified lobby).
+- **Swarm + unattended/cron + cost budgets** → **Phase 7 → 6** (fuel/cost) → scheduler wire-up;
+  ship the Scheduled-QA preset last.
+- Recommend tracking this as a dedicated **Phase 11 — Loop / Autonomous Iterative Execution**
+  in the final sprint sequence so it isn't rushed into the core fork.
+
+---
+
 ## 13. Testing & Verification Plan (charter §21.13, §18)
 
 ```bash
@@ -596,6 +686,7 @@ npm run agent-os-panel                       # panel + relay (local mode)
 | R7 | Monorepo refactor destabilizes panel | Med | Med | Keep Phase 1 minimal; introduce `packages/` only at Phase 4; preserve npm scripts |
 | R8 | Apache-2.0 notice/attribution compliance | Low | Low | **License locked: Apache-2.0**; `LICENSE`+`NOTICE` added Phase 1; retain third-party notices; SPDX headers enforced by CI hook |
 | R9 | Dropping a skill/agent that was actually generic | Low | Low | Classification table reviewed before deletion; nothing deleted from source (drop = "don't copy") |
+| R10 | Loop Mode runaway (infinite churn / budget burn / unsafe autonomous action) | Med | High | §12B safety: hard `maxIterations` + token/time/cost budget, convergence-stall + regression guards, human-gated checkpoints by default (opt-in for unattended), durable audit + kill switch, identity-gated swarm loops |
 
 ---
 
