@@ -1,0 +1,35 @@
+{
+  "name": "agent-os-protocol",
+  "version": "0.0.0",
+  "private": true,
+  "description": "An open, runtime-agnostic operating system for agentic software development — orchestrate specialized AI agents locally or across an accountable remote swarm.",
+  "license": "Apache-2.0",
+  "author": "Gothar.dk // Ronni K. Gothard Christiansen (https://gothar.dk)",
+  "homepage": "https://github.com/ronnikc/agent-os-protocol#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ronnikc/agent-os-protocol.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ronnikc/agent-os-protocol/issues"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "agents",
+    "ai",
+    "orchestration",
+    "claude",
+    "agentic",
+    "multi-agent",
+    "swarm",
+    "developer-tools"
+  ],
+  "scripts": {
+    "agent-os-panel": "tsx agent-os/scripts/agent-os-panel-server.ts",
+    "agent-os-panel-tray": "tsx agent-os/scripts/agent-os-panel-tray.ts",
+    "relay": "tsx packages/relay/src/relay-server.ts"
+  }
+}

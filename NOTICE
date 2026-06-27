@@ -1,0 +1,22 @@
+Agent OS Protocol
+Copyright 2026 Gothar.dk // Ronni K. Gothard Christiansen
+
+This product is developed and maintained by
+Ronni K. Gothard Christiansen (https://gothar.dk).
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+----------------------------------------------------------------------
+Third-party components
+----------------------------------------------------------------------
+This section lists third-party material redistributed with Agent OS
+Protocol and the licenses under which it is included. Entries are added
+as such material is incorporated. MIT- and BSD-licensed components are
+compatible with the Apache License 2.0; their original notices are
+preserved alongside the relevant files and listed here.
+
+(none yet)
