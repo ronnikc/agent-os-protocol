@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent OS Panel</title>
+<link rel="icon" href="favicon.ico" type="image/x-icon">
+<link rel="stylesheet" href="styles.css">
+<script src="lib/marked.umd.js"></script>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <h1>Agent OS Panel</h1>
+  <div class="status-bar" id="status-bar">Loading...</div>
+</div>
+
+<!-- Tab Bar -->
+<div class="tab-bar">
+  <button data-tab="agents" class="active">Agents</button>
+  <button data-tab="lobby">Lobby</button>
+  <button data-tab="messages">Messages</button>
+  <button data-tab="tasks">Tasks</button>
+  <button data-tab="requests">Requests</button>
+  <button data-tab="sprint">Sprint</button>
+  <button data-tab="scheduled">Scheduled</button>
+  <button data-tab="files">Files</button>
+  <button data-tab="gantt">Gantt</button>
+  <button data-tab="memory">Memory</button>
+</div>
+
+<!-- Tab Panes -->
+<div class="tab-content">
+
+  <!-- Agents Tab -->
+  <div id="tab-agents" class="tab-pane active" style="flex-direction:column;">
+    <div class="toolbar">
+      <label>Lobby URL:</label>
+      <input type="text" id="lobbyUrl" placeholder="https://your-lobby.example.com" style="flex:1" />
+    </div>
+    <div class="toolbar" id="presets" style="gap:6px;flex-wrap:wrap;"></div>
+    <div class="toolbar">
+      <button class="btn btn-primary" id="startSelected" disabled>Start Selected (0)</button>
+      <button class="btn btn-danger" id="stopAll">Stop All</button>
+      <button class="btn btn-secondary" id="selectAll">Select All</button>
+      <button class="btn btn-secondary" id="deselectAll">Deselect All</button>
+    </div>
+    <div class="scroll-panel">
+      <table class="data-table">
+        <thead><tr><th style="width:30px"></th><th>Agent</th><th>Scope</th><th>Status</th><th>Action</th></tr></thead>
+        <tbody id="agentList"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Lobby Tab (agent roster + controls only, no sub-tabs) -->
+  <div id="tab-lobby" class="tab-pane">
+    <div class="scroll-panel" id="lobby-content"></div>
+  </div>
+
+  <!-- Messages Tab -->
+  <div id="tab-messages" class="tab-pane">
+    <div class="toolbar" id="message-filters"></div>
+    <div class="scroll-panel">
+      <div class="feed" id="message-feed">
+        <div class="feed-item" style="color:var(--text-muted)">(loading...)</div>
+      </div>
+    </div>
+    <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:none;">
+      <select id="msg-send-to" style="width:160px">
+        <option value="*">All Agents (broadcast)</option>
+      </select>
+      <select id="msg-send-type" style="width:100px">
+        <option value="finding">finding</option>
+        <option value="handoff">handoff</option>
+        <option value="request">request</option>
+        <option value="blocker">blocker</option>
+        <option value="completion">completion</option>
+      </select>
+      <input type="text" id="msg-send-content" placeholder="Send a message..." style="flex:1" />
+      <button class="btn btn-primary btn-sm" id="msg-send-btn">Send</button>
+    </div>
+  </div>
+
+  <!-- Tasks Tab -->
+  <div id="tab-tasks" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Task Board</span>
+      <span id="tasks-stats" style="font-size:11px;color:var(--text-muted)"></span>
+      <span style="flex:1"></span>
+      <button class="btn btn-primary btn-sm" id="create-task-trigger">+ New Task</button>
+    </div>
+    <div class="kanban" id="tasks-kanban"></div>
+  </div>
+
+  <!-- Requests Tab -->
+  <div id="tab-requests" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Approval Requests</span>
+      <span id="requests-count" style="font-size:11px;color:var(--text-muted)"></span>
+      <span style="flex:1"></span>
+    </div>
+    <div class="scroll-panel" id="requests-content"></div>
+  </div>
+
+  <!-- Sprint Planner Tab -->
+  <div id="tab-sprint" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Sprint Planner</span>
+      <span style="flex:1"></span>
+      <span id="sprint-relay-status" style="font-size:11px;"></span>
+    </div>
+    <div class="scroll-panel" id="sprint-planner-content"></div>
+  </div>
+
+  <!-- Scheduled Tab -->
+  <div id="tab-scheduled" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Scheduled Tasks</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">3 daily tasks from agent-os/scheduled/config.json</span>
+    </div>
+    <div class="scroll-panel" id="scheduled-content"></div>
+  </div>
+
+  <!-- Files Tab -->
+  <div id="tab-files" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">File Browser</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Browse and edit project files — governance, source, docs</span>
+    </div>
+    <div id="files-content" style="flex:1;overflow:hidden;"></div>
+  </div>
+
+  <!-- Gantt Tab -->
+  <div id="tab-gantt" class="tab-pane">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Project Timeline</span>
+      <span style="flex:1"></span>
+      <button class="btn btn-sm btn-secondary" id="gantt-expand-all">Expand All</button>
+      <button class="btn btn-sm btn-secondary" id="gantt-collapse-all">Collapse All</button>
+    </div>
+    <div class="scroll-panel" id="gantt-content"></div>
+  </div>
+
+  <!-- Memory Tab (Sprint 46.6.5) -->
+  <div id="tab-memory" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Memory</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Index · Facts · Diaries · Lessons (read-only)</span>
+    </div>
+    <div id="memory-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
+  </div>
+
+</div>
+
+<script type="module">
+import { init } from './app.js';
+import './tabs/agents.js';
+import './tabs/scheduled.js';
+import './tabs/lobby.js';
+import './tabs/messages.js';
+import './tabs/tasks.js';
+import './tabs/requests.js';
+import './tabs/sprint.js';
+import './tabs/files.js';
+import './tabs/gantt.js';
+import './tabs/memory.js';
+
+init();
+</script>
+</body>
+</html>

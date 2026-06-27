@@ -31,5 +31,15 @@
     "agent-os-panel": "tsx agent-os/scripts/agent-os-panel-server.ts",
     "agent-os-panel-tray": "tsx agent-os/scripts/agent-os-panel-tray.ts",
     "relay": "tsx packages/relay/src/relay-server.ts"
+  },
+  "dependencies": {
+    "@anthropic-ai/claude-agent-sdk": "^0.1.0",
+    "ws": "^8.21.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
   }
 }

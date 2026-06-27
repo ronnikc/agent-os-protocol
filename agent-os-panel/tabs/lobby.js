@@ -1,0 +1,256 @@
+/**
+ * Lobby Tab — Agent roster + floor control + join/leave.
+ * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
+ */
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime } from '../app.js';
+
+let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
+let remoteAgents = [];
+let localAgents = [];
+let lobbyConnected = false;
+let currentUser = null;
+let events = [];
+let lobbyMode = 'local'; // 'local' or 'swarm'
+
+function renderJoinScreen() {
+  const el = document.getElementById('lobby-content');
+  if (!el) return;
+  el.innerHTML = `
+    <div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:400px;">
+      <div style="width:420px;max-width:90vw;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:32px;">
+        <h2 style="font-size:18px;font-weight:600;margin-bottom:24px;">Join Lobby</h2>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Display Name</label>
+          <input type="text" id="lobby-join-name" placeholder="Ronni" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;" />
+        </div>
+        <div style="margin-bottom:24px;">
+          <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Role</label>
+          <select id="lobby-join-role" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;appearance:auto;">
+            <option value="product-owner">Product Owner</option>
+            <option value="reviewer">Reviewer</option>
+            <option value="developer">Developer</option>
+            <option value="architect">Architect</option>
+            <option value="qa-lead">QA Lead</option>
+            <option value="observer">Observer</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:flex-end;">
+          <button class="btn btn-secondary" style="padding:10px 20px;border-radius:8px;" onclick="window.history.back()">Cancel</button>
+          <button class="btn btn-primary" id="lobby-join-btn" style="padding:10px 24px;border-radius:8px;font-size:14px;">Join</button>
+        </div>
+      </div>
+    </div>`;
+  document.getElementById('lobby-join-btn')?.addEventListener('click', async () => {
+    const name = document.getElementById('lobby-join-name')?.value?.trim();
+    const role = document.getElementById('lobby-join-role')?.value;
+    if (!name) return;
+    currentUser = { name, role, type: 'human', joinedAt: new Date().toISOString() };
+    if (!lobbyState.humanUsers) lobbyState.humanUsers = [];
+    lobbyState.humanUsers = lobbyState.humanUsers.filter(u => u.name !== name);
+    lobbyState.humanUsers.push(currentUser);
+    await postJson('/api/lobby/state', lobbyState);
+    try { localStorage.setItem('agent-os-lobby-user', JSON.stringify(currentUser)); } catch {}
+    renderLobby();
+  });
+}
+
+function renderLobby() {
+  const el = document.getElementById('lobby-content');
+  if (!el) return;
+  if (!currentUser) { renderJoinScreen(); return; }
+
+  const isHuman = a => a.agent_role === 'observer' || a.agent_role === 'human' || a.is_human;
+  const onlineAgents = remoteAgents.filter(a => a.status !== 'disconnected' && !isHuman(a));
+  const onlineHumans = remoteAgents.filter(a => a.status !== 'disconnected' && isHuman(a));
+  const offline = remoteAgents.filter(a => a.status === 'disconnected');
+  const online = onlineAgents; // alias for count
+  const humanUsers = onlineHumans.length ? onlineHumans : (lobbyState.humanUsers || []);
+
+  el.innerHTML = `
+    <div style="padding:12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">
+      <div>
+        <span style="font-size:15px;font-weight:600;">Agent Lobby</span>
+        <span style="margin-left:8px;font-size:12px;color:var(--text-secondary);">
+          <span class="status-dot ${lobbyConnected ? 'status-running' : 'status-stopped'}"></span>
+          ${onlineAgents.length} agents${onlineHumans.length ? ` + ${onlineHumans.length} human${onlineHumans.length > 1 ? 's' : ''}` : ''} connected
+        </span>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button class="btn btn-secondary btn-sm" data-action="leave-lobby">Leave Lobby</button>
+        <button class="btn btn-warning btn-sm" data-action="pause-lobby">Pause</button>
+        <button class="btn btn-danger btn-sm" data-action="close-lobby">Close Lobby</button>
+      </div>
+    </div>
+    <div style="padding:12px;">
+      ${online.map(a => {
+        const isBoss = a.agent_id === lobbyState.bossAgentSlug;
+        const isPanel = a.agent_role === 'panel' || (a.display_name || '').toLowerCase().startsWith('panel-');
+        const roleOptions = ['general', 'backend', 'frontend', 'code-review', 'planning', 'research', 'i18n', 'accessibility', 'documentation', 'graph-navigator', 'product', 'security', 'compliance', 'test', 'boss-agent', 'panel', 'ui-assist'].map(r =>
+          `<option value="${r}" ${(a.agent_role || '') === r ? 'selected' : ''}>${r}</option>`
+        ).join('');
+        return `
+        <div class="card" style="margin-bottom:6px;${isBoss ? 'border-left:3px solid var(--warning);' : ''}${isPanel ? 'opacity:0.7;' : ''}">
+          <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+              <span class="status-dot status-running"></span>
+              <strong>${escapeHtml(a.display_name || a.name || a.agent_id)}</strong>
+              ${isPanel
+                ? `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="Panel is a UI connection only, not a Claude session">panel (UI only)</span>`
+                : `<select data-action="change-role" data-agent-id="${a.agent_id}" style="margin-left:6px;font-size:10px;padding:2px 4px;background:var(--bg-base);color:var(--text-secondary);border:1px solid var(--border);border-radius:3px;">
+                <option value="" ${!a.agent_role ? 'selected' : ''}>no role</option>
+                ${roleOptions}
+              </select>`
+              }
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-size:11px;color:var(--text-muted)">${a.status || 'idle'}</span>
+              ${isBoss
+                ? '<span class="badge badge-warning">Boss Agent</span>'
+                : (isPanel
+                  ? ''
+                  : `<button class="btn btn-sm btn-secondary" data-action="appoint-boss" data-agent-id="${a.agent_id}">Appoint as Boss</button>`)
+              }
+            </div>
+          </div>
+          ${a.current_work ? `<div style="font-size:11px;color:var(--text-secondary);margin-top:4px;">${escapeHtml(a.current_work.slice(0, 80))}</div>` : ''}
+          ${a.cwd ? `<div style="font-size:10px;color:var(--text-muted);margin-top:2px;">branch: ${a.branch || '?'} &nbsp; cwd: ${escapeHtml((a.cwd || '').slice(-40))} &nbsp; port: ${a.relay_port || '?'}</div>` : ''}
+        </div>`;
+      }).join('') || '<div class="empty-state" style="padding:20px;">No agents online</div>'}
+      ${humanUsers.length ? `
+        <div style="font-size:11px;color:var(--text-muted);margin:16px 0 6px;text-transform:uppercase;font-weight:600;">Human Participants</div>
+        ${humanUsers.map(u => {
+          const name = u.display_name || u.name || u.agent_id || '?';
+          const role = u.agent_role || u.role || 'observer';
+          return `
+          <div class="card" style="margin-bottom:6px;border-left:3px solid var(--purple);">
+            <span class="status-dot status-running"></span>
+            <strong>${escapeHtml(name)}</strong>
+            <span class="badge badge-muted" style="margin-left:4px">${escapeHtml(role)}</span>
+            <span class="badge badge-success" style="margin-left:4px">Human</span>
+            ${name === currentUser?.name ? '<span class="badge badge-info" style="margin-left:4px">You</span>' : ''}
+          </div>`;
+        }).join('')}
+      ` : ''}
+      ${offline.length ? `<div style="font-size:11px;color:var(--text-muted);margin:16px 0 6px;">+${offline.length} disconnected agent(s)</div>` : ''}
+      ${events.length ? `
+        <div style="font-size:11px;color:var(--text-muted);margin:16px 0 6px;text-transform:uppercase;font-weight:600;">Recent Events</div>
+        <div class="feed">
+          ${events.slice(-10).reverse().map(e => `
+            <div class="feed-item">
+              <span class="feed-time">${formatTime(e.ts)}</span>
+              <span class="feed-type feed-type-${e.type === 'agent-start' ? 'completion' : 'blocker'}">[${e.type}]</span>
+              ${escapeHtml(e.slug || '')}
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+async function refresh() {
+  const modeData = await fetchJson('/api/mode');
+  if (modeData) lobbyMode = modeData.mode || 'local';
+
+  const stateData = await fetchJson('/api/lobby/state');
+  if (stateData?.lobby) {
+    // Merge — don't overwrite WS-set bossAgentSlug if it's more recent
+    const saved = stateData.lobby;
+    if (saved.bossAgentSlug) lobbyState.bossAgentSlug = saved.bossAgentSlug;
+    if (saved.phase) lobbyState.phase = saved.phase;
+    if (saved.humanUsers) lobbyState.humanUsers = saved.humanUsers;
+  }
+
+  const localData = await fetchJson('/api/agents');
+  if (localData) localAgents = (localData.agents || []).filter(a => a.status === 'running');
+
+  const agentData = await fetchJson('/api/lobby/remote/agents');
+  if (agentData && !agentData.error && (agentData.agents || agentData || []).length) {
+    remoteAgents = agentData.agents || agentData || [];
+    lobbyConnected = true;
+  } else {
+    remoteAgents = localAgents.map(a => ({
+      agent_id: a.slug, display_name: a.name, agent_role: a.slug,
+      status: 'idle', current_work: '', pid: a.pid, source: 'local',
+    }));
+    lobbyConnected = localAgents.length > 0;
+  }
+  renderLobby();
+}
+
+function init() {
+  try {
+    const saved = localStorage.getItem('agent-os-lobby-user');
+    if (saved) currentUser = JSON.parse(saved);
+  } catch {}
+
+  refresh();
+
+  // Wire up lobby action buttons (use capture to handle re-rendered DOM)
+  document.getElementById('lobby-content')?.addEventListener('click', async (e) => {
+    const btn = e.target.closest('[data-action]');
+    if (!btn) return;
+    if (btn.dataset.action === 'leave-lobby') {
+      lobbyState.humanUsers = (lobbyState.humanUsers || []).filter(u => u.name !== currentUser?.name);
+      await postJson('/api/lobby/state', lobbyState);
+      currentUser = null;
+      try { localStorage.removeItem('agent-os-lobby-user'); } catch {}
+      renderLobby();
+    }
+    if (btn.dataset.action === 'pause-lobby') { await postJson('/api/lobby/remote/status', { status: 'paused' }); refresh(); }
+    if (btn.dataset.action === 'close-lobby') {
+      if (!confirm('Close the lobby?')) return;
+      await postJson('/api/lobby/remote/status', { status: 'closed' }); refresh();
+    }
+    if (btn.dataset.action === 'appoint-boss') {
+      const agentId = btn.dataset.agentId;
+      await postJson('/api/lobby/remote/boss-agent', { agent_id: agentId });
+      lobbyState.bossAgentSlug = agentId;
+      await postJson('/api/lobby/state', lobbyState);
+      refresh();
+    }
+  });
+
+  // Role change dropdown handler
+  document.getElementById('lobby-content')?.addEventListener('change', async (e) => {
+    const select = e.target.closest('[data-action="change-role"]');
+    if (!select) return;
+    const agentId = select.dataset.agentId;
+    const newRole = select.value;
+    await postJson('/api/lobby/remote/role-change', { agent_id: agentId, agent_role: newRole });
+    // Update cached roster
+    const agent = remoteAgents.find(a => a.agent_id === agentId);
+    if (agent) agent.agent_role = newRole;
+  });
+
+  onWsMessage('agent-start', (data) => { events.push({ type: 'agent-start', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
+  onWsMessage('agent-exit', (data) => { events.push({ type: 'agent-exit', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
+  onWsMessage('lobby-agent-update', (data) => {
+    const info = data?.agent?.display_name || data?.agent_id || '';
+    const eventType = data?.type || 'agent-update';
+    events.push({ type: eventType, slug: info, ts: new Date().toISOString() });
+    refresh();
+  });
+  onWsMessage('lobby-boss-update', (data) => {
+    if (data?.type === 'appointed' && data?.agent_id) {
+      lobbyState.bossAgentSlug = data.agent_id;
+      events.push({ type: 'boss-appointed', slug: data.agent_id, ts: new Date().toISOString() });
+    } else if (data?.type === 'lost') {
+      lobbyState.bossAgentSlug = null;
+      events.push({ type: 'boss-lost', slug: '', ts: new Date().toISOString() });
+    }
+    renderLobby();
+  });
+  onWsMessage('lobby-message', (data) => {
+    const msg = data?.message || data;
+    if (msg?.from_agent_id === 'system') {
+      events.push({ type: 'system', slug: (msg.content || '').slice(0, 80), ts: msg.created_at || new Date().toISOString() });
+      // System messages include boss appointments — update local state
+      if ((msg.content || '').includes('Boss Agent')) refresh();
+    }
+  });
+
+  setInterval(refresh, 10000);
+}
+
+registerTab('lobby', { init, onActivate: refresh });
