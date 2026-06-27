@@ -1,6 +1,6 @@
 # SUB-AGENTS — Agent OS Protocol Sub-Agent System
 
-> **Last updated:** 2026-05-03 (Sprint 47.5.9.6 — roster locked at 35: cost-governance + tool-call-quality landed)
+> **Last updated:** Phase 2 (independent platform — 30-agent roster: 24 generic specialists + 6 platform agents)
 > **Purpose:** Sub-agent orchestration system — agent roster, routing rules, parallelism constraints, crash prevention, prompt template, verification rules, and common error patterns.
 > **When to update:**
 > - New sub-agent type added or retired
@@ -53,15 +53,12 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 | **Build Integrity Specialist** | `build-integrity` | Build health, TypeScript compilation, dependency resolution, zero-tolerance for pre-existing errors | Build configs, `package.json` files | All `tsconfig.json`, all `package.json` |
 | **Graph Navigator** | `graph-navigator` | Dependency graph, blast radius, import chains, structural codebase intelligence | `agent-os/graph.json` | Read-only across `src/` |
 
-### Domain Specialists (5)
+### Security & Accessibility (2)
 
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
-| **Compliance Specialist** | `compliance` | Regulatory frameworks, audit trails, evidence collection | `docs/compliance/` | Throughout |
-| **Security Specialist** | `security` | RBAC, AuthN/AuthZ, encryption, data classification | `docs/security/` | Throughout |
-| **I18N Specialist** | `i18n` | Translations, locale management, anti-pattern detection | `I18N.md`, `src/shared/src/i18n/` | `src/shared/src/i18n/` |
+| **Security Specialist** | `security` | AuthN/AuthZ, access control, encryption, data classification | `docs/security/` | Throughout |
 | **Accessibility Specialist** | `accessibility` | WCAG 2.1 AA, ARIA, keyboard nav, screen readers | `docs/accessibility/` | Throughout |
-| **Legal Specialist** | `legal` | Legal timelines, regulatory interpretation, data protection | `docs/compliance/legal-timelines.md` | N/A |
 
 ### Delivery & Infrastructure (3)
 
@@ -71,11 +68,12 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 | **Release Specialist** | `release` | CI/CD, deployment, versioning, changelog | `docs/infrastructure/` | Project root configs |
 | **Infrastructure Specialist** | `infrastructure` | Docker, monitoring, environments, storage | `docs/infrastructure/` | `docker-compose.yml`, CI configs |
 
-### Coordination (1)
+### Coordination & Process (2)
 
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
-| **Boss Agent** | `boss-agent` | Agent Lobby coordination, multi-session orchestration, work assignment, handoff management | `agent-os/sub-agents/agents/boss-agent.md` | `src/*/modules/agent-lobby/` |
+| **Boss Agent** | `boss-agent` | Agent Lobby coordination, multi-session orchestration, work assignment, handoff management | `agent-os/sub-agents/agents/boss-agent.md` | `packages/lobby-server/`, `agent-os/scripts/lobby-*` |
+| **Sprint Gate Enforcer** | `sprint-gate-enforcer` | Enforces sprint gates and completion checks before close-out | `SPRINTS.md` | `agent-os/scripts/sprint-gate-runner.sh` |
 
 ### Product & Validation (6)
 
@@ -86,16 +84,25 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 | **Design Specialist** | `design` | Visual design, component design, design system | `docs/frontend/ui-modules.md` | `src/frontend/src/components/` |
 | **UI Assist Specialist** | `ui-assist` | WebSocket relay, Claude Code integration, overlay | Sprint 17.8.0 spec | `src/*/modules/ui-assist/` |
 | **User Validation Specialist** | `user-validation` | Persona and use case validation for sprint planning and acceptance criteria | `docs/user-validation/` | N/A (cross-cutting review) |
-| **Help Center Content Specialist** | `help-center-content` | Help article authoring, audit, revision — persona-aware, regulatory-grounded, template-driven | `docs/user-guide/`, `docs/training/` | Seed data (`seed-help-articles.ts`) |
-| **Product QA Specialist** | `product-qa` | Code-level production readiness review against personas, use cases, and regulatory frameworks. Reads every page, walks workflows, reports findings. | `docs/user-validation/` (read-only) | `src/frontend/src/pages/admin/` (read-only) |
+| **Product QA Specialist** | `product-qa` | Code-level production readiness review against personas and use cases. Reads every page, walks workflows, reports findings. | `docs/user-validation/` (read-only) | frontend pages (read-only) |
 
-### Growth & Content (3)
+### Growth & Content (2)
 
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
-| **Content Specialist** | `content` | Copy, help articles, training materials, onboarding text | `docs/training/`, `docs/user-guide/` | Seed data (help articles) |
-| **SEO Specialist** | `seo` | Meta tags, structured data, page titles, crawlability | N/A | `src/frontend/` (meta/head) |
-| **Agent OS Protocol Content Agent** | `content-marketing` | Marketing landing pages (L2/L3), SEO blog posts, website content | `docs/content/marketing/` | N/A (read-only across repo) |
+| **Content Specialist** | `content` | Copy, docs, onboarding text | `docs/` | N/A |
+| **SEO Specialist** | `seo` | Meta tags, structured data, page titles, crawlability | N/A | frontend meta/head |
+
+### Platform (6)
+
+| Agent | Slug | Focus | Docs Owned | Source Owned |
+|-------|------|-------|------------|--------------|
+| **Domain Specialist** | `domain-specialist` | Blank-slate trainable subject-matter expert; no built-in domain knowledge — taught via `/train` | trained skills/memory | `agent-os/sub-agents/skills/trained/`, `agent-os/memories/trained/` |
+| **Identity Agent** | `identity` | Agent identity, Agent Card authoring, registry-reference verification (Concordium) | `docs/agent-identity.md` | `packages/identity-concordium/` |
+| **Lobby Architect** | `lobby-architect` | Lobby protocol, WebSocket transport, floor control, durable state, access control | `LOBBY-PROTOCOL.md` | `packages/lobby-server/`, `apps/lobby-web/` |
+| **Runtime Adapter Specialist** | `runtime-adapter` | Adapter contracts for CLI + API runtimes (Claude/Codex/OpenCode/Cursor/…) | `docs/runtime-adapters.md` | `packages/adapters/`, `packages/relay/` |
+| **UI Assist Integration Specialist** | `ui-assist-integration` | Embed the UI Assist overlay into user apps; framework integrations | `docs/ui-assist-integration.md` | `packages/ui-assist-*/` |
+| **Training Agent** | `training` | Owns `/train` — reviewable, reversible, secret-detecting skill+memory authoring | `docs/training-agents.md` | `agent-os/training/` |
 
 ---
 
@@ -106,7 +113,6 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 Route to the owning agent. Examples:
 - "Add a new API endpoint" → **Backend**
 - "Fix failing test" → **Test**
-- "Translate new keys" → **I18N**
 - "Audit page for WCAG" → **Accessibility**
 - "Create landing page or blog post" → **Agent OS Protocol Content Agent**
 - "What files are affected by this change?" → **Graph Navigator**
@@ -125,9 +131,9 @@ Route to the owning agent. Examples:
 | New feature (full stack) | **Planning** decomposes → **Backend** + **Frontend** | **Security**, **Accessibility**, **Test** |
 | API endpoint + frontend | **Backend** leads | **API** reviews contract, **Frontend** consumes |
 | Security-sensitive change | **Security** leads | **Backend** or **Frontend** implements |
-| Regulatory framework pack | **Compliance** leads | **Backend** seeds, **I18N** translates, **User Validation** validates personas/use cases |
+| Trainable domain pack | **Domain Specialist** leads | **Training** authors the pack, **User Validation** validates use cases |
 | Sprint implementation | **Planning** breaks down | Route each task to owning agent; **User Validation** reviews acceptance criteria |
-| Sprint validation / acceptance | **User Validation** leads | **Compliance** for regulatory accuracy, **Product** for acceptance criteria |
+| Sprint validation / acceptance | **User Validation** leads | **Product** for acceptance criteria |
 | Module production readiness review | **Product QA** leads | **User Validation** for persona/use case alignment, **Accessibility** for WCAG compliance |
 | Sprint spec governance & linting | **Product** leads (Gate -2) | **Code Review** validates via `spec-linting` skill |
 | Bug fix sprint | **Research** diagnoses | Owning agent fixes, **Test** verifies |
@@ -163,7 +169,6 @@ When one agent's changes require another agent's involvement, these triggers are
 |-------------|-----------|---------------------|-----|
 | Backend service/route modification | Backend | **Test Specialist** reviews and updates service/route tests | Code changes without test updates pass tsc but fail vitest (Incident 14) |
 | Frontend component modification | Frontend | **Test Specialist** updates component test mocks | Props/text changes invalidate existing mocks |
-| i18n key addition or text change | I18N | **Test Specialist** updates test mocks for affected components | Hardcoded-to-i18n changes break partial mocks (Incident 15: 13 files, 27 tests) |
 | Route response message change | Backend/API | **Test Specialist** greps for old strings and updates assertions | String literal changes are invisible to tsc (Incident 14) |
 | Shared type modification | Backend/Frontend | **Test Specialist** verifies test factories match new type shape | Factory Zod validation catches mismatches |
 | Any module modification | Any code agent | **Test Specialist** runs existing tests BEFORE modification to establish baseline | Prevents "I introduced a regression but never ran existing tests" |
@@ -176,7 +181,6 @@ When one agent's changes require another agent's involvement, these triggers are
 3. Each task → routed to owning agent (with explicit file lists)
 4. Accessibility Specialist → reviews all UI changes
 5. Test Specialist → verifies coverage thresholds
-6. I18N Specialist → verifies translation completeness
 7. Product QA Specialist → reviews implementations for production readiness (after code, before close-out)
 8. User Validation Specialist → validates acceptance criteria against use case outcomes
 8. Code Review Specialist → final quality check

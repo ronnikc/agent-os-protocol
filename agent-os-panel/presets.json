@@ -1,8 +1,8 @@
 {
   "sprint-full": {
     "name": "Full Sprint Team",
-    "agents": ["backend", "frontend", "i18n", "accessibility", "code-review", "security", "sprint-gate-enforcer"],
-    "description": "Standard sprint execution team (7 agents)"
+    "agents": ["backend", "frontend", "accessibility", "code-review", "security", "sprint-gate-enforcer"],
+    "description": "Standard sprint execution team (6 agents)"
   },
   "sprint-light": {
     "name": "Light Sprint (Backend Only)",
@@ -11,8 +11,8 @@
   },
   "qa-sweep": {
     "name": "QA Sweep Team",
-    "agents": ["product-qa", "accessibility", "i18n", "security", "code-review"],
-    "description": "Full quality assurance sweep (5 agents)"
+    "agents": ["product-qa", "accessibility", "security", "code-review"],
+    "description": "Full quality assurance sweep (4 agents)"
   },
   "planning": {
     "name": "Planning Team",
@@ -21,7 +21,12 @@
   },
   "frontend-only": {
     "name": "Frontend Sprint",
-    "agents": ["frontend", "accessibility", "i18n", "code-review", "sprint-gate-enforcer"],
-    "description": "Frontend-focused sprint (5 agents)"
+    "agents": ["frontend", "accessibility", "code-review", "sprint-gate-enforcer"],
+    "description": "Frontend-focused sprint (4 agents)"
+  },
+  "platform": {
+    "name": "Platform Team",
+    "agents": ["lobby-architect", "runtime-adapter", "identity", "ui-assist-integration"],
+    "description": "Agent OS Protocol platform work — lobby, adapters, identity, UI Assist (4 agents)"
   }
 }
