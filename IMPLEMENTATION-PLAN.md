@@ -468,6 +468,99 @@ client of the new lobby URL.
 
 ---
 
+## 12A. Work-Item Model Standardization — Phase / Sprint / Task (confirmed Panel defect)
+
+**Ronni's hunch is correct and broader than the Gantt.** The Panel today has **no shared
+schema** for Phase / Sprint / Task — five surfaces each invent their own, and the Gantt
+compensates with a multi-syntax guesser. Evidence (read-only, from `grc-suite-test`):
+
+| Surface | Task identity | Status vocabulary | How it reads/writes |
+|---|---|---|---|
+| **Gantt** `getGanttData()` `agent-os-panel-server.ts:829-1085` | `{title, done}` — **no id** | `complete / in-progress / planned / unknown` | **Reads 7 task formats in priority-fallback order** (checkbox `:959`, numbered `:968`, AC table `:982`, sub-sprint table `:1000`, issue table `:1013`, `## Epic` `:1028`, `### Step` `:1038`) + **3 status formats** (README `Status:` `:864`, `\| Status \|` table `:945`, `> Status:` blockquote `:947`); **fabricates** `done=true` for all tasks when the sprint is "complete" `:1048` |
+| **Tasks store** `/api/tasks` → `shared-memory/tasks.jsonl` | `TASK-{ts}-{n}` (`nextTaskId`) | `pending / in_progress / done / failed / blocked` | JSONL append; also mirrors lobby tasks |
+| **Sprint planner** `tabs/sprint.js` | `st-{ts}-{rand}` — **no status** | none | Ephemeral client state; on "execute" it (a) POSTs store tasks (`category:'sprint'`) **and** (b) emits a **free-text `# Sprint Plan` markdown** to the boss agent via `/api/messages`; new phase = a *prose instruction* to `mkdir docs/product/phases/phase-N/` |
+| **Lobby tasks** | `task_id` | lobby set | mirrored into `tasks.jsonl` |
+| **UI Assist / relay** `relay-server.ts:836+` | consumes lobby `task_id`, `updateTaskProgress()` | progress strings | system prompt hardcodes the `phase-N/sprint-X.Y.Z.md` convention as prose |
+
+**Consequences:** (1) a task created in the Sprint planner becomes a store task + a prose
+line to the boss, but **never a checkbox in the sprint markdown**, so it never appears under
+its sprint in the Gantt; (2) three status vocabularies don't map; (3) phase/sprint-id parsing
+(`phase-N`, `\d+\.\d+\.\d+`) is duplicated in panel-server *and* `sprint.js`; (4) the parser
+*guesses*, so the same file renders differently depending on which pattern matches first.
+
+### The Standard (one schema, written once, read everywhere)
+
+1. **Canonical types in `packages/protocol-core`** — `Phase`, `Sprint`, `Task`, and a single
+   `WorkItemStatus = 'planned' | 'in_progress' | 'blocked' | 'complete' | 'cancelled'`.
+   Imported by **all five surfaces**: panel UI, panel-server, relay/UI Assist, lobby-server,
+   and the Vercel swarm app. Single source of truth.
+2. **One on-disk format** (kills the 7-syntax guesser):
+   - **YAML front-matter** on `phase-N/README.md` (`id, name, status`) and
+     `sprint-X.Y.Z.md` (`id, title, phase, status, owner`).
+   - **One task syntax** — GitHub checkboxes under a required `## Tasks` / `## Acceptance
+     Criteria` heading: `- [ ] AC-1: <title> {id, assignee, priority}`. The other six read
+     paths are **deleted from the live reader**.
+3. **One reader, one writer:**
+   - **Reader** = a single `parseWorkItems()` in `protocol-core`; `getGanttData` collapses to
+     call it. The legacy 7-format parser survives **only** inside a one-time migration codemod.
+   - **Writer** = the Sprint planner + new `POST /api/phases` and `POST /api/sprints` write
+     canonical front-matter + checkboxes to disk (instead of only messaging the boss).
+4. **Unify task identity & linkage:** one `Task { id, status, priority, assignee, phaseId,
+   sprintId }`. Gantt's `{title, done}` becomes a projection (`done = status==='complete'`).
+   Markdown checkboxes carry the same `id` as the `tasks.jsonl` record, so a task shows under
+   its sprint in the Gantt **no matter where it was created** (Tasks tab, Gantt menu, Sprint
+   planner, lobby, or UI Assist).
+5. **Enforcement:** extend the existing `lint-sprint-spec.sh` (Gate -2) and
+   `lint-sprint-contract.sh` (Step A) to validate front-matter + the single task syntax; add a
+   `validate-work-items` pre-commit hook + CI gate; surface a "schema drift" indicator in the
+   panel. A `migrate-work-items` codemod upgrades any legacy specs on import.
+6. **Reflected in UI Assist (Ronni's requirement):** the relay system prompt references the
+   canonical schema/format (not freeform prose), and UI Assist task coordination + the
+   embeddable overlay create/read the same `Task` records.
+
+### Authoring skills — the missing "create" layer (Ronni's suggestion: **yes, do this**)
+
+The roster already has skills for every step **except creation**:
+`implementation-planning` + `sprint-decomposition` (break down), `spec-linting` (validate),
+`sprint-gate-enforcement` / `verification-gate` (gate), `task-routing` (assign),
+`agent-task-execution` (execute). The `planning` agent authors specs from **SPRINTS.md prose
++ a validate-*after*-the-fact linter** — there is **no skill that owns how to *create* a
+Phase / Sprint / Task in the canonical schema.** That gap is exactly why the on-disk format
+drifted into 7 syntaxes. Adding authoring skills closes the **author → validate → read** loop:
+
+| New skill | Owns the rules for | Emits / enforces |
+|---|---|---|
+| `create-phase` | New phase | `phase-N` id rule, `README.md` front-matter (`id, name, status`), required phase sections |
+| `create-sprint` | New sprint | semver `X.Y.Z` id, `sprint-X.Y.Z.md` front-matter (`id, title, phase, status, owner`), required contract sections (Goal / ACs / Out-of-Scope / Dependencies — same checks `lint-sprint-contract.sh` already verifies), the single `## Tasks` checkbox syntax |
+| `create-task` | New task | canonical `Task { id, status, priority, assignee, phaseId, sprintId }`, the one checkbox form, valid `WorkItemStatus` |
+
+(Ship as one layered `work-item-authoring` SKILL.md with three sections if you prefer fewer
+skills — same contract either way.) Properties that make this the right fix:
+
+- **Self-enforcing standard:** every creator (the `planning`/Planning Orchestrator agent, the
+  Gantt "Create Task" menu, the Sprint planner, the **Training Agent**, **UI Assist**'s
+  "add to sprint plan" path) calls the **same authoring contract** and writes the exact format
+  the single `parseWorkItems()` reader expects — no more guessing.
+- **Runtime-agnostic:** skills are plain instructions, so Codex / OpenCode / Cursor agents
+  (§8) follow the identical creation rules through their adapters.
+- **Pairs with, not replaces, the linter:** authoring skills write it right; `spec-linting`
+  verifies it; the `validate-work-items` hook (item 5) blocks drift at commit.
+
+These skills are added in **Phase 2** (roster) and wired to the writer endpoints in **Phase 4**.
+
+### Where it lands in the phases
+- **Authoring skills** (`create-phase` / `create-sprint` / `create-task`) → **Phase 2** (roster).
+- **Schema + `protocol-core` types** → **Phase 4** (protocol-core is created there).
+- **Panel reader/writer unification + migration codemod + linter extension** → **Phase 4**
+  (dedicated task, alongside the relay/adapter extraction).
+- **Lobby + Vercel swarm app consume the same schema** → **Phase 7**.
+- **UI Assist alignment** → **Phase 9**.
+
+The independent fork **ships the standard from day one** — it does not inherit the
+multi-syntax guesser; the 7-format reader exists only as a migration aid.
+
+---
+
 ## 13. Testing & Verification Plan (charter §21.13, §18)
 
 ```bash
