@@ -76,7 +76,7 @@ Backend API endpoints:
 ## Architecture
 
 ```
-You (browser)          Native Relay (npm run relay)    Claude Code (CLI)     GRC Backend (MongoDB)
+You (browser)          Native Relay (npm run relay)    Claude Code (CLI)     Project Backend (DB)
 ─────────────          ─────────────────────────       ─────────────────     ─────────────────────
 Select element ──┐
 Type prompt      │

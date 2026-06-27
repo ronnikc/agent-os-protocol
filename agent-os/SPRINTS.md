@@ -137,14 +137,13 @@ Implementation order (prevents rework):
 | Rule | Why |
 |------|-----|
 | No refactors unless required by ACs | Scope creep |
-| Every state change emits audit events | Compliance platform |
+| Every state change emits audit events | Accountability |
 | Mocks match real method names | Wrong names pass vitest but fail tsc |
 | Coverage thresholds met same commit | No test debt |
 | Build passes before commit | shared -> backend -> frontend |
 | Tests pass for modified modules before commit | A commit that breaks tests is a gate failure |
 | Documentation updates are blocking | Code without docs is incomplete |
 | No hardcoded UI strings | Every page uses `useLocale()` |
-| Zero `// TODO: translate` stubs at close | All 16 locales must have real translations |
 | Fix root causes, not symptoms | Frontend filters hiding bad data is not a fix |
 | Verify field names end-to-end | Seed -> service -> API -> frontend |
 | >3 files = decompose first | Break into reviewable sub-tasks |

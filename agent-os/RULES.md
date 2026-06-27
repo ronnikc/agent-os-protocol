@@ -113,7 +113,6 @@ These rules apply to every session, every sprint, every agent invocation. No exc
 
 | # | Rule | Origin |
 |---|------|--------|
-| R-13 | **i18n completeness is mandatory per sprint.** Every new key translated in ALL 16 locale files. Zero `// TODO: translate` stubs. The I18N Specialist agent MUST be invoked for real translations — EN-copy placeholders in non-EN locales are a gate failure. | Violated for 33 consecutive sprints in Phase 19 |
 
 ### Regulatory & Validation
 

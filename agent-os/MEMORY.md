@@ -335,9 +335,7 @@ Never store transient details (one-off tasks, short-lived status updates) in mem
 
 | File | Purpose | When to Read |
 |------|---------|-------------|
-| `sub-agents/memories/platform-mission-evidence-by-design.md` | Core platform mission: evidence as operational byproduct, five architectural principles, per-agent implications | Before any review, QA, validation, UX, testing, or compliance task |
-| `sub-agents/memories/vn-regulatory-domain-knowledge.md` | Maps 8 Vietnamese laws/decrees to platform modules, defines 4 compliance building blocks, execution compliance model | Before planning/validating regulatory or compliance features |
-| `sub-agents/memories/qa-finalization-phase22-lessons.md` | 628 QA findings across 246 pages: 7 systemic anti-patterns, Gate E12 rationale, evidence-by-design in ACs | Before sprint close-out or production readiness review |
+| `sub-agents/memories/platform-mission-evidence-by-design.md` | Core platform mission: evidence as operational byproduct, five architectural principles, per-agent implications | Before any review, QA, validation, UX, testing, or compliance task || `sub-agents/memories/qa-finalization-phase22-lessons.md` | 628 QA findings across 246 pages: 7 systemic anti-patterns, Gate E12 rationale, evidence-by-design in ACs | Before sprint close-out or production readiness review |
 
 ## New Memory Files (Added 2026-04-11)
 
