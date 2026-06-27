@@ -10,8 +10,6 @@
  *
  * Usage:
  *   npx tsx agent-os/scripts/agent-os-panel-server.ts [--port 4800] [--lobby <url>]
- *
- * Sprint 38.5.0 — Step 2: Agent OS Panel Expansion
  */
 
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -32,6 +30,7 @@ function spawnTsx(args: string[], opts: import('node:child_process').SpawnOption
 
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
+import { runtimeRegistry } from '@agent-os/adapters';
 
 // ── Config ──
 const args = process.argv.slice(2);
@@ -2021,6 +2020,29 @@ const server = createServer(async (req, res) => {
     stopRelay();
     setTimeout(() => startRelay(), 500);
     sendJson(res, { ok: true });
+    return;
+  }
+
+  // ── Runtime Adapters ──
+  // Discover which agent runtimes are installed via the adapter registry
+  // (@agent-os/adapters). The panel uses this to show available runtimes and
+  // pick a default; today Claude CLI is the first-class runtime.
+  if (path === '/api/runtimes' && method === 'GET') {
+    runtimeRegistry
+      .detectAll()
+      .then((runtimes) => {
+        const available = Object.entries(runtimes)
+          .filter(([, r]) => r.installed)
+          .map(([id]) => id);
+        sendJson(res, {
+          runtimes,
+          available,
+          default: available.includes('claude-cli') ? 'claude-cli' : (available[0] ?? null),
+        });
+      })
+      .catch((err: unknown) => {
+        sendJson(res, { error: (err as Error).message, runtimes: {}, available: [], default: null }, 500);
+      });
     return;
   }
 
