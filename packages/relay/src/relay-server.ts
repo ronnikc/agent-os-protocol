@@ -30,7 +30,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 import { query, type Options, type SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { LobbyToAgentMessage, HandRaiseCategory } from './lobby-types.js';
+import type { LobbyToAgentMessage, HandRaiseCategory } from '@agent-os/protocol-core';
 
 // ── Constants ──
 
