@@ -254,6 +254,30 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Exit:** a loop converges on a real work item against measurable exit criteria; respects
   iteration/budget caps + human checkpoints; is fully auditable + stoppable; works local + swarm.
 
+### Phase 12 — Agent OS Panel UI Redesign (DESIGN.md alignment)
+- Evolve the Panel UI from the functional Phase-1 layout into the polished, **dark glass-panel
+  control-plane aesthetic** defined in [`DESIGN.md`](DESIGN.md) and the per-tab mockups in
+  [`design-specs/`](design-specs/) (Agents, Lobby, Messages, Tasks, Gantt, Schedule, Memory).
+- Encode DESIGN.md as a **CSS token system** (deep-navy background, glassmorphism panels,
+  cyan→violet gradients, sharp status indicators for agents/tasks/lobbies/**identity**, the
+  hex/cube logo lockup); align each tab's layout to its mockup; fold the Phase-8 identity badges
+  into the design language.
+- Keep it **vanilla JS** (no framework) and product-neutral; **no functional regressions** — every
+  tab keeps working and the panel keeps booting.
+- **Exit:** each tab visually matches its `design-specs/` mockup; DESIGN.md conventions live as
+  reusable CSS tokens; the panel boots and all tabs work (a screenshot pass vs the mockups).
+
+### Phase 13 — Agent OS Protocol Website (public landing site)
+- A **simple, static public website** for the platform under `apps/website/`, reusing the DESIGN.md
+  visual language: hero, what-it-is, features (Local/Swarm/Loop Mode, UI Assist, agent identity,
+  `/train`, runtime adapters), install + quick-start, docs + GitHub links, Apache-2.0.
+- Static HTML/CSS (optionally a minimal generator) + a tiny `npm run website` static server for
+  local preview. A hosted deploy (Vercel / GitHub Pages) is **config-gated** (verifiable-core-first,
+  as with `apps/lobby-web`).
+- **Brand-neutral**; no domain content; no secrets.
+- **Exit:** `npm run website` serves a coherent landing page that reflects current capabilities and
+  is consistent with DESIGN.md; it builds/serves locally with no external service.
+
 ---
 
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)
@@ -450,6 +474,22 @@ deploy-gated next increment. Docs: `docs/lobby/`.
   human-linked / org-linked / failed.
 - **Privacy principle (charter §11):** accountability, not doxxing — verify the anchor
   without exposing the human identity to every participant.
+
+**Phase 8 status:** the read-only, key-free slice ships. `packages/protocol-core/agent-identity.ts`
+defines the **Agent Card** (public, hashable, `application/a2a-agent-card+json`), `ConcordiumAgentRef`,
+the verification **status ladder** (`registry_verified` → `human_linked` → `org_linked` / `pending` /
+`failed`), and `LobbyJoinPolicy`. `packages/identity-concordium` does read-only verification behind an
+**injectable transport seam** (`HttpIndexerTransport`, GET-only; a fake in tests), Agent Card
+draft/validate/hash, `prepareRegistration` (**non-submitting, wallet-side-only**), and `linkProfile`.
+The lobby coordinator enforces the policy ladder **server-side** (none → registered → allowlisted →
+verified_human_link) through the verifier seam — **fail-closed** with no verifier; the server wires a
+live verifier only when `AGENT_OS_CONCORDIUM_INDEXER_URL` is set. Roster **identity badges** in the
+Panel. Verified by `npm run verify-identity` (23/23, no network/key). **Exit met:** a lobby can
+require verified identity; refs verify/fail/pending; **no key is ever stored or sent.** The live
+references (CIS-8004/CIS-8, MCP service, indexer tools `list_agents`/`search_agents`/
+`recent_registrations`, `@concordium/web-sdk`, VCK/VCDC) were confirmed before coding; **deferred:**
+live-indexer wiring, on-chain registration writes (wallet-side), and the Panel/relay join_token UX.
+Docs: `docs/identity/`.
 
 ---
 

@@ -98,7 +98,7 @@ The sub-agent system provides specialized agents that can be delegated tasks via
 | Agent | Slug | Focus | Docs Owned | Source Owned |
 |-------|------|-------|------------|--------------|
 | **Domain Specialist** | `domain-specialist` | Blank-slate trainable subject-matter expert; no built-in domain knowledge — taught via `/train` | trained skills/memory | `agent-os/sub-agents/skills/trained/`, `agent-os/memories/trained/` |
-| **Identity Agent** | `identity` | Agent identity, Agent Card authoring, registry-reference verification (Concordium) | `docs/agent-identity.md` | `packages/identity-concordium/` |
+| **Identity Agent** | `identity` | Agent identity, Agent Card authoring, registry-reference verification (Concordium) | `docs/identity/README.md` | `packages/identity-concordium/` |
 | **Lobby Architect** | `lobby-architect` | Lobby protocol, WebSocket transport, floor control, durable state, access control | `LOBBY-PROTOCOL.md` | `packages/lobby-server/`, `apps/lobby-web/` |
 | **Runtime Adapter Specialist** | `runtime-adapter` | Adapter contracts for CLI + API runtimes (Claude/Codex/OpenCode/Cursor/…) | `docs/runtime-adapters.md` | `packages/adapters/`, `packages/relay/` |
 | **UI Assist Integration Specialist** | `ui-assist-integration` | Embed the UI Assist overlay into user apps; framework integrations | `docs/ui-assist-integration.md` | `packages/ui-assist-*/` |

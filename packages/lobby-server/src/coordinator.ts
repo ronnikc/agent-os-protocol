@@ -27,8 +27,19 @@ import type {
   LobbyTask,
   LobbyEvent,
   LobbyEventType,
+  LobbySession,
+  LobbyJoinPolicy,
+  IdentityVerificationResult,
 } from '@agent-os/protocol-core';
+import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
+
+/**
+ * The read-only identity-verification seam (Phase 8). The coordinator stays decoupled from any
+ * registry implementation — `server.ts` injects a real verifier (backed by `@agent-os/identity-
+ * concordium`) when an indexer URL is configured; otherwise the fail-closed default applies.
+ */
+export type VerifyIdentityFn = (ref: string) => Promise<IdentityVerificationResult>;
 
 /** Per-socket state the server hands to the coordinator on every message. */
 export interface Connection {
@@ -59,19 +70,35 @@ export interface CoordinatorOptions {
   rateLimit?: number;
   /** Rate-limit window in ms. */
   rateWindowMs?: number;
+  /**
+   * Read-only identity verifier (Phase 8). When omitted, identity is treated as `unverified`, so a
+   * lobby whose policy *requires* a verified reference (`registered` / `verified_human_link`) fails
+   * closed — the safe default. Inject a real verifier to actually admit verified agents.
+   */
+  verifyIdentity?: VerifyIdentityFn;
 }
 
 const BROADCAST = new Set(['all', '*', 'broadcast']);
 
+/** Resolve the effective join policy: explicit `join_policy`, else derived from visibility. */
+function effectiveJoinPolicy(lobby: LobbySession): LobbyJoinPolicy {
+  if (lobby.join_policy) return lobby.join_policy;
+  return lobby.visibility === 'private' ? 'allowlisted' : 'none';
+}
+
 export class LobbyCoordinator {
   private rateLimit: number;
   private rateWindowMs: number;
+  private verifyIdentity: VerifyIdentityFn;
   /** agentId → recent send timestamps (ms), trimmed to the window. */
   private sendTimes = new Map<string, number[]>();
 
   constructor(private readonly store: LobbyStore, options: CoordinatorOptions = {}) {
     this.rateLimit = options.rateLimit ?? 30;
     this.rateWindowMs = options.rateWindowMs ?? 10_000;
+    this.verifyIdentity =
+      options.verifyIdentity ??
+      (async () => ({ status: 'unverified', source: 'none', checkedAt: new Date().toISOString() }));
   }
 
   // ── Entry point ──
@@ -121,14 +148,37 @@ export class LobbyCoordinator {
     if (!lobby) {
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: `unknown lobby: ${conn.lobbyId}` } }], close: true };
     }
-    // Private-lobby access control: deny agents not on the allowlist (by join token or name).
-    if (lobby.visibility === 'private') {
+
+    // ── Private-lobby access ladder (Phase 8): none → registered → allowlisted → verified_human_link.
+    // A display name is never an identity — only `join_token` (a non-secret registry ref/DID) is.
+    const policy = effectiveJoinPolicy(lobby);
+    const presentedRef = msg.join_token;
+    let verification: IdentityVerificationResult | undefined;
+    const deny = async (error: string): Promise<HandleResult> => {
+      await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, policy, reason: error, status: verification?.status });
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error } }], close: true };
+    };
+
+    if (policy === 'allowlisted') {
       const allow = lobby.allowlist ?? [];
-      const presented = msg.join_token ?? msg.display_name;
-      if (!allow.includes(presented)) {
-        await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name });
-        return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'private lobby: not authorized to join' } }], close: true };
+      const key = msg.join_token ?? msg.display_name;
+      if (!allow.includes(key)) return deny('private lobby: not on the allowlist');
+    } else if (policy === 'registered') {
+      if (!presentedRef) return deny('private lobby: a registered identity reference is required to join');
+      verification = await this.verifyIdentity(presentedRef);
+      if (!isRegistryResolved(verification.status)) {
+        return deny(`private lobby: identity is not registry-verified (status: ${verification.status})`);
       }
+    } else if (policy === 'verified_human_link') {
+      if (!presentedRef) return deny('private lobby: a verified human-linked identity reference is required to join');
+      verification = await this.verifyIdentity(presentedRef);
+      if (!(verification.humanLinked || verification.orgLinked)) {
+        return deny(`private lobby: identity is not human-linked (status: ${verification.status})`);
+      }
+    }
+    // For 'none'/'allowlisted', best-effort verify a presented ref so the roster badge reflects reality.
+    if (!verification && presentedRef) {
+      verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
     }
 
     const now = new Date().toISOString();
@@ -151,9 +201,11 @@ export class LobbyCoordinator {
       is_boss: false,
       registered_at: now,
       last_seen: now,
+      ...(verification ? { identity_status: verification.status } : {}),
+      ...(presentedRef ? { identity_ref: verification?.ref?.did ?? presentedRef } : {}),
     };
     await this.store.addAgent(conn.lobbyId, agent);
-    await this.event(conn.lobbyId, 'agent_registered', agentId, { display_name: msg.display_name });
+    await this.event(conn.lobbyId, 'agent_registered', agentId, { display_name: msg.display_name, policy, identity_status: verification?.status });
     const roster = await this.store.roster(conn.lobbyId);
     return {
       out: [

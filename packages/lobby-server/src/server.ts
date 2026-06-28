@@ -21,6 +21,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import type { AgentToLobbyMessage, LobbyToAgentMessage, LobbySession } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
+import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
@@ -42,7 +43,14 @@ export interface RunningLobbyServer {
 
 export async function startLobbyServer(options: LobbyServerOptions = {}): Promise<RunningLobbyServer> {
   const store = options.store ?? new InMemoryLobbyStore();
-  const coordinator = options.coordinator ?? new LobbyCoordinator(store);
+  // Phase 8: wire a read-only identity verifier only when an indexer URL is configured. Without it
+  // the coordinator's fail-closed default applies (a verified-identity policy denies everyone),
+  // and the server still boots with no network dependency.
+  const indexerUrl = process.env.AGENT_OS_CONCORDIUM_INDEXER_URL;
+  const verifyIdentity = indexerUrl
+    ? makeVerifyIdentityFn(new IdentityVerifier({ transport: new HttpIndexerTransport({ baseUrl: indexerUrl }) }))
+    : undefined;
+  const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity });
   const autoDefault = options.autoDefaultLobby ?? true;
 
   // Socket bookkeeping for fan-out.
@@ -103,7 +111,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // Public discovery — shape matches what the Panel/relay parse.
     if (path === '/api/v1/agent-lobby/discover' && req.method === 'GET') {
       const lobby = autoDefault ? await ensureDefaultLobby() : (await store.listLobbies()).find((l) => l.status === 'active');
-      return json({ lobby: lobby ? { lobby_id: lobby.lobby_id, org_id: lobby.org_id, name: lobby.name, visibility: lobby.visibility } : null });
+      return json({ lobby: lobby ? { lobby_id: lobby.lobby_id, org_id: lobby.org_id, name: lobby.name, visibility: lobby.visibility, join_policy: lobby.join_policy } : null });
     }
 
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'POST') {
@@ -115,6 +123,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         name: body.name ?? 'Lobby',
         status: 'active',
         visibility: body.visibility ?? 'public',
+        join_policy: body.join_policy,
         allowlist: body.allowlist,
         connected_agent_ids: [],
         message_seq: 0,

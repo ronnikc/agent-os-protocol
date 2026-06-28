@@ -11,6 +11,8 @@
  * Sprint: Multi-Session UI Assist — Agent Lobby (Phase 1)
  */
 
+import type { IdentityVerificationStatus, LobbyJoinPolicy } from './agent-identity.js';
+
 // ── Agent Session ──
 
 /** Status of a connected agent session in the lobby. */
@@ -59,6 +61,13 @@ export interface LobbyAgent {
   last_seen: string;
   /** ISO timestamp of disconnection (set when status becomes 'disconnected'). */
   disconnected_at?: string;
+  /**
+   * Identity verification status stamped at join time (Phase 8) — drives the roster identity badge.
+   * Absent/`undefined` means no reference was presented (an unverified/anonymous participant).
+   */
+  identity_status?: IdentityVerificationStatus;
+  /** Non-secret registry reference (the DID) the agent presented, when any. Never a key. */
+  identity_ref?: string;
 }
 
 // ── Lobby Messages (inter-agent communication) ──
@@ -160,8 +169,14 @@ export interface LobbySession {
   /** Visibility — defaults to 'public' when unset. */
   visibility?: LobbyVisibility;
   /**
+   * Private-lobby access policy (Phase 8 ladder: none → registered → allowlisted →
+   * verified_human_link). When unset, behavior derives from `visibility`: a private lobby defaults
+   * to `allowlisted` (back-compat with the Phase 7 allowlist), a public lobby to `none`.
+   */
+  join_policy?: LobbyJoinPolicy;
+  /**
    * Join allowlist for a private lobby. An entry matches an agent's presented join token (its
-   * verified identity reference, Phase 8) or display name. Empty/undefined on a public lobby.
+   * verified identity reference / DID, Phase 8) or display name. Empty/undefined on a public lobby.
    */
   allowlist?: string[];
   /** ID of the agent currently appointed as Boss Agent (if any). */
@@ -386,6 +401,7 @@ export interface CreateLobbySessionPayload {
   org_id?: string;
   created_by?: string;
   visibility?: LobbyVisibility;
+  join_policy?: LobbyJoinPolicy;
   allowlist?: string[];
 }
 
@@ -394,7 +410,14 @@ export interface CreateLobbySessionPayload {
  * relay already parse: `{ lobby: { lobby_id, org_id, name } | null }`.
  */
 export interface LobbyDiscoverResponse {
-  lobby: { lobby_id: string; org_id: string; name: string; visibility?: LobbyVisibility } | null;
+  lobby: {
+    lobby_id: string;
+    org_id: string;
+    name: string;
+    visibility?: LobbyVisibility;
+    /** The join policy a client must satisfy (so it knows whether to present an identity ref). */
+    join_policy?: LobbyJoinPolicy;
+  } | null;
 }
 
 // ── Event log (durable accountability — charter §19) ──

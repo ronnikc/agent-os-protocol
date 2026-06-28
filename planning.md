@@ -1081,6 +1081,34 @@ Exit criteria:
 - No AesirX/ComplianceOne runtime references remain.
 - No changes were made to `grc-suite`.
 
+### Phase 12 — Agent OS Panel UI Redesign
+
+Deliverables:
+
+- CSS token system encoding DESIGN.md (the dark glass-panel control-plane aesthetic).
+- Per-tab layout alignment to the `design-specs/` mockups (Agents, Lobby, Messages, Tasks, Gantt, Schedule, Memory).
+- Logo/brand lockup and status indicators (agents, tasks, lobbies, identity).
+- Styled Phase-8 identity badges folded into the design language.
+
+Exit criteria:
+
+- Each Panel tab visually matches its `design-specs/` mockup.
+- DESIGN.md conventions are encoded as reusable CSS tokens.
+- The panel still boots and all tabs work (no functional regression).
+
+### Phase 13 — Agent OS Protocol Website
+
+Deliverables:
+
+- A simple static public website (`apps/website/`) reusing the DESIGN.md visual language.
+- Landing page: hero, features, install/quick-start, docs + GitHub links, license.
+- Local preview script; a hosted deploy is config-gated.
+
+Exit criteria:
+
+- The website serves locally and reflects current platform capabilities.
+- Brand-neutral, Apache-2.0, with no domain content or secrets.
+
 ---
 
 ## 18. Testing and Verification
