@@ -34,8 +34,11 @@ agent-os-protocol/
     protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider)
     adapters/src/                 # runtime adapters + registry (claude-cli, codex-cli)
     providers/src/                # model providers (API fuel): openai-/anthropic-compatible, BYOK
+    lobby-server/src/             # independent lobby (store + coordinator + HTTP/WS) — npm run lobby
+    lobby-client/src/             # typed WS lobby client (discover, register, heartbeat)
     relay/src/                    # relay-server.ts + lobby-types.ts
-  docs/adapters/  docs/providers/ # runtime-adapter + model-provider contracts, spikes, matrices
+  apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
+  docs/adapters/ providers/ lobby/ # contracts, spikes, matrices, lobby protocol/security
   design-specs/                   # panel design mockups
 ```
 
@@ -59,9 +62,14 @@ npm run agent-os-panel-tray                       # system-tray launcher
 npm run relay                                     # ws://localhost:4722
 npm run relay -- --port 5001 --cwd /path/to/repo
 
-# Verify the runtime-adapter + model-provider layers (no runtime/key needed — injected spawn/fetch)
+# Lobby server — standalone Swarm Mode lobby the Panel/relay connect to (--lobby <url>)
+npm run lobby                                     # ws://localhost:4730
+npm run lobby -- --port 5000
+
+# Verify the adapter + provider + lobby layers (no runtime/key/service needed — injected seams)
 npm run verify-adapters
 npm run verify-providers
+npm run verify-lobby
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),

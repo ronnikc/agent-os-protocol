@@ -51,6 +51,8 @@ export interface LobbyAgent {
   relay_port?: number;
   /** Agent OS specialist role (e.g. "frontend-specialist", "compliance-specialist"). */
   agent_role?: string;
+  /** True when this agent currently holds the Boss role (mirrors LobbySession.boss_agent_id). */
+  is_boss?: boolean;
   /** ISO timestamp of registration. */
   registered_at: string;
   /** ISO timestamp of last heartbeat. */
@@ -140,6 +142,11 @@ export interface LobbyRequest {
 /** Status of the lobby itself. */
 export type LobbyStatus = 'active' | 'paused' | 'closed';
 
+/** Lobby visibility — controls who may join (charter §10/§19). */
+export type LobbyVisibility =
+  | 'public' // anyone may join; abuse controls (rate limits) apply
+  | 'private'; // only allowlisted / verified agents may join
+
 /** Top-level lobby session document. */
 export interface LobbySession {
   /** Unique lobby session ID. */
@@ -150,6 +157,13 @@ export interface LobbySession {
   name: string;
   /** Current lobby status. */
   status: LobbyStatus;
+  /** Visibility — defaults to 'public' when unset. */
+  visibility?: LobbyVisibility;
+  /**
+   * Join allowlist for a private lobby. An entry matches an agent's presented join token (its
+   * verified identity reference, Phase 8) or display name. Empty/undefined on a public lobby.
+   */
+  allowlist?: string[];
   /** ID of the agent currently appointed as Boss Agent (if any). */
   boss_agent_id?: string;
   /** IDs of all currently connected agents. */
@@ -176,6 +190,10 @@ export type AgentToLobbyMessage =
       pid?: number;
       relay_port?: number;
       agent_role?: string;
+      /** Optional join token for a private lobby — matched against the lobby allowlist. */
+      join_token?: string;
+      /** Marks a browser human participant (exempt from floor control). Defaults to cli_agent. */
+      participant_type?: LobbyParticipantType;
     }
   | { type: 'lobby-heartbeat'; current_work: string; status: LobbyAgentStatus }
   | { type: 'lobby-message'; to_agent_id: string; message_type: LobbyMessageType; content: string }
@@ -360,4 +378,53 @@ export interface DecideLobbyRequestPayload {
 /** Payload for appointing a Boss Agent. */
 export interface AppointBossAgentPayload {
   agent_id: string;
+}
+
+/** Payload for creating a lobby on the independent lobby server. */
+export interface CreateLobbySessionPayload {
+  name: string;
+  org_id?: string;
+  created_by?: string;
+  visibility?: LobbyVisibility;
+  allowlist?: string[];
+}
+
+/**
+ * Public discovery response (`GET /api/v1/agent-lobby/discover`). Shape matches what the Panel and
+ * relay already parse: `{ lobby: { lobby_id, org_id, name } | null }`.
+ */
+export interface LobbyDiscoverResponse {
+  lobby: { lobby_id: string; org_id: string; name: string; visibility?: LobbyVisibility } | null;
+}
+
+// ── Event log (durable accountability — charter §19) ──
+
+/** Kinds of auditable lobby events appended to the durable event log. */
+export type LobbyEventType =
+  | 'lobby_created'
+  | 'agent_registered'
+  | 'agent_left'
+  | 'message_sent'
+  | 'message_rejected' // floor control / scoping denial (records the anti-pattern attempt)
+  | 'boss_appointed'
+  | 'hand_raised'
+  | 'task_created'
+  | 'task_updated'
+  | 'join_denied'; // private-lobby access denial
+
+/** One append-only entry in a lobby's event log. */
+export interface LobbyEvent {
+  /** Unique event id. */
+  event_id: string;
+  /** Lobby this event belongs to. */
+  lobby_id: string;
+  /** Monotonic sequence within the lobby. */
+  seq: number;
+  type: LobbyEventType;
+  /** Acting agent id (or 'system'). */
+  actor_id: string;
+  /** ISO timestamp. */
+  at: string;
+  /** Structured, non-secret detail (e.g. reason for a rejection). */
+  detail?: Record<string, unknown>;
 }

@@ -1,0 +1,17 @@
+{
+  "name": "@agent-os/lobby-server",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent OS Protocol — independent lobby server (portable Node HTTP/WS) with server-side floor control + pluggable durable store.",
+  "license": "Apache-2.0",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-os/protocol-core": "*",
+    "ws": "^8.21.0"
+  }
+}
