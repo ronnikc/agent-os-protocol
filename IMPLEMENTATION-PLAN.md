@@ -254,6 +254,30 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Exit:** a loop converges on a real work item against measurable exit criteria; respects
   iteration/budget caps + human checkpoints; is fully auditable + stoppable; works local + swarm.
 
+### Phase 12 — Agent OS Panel UI Redesign (DESIGN.md alignment)
+- Evolve the Panel UI from the functional Phase-1 layout into the polished, **dark glass-panel
+  control-plane aesthetic** defined in [`DESIGN.md`](DESIGN.md) and the per-tab mockups in
+  [`design-specs/`](design-specs/) (Agents, Lobby, Messages, Tasks, Gantt, Schedule, Memory).
+- Encode DESIGN.md as a **CSS token system** (deep-navy background, glassmorphism panels,
+  cyan→violet gradients, sharp status indicators for agents/tasks/lobbies/**identity**, the
+  hex/cube logo lockup); align each tab's layout to its mockup; fold the Phase-8 identity badges
+  into the design language.
+- Keep it **vanilla JS** (no framework) and product-neutral; **no functional regressions** — every
+  tab keeps working and the panel keeps booting.
+- **Exit:** each tab visually matches its `design-specs/` mockup; DESIGN.md conventions live as
+  reusable CSS tokens; the panel boots and all tabs work (a screenshot pass vs the mockups).
+
+### Phase 13 — Agent OS Protocol Website (public landing site)
+- A **simple, static public website** for the platform under `apps/website/`, reusing the DESIGN.md
+  visual language: hero, what-it-is, features (Local/Swarm/Loop Mode, UI Assist, agent identity,
+  `/train`, runtime adapters), install + quick-start, docs + GitHub links, Apache-2.0.
+- Static HTML/CSS (optionally a minimal generator) + a tiny `npm run website` static server for
+  local preview. A hosted deploy (Vercel / GitHub Pages) is **config-gated** (verifiable-core-first,
+  as with `apps/lobby-web`).
+- **Brand-neutral**; no domain content; no secrets.
+- **Exit:** `npm run website` serves a coherent landing page that reflects current capabilities and
+  is consistent with DESIGN.md; it builds/serves locally with no external service.
+
 ---
 
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)

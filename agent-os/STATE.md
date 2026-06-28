@@ -8,8 +8,8 @@
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the 11-phase plan. **Phases 0–7 are merged to `main`; Phase 8 (Concordium agent identity &
-verification) is landing.**
+the phase plan. **Phases 0–8 are merged to `main` (Phase 8 — Concordium agent identity &
+verification — via #9); Phases 9–13 are planned.**
 
 ## Phase status
 
@@ -23,10 +23,12 @@ verification) is landing.**
 | 5 | Additional CLI adapters (Codex first) | ✅ merged (#6) |
 | 6 | API provider (fuel) layer, BYOK | ✅ merged (#7) |
 | 7 | Independent lobby platform (public/private, durable state) | ✅ merged (#8) |
-| 8 | Concordium agent identity & verification | 🔄 landing |
+| 8 | Concordium agent identity & verification | ✅ merged (#9) |
 | 9 | UI Assist integration package | ⬜ planned |
 | 10 | Launch readiness | ⬜ planned |
 | 11 | Loop / autonomous iterative execution | ⬜ planned |
+| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ⬜ planned |
+| 13 | Agent OS Protocol website (public landing site) | ⬜ planned |
 
 ## Done so far
 
@@ -74,7 +76,7 @@ verification) is landing.**
   real two-client WS run incl. on-wire lobby-scoping) **and** an end-to-end Panel connect
   (`--lobby` → discover → register → roster). `apps/lobby-web` (Vercel + Upstash) documented as the
   deploy-gated next increment. `npm run lobby`; docs in `docs/lobby/`.
-- **Phase 8 — Concordium agent identity & verification (landing):** the verifiable, read-only,
+- **Phase 8 — Concordium agent identity & verification (merged #9):** the verifiable, read-only,
   key-free identity slice. `packages/protocol-core/agent-identity.ts` adds the **Agent Card** (public,
   hashable, A2A-shaped — `application/a2a-agent-card+json`), `ConcordiumAgentRef` (non-secret pointer),
   the verification **status ladder** (registry_verified → human_linked → org_linked / pending / failed),

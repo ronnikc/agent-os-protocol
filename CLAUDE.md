@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–7 merged; Phase 8 — Concordium agent identity — landing). See
+> **Status:** Forking in progress (Phases 0–8 merged — through Concordium agent identity; Phases 9–13 planned). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -86,7 +86,7 @@ registry indexer for the private-lobby identity policy ladder — no private key
 
 | File | What it covers |
 |------|----------------|
-| [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) | The fork build plan (Phases 0–11), extraction manifest, risks |
+| [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) | The fork build plan (Phases 0–13), extraction manifest, risks |
 | [`agent-os/RULES.md`](agent-os/RULES.md) | Non-negotiable operational rules + precedence |
 | [`agent-os/SPRINTS.md`](agent-os/SPRINTS.md) | Sprint lifecycle, gates, close-out |
 | [`agent-os/SUB-AGENTS.md`](agent-os/SUB-AGENTS.md) | Sub-agent roster, routing, verification |

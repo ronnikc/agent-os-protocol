@@ -5,11 +5,14 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Status: **Phase 1 landed — Local Mode runs (Panel + relay)**
+&nbsp;Status: **Phases 1–8 landed — Local + Swarm Mode, runtime adapters, API providers, the independent lobby & verifiable agent identity**
 
-> 🚧 **Project status.** The platform is mid-fork. **Phase 1 is complete: the Agent OS Panel
-> and relay run locally** (`npm run agent-os-panel`). Later capabilities — Swarm Mode, the
-> hosted lobby, agent identity, additional runtime adapters, `/train`, and Loop Mode — are
+> 🚧 **Project status.** The platform is mid-fork. **Phases 1–8 are merged:** the Agent OS Panel
+> and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the
+> runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider
+> (fuel) layer; the independent public/private **lobby server**; and **read-only Concordium agent
+> identity & verification** with a private-lobby policy ladder. Later capabilities — UI Assist
+> packaging, Launch readiness, Loop Mode, the **Panel UI redesign**, and a **public website** — are
 > marked **(planned)** or by the phase that delivers them. See
 > **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
 > **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
@@ -306,17 +309,19 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 | Phase | Focus |
 |---|---|
 | 0 | Discovery, safety, planning ✅ |
-| 1 | Repo isolation, branding & Apache-2.0 relicensing; runnable local mode |
-| 2 | Generic agent roster + Domain Specialist + new platform agents |
-| 3 | `/train [agent]` command |
-| 4 | Runtime adapter abstraction + canonical work-item schema |
-| 5 | Additional CLI adapters (Codex first) |
-| 6 | API provider (fuel) layer, BYOK |
-| 7 | Independent lobby platform (public/private, durable state) |
-| 8 | Concordium agent identity & verification |
+| 1 | Repo isolation, branding & Apache-2.0 relicensing; runnable local mode ✅ |
+| 2 | Generic agent roster + Domain Specialist + new platform agents ✅ |
+| 3 | `/train [agent]` command ✅ |
+| 4 | Runtime adapter abstraction + canonical work-item schema ✅ |
+| 5 | Additional CLI adapters (Codex first) ✅ |
+| 6 | API provider (fuel) layer, BYOK ✅ |
+| 7 | Independent lobby platform (public/private, durable state) ✅ |
+| 8 | Concordium agent identity & verification ✅ |
 | 9 | UI Assist integration package |
 | 10 | Launch readiness (docs, examples, first release) |
 | 11 | Loop / autonomous iterative execution |
+| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) |
+| 13 | Agent OS Protocol website (public landing site) |
 
 ## Documentation
 
