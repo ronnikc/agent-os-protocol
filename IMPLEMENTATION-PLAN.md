@@ -375,13 +375,17 @@ any `AesirX`/`proprietary and confidential` reappearance.
 | **Cursor CLI** | 5 | `cursor login` | ✅ | ✅ `cursor-agent -p` | ✅ `json`/`stream-json` | ✅ | ✅ | **Blocked: needs PTY shim (TTY-only)** |
 | **Hermes Agent** | 5/6 | Nous auth | ? | ? | ? | ? | ? | Blocked: confirm CLI vs. Phase 6 provider |
 | **OpenClaw** | 5 | per docs | ? | ? | ? | ? | ? | Blocked: CLI surface unconfirmed |
-| **OpenAI-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
-| **Anthropic-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
+| **OpenAI-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | **Provider shipped** ([docs](docs/providers/README.md)) |
+| **Anthropic-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | **Provider shipped** ([docs](docs/providers/README.md)) |
 
 **Adapter acceptance (charter §12):** feature-flagged; missing runtime → panel explains
 install; one adapter's failure never breaks the panel; relay protocol stays stable.
 **Phase 5 status:** Codex adapter shipped + verified; OpenCode/Cursor/Hermes/OpenClaw documented
 with blockers in [`docs/adapters/runtime-spikes.md`](docs/adapters/runtime-spikes.md).
+**Phase 6 status:** `packages/providers` ships the OpenAI-/Anthropic-compatible `ModelProviderAdapter`
+(complete + SSE stream), BYOK structural (keys local-only, never to a lobby), panel `/api/providers`
+discovery, and `npm run verify-providers` (11/11). Live "fuel an agent in turn execution" wiring
+rides on the relay driver refactor (STATE.md follow-ups).
 
 ---
 
