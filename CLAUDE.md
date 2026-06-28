@@ -33,8 +33,9 @@ agent-os-protocol/
   packages/                       # Layers 3 & 4
     protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider)
     adapters/src/                 # runtime adapters + registry (claude-cli, codex-cli)
+    providers/src/                # model providers (API fuel): openai-/anthropic-compatible, BYOK
     relay/src/                    # relay-server.ts + lobby-types.ts
-  docs/adapters/                  # runtime-adapter contract, discovery spikes, compatibility matrix
+  docs/adapters/  docs/providers/ # runtime-adapter + model-provider contracts, spikes, matrices
   design-specs/                   # panel design mockups
 ```
 
@@ -58,8 +59,9 @@ npm run agent-os-panel-tray                       # system-tray launcher
 npm run relay                                     # ws://localhost:4722
 npm run relay -- --port 5001 --cwd /path/to/repo
 
-# Verify the runtime-adapter layer (no runtime install needed — injected spawn)
+# Verify the runtime-adapter + model-provider layers (no runtime/key needed — injected spawn/fetch)
 npm run verify-adapters
+npm run verify-providers
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),

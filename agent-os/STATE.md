@@ -3,12 +3,12 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 5.
+> **Last updated:** Phase 6.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the 11-phase plan. **Phases 0–4 are merged to `main`; Phase 5 (Codex CLI adapter) is landing.**
+the 11-phase plan. **Phases 0–5 are merged to `main`; Phase 6 (API provider / fuel layer) is landing.**
 
 ## Phase status
 
@@ -19,8 +19,8 @@ the 11-phase plan. **Phases 0–4 are merged to `main`; Phase 5 (Codex CLI adapt
 | 2 | Generic agent roster + Domain Specialist + new platform agents | ✅ merged (#3) |
 | 3 | `/train [agent]` command | ✅ merged (#4) |
 | 4 | Runtime adapter abstraction + canonical work-item schema | ✅ merged (#5) |
-| 5 | Additional CLI adapters (Codex first) | 🔄 landing |
-| 6 | API provider (fuel) layer, BYOK | ⬜ planned |
+| 5 | Additional CLI adapters (Codex first) | ✅ merged (#6) |
+| 6 | API provider (fuel) layer, BYOK | 🔄 landing |
 | 7 | Independent lobby platform (public/private, durable state) | ⬜ planned |
 | 8 | Concordium agent identity & verification | ⬜ planned |
 | 9 | UI Assist integration package | ⬜ planned |
@@ -47,13 +47,21 @@ the 11-phase plan. **Phases 0–4 are merged to `main`; Phase 5 (Codex CLI adapt
   `packages/adapters` (the `AdapterRegistry` + the first-class `claude-cli` adapter, extracted from
   the relay) + the canonical work-item engine (`npm run work-items`) and create-phase/sprint/task
   authoring skills. The panel detects runtimes via `GET /api/runtimes` → `runtimeRegistry.detectAll()`.
-- **Phase 5 — Codex CLI adapter (landing):** second first-class adapter — `packages/adapters/src/codex-cli.ts`
+- **Phase 5 — Codex CLI adapter (merged #6):** second first-class adapter — `packages/adapters/src/codex-cli.ts`
   drives OpenAI's Codex CLI in headless mode (`codex exec --experimental-json`, spawned binary
   detected on PATH) with a pure `mapCodexEvent()` parser and thread-id session resume. Registered
   alongside `claude-cli`; missing runtime degrades to an install message. Verified by
   `npm run verify-adapters` (16/16, injected fake spawn over a canned JSONL transcript). Discovery
   spikes + the confirmed compatibility matrix in `docs/adapters/` (OpenCode/Cursor/Hermes/OpenClaw
   documented with blockers).
+- **Phase 6 — API provider (fuel) layer (landing):** `packages/providers` implements the
+  `ModelProviderAdapter` contract — `openai-compatible` (Chat Completions) + `anthropic-compatible`
+  (Messages), each with `complete()` + SSE `stream()` over an injectable fetch, plus a
+  `ProviderRegistry`. **BYOK is structural**: configs store only the env-var *name*; keys resolve
+  from the local env at call time and never serialize, log, or reach a lobby (`redactProviderConfig`
+  / `assertNoInlineSecret`). Panel discovery via `GET /api/providers` (reports key present/absent,
+  never the value). Verified by `npm run verify-providers` (11/11, injected fake fetch — no network/
+  key). Contract + BYOK model in `docs/providers/`.
 
 ## Known follow-ups
 
@@ -62,7 +70,10 @@ the 11-phase plan. **Phases 0–4 are merged to `main`; Phase 5 (Codex CLI adapt
   illustrative incident history from the origin project (now neutralized); it will be refreshed
   organically as the platform accrues its own history.
 - **Next adapter: OpenCode** (no hard blocker — `opencode run --format json` / ACP nd-JSON);
-  **Cursor** needs a PTY shim (TTY-only); **Hermes** may belong in the Phase 6 provider layer.
-  See `docs/adapters/runtime-spikes.md`.
+  **Cursor** needs a PTY shim (TTY-only). See `docs/adapters/runtime-spikes.md`.
+- **Provider follow-up:** the fuel engine ships, but binding "agent X → provider Y" into live turn
+  execution (and a panel provider selector UI) rides on the relay driver refactor below; an
+  Anthropic-/OpenAI-compatible Hermes endpoint would slot in here as a config, not a new runtime.
 - The relay still drives Claude inline via the SDK `query()`; routing its turn loop through the
-  adapter's `startAgent`/`readOutput` (so both runtimes share one driver path) is a later refactor.
+  adapter's `startAgent`/`readOutput` (so both runtimes — and providers — share one driver path) is
+  a later refactor.

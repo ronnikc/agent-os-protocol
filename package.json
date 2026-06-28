@@ -33,7 +33,8 @@
     "relay": "tsx packages/relay/src/relay-server.ts",
     "train": "node agent-os/scripts/train.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
-    "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts"
+    "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
+    "verify-providers": "tsx agent-os/scripts/verify-providers.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
@@ -47,6 +48,7 @@
   },
   "workspaces": [
     "packages/protocol-core",
-    "packages/adapters"
+    "packages/adapters",
+    "packages/providers"
   ]
 }

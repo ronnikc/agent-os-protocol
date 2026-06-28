@@ -31,6 +31,7 @@ function spawnTsx(args: string[], opts: import('node:child_process').SpawnOption
 import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { runtimeRegistry } from '@agent-os/adapters';
+import { providerRegistry, loadProviderConfigsFromEnv, defaultProviderId, redactProviderConfig } from '@agent-os/providers';
 
 // ── Config ──
 const args = process.argv.slice(2);
@@ -2042,6 +2043,34 @@ const server = createServer(async (req, res) => {
       })
       .catch((err: unknown) => {
         sendJson(res, { error: (err as Error).message, runtimes: {}, available: [], default: null }, 500);
+      });
+    return;
+  }
+
+  // ── Model Providers (API fuel) ──
+  // Discover which BYOK API providers are configured locally via the provider registry
+  // (@agent-os/providers). Validation is static/offline and NEVER returns key values — only the
+  // env-var name and whether the key is present locally. Keys never leave this machine.
+  if (path === '/api/providers' && method === 'GET') {
+    const configs = loadProviderConfigsFromEnv();
+    providerRegistry
+      .validateAll(configs)
+      .then((validation) => {
+        const available = Object.entries(validation)
+          .filter(([, v]) => v.ok)
+          .map(([id]) => id);
+        const def = defaultProviderId();
+        sendJson(res, {
+          providers: providerRegistry.list().map((p) => ({ id: p.id, label: p.label })),
+          // redactProviderConfig guarantees no secret crosses this boundary.
+          configs: Object.fromEntries(Object.entries(configs).map(([id, c]) => [id, redactProviderConfig(c)])),
+          validation,
+          available,
+          default: available.includes(def) ? def : (available[0] ?? null),
+        });
+      })
+      .catch((err: unknown) => {
+        sendJson(res, { error: (err as Error).message, providers: [], available: [], default: null }, 500);
       });
     return;
   }
