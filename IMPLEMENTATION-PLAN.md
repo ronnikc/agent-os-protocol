@@ -364,20 +364,24 @@ any `AesirX`/`proprietary and confidential` reappearance.
 
 > Capability cells for non-Claude runtimes are **provisional** and must be confirmed in
 > each Phase-5 discovery spike against the live docs in charter §23 before coding.
+> **Confirmed cells + per-runtime blockers now live in [`docs/adapters/`](docs/adapters/README.md)**
+> (the living spike record); this table is the high-level summary.
 
 | Runtime | Phase | Install/Auth | Interactive | Headless | JSON/NDJSON | Resume | MCP | Status |
 |---|---|---|---|---|---|---|---|---|
-| **Claude CLI / Code** | 4 | Claude Max login / API key | ✅ | ✅ | ✅ | ✅ | ✅ | **Working today** (relay) → adapter |
-| **Codex CLI** | 5 (1st) | `npm i -g`; OpenAI auth | ? | likely | likely | ? | ? | PoC target |
-| **OpenCode** | 5 | per docs | ? | ? | ? | ? | ? | Spike |
-| **Cursor CLI** | 5 | Cursor auth | ? | ? | ? | ? | ? | Spike |
-| **Hermes Agent** | 5 | Nous auth | ? | ? | ? | ? | ? | Spike (after discovery) |
-| **OpenClaw** | 5 | per docs | ? | ? | ? | ? | ? | Spike (after discovery) |
+| **Claude CLI / Code** | 4 | Claude Max login / API key | ✅ | ✅ | ✅ | ✅ | ✅ | **Adapter shipped** (relay) |
+| **Codex CLI** | 5 (1st) | `npm i -g @openai/codex`; ChatGPT / `OPENAI_API_KEY` | ✅ | ✅ `codex exec` | ✅ `--experimental-json` | ✅ `resume` | ✅ | **Adapter shipped** ([spike](docs/adapters/codex-cli.md)) |
+| **OpenCode** | 5 | `npm i -g opencode-ai` | ✅ | ✅ `opencode run` | ✅ `--format json` / ACP nd-JSON | ✅ | ✅ | Next spike (no hard blocker) |
+| **Cursor CLI** | 5 | `cursor login` | ✅ | ✅ `cursor-agent -p` | ✅ `json`/`stream-json` | ✅ | ✅ | **Blocked: needs PTY shim (TTY-only)** |
+| **Hermes Agent** | 5/6 | Nous auth | ? | ? | ? | ? | ? | Blocked: confirm CLI vs. Phase 6 provider |
+| **OpenClaw** | 5 | per docs | ? | ? | ? | ? | ? | Blocked: CLI surface unconfirmed |
 | **OpenAI-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
 | **Anthropic-compatible API** | 6 | BYOK | n/a | ✅ | ✅ | n/a | tool-use | Provider adapter |
 
 **Adapter acceptance (charter §12):** feature-flagged; missing runtime → panel explains
 install; one adapter's failure never breaks the panel; relay protocol stays stable.
+**Phase 5 status:** Codex adapter shipped + verified; OpenCode/Cursor/Hermes/OpenClaw documented
+with blockers in [`docs/adapters/runtime-spikes.md`](docs/adapters/runtime-spikes.md).
 
 ---
 

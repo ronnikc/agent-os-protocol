@@ -1,8 +1,9 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phase 1). See [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)
-> for the phase-by-phase plan and [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
+> **Status:** Forking in progress (Phases 0–4 merged; Phase 5 — Codex CLI adapter — landing). See
+> [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
+> [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
 
 ## What this is
@@ -29,8 +30,11 @@ agent-os-protocol/
     observations/ shared-memory/ logs/ training/   # runtime state (regenerated)
   agent-os-panel/                 # Layer 2 — local control-plane UI (vanilla JS SPA)
     index.html app.js styles.css presets.json tabs/ lib/
-  packages/
-    relay/src/                    # Layer 4 — relay-server.ts + lobby-types.ts
+  packages/                       # Layers 3 & 4
+    protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider)
+    adapters/src/                 # runtime adapters + registry (claude-cli, codex-cli)
+    relay/src/                    # relay-server.ts + lobby-types.ts
+  docs/adapters/                  # runtime-adapter contract, discovery spikes, compatibility matrix
   design-specs/                   # panel design mockups
 ```
 
@@ -53,6 +57,9 @@ npm run agent-os-panel-tray                       # system-tray launcher
 # Relay only — bridges the browser/UI Assist to your agent runtime (default: Claude Code)
 npm run relay                                     # ws://localhost:4722
 npm run relay -- --port 5001 --cwd /path/to/repo
+
+# Verify the runtime-adapter layer (no runtime install needed — injected spawn)
+npm run verify-adapters
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),
