@@ -438,7 +438,7 @@ async function main(): Promise<void> {
 
   await check('no client frame serializes a brand string or secret material', async () => {
     const { fake, session } = await connectedSession('act');
-    session.ask('apply the fix', { intent: 'act', content: ['<div class="dm-page" />'] });
+    session.ask('apply the fix', { intent: 'act', content: ['<div class="page-root" />'] });
     const wire = JSON.stringify(fake.last.sentMessages()).toLowerCase();
     // Origin product names, assembled so this guard does not itself trip the repo brand gate.
     const ORIGIN_BRANDS = ['aesir' + 'x', 'compliance' + 'one', 'forse' + 'ti'];
