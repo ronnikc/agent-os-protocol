@@ -41,6 +41,12 @@ import {
   extractTrailingActions,
   // tasks
   draftTaskFromAssist,
+  // integration
+  detectProjectType,
+  emitIntegrationPlan,
+  planIntegration,
+  FRAMEWORK_TARGETS,
+  type FrameworkTarget,
   type UiAssistClientMessage,
   type UiAssistServerMessage,
 } from '@agent-os/ui-assist-core';
@@ -566,6 +572,63 @@ async function main(): Promise<void> {
       assert.deepEqual(a.actions, b.actions, `actions mismatch for: ${JSON.stringify(f)}`);
       assert.equal(a.body, b.body, `body mismatch for: ${JSON.stringify(f)}`);
     }
+  });
+
+  // ════════ I — Integration engine (Integration Agent) ════════
+  console.log('\nI — integration engine');
+
+  const detectionFixtures: Array<{ name: string; inv: Parameters<typeof detectProjectType>[0]; expect: FrameworkTarget }> = [
+    { name: 'Next.js', inv: { files: ['next.config.js', 'pages/index.tsx'], dependencies: ['next', 'react'] }, expect: 'next' },
+    { name: 'React (no Next)', inv: { files: ['src/App.jsx'], dependencies: ['react', 'react-dom'] }, expect: 'react' },
+    { name: 'Vue', inv: { files: ['src/App.vue'], dependencies: ['vue'] }, expect: 'vue' },
+    { name: 'Svelte', inv: { files: ['src/routes/+page.svelte'], dependencies: ['svelte'] }, expect: 'svelte' },
+    { name: 'Laravel', inv: { files: ['artisan', 'resources/views/welcome.blade.php'], composer: ['laravel/framework'] }, expect: 'laravel' },
+    { name: 'WordPress', inv: { files: ['wp-config.php', 'wp-content/'] }, expect: 'wordpress' },
+    { name: 'Joomla', inv: { files: ['configuration.php', 'administrator/'] }, expect: 'joomla' },
+    { name: 'plain HTML', inv: { files: ['index.html', 'app.js'] }, expect: 'plain' },
+  ];
+
+  await check('detectProjectType classifies all eight targets (Next beats React)', () => {
+    for (const f of detectionFixtures) {
+      const d = detectProjectType(f.inv);
+      assert.equal(d.framework, f.expect, `${f.name} → ${d.framework}`);
+      assert.ok(d.signals.length > 0, `${f.name} has signals`);
+    }
+  });
+
+  await check('every framework plan mounts the overlay, targets the relay, and is dev-gated', () => {
+    for (const fw of FRAMEWORK_TARGETS) {
+      const plan = emitIntegrationPlan(fw, { relayUrl: 'ws://localhost:4722' });
+      assert.ok(plan.steps.length > 0, `${fw}: steps`);
+      assert.ok(plan.snippets.length > 0, `${fw}: snippets`);
+      const allCode = plan.snippets.map((s) => s.code).join('\n');
+      assert.ok(allCode.includes('mountUiAssist') || allCode.includes('data-ui-assist-auto'), `${fw}: mounts the overlay`);
+      assert.ok(allCode.includes('ws://localhost:4722'), `${fw}: uses the relay url`);
+      // Dev-gating present (framework-appropriate guard, or the dev-only check in the checklist).
+      const devGated =
+        /import\.meta\.env|NODE_ENV|@env\('local'\)|WP_DEBUG|JDEBUG|dev only|local\/dev/i.test(allCode) ||
+        plan.checks.some((c) => /dev-only/i.test(c));
+      assert.ok(devGated, `${fw}: dev-gated`);
+      // Connect notes carry the suggest-only safety boundary.
+      assert.ok(plan.connect.notes.some((n) => /suggest-only/i.test(n)), `${fw}: suggest-only note`);
+    }
+  });
+
+  await check('plans carry no origin brand string', () => {
+    const blob = JSON.stringify(FRAMEWORK_TARGETS.map((fw) => emitIntegrationPlan(fw))).toLowerCase();
+    for (const brand of ['aesir' + 'x', 'compliance' + 'one', 'forse' + 'ti']) {
+      assert.equal(blob.includes(brand), false, brand);
+    }
+  });
+
+  await check('planIntegration composes detection + plan; a remote lobby adds a swarm note', () => {
+    const { detection, plan } = planIntegration(
+      { files: ['next.config.ts'], dependencies: ['next'] },
+      { lobbyUrl: 'wss://lobby.example.com' },
+    );
+    assert.equal(detection.framework, 'next');
+    assert.equal(plan.connect.lobbyUrl, 'wss://lobby.example.com');
+    assert.ok(plan.connect.notes.some((n) => /swarm mode/i.test(n)));
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

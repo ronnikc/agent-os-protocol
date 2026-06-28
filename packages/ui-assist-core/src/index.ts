@@ -16,6 +16,7 @@ export * from './permission.js';
 export * from './session.js';
 export * from './render.js';
 export * from './tasks.js';
+export * from './integration.js';
 
 // Re-export the canonical work-item types the overlay reads/writes (the "add to sprint plan" path).
 export type { Task, Sprint, Phase, WorkItemStatus, Priority } from '@agent-os/protocol-core';
