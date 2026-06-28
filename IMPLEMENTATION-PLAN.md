@@ -252,6 +252,19 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
   first release tag.
 - **Exit:** fresh clone runs local mode + connects to configured lobby; all checks pass;
   zero AesirX/ComplianceOne runtime refs; `grc-suite` untouched.
+- **Status (PR open):** the launch documentation set ships under `docs/` (getting-started,
+  examples, security, lobby-hosting, training-agents + a docs index; the adapter matrix already
+  lives in `docs/adapters/`), wired together with the root README. The documented configuration is
+  now real — a zero-dependency `.env` loader (`@agent-os/protocol-core`) + `AGENT_OS_LOBBY_URL`/
+  `AGENT_OS_PANEL_PORT`/`AGENT_OS_RELAY_PORT`/`AGENT_OS_LOBBY_PORT` honoured with flag→`.env`→default
+  precedence. New checkable artifacts: `npm run verify-launch` (49 invariants incl. in-process brand
+  + domain gates and skill-reference integrity), `npm run verify-all` (all six suites), and
+  `npm run smoke` (the fresh-clone boot smoke: install → verify-all → boot Panel/Lobby/Relay → HTTP
+  probes). First release prepared (`0.1.0` + `CHANGELOG.md` + `RELEASING.md`); the `v0.1.0` tag is
+  cut on the merge commit. **Exit met** — verified by `npm run smoke` (PASSED) and `verify-all`
+  (16/11/15/23/31/49); brand + domain gates clean; `grc-suite` untouched. **Deferred (infra-gated):**
+  npm package publishing, the hosted `apps/lobby-web` deploy, live indexer wiring, and honouring
+  `AGENT_OS_RUNTIME` in the relay turn loop. See `agent-os/STATE.md`.
 
 ### Phase 11 — Loop / Autonomous Iterative Execution (locked late phase, §12B)
 - Ship + harden Loop Mode: the `LoopSpec`/`ExitCriterion` engine, `loop-orchestrator` Boss

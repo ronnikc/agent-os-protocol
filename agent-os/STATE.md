@@ -3,14 +3,14 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 9.
+> **Last updated:** Phase 10.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the phase plan. **Phases 0–8 are merged to `main` (Phase 8 — Concordium agent identity &
-verification — via #9). Phase 9 (UI Assist integration package) is implemented on a feature
-branch with a PR open; Phases 10–13 are planned.**
+the phase plan. **Phases 0–9 are merged to `main` (Phase 9 — UI Assist integration package —
+via #10). Phase 10 (launch readiness) is implemented on a feature branch with a PR open and a
+first `v0.1.0` release prepared; Phases 11–13 are planned.**
 
 ## Phase status
 
@@ -25,8 +25,8 @@ branch with a PR open; Phases 10–13 are planned.**
 | 6 | API provider (fuel) layer, BYOK | ✅ merged (#7) |
 | 7 | Independent lobby platform (public/private, durable state) | ✅ merged (#8) |
 | 8 | Concordium agent identity & verification | ✅ merged (#9) |
-| 9 | UI Assist integration package | ✅ implemented — PR open |
-| 10 | Launch readiness | ⬜ planned |
+| 9 | UI Assist integration package | ✅ merged (#10) |
+| 10 | Launch readiness (docs, verify-launch, smoke, v0.1.0) | ✅ implemented — PR open |
 | 11 | Loop / autonomous iterative execution | ⬜ planned |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ⬜ planned |
 | 13 | Agent OS Protocol website (public landing site) | ⬜ planned |
@@ -92,7 +92,7 @@ branch with a PR open; Phases 10–13 are planned.**
   injected fake transport/verifier — no network, no key) with the other three suites still green
   (adapters 16, providers 11, lobby 15). The verified Concordium references (CIS-8004/CIS-8, MCP service,
   indexer tools, JS SDK, VCK/VCDC) and the deferred on-chain writes are recorded in `docs/identity/`.
-- **Phase 9 — UI Assist integration package (PR open):** the neutral, embeddable overlay slice.
+- **Phase 9 — UI Assist integration package (merged #10):** the neutral, embeddable overlay slice.
   `packages/ui-assist-core` is the framework-agnostic engine — the browser↔runtime **event contract**
   (named to match the relay wire), a **transport seam** (local relay / remote lobby / fake in tests),
   the **session** state machine, the explicit-**permission gate** (suggest-only by default; an `act`
@@ -108,6 +108,24 @@ branch with a PR open; Phases 10–13 are planned.**
   refs removed) and the UI Assist docs neutralized. Verified by `npm run verify-ui-assist` (31/31 — an
   injected fake WebSocket + a DOM stub that mounts `embed.js` itself and cross-checks its action parser
   against the core) with the other four suites green (adapters 16, providers 11, lobby 15, identity 23).
+- **Phase 10 — launch readiness (PR open):** the fork is shippable as a coherent whole. The launch
+  documentation set under `docs/` (getting-started, examples, security, lobby-hosting,
+  training-agents + a docs index) is written to the verified reality of the code and wired together;
+  the root README points at it. The documented configuration is now **real**: a zero-dependency
+  `.env` loader in `@agent-os/protocol-core` plus `AGENT_OS_LOBBY_URL` / `AGENT_OS_PANEL_PORT` /
+  `AGENT_OS_RELAY_PORT` / `AGENT_OS_LOBBY_PORT` honoured across panel/relay/lobby with **flag → `.env`
+  → default** precedence (previously these were advertised but read by no code, and `.env` was never
+  loaded). The roster is self-consistent — the last domain-gate leak and all dangling skill
+  references are cleared, and two generic skills (`persona-usecase-validation`,
+  `module-production-review`) authored so the kept agents resolve. New checkable artifacts:
+  `npm run verify-launch` (49 launch invariants — docs present, scripts wired, brand+domain gates,
+  no dangling skill refs, Apache-2.0 license, `.env` loader behaviour, CHANGELOG↔version match),
+  `npm run verify-all` (all six suites), and `npm run smoke` — the fresh-clone boot smoke
+  (install → verify-all → boot Panel + Lobby + Relay → HTTP probes → teardown). First release
+  prepared: version `0.1.0`, `CHANGELOG.md`, `RELEASING.md` (the `v0.1.0` tag is cut on the merge
+  commit). **Exit met:** a fresh clone runs Local Mode and connects to a configured lobby; all six
+  suites pass; brand+domain gates clean; the read-only source repo untouched (reference only). Verified
+  by `npm run smoke` (PASSED) and `npm run verify-all` (16/11/15/23/31/49).
 
 ## Known follow-ups
 
@@ -146,3 +164,13 @@ branch with a PR open; Phases 10–13 are planned.**
   currently runs the runtime in a permissive edit mode; the explicit-permission gate is enforced
   overlay-side + by the system prompt until then). Also: routing the Panel's Assist tab + the relay
   onto `@agent-os/ui-assist-core`'s contract/session (replacing their inline copies) is a follow-up.
+- **Launch follow-ups (Phase 10):** the verifiable core ships (`verify-launch`, `verify-all`,
+  `smoke`, the docs, real `.env`). Deferred / infra-gated: (1) **npm publishing** of the
+  `@agent-os/*` packages + the bundled UI Assist framework wrappers; (2) the **hosted swarm lobby**
+  `apps/lobby-web` (Vercel + Upstash) — a deploy, not a tag artifact; (3) **live Concordium indexer**
+  wiring + on-chain (wallet-side) registration; (4) **`AGENT_OS_RUNTIME` is parsed but not yet
+  honoured** by the relay — selecting the driver per the runtime adapter (so Codex/others fuel a turn
+  through the relay) rides on the relay-driver refactor noted above; it is marked "planned" in
+  `.env.example`. Pre-existing Phase-2 roster debt also remains (gate-clean, so not a launch blocker):
+  a few agent startup protocols still cite origin-era doc paths, and some governance skill/agent
+  counts are stale — both to be refreshed organically (or in a housekeeping pass).
