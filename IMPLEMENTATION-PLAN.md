@@ -420,6 +420,15 @@ client of the new lobby URL.
   unverified agents; public lobbies rate-limit; messages lobby-scoped; **no secrets/keys in
   lobby**; display name ≠ identity.
 
+**Phase 7 status:** the portable Node WS server ships — `packages/lobby-server` (pluggable
+`LobbyStore` + `LobbyCoordinator` with server-side floor control, lobby-scoping, directed-task-only,
+private allowlist, rate-limit, event log) + `packages/lobby-client`, speaking the existing
+`/api/v1/agent-lobby` protocol. Verified by `npm run verify-lobby` (15/15) and an end-to-end Panel
+`--lobby` connect (discover → register → roster). **Exit met** (panel connects to the new lobby URL;
+local mode intact; messages lobby-scoped). The hosted swarm `apps/lobby-web` (Vercel + Upstash,
+REST + SSE over the same store/coordinator) is documented in `apps/lobby-web/README.md` as the
+deploy-gated next increment. Docs: `docs/lobby/`.
+
 ---
 
 ## 10. Concordium Agent Registry Integration Plan (charter §21.10)

@@ -3,12 +3,12 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 6.
+> **Last updated:** Phase 7.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the 11-phase plan. **Phases 0–5 are merged to `main`; Phase 6 (API provider / fuel layer) is landing.**
+the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lobby platform) is landing.**
 
 ## Phase status
 
@@ -20,8 +20,8 @@ the 11-phase plan. **Phases 0–5 are merged to `main`; Phase 6 (API provider / 
 | 3 | `/train [agent]` command | ✅ merged (#4) |
 | 4 | Runtime adapter abstraction + canonical work-item schema | ✅ merged (#5) |
 | 5 | Additional CLI adapters (Codex first) | ✅ merged (#6) |
-| 6 | API provider (fuel) layer, BYOK | 🔄 landing |
-| 7 | Independent lobby platform (public/private, durable state) | ⬜ planned |
+| 6 | API provider (fuel) layer, BYOK | ✅ merged (#7) |
+| 7 | Independent lobby platform (public/private, durable state) | 🔄 landing |
 | 8 | Concordium agent identity & verification | ⬜ planned |
 | 9 | UI Assist integration package | ⬜ planned |
 | 10 | Launch readiness | ⬜ planned |
@@ -62,6 +62,17 @@ the 11-phase plan. **Phases 0–5 are merged to `main`; Phase 6 (API provider / 
   / `assertNoInlineSecret`). Panel discovery via `GET /api/providers` (reports key present/absent,
   never the value). Verified by `npm run verify-providers` (11/11, injected fake fetch — no network/
   key). Contract + BYOK model in `docs/providers/`.
+- **Phase 7 — independent lobby platform (landing):** `packages/lobby-server` is a portable Node
+  HTTP+WS lobby that speaks the protocol the Panel/relay already use (`/api/v1/agent-lobby/discover`
+  + `/ws/agent`), so they connect via `--lobby <url>` unmodified — a clean-room reimplementation of
+  the prior bespoke coordinator. **Rules are enforced server-side** by `LobbyCoordinator`: floor control
+  (only the Boss/human may broadcast — the fix for the N² echo-cascade), lobby-scoping, directed-
+  task-only (`*` rejected), private-lobby allowlist, public rate-limit, and a durable event log.
+  `LobbyStore` is a pluggable seam (InMemory now; Redis backs the swarm). `packages/lobby-client`
+  is the typed WS client. Verified by `npm run verify-lobby` (15/15: coordinator unit rules + a
+  real two-client WS run incl. on-wire lobby-scoping) **and** an end-to-end Panel connect
+  (`--lobby` → discover → register → roster). `apps/lobby-web` (Vercel + Upstash) documented as the
+  deploy-gated next increment. `npm run lobby`; docs in `docs/lobby/`.
 
 ## Known follow-ups
 
@@ -77,3 +88,8 @@ the 11-phase plan. **Phases 0–5 are merged to `main`; Phase 6 (API provider / 
 - The relay still drives Claude inline via the SDK `query()`; routing its turn loop through the
   adapter's `startAgent`/`readOutput` (so both runtimes — and providers — share one driver path) is
   a later refactor.
+- **Lobby follow-ups:** the portable Node WS server is the verified core; the hosted swarm
+  `apps/lobby-web` (Next.js on Vercel + a `RedisLobbyStore`, REST + SSE) is the deploy-gated next
+  increment (needs Vercel + Upstash, so not bootable in CI). Wiring the Panel Lobby tab's phase
+  switching + the relay's lobby client onto `@agent-os/lobby-client` (replacing their bespoke
+  clients) is a follow-up; private-lobby join tokens become verified identity refs in Phase 8.

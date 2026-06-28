@@ -5,9 +5,9 @@
 /**
  * Independent Agent OS lobby server — a portable Node HTTP + WebSocket server that speaks the
  * exact protocol the Panel and relay already use (`/api/v1/agent-lobby/discover` +
- * `/ws/agent`), so they connect to it unmodified via Swarm Mode (`--lobby <url>`). It replaces the
- * old ComplianceOne backend coordinator with a clean, brand-neutral implementation whose rules are
- * enforced server-side by the LobbyCoordinator. Pair it with a Redis-backed LobbyStore for the
+ * `/ws/agent`), so they connect to it unmodified via Swarm Mode (`--lobby <url>`). It is a clean,
+ * brand-neutral, clean-room reimplementation whose rules are enforced server-side by the
+ * LobbyCoordinator. Pair it with a Redis-backed LobbyStore for the
  * remote swarm (apps/lobby-web); the default in-memory store fits local + the WS fallback.
  *
  *   npm run lobby                 # ws://localhost:4730
