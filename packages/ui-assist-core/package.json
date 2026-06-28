@@ -1,0 +1,16 @@
+{
+  "name": "@agent-os/ui-assist-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent OS Protocol — neutral UI Assist core: the browser↔runtime event contract, a transport seam, the session state machine, the explicit-permission gate, and framework integration scaffolding.",
+  "license": "Apache-2.0",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-os/protocol-core": "*"
+  }
+}

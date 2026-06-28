@@ -37,7 +37,8 @@
     "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
     "verify-providers": "tsx agent-os/scripts/verify-providers.ts",
     "verify-lobby": "tsx agent-os/scripts/verify-lobby.ts",
-    "verify-identity": "tsx agent-os/scripts/verify-identity.ts"
+    "verify-identity": "tsx agent-os/scripts/verify-identity.ts",
+    "verify-ui-assist": "tsx agent-os/scripts/verify-ui-assist.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
@@ -55,6 +56,7 @@
     "packages/providers",
     "packages/lobby-server",
     "packages/lobby-client",
-    "packages/identity-concordium"
+    "packages/identity-concordium",
+    "packages/ui-assist-core"
   ]
 }
