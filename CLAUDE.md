@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–9 merged — through the UI Assist integration package; Phase 10 — launch readiness — PR open, first `v0.1.0` prepared; Phases 11–13 planned). See
+> **Status:** Forking in progress (Phases 0–10 merged — through launch readiness; `v0.1.0` tagged. Phase 11 — Loop Mode — PR open; Phases 12–13 planned). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -39,6 +39,7 @@ agent-os-protocol/
     identity-concordium/src/      # read-only agent-identity verification + Agent Card authoring (no keys)
     ui-assist-core/src/           # neutral UI Assist engine: event contract, transport seam, session, permission gate, integration
     ui-assist-embed/              # repo-local embeddable overlay <script> (embed.js) + demo page
+    loop/src/                     # Loop Mode engine (LoopOrchestrator + presets) — npm run loop
     relay/src/                    # relay-server.ts + lobby-types.ts
   apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
   docs/                           # launch guides: getting-started, examples, security, lobby-hosting, training-agents (+ index)
@@ -75,14 +76,19 @@ npm run ui-assist-integrate -- /path/to/app --json --lobby wss://lobby.example.c
 npm run lobby                                     # ws://localhost:4730
 npm run lobby -- --port 5000
 
+# Loop Mode — run a preset loop through the engine (simulated / dry-run driver)
+npm run loop -- --list
+npm run loop -- --preset continuous-quality [--unattended]
+
 # Verify the layers (no runtime/key/service needed — injected seams)
 npm run verify-adapters
 npm run verify-providers
 npm run verify-lobby
 npm run verify-identity
 npm run verify-ui-assist
+npm run verify-loop       # Loop Mode engine: caps, convergence/stall, regression, checkpoints
 npm run verify-launch     # launch-readiness invariants (docs, scripts, gates, references, license)
-npm run verify-all        # all six suites in one chain
+npm run verify-all        # all seven suites in one chain
 npm run smoke             # fresh-clone boot smoke: install → verify-all → boot Panel/Lobby/Relay → probe
 ```
 

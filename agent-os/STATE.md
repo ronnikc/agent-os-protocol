@@ -3,14 +3,14 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 10.
+> **Last updated:** Phase 11.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the phase plan. **Phases 0–9 are merged to `main` (Phase 9 — UI Assist integration package —
-via #10). Phase 10 (launch readiness) is implemented on a feature branch with a PR open and a
-first `v0.1.0` release prepared; Phases 11–13 are planned.**
+the phase plan. **Phases 0–10 are merged to `main` (Phase 10 — launch readiness — via #11) and the
+first release `v0.1.0` is tagged. Phase 11 (Loop Mode) is implemented on a feature branch with a PR
+open; Phases 12–13 are planned.**
 
 ## Phase status
 
@@ -26,8 +26,8 @@ first `v0.1.0` release prepared; Phases 11–13 are planned.**
 | 7 | Independent lobby platform (public/private, durable state) | ✅ merged (#8) |
 | 8 | Concordium agent identity & verification | ✅ merged (#9) |
 | 9 | UI Assist integration package | ✅ merged (#10) |
-| 10 | Launch readiness (docs, verify-launch, smoke, v0.1.0) | ✅ implemented — PR open |
-| 11 | Loop / autonomous iterative execution | ⬜ planned |
+| 10 | Launch readiness (docs, verify-launch, smoke, v0.1.0) | ✅ merged (#11) + `v0.1.0` tagged |
+| 11 | Loop / autonomous iterative execution | ✅ implemented — PR open |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ⬜ planned |
 | 13 | Agent OS Protocol website (public landing site) | ⬜ planned |
 
@@ -108,7 +108,7 @@ first `v0.1.0` release prepared; Phases 11–13 are planned.**
   refs removed) and the UI Assist docs neutralized. Verified by `npm run verify-ui-assist` (31/31 — an
   injected fake WebSocket + a DOM stub that mounts `embed.js` itself and cross-checks its action parser
   against the core) with the other four suites green (adapters 16, providers 11, lobby 15, identity 23).
-- **Phase 10 — launch readiness (PR open):** the fork is shippable as a coherent whole. The launch
+- **Phase 10 — launch readiness (merged #11, `v0.1.0` tagged):** the fork is shippable as a coherent whole. The launch
   documentation set under `docs/` (getting-started, examples, security, lobby-hosting,
   training-agents + a docs index) is written to the verified reality of the code and wired together;
   the root README points at it. The documented configuration is now **real**: a zero-dependency
@@ -126,6 +126,24 @@ first `v0.1.0` release prepared; Phases 11–13 are planned.**
   commit). **Exit met:** a fresh clone runs Local Mode and connects to a configured lobby; all six
   suites pass; brand+domain gates clean; the read-only source repo untouched (reference only). Verified
   by `npm run smoke` (PASSED) and `npm run verify-all` (16/11/15/23/31/49).
+- **Phase 11 — Loop Mode (PR open):** Loop Mode ships (§12B), built on the `LoopSpec`/`ExitCriterion`
+  schema Phase 4 seeded. New `packages/loop` (`@agent-os/loop`) — the `LoopOrchestrator` runs
+  `Assess → Delegate → Verify → Reflect → Decide` over a work item behind injected seams (evaluate /
+  delegate / approveCheckpoint / now / isKilled / emit), so the whole controller + every safety rule
+  verifies with no LLM/lobby/network: hard `maxIterations` + token/cost/wall-clock budget,
+  convergence + stall detection, a regression guard, human approval checkpoints (fail-closed), a kill
+  switch, full audit, and **unattended OFF by default** (opt-in at run time; allowlisted actions
+  only). Authoring + orchestration via the new `create-loop` and `loop-orchestrator` skills (wired
+  into boss-agent + SUB-AGENTS). The **`continuous-quality` preset** expresses the Scheduled-QA
+  workload as a `LoopSpec` (`onConverge: open-pr`, commit-only unattended allowlist). Runnable via
+  `npm run loop` (simulated driver) and a Panel **Loop** tab + `/api/loops` endpoints with
+  `loop-event`/`loop-done` WS streaming. New `npm run verify-loop` (17) wired into `verify-all` and
+  required by `verify-launch` (now 53); guide at `docs/loop-mode.md`. README given a full
+  stale-information refresh. **Exit met:** a loop converges on a work item against measurable exit
+  criteria, respects iteration/budget caps + human checkpoints, is fully auditable + stoppable, and
+  is runtime-agnostic (local now via the runner; swarm via the lobby). Verified by `npm run verify-loop`
+  (17/17), `npm run loop` (attended + unattended converge), the Panel loop endpoints (attended +
+  unattended runs converge 4/4), and `npm run verify-all` (16/11/15/23/31/17/53).
 
 ## Known follow-ups
 
@@ -174,3 +192,13 @@ first `v0.1.0` release prepared; Phases 11–13 are planned.**
   `.env.example`. Pre-existing Phase-2 roster debt also remains (gate-clean, so not a launch blocker):
   a few agent startup protocols still cite origin-era doc paths, and some governance skill/agent
   counts are stale — both to be refreshed organically (or in a housekeeping pass).
+- **Loop Mode follow-ups (Phase 11):** the engine, skills, preset, runner, Panel tab/endpoints, and
+  docs ship and are verified. Deferred / infra-gated: (1) **live execution wiring** — binding the
+  engine's `evaluate` seam to real gate-skill runs and `delegate` to the Boss/lobby turn loop (the
+  `npm run loop` driver and the Panel runs are deterministic simulations until then; rides on the
+  relay-driver refactor); (2) **unattended cron** — the scheduler driving a preset loop on a cadence
+  over a remote swarm with cost budgets + verified identities; (3) the **polished Panel Loop view**
+  (start/pause/stop, per-criterion pass/fail, budget burn, approve-checkpoint, attended⇄unattended
+  mode-changer) — the backend endpoints + a minimal tab land now; the full UI folds into the Phase 12
+  Panel redesign; (4) **loop resumability** — `awaiting_checkpoint` is currently terminal (a paused
+  loop is re-run, not suspended/resumed mid-iteration).

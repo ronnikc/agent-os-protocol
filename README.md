@@ -5,18 +5,22 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Status: **Phases 1–9 landed; Phase 10 (launch readiness) prepares the first `v0.1.0` — Local + Swarm Mode, runtime adapters, API providers, the independent lobby, verifiable agent identity & the UI Assist package**
+&nbsp;Version: **v0.1.0**
+&nbsp;Status: **Phases 1–10 released; Phase 11 (Loop Mode) landing — Local + Swarm Mode, runtime adapters, API providers, the independent lobby, verifiable agent identity, the UI Assist package & iterative Loop Mode**
 
-> 🚧 **Project status.** The platform is mid-fork. **Phases 1–9 are merged:** the Agent OS Panel
-> and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the
-> runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider
-> (fuel) layer; the independent public/private **lobby server**; **read-only Concordium agent
-> identity & verification** with a private-lobby policy ladder; and the **UI Assist integration
-> package** (embeddable overlay + Integration Agent). **Phase 10 (launch readiness) is implemented
-> with a PR open:** the full [`docs/`](docs/README.md) guide set, real `.env` configuration, a
-> launch-readiness check (`npm run verify-launch`), a one-shot `npm run verify-all`, and a
-> fresh-clone boot smoke (`npm run smoke`) — with a first **`v0.1.0`** prepared. Later capabilities —
-> Loop Mode, the **Panel UI redesign**, and a **public website** — are marked **(planned)**. See
+> 🚧 **Project status.** The platform is being forked in phases. **Phases 1–10 are merged and the
+> first release `v0.1.0` is tagged:** the Agent OS Panel and relay run locally
+> (`npm run agent-os-panel`); the generic agent roster + `/train`; the runtime-adapter abstraction
+> with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider (fuel) layer; the
+> independent public/private **lobby server**; **read-only Concordium agent identity & verification**
+> with a private-lobby policy ladder; the **UI Assist integration package** (embeddable overlay +
+> Integration Agent); and a launch-ready repo — the full [`docs/`](docs/README.md) guide set, real
+> `.env` configuration, `npm run verify-all`, and a fresh-clone boot smoke (`npm run smoke`).
+> **Phase 11 (Loop Mode) is implemented with a PR open:** a Boss-driven iterate-until-exit-criteria
+> engine (`@agent-os/loop`) with hard caps, convergence/stall + regression guards, human
+> checkpoints, a kill switch, and unattended-off-by-default — with `create-loop`/`loop-orchestrator`
+> skills, the `continuous-quality` preset, `npm run loop`, and a Panel Loop tab. Remaining
+> capabilities — the **Panel UI redesign** and a **public website** — are **(planned)**. See
 > **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
 > **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
 
@@ -128,6 +132,7 @@ A localhost browser control plane (a lightweight SPA) that auto-starts the relay
 | **Tasks** | Kanban of tasks (status, priority, assignee) |
 | **Gantt** | Phase → Sprint → Task hierarchy and progress |
 | **Sprint** | Plan a sprint and dispatch it to the boss agent |
+| **Loop** | Run a work item in Loop Mode — presets, live per-criterion progress, stop |
 | **Scheduled** | Recurring tasks (the scheduling engine; drives unattended loops) |
 | **Assist** | UI Assist bridge |
 | **Files** / **Memory** / **Requests** | Workspace, agent memory, approval requests |
@@ -187,14 +192,20 @@ so creation is always conformant, and linters/gates block drift.
 ### Two execution modes: Sprint Mode & Loop Mode
 
 - **Sprint Mode** — linear, human-gated delivery: plan → decompose → execute → gates → close-out.
-- **Loop Mode** — the boss agent runs a **control loop** over a work item until **measurable exit
-  criteria** pass (build green, tests pass, coverage threshold, review approved, custom
-  assertions) or a budget is exhausted. Attended or unattended; local or swarm.
+- **Loop Mode** — the boss agent runs a **control loop** over a work item (`Assess → Delegate →
+  Verify → Reflect → Decide`) until **measurable exit criteria** pass (build green, tests pass,
+  coverage threshold, review approved, custom assertions) or a cap/budget stops it. Attended or
+  unattended; local or swarm.
 
-> **Unattended swarm loops are OFF by default.** They are enabled only via an explicit,
-> clearly-labelled **mode-changer button** in the Panel, per loop, with an allowlist of safe
-> actions. Irreversible actions (commit/merge/deploy) stay human-gated unless you opt in. Every
-> loop is budget-capped, convergence/regression-guarded, fully audited, and stoppable.
+The engine ships as **`@agent-os/loop`** with `create-loop` / `loop-orchestrator` skills, the
+shipped **`continuous-quality`** preset, a runner (`npm run loop`), a Panel **Loop** tab, and
+`npm run verify-loop`. Try it: `npm run loop -- --preset continuous-quality`. Full guide:
+**[Loop Mode](docs/loop-mode.md)**.
+
+> **Unattended is OFF by default.** A loop runs unattended only via an explicit per-loop opt-in (the
+> Panel mode-changer), and even then auto-approves only **allowlisted** actions. Irreversible
+> actions (commit/merge/deploy/scope-change) stay human-gated; every loop is budget-capped,
+> convergence/stall + regression-guarded, fully audited, and stoppable (kill switch).
 
 ### Agent OS UI Assist
 
@@ -271,8 +282,9 @@ is built — including that the boss is actually engaged and dispatches to a nam
 
 ## Installation
 
-**Prerequisites:** Node.js 20+, npm, and at least one agent runtime (e.g. Claude Code CLI).
-A Chromium build is used for screenshots/UI tests.
+**Prerequisites:** Node.js 20+ and npm. To drive real agents you also need at least one agent
+runtime (e.g. the Claude Code CLI) — but the Panel, the lobby, and every verification suite run
+with no runtime and no API key.
 
 ```bash
 git clone https://github.com/ronnikc/agent-os-protocol.git
@@ -302,16 +314,28 @@ npm run agent-os-panel -- --lobby https://your-lobby.example.com
 Then: open the Panel → start an agent (or a preset team) → appoint a boss in the **Lobby** tab →
 plan work in the **Sprint** tab → watch it execute in **Tasks**/**Gantt**.
 
+Confirm a fresh clone is healthy (no runtime or API key needed):
+
+```bash
+npm run verify-all      # all six layer suites + the launch-readiness check
+npm run smoke           # boots Panel + Lobby + Relay end-to-end and probes them
+```
+
 ## Configuration
 
-Copy `.env.example` to `.env`. Key settings:
+Copy `.env.example` to `.env` — it's loaded automatically. Precedence for every setting is
+**CLI flag → `.env` / environment → default** (the real environment always wins over the file).
 
-| Variable | Purpose |
-|---|---|
-| `AGENT_OS_LOBBY_URL` | Default remote lobby for Swarm Mode (empty = Local Mode) |
-| `AGENT_OS_PANEL_PORT` | Panel port (default `4800`) |
-| `AGENT_OS_RELAY_PORT` | Relay port (default `4722`) |
-| Provider keys (BYOK) | Stored **locally**; never sent to a lobby |
+| Variable | Purpose | Default |
+|---|---|---|
+| `AGENT_OS_LOBBY_URL` | Default remote lobby for Swarm Mode (empty = Local Mode); same as `--lobby` | _(empty)_ |
+| `AGENT_OS_PANEL_PORT` | Panel port; same as `--port` | `4800` |
+| `AGENT_OS_RELAY_PORT` | Relay port | `4722` |
+| `AGENT_OS_LOBBY_PORT` | Standalone lobby port (`npm run lobby`) | `4730` |
+| `AGENT_OS_CONCORDIUM_INDEXER_URL` | Read-only identity indexer (empty = verification off) | _(empty)_ |
+| Provider keys (BYOK) | Stored **locally**; never sent to a lobby | _(unset)_ |
+
+Full reference: **[Getting started → Configure](docs/getting-started.md#configure-with-env)**.
 
 ## Safety & security model
 
@@ -341,10 +365,10 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 | 7 | Independent lobby platform (public/private, durable state) ✅ |
 | 8 | Concordium agent identity & verification ✅ |
 | 9 | UI Assist integration package ✅ |
-| 10 | Launch readiness (docs, examples, `v0.1.0`) ✅ (PR open) |
-| 11 | Loop / autonomous iterative execution |
-| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) |
-| 13 | Agent OS Protocol website (public landing site) |
+| 10 | Launch readiness (docs, examples, `v0.1.0`) ✅ released |
+| 11 | Loop / autonomous iterative execution ✅ (PR open) |
+| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) — planned |
+| 13 | Agent OS Protocol website (public landing site) — planned |
 
 ## Documentation
 
@@ -352,6 +376,7 @@ Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:
 
 - **[Getting started](docs/getting-started.md)** — clone → boot Local Mode → configure → connect a lobby → verify.
 - **[Examples](docs/examples.md)** — local team, swarm connect, BYOK, `/train`, UI Assist embed, work items.
+- **[Loop Mode](docs/loop-mode.md)** — iterate a work item to measurable exit criteria, safely.
 - **[Security model](docs/security.md)** — trust boundaries, BYOK, server-side lobby control, identity.
 - **[Lobby hosting](docs/lobby-hosting.md)** — built-in, standalone Node, and the planned hosted swarm.
 - **[Training agents](docs/training-agents.md)** — teach a generic agent your domain with `/train`.
@@ -372,4 +397,4 @@ Licensed under the **Apache License 2.0**.
 
 Copyright © 2026 **Gothard.dk // Ronni K. Gothard Christiansen**.
 
-See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE) *(added in Phase 1)*.
+See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).

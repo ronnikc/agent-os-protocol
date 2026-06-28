@@ -28,6 +28,7 @@
   <button data-tab="files">Files</button>
   <button data-tab="gantt">Gantt</button>
   <button data-tab="memory">Memory</button>
+  <button data-tab="loop">Loop</button>
 </div>
 
 <!-- Tab Panes -->
@@ -155,6 +156,15 @@
     <div id="memory-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
   </div>
 
+  <div id="tab-loop" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Loop Mode</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Iterate to exit criteria · simulated runner (no live gate skills/lobby)</span>
+    </div>
+    <div id="loop-content" style="flex:1;overflow:auto;padding:12px;"></div>
+  </div>
+
 </div>
 
 <script type="module">
@@ -169,6 +179,7 @@ import './tabs/sprint.js';
 import './tabs/files.js';
 import './tabs/gantt.js';
 import './tabs/memory.js';
+import './tabs/loop.js';
 
 init();
 </script>

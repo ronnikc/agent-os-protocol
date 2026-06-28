@@ -15,6 +15,7 @@ and extend it. Start at the top and follow the links.
 |---|---|
 | **[Getting started](getting-started.md)** | Install, boot Local Mode, configure `.env`, connect to a lobby, and verify your install |
 | **[Examples](examples.md)** | Concrete, copy-pasteable walkthroughs: a local team, swarm connect, `/train`, UI Assist embed, work items |
+| **[Loop Mode](loop-mode.md)** | Iterate a work item until measurable exit criteria pass — caps, budgets, checkpoints, unattended safety |
 | **[Security model](security.md)** | The trust boundaries: local-first, BYOK, server-side lobby control, identity, human-in-the-loop |
 
 ## Capability guides
@@ -43,7 +44,7 @@ A fresh clone should pass all the layer verifications plus the launch-readiness 
 
 ```bash
 npm install
-npm run verify-all          # adapters + providers + lobby + identity + ui-assist + launch
+npm run verify-all          # adapters + providers + lobby + identity + ui-assist + loop + launch
 ```
 
 `npm run verify-launch` on its own checks the launch invariants (required docs present, scripts

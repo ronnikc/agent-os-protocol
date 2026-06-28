@@ -34,14 +34,16 @@
     "lobby": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
+    "loop": "tsx agent-os/scripts/loop.ts",
     "ui-assist-integrate": "tsx agent-os/scripts/ui-assist-integrate.ts",
     "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
     "verify-providers": "tsx agent-os/scripts/verify-providers.ts",
     "verify-lobby": "tsx agent-os/scripts/verify-lobby.ts",
     "verify-identity": "tsx agent-os/scripts/verify-identity.ts",
     "verify-ui-assist": "tsx agent-os/scripts/verify-ui-assist.ts",
+    "verify-loop": "tsx agent-os/scripts/verify-loop.ts",
     "verify-launch": "tsx agent-os/scripts/verify-launch.ts",
-    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-launch",
+    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-launch",
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
@@ -61,6 +63,7 @@
     "packages/lobby-server",
     "packages/lobby-client",
     "packages/identity-concordium",
-    "packages/ui-assist-core"
+    "packages/ui-assist-core",
+    "packages/loop"
   ]
 }

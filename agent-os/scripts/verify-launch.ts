@@ -117,7 +117,7 @@ async function main(): Promise<void> {
   // ── A. Launch documentation set ──
   const launchDocs = [
     'docs/README.md', 'docs/getting-started.md', 'docs/examples.md', 'docs/security.md',
-    'docs/lobby-hosting.md', 'docs/training-agents.md',
+    'docs/lobby-hosting.md', 'docs/training-agents.md', 'docs/loop-mode.md',
     'docs/adapters/README.md', 'docs/providers/README.md', 'docs/lobby/README.md',
     'docs/identity/README.md', 'docs/ui-assist/README.md',
   ];
@@ -145,9 +145,9 @@ async function main(): Promise<void> {
   });
   await check('RELEASING.md present', () => assert.ok(nonEmpty('RELEASING.md'), 'RELEASING.md missing'));
   const requiredScripts = [
-    'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'ui-assist-integrate',
+    'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'loop', 'ui-assist-integrate',
     'verify-adapters', 'verify-providers', 'verify-lobby', 'verify-identity', 'verify-ui-assist',
-    'verify-launch', 'verify-all',
+    'verify-loop', 'verify-launch', 'verify-all',
   ];
   for (const s of requiredScripts) {
     await check(`package.json: script "${s}" wired`, () =>
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   }
 
   // ── D. Verify scripts exist on disk ──
-  for (const s of ['adapters', 'providers', 'lobby', 'identity', 'ui-assist', 'launch']) {
+  for (const s of ['adapters', 'providers', 'lobby', 'identity', 'ui-assist', 'loop', 'launch']) {
     await check(`verify script on disk: verify-${s}.ts`, () =>
       assert.ok(nonEmpty(`agent-os/scripts/verify-${s}.ts`), `verify-${s}.ts missing`));
   }

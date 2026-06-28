@@ -9,8 +9,33 @@ All notable changes to **Agent OS Protocol** are documented here. The format fol
 
 ## [Unreleased]
 
-- Loop / autonomous iterative execution (Phase 11), Panel UI redesign (Phase 12), and the public
-  website (Phase 13) are planned. See [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
+### Added — Loop Mode (Phase 11)
+
+- **`@agent-os/loop` engine** — a Boss-driven `Assess → Delegate → Verify → Reflect → Decide`
+  control loop over a work item (the `LoopSpec`/`ExitCriterion` schema seeded in Phase 4), behind
+  injected seams so the whole controller verifies with no LLM/lobby/network. Safety: hard
+  `maxIterations` + token/cost/wall-clock budget, convergence + stall detection, a regression guard,
+  human approval checkpoints (fail-closed), a kill switch, full audit, and **unattended OFF by
+  default** (opt-in at run time, allowlisted actions only).
+- **Authoring + orchestration skills** — `create-loop` (forces machine-checkable exit criteria,
+  hard caps, gated checkpoints) and `loop-orchestrator` (the Boss control-loop skill); wired into
+  the boss-agent definition and SUB-AGENTS routing.
+- **`continuous-quality` preset** — the Scheduled-QA workload as a `LoopSpec` (build + tests +
+  coverage + Product-QA review; `onConverge: open-pr`, never an autonomous merge); the canonical
+  deliberately-operated unattended loop with a commit-only allowlist.
+- **`npm run loop`** — a simulated/dry-run driver that runs a preset through the real engine and
+  prints the iteration audit trail (attended and unattended).
+- **Panel Loop tab + endpoints** — `GET /api/loops`, `POST /api/loops/run`, `POST /api/loops/stop`
+  with `loop-event`/`loop-done` WS streaming, and a minimal Loop tab.
+- **`npm run verify-loop`** (17 checks) — wired into `verify-all` and required by `verify-launch`
+  (now 53). **[`docs/loop-mode.md`](docs/loop-mode.md)** guide.
+
+### Planned
+
+- Panel UI redesign (Phase 12) and the public website (Phase 13). See
+  [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
+- Loop Mode follow-ups (infra-gated): live `evaluate`/`delegate` wiring through the relay/lobby,
+  unattended cron over a swarm, and the polished Panel Loop view (folds into Phase 12).
 
 ## [0.1.0] — 2026-06-28
 

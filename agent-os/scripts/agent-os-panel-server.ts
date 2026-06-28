@@ -33,6 +33,10 @@ import { request as httpsRequest } from 'node:https';
 import { runtimeRegistry } from '@agent-os/adapters';
 import { providerRegistry, loadProviderConfigsFromEnv, defaultProviderId, redactProviderConfig } from '@agent-os/providers';
 import { loadEnv } from '@agent-os/protocol-core';
+import {
+  LoopOrchestrator, LOOP_PRESETS,
+  type LoopEvent, type CriterionResult, type IterationWork, type CheckpointAction,
+} from '@agent-os/loop';
 
 // ── Config ──
 const REPO_ROOT = resolve(import.meta.dirname ?? __dirname, '../..');
@@ -93,6 +97,45 @@ function broadcastWs(type: string, data: unknown): void {
       try { client.send(msg); } catch { wsClients.delete(client); }
     }
   }
+}
+
+// ── Loop Mode (Phase 11) — simulated run registry ──
+// Runs use the real @agent-os/loop engine with deterministic in-process seams (no live gate
+// skills/lobby) — the same simulation as `npm run loop`. The real evaluate/delegate wiring rides
+// on the relay-driver refactor (see docs/loop-mode.md). Events stream over WS as `loop-event`.
+interface PanelLoopRun {
+  id: string; preset: string; goal: string; status: string;
+  iterations: number; passing: number; total: number; attended: boolean; killed: boolean;
+}
+const loopRuns = new Map<string, PanelLoopRun>();
+let loopRunSeq = 0;
+
+function startLoopRun(presetName: string, unattended: boolean): { ok: boolean; id?: string; error?: string } {
+  const preset = LOOP_PRESETS[presetName];
+  if (!preset) return { ok: false, error: `unknown preset "${presetName}"` };
+  const spec = preset.build();
+  const total = spec.exitCriteria.length;
+  const id = `loop-${Date.now()}-${++loopRunSeq}`;
+  const run: PanelLoopRun = { id, preset: presetName, goal: spec.goal, status: 'running', iterations: 0, passing: 0, total, attended: !unattended, killed: false };
+  loopRuns.set(id, run);
+
+  let fixed = 0;
+  const orchestrator = new LoopOrchestrator({
+    evaluate: (): CriterionResult[] => spec.exitCriteria.map((c, i) => ({ criterion: c, passed: i < fixed })),
+    delegate: (): IterationWork => { fixed = Math.min(total, fixed + 1); return { tokensUsed: 200, costUSD: 0.02, summary: `closed 1 gap → ${fixed}/${total}`, requestedActions: ['commit'] as CheckpointAction[] }; },
+    approveCheckpoint: () => true, // simulated operator (the attended demo auto-approves)
+    isKilled: () => run.killed,
+    emit: (e: LoopEvent) => {
+      run.iterations = e.iteration;
+      if (e.passing != null) { run.passing = e.passing; run.total = e.total ?? total; }
+      broadcastWs('loop-event', { id, type: e.type, iteration: e.iteration, message: e.message, passing: e.passing, total: e.total });
+    },
+  });
+  orchestrator.run(spec, { allowUnattended: unattended, unattendedAllowlist: [...preset.unattendedAllowlist] })
+    .then((res) => { run.status = res.status; run.passing = res.passing; run.total = res.total; run.iterations = res.iterations; broadcastWs('loop-done', { id, status: res.status, passing: res.passing, total: res.total, iterations: res.iterations }); })
+    .catch((err) => { run.status = 'error'; broadcastWs('loop-done', { id, status: 'error', message: String(err) }); });
+
+  return { ok: true, id };
 }
 
 // ── Lobby WebSocket Bridge ──
@@ -1159,6 +1202,32 @@ const server = createServer(async (req, res) => {
       startedAt: runningAgents[a.slug]?.startedAt ?? null,
     }));
     sendJson(res, { agents, defaultLobbyUrl: DEFAULT_LOBBY_URL });
+    return;
+  }
+
+  // ── Loop Mode API Routes (Phase 11) ──
+  if (path === '/api/loops' && method === 'GET') {
+    sendJson(res, {
+      presets: Object.values(LOOP_PRESETS).map(p => ({ name: p.name, description: p.description, unattendedAllowlist: p.unattendedAllowlist })),
+      runs: [...loopRuns.values()],
+      note: 'Loop runs here are simulated (deterministic seams; no live gate skills/lobby). See docs/loop-mode.md.',
+    });
+    return;
+  }
+
+  if (path === '/api/loops/run' && method === 'POST') {
+    const body = await parseBody(req);
+    const result = startLoopRun((body.preset as string) || 'continuous-quality', Boolean(body.unattended));
+    sendJson(res, result, result.ok ? 200 : 400);
+    return;
+  }
+
+  if (path === '/api/loops/stop' && method === 'POST') {
+    const body = await parseBody(req);
+    const run = loopRuns.get(body.id as string);
+    if (!run) { sendJson(res, { error: 'unknown loop id' }, 404); return; }
+    run.killed = true;
+    sendJson(res, { ok: true, id: run.id });
     return;
   }
 

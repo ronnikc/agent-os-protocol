@@ -1,0 +1,16 @@
+{
+  "name": "@agent-os/loop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent OS Protocol — Loop Mode engine: a Boss-driven iterate-until-exit-criteria controller with hard caps, convergence/stall + regression guards, budget accounting, human checkpoints, and a kill switch.",
+  "license": "Apache-2.0",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@agent-os/protocol-core": "*"
+  }
+}
