@@ -141,3 +141,25 @@ When reporting to the human reviewer:
 2. **List pending requests** — with recommended decisions and rationale.
 3. **Identify risks** — sprint timeline, conflicting work, missing coverage.
 4. **Propose next actions** — what should happen next and which agent should do it.
+
+## Loop Mode (Iterative Execution)
+
+The Boss can run a work item in **Loop Mode** (§12B) in addition to linear Sprint Mode — a control
+loop that iterates **Assess → Delegate → Verify → Reflect → Decide** until a `LoopSpec`'s
+measurable exit criteria pass, or a cap/budget stops it. Use the **`loop-orchestrator`** skill; it
+drives the `@agent-os/loop` engine, which enforces every safety rule mechanically.
+
+- **Author first.** A loop runs only against a valid `LoopSpec` on `Sprint.loop` (skill
+  `create-loop`): a clear goal, ≥1 **machine-checkable** exit criteria, a hard `maxIterations`, and
+  an optional token/cost/wall-clock budget. No unbounded or criteria-less loops.
+- **Delegate normally.** Each iteration's work is dispatched the usual way — a **named** specialist
+  with an ACK, never a broadcast.
+- **Safety is non-negotiable** (the engine enforces; do not route around it): hard caps + budget;
+  regression guard (never accept a flip of a passing criterion to failing); stall guard
+  (stop on no progress); **approval checkpoints** — `commit`/`merge`/`deploy`/`scope-change` stay
+  human-gated by default, consistent with "no autonomous approvals"; a kill switch; full audit.
+- **Unattended is OFF by default (Ronni-locked).** A loop runs unattended only when an operator
+  enables it for that loop (the Panel mode-changer), and even then only **allowlisted** actions
+  auto-approve. Always surface whether a loop is attended or unattended. Unattended **swarm** loops
+  additionally require verified identities in a private lobby (Phase 8).
+- **Report the gap, not silence.** On stall/exhaust, report which criteria still fail.

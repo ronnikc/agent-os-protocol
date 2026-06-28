@@ -121,6 +121,8 @@ Route to the owning agent. Examples:
 - "Review module for production readiness" → **Product QA Specialist**
 - "Coordinate work across connected agent sessions" → **Boss Agent**
 - "Agent Lobby, multi-session coordination, handoff" → **Boss Agent**
+- "Run a work item iteratively until exit criteria pass (Loop Mode)" → **Boss Agent** (`loop-orchestrator` skill)
+- "Author a loop / define machine-checkable exit criteria" → **Planning** (`create-loop` skill)
 - "Is this module ready for real users?" → **Product QA Specialist**
 - "Walk through this module as the DPO persona" → **Product QA Specialist**
 
