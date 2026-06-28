@@ -3,12 +3,13 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 7.
+> **Last updated:** Phase 8.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
-the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lobby platform) is landing.**
+the 11-phase plan. **Phases 0–7 are merged to `main`; Phase 8 (Concordium agent identity &
+verification) is landing.**
 
 ## Phase status
 
@@ -21,8 +22,8 @@ the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lob
 | 4 | Runtime adapter abstraction + canonical work-item schema | ✅ merged (#5) |
 | 5 | Additional CLI adapters (Codex first) | ✅ merged (#6) |
 | 6 | API provider (fuel) layer, BYOK | ✅ merged (#7) |
-| 7 | Independent lobby platform (public/private, durable state) | 🔄 landing |
-| 8 | Concordium agent identity & verification | ⬜ planned |
+| 7 | Independent lobby platform (public/private, durable state) | ✅ merged (#8) |
+| 8 | Concordium agent identity & verification | 🔄 landing |
 | 9 | UI Assist integration package | ⬜ planned |
 | 10 | Launch readiness | ⬜ planned |
 | 11 | Loop / autonomous iterative execution | ⬜ planned |
@@ -54,7 +55,7 @@ the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lob
   `npm run verify-adapters` (16/16, injected fake spawn over a canned JSONL transcript). Discovery
   spikes + the confirmed compatibility matrix in `docs/adapters/` (OpenCode/Cursor/Hermes/OpenClaw
   documented with blockers).
-- **Phase 6 — API provider (fuel) layer (landing):** `packages/providers` implements the
+- **Phase 6 — API provider (fuel) layer (merged #7):** `packages/providers` implements the
   `ModelProviderAdapter` contract — `openai-compatible` (Chat Completions) + `anthropic-compatible`
   (Messages), each with `complete()` + SSE `stream()` over an injectable fetch, plus a
   `ProviderRegistry`. **BYOK is structural**: configs store only the env-var *name*; keys resolve
@@ -62,7 +63,7 @@ the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lob
   / `assertNoInlineSecret`). Panel discovery via `GET /api/providers` (reports key present/absent,
   never the value). Verified by `npm run verify-providers` (11/11, injected fake fetch — no network/
   key). Contract + BYOK model in `docs/providers/`.
-- **Phase 7 — independent lobby platform (landing):** `packages/lobby-server` is a portable Node
+- **Phase 7 — independent lobby platform (merged #8):** `packages/lobby-server` is a portable Node
   HTTP+WS lobby that speaks the protocol the Panel/relay already use (`/api/v1/agent-lobby/discover`
   + `/ws/agent`), so they connect via `--lobby <url>` unmodified — a clean-room reimplementation of
   the prior bespoke coordinator. **Rules are enforced server-side** by `LobbyCoordinator`: floor control
@@ -73,6 +74,21 @@ the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lob
   real two-client WS run incl. on-wire lobby-scoping) **and** an end-to-end Panel connect
   (`--lobby` → discover → register → roster). `apps/lobby-web` (Vercel + Upstash) documented as the
   deploy-gated next increment. `npm run lobby`; docs in `docs/lobby/`.
+- **Phase 8 — Concordium agent identity & verification (landing):** the verifiable, read-only,
+  key-free identity slice. `packages/protocol-core/agent-identity.ts` adds the **Agent Card** (public,
+  hashable, A2A-shaped — `application/a2a-agent-card+json`), `ConcordiumAgentRef` (non-secret pointer),
+  the verification **status ladder** (registry_verified → human_linked → org_linked / pending / failed),
+  and `LobbyJoinPolicy`. New `packages/identity-concordium` implements read-only verification behind an
+  **injectable transport seam** (`HttpIndexerTransport` = GET-only against a registry indexer; a fake in
+  tests) + Agent Card draft/validate/hash + `prepareRegistration` (**wallet-side-only — never signs or
+  submits**) + `linkProfile`. The **Identity Agent** is now functional (definition + `identity-verification`
+  skill). The lobby coordinator enforces the **private-lobby policy ladder** server-side
+  (none → registered → allowlisted → verified_human_link) via an injected verifier seam — fails closed with
+  no verifier; the server wires a live verifier only when `AGENT_OS_CONCORDIUM_INDEXER_URL` is set (default
+  boot unchanged). The Panel roster shows **identity badges**. Verified by `npm run verify-identity` (23/23,
+  injected fake transport/verifier — no network, no key) with the other three suites still green
+  (adapters 16, providers 11, lobby 15). The verified Concordium references (CIS-8004/CIS-8, MCP service,
+  indexer tools, JS SDK, VCK/VCDC) and the deferred on-chain writes are recorded in `docs/identity/`.
 
 ## Known follow-ups
 
@@ -92,4 +108,13 @@ the 11-phase plan. **Phases 0–6 are merged to `main`; Phase 7 (independent lob
   `apps/lobby-web` (Next.js on Vercel + a `RedisLobbyStore`, REST + SSE) is the deploy-gated next
   increment (needs Vercel + Upstash, so not bootable in CI). Wiring the Panel Lobby tab's phase
   switching + the relay's lobby client onto `@agent-os/lobby-client` (replacing their bespoke
-  clients) is a follow-up; private-lobby join tokens become verified identity refs in Phase 8.
+  clients) is a follow-up.
+- **Identity follow-ups (Phase 8):** the read-only verification slice ships and is the verifiable
+  core. Three parts are intentionally deferred / config-gated: (1) **live indexer wiring** —
+  `HttpIndexerTransport` needs a running registry indexer (`AGENT_OS_CONCORDIUM_INDEXER_URL`); its
+  exact record routes/fields must be confirmed against a live indexer (the seam isolates this).
+  (2) **On-chain registration writes** stay wallet-side (Agent OS prepares, never signs/submits) —
+  the `@concordium/web-sdk` serialization path is future work. (3) **Panel/relay join_token UX** —
+  presenting an identity reference from the Panel join screen + the relay's `lobby-register`, and a
+  card-authoring panel view, build on the shipped protocol field. No private keys are ever stored or
+  sent in any of these.

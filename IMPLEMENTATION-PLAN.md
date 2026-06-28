@@ -451,6 +451,22 @@ deploy-gated next increment. Docs: `docs/lobby/`.
 - **Privacy principle (charter §11):** accountability, not doxxing — verify the anchor
   without exposing the human identity to every participant.
 
+**Phase 8 status:** the read-only, key-free slice ships. `packages/protocol-core/agent-identity.ts`
+defines the **Agent Card** (public, hashable, `application/a2a-agent-card+json`), `ConcordiumAgentRef`,
+the verification **status ladder** (`registry_verified` → `human_linked` → `org_linked` / `pending` /
+`failed`), and `LobbyJoinPolicy`. `packages/identity-concordium` does read-only verification behind an
+**injectable transport seam** (`HttpIndexerTransport`, GET-only; a fake in tests), Agent Card
+draft/validate/hash, `prepareRegistration` (**non-submitting, wallet-side-only**), and `linkProfile`.
+The lobby coordinator enforces the policy ladder **server-side** (none → registered → allowlisted →
+verified_human_link) through the verifier seam — **fail-closed** with no verifier; the server wires a
+live verifier only when `AGENT_OS_CONCORDIUM_INDEXER_URL` is set. Roster **identity badges** in the
+Panel. Verified by `npm run verify-identity` (23/23, no network/key). **Exit met:** a lobby can
+require verified identity; refs verify/fail/pending; **no key is ever stored or sent.** The live
+references (CIS-8004/CIS-8, MCP service, indexer tools `list_agents`/`search_agents`/
+`recent_registrations`, `@concordium/web-sdk`, VCK/VCDC) were confirmed before coding; **deferred:**
+live-indexer wiring, on-chain registration writes (wallet-side), and the Panel/relay join_token UX.
+Docs: `docs/identity/`.
+
 ---
 
 ## 11. `/train [agent]` Plan (charter §21.11)

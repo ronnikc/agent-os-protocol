@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–4 merged; Phase 5 — Codex CLI adapter — landing). See
+> **Status:** Forking in progress (Phases 0–7 merged; Phase 8 — Concordium agent identity — landing). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -31,14 +31,15 @@ agent-os-protocol/
   agent-os-panel/                 # Layer 2 — local control-plane UI (vanilla JS SPA)
     index.html app.js styles.css presets.json tabs/ lib/
   packages/                       # Layers 3 & 4
-    protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider)
+    protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider, agent-identity)
     adapters/src/                 # runtime adapters + registry (claude-cli, codex-cli)
     providers/src/                # model providers (API fuel): openai-/anthropic-compatible, BYOK
     lobby-server/src/             # independent lobby (store + coordinator + HTTP/WS) — npm run lobby
     lobby-client/src/             # typed WS lobby client (discover, register, heartbeat)
+    identity-concordium/src/      # read-only agent-identity verification + Agent Card authoring (no keys)
     relay/src/                    # relay-server.ts + lobby-types.ts
   apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
-  docs/adapters/ providers/ lobby/ # contracts, spikes, matrices, lobby protocol/security
+  docs/adapters/ providers/ lobby/ identity/ # contracts, spikes, matrices, lobby + identity protocol/security
   design-specs/                   # panel design mockups
 ```
 
@@ -66,14 +67,17 @@ npm run relay -- --port 5001 --cwd /path/to/repo
 npm run lobby                                     # ws://localhost:4730
 npm run lobby -- --port 5000
 
-# Verify the adapter + provider + lobby layers (no runtime/key/service needed — injected seams)
+# Verify the adapter + provider + lobby + identity layers (no runtime/key/service needed — injected seams)
 npm run verify-adapters
 npm run verify-providers
 npm run verify-lobby
+npm run verify-identity
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),
 `AGENT_OS_PANEL_PORT`, `AGENT_OS_RELAY_PORT`. BYOK provider keys stay local and are never sent to a lobby.
+`AGENT_OS_CONCORDIUM_INDEXER_URL` (empty = no identity verification) points the lobby at a **read-only**
+registry indexer for the private-lobby identity policy ladder — no private keys are ever stored or sent.
 
 ## Governance map
 
