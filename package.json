@@ -31,6 +31,7 @@
     "agent-os-panel": "tsx agent-os/scripts/agent-os-panel-server.ts",
     "agent-os-panel-tray": "tsx agent-os/scripts/agent-os-panel-tray.ts",
     "relay": "tsx packages/relay/src/relay-server.ts",
+    "lobby": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
     "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
@@ -49,6 +50,8 @@
   "workspaces": [
     "packages/protocol-core",
     "packages/adapters",
-    "packages/providers"
+    "packages/providers",
+    "packages/lobby-server",
+    "packages/lobby-client"
   ]
 }
