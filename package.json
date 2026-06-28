@@ -47,6 +47,7 @@
   },
   "workspaces": [
     "packages/protocol-core",
-    "packages/adapters"
+    "packages/adapters",
+    "packages/providers"
   ]
 }
