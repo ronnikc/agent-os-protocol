@@ -35,8 +35,6 @@ This agent does not own a single source directory. It has cross-cutting ownershi
 | `rbac-verification` | `skills/rbac-verification/SKILL.md` | Verify RBAC enforcement on endpoints, check permission matrix compliance |
 | `security-and-hardening` | `skills/security-and-hardening/SKILL.md` | OWASP Top 10 prevention beyond RBAC: input validation at boundaries, secrets management, helmet/CSP, npm audit triage, file upload safety, SSRF allowlists, sensitive data hygiene |
 | `documentation-and-adrs` | `skills/documentation-and-adrs/SKILL.md` | Capture significant security decisions (auth strategy, encryption, threat model deltas) as ADRs in docs/decisions/ — security choices are expensive to reverse and need traceable rationale |
-| `vn-cybersecurity` | `skills/vn-cybersecurity/SKILL.md` | VN Cybersecurity (Law 24/2018, 116/2025, Decree 53/2022) — IIS classification, data localisation, A05/AKMC incident reporting |
-| `eu-nis2` | `skills/eu-nis2/SKILL.md` | EU NIS2 Directive 2022/2555 — essential vs important entities, Art. 21 risk management, Art. 22 supply chain security, 24h+72h+1-month incident reporting |
 
 ## Startup Protocol
 
