@@ -32,19 +32,23 @@ import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { runtimeRegistry } from '@agent-os/adapters';
 import { providerRegistry, loadProviderConfigsFromEnv, defaultProviderId, redactProviderConfig } from '@agent-os/providers';
+import { loadEnv } from '@agent-os/protocol-core';
 
 // ── Config ──
+const REPO_ROOT = resolve(import.meta.dirname ?? __dirname, '../..');
+// Populate process.env from a repo-root `.env` before reading any config (real env always wins).
+loadEnv(REPO_ROOT);
+
+// Precedence for each setting: explicit CLI flag → `.env` / environment → built-in default.
 const args = process.argv.slice(2);
 const portIdx = args.indexOf('--port');
-const PORT = portIdx >= 0 ? parseInt(args[portIdx + 1], 10) : 4800;
+const PORT = portIdx >= 0 ? parseInt(args[portIdx + 1], 10) : Number(process.env.AGENT_OS_PANEL_PORT) || 4800;
 const lobbyIdx = args.indexOf('--lobby');
-const DEFAULT_LOBBY_URL = lobbyIdx >= 0 ? args[lobbyIdx + 1] : '';
+const DEFAULT_LOBBY_URL = lobbyIdx >= 0 ? args[lobbyIdx + 1] : (process.env.AGENT_OS_LOBBY_URL || '');
 const NO_RELAY = args.includes('--no-relay');
 const RELAY_PORT_IDX = args.indexOf('--relay-port');
-const RELAY_PORT = RELAY_PORT_IDX >= 0 ? parseInt(args[RELAY_PORT_IDX + 1], 10) : 4722;
+const RELAY_PORT = RELAY_PORT_IDX >= 0 ? parseInt(args[RELAY_PORT_IDX + 1], 10) : Number(process.env.AGENT_OS_RELAY_PORT) || 4722;
 const PANEL_ID = `${hostname()}-${PORT}`; // Unique identifier for this panel instance
-
-const REPO_ROOT = resolve(import.meta.dirname ?? __dirname, '../..');
 const AGENTS_DIR = join(REPO_ROOT, 'agent-os/sub-agents/agents');
 const PANEL_DIR = join(REPO_ROOT, 'agent-os-panel');
 const SHARED_MEM_DIR = join(REPO_ROOT, 'agent-os/shared-memory');

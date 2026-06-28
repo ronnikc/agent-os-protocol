@@ -28,8 +28,12 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 import { query, type Options, type SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
-import type { LobbyToAgentMessage, HandRaiseCategory } from '@agent-os/protocol-core';
+import { loadEnv, type LobbyToAgentMessage, type HandRaiseCategory } from '@agent-os/protocol-core';
 import { runtimeRegistry } from '@agent-os/adapters';
+
+// Populate process.env from a repo-root `.env` (real env wins) so AGENT_OS_RELAY_PORT /
+// AGENT_OS_LOBBY_URL and any runtime/provider credentials apply when the relay runs standalone.
+loadEnv(pathResolve(import.meta.dirname, '../../..'));
 
 // ── Constants ──
 
@@ -658,10 +662,11 @@ interface ParsedArgs {
 }
 
 function parseArgs(): ParsedArgs {
+  // Precedence for each setting: explicit CLI flag → `.env` / environment → built-in default.
   const args = process.argv.slice(2);
-  let port = DEFAULT_PORT;
+  let port = Number(process.env.AGENT_OS_RELAY_PORT) || DEFAULT_PORT;
   let cwd = process.cwd();
-  let lobbyBaseUrl: string | undefined;
+  let lobbyBaseUrl: string | undefined = process.env.AGENT_OS_LOBBY_URL?.replace(/\/+$/, '') || undefined;
   let agentName: string | undefined;
   let agentRole: string | undefined;
 
