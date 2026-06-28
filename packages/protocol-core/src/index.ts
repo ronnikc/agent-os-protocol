@@ -9,3 +9,4 @@ export * from './runtime-adapter.js';
 export * from './model-provider.js';
 export * from './lobby-protocol.js';
 export * from './agent-identity.js';
+export * from './load-env.js';

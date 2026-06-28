@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–8 merged — through Concordium agent identity; Phase 9 — UI Assist integration — PR open; Phases 10–13 planned). See
+> **Status:** Forking in progress (Phases 0–9 merged — through the UI Assist integration package; Phase 10 — launch readiness — PR open, first `v0.1.0` prepared; Phases 11–13 planned). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -18,7 +18,7 @@ for the four-layer architecture.
 
 ```
 agent-os-protocol/
-  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  MIGRATION.md
+  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  MIGRATION.md  CHANGELOG.md  RELEASING.md
   LICENSE  NOTICE  .env.example  package.json
   agent-os/                       # Layer 1 — Protocol Core
     RULES.md SPRINTS.md SUB-AGENTS.md ARCHITECTURE.md MEMORY.md
@@ -31,7 +31,7 @@ agent-os-protocol/
   agent-os-panel/                 # Layer 2 — local control-plane UI (vanilla JS SPA)
     index.html app.js styles.css presets.json tabs/ lib/
   packages/                       # Layers 3 & 4
-    protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider, agent-identity)
+    protocol-core/src/            # canonical shared types (runtime-adapter, work-items, lobby, provider, agent-identity) + .env loader
     adapters/src/                 # runtime adapters + registry (claude-cli, codex-cli)
     providers/src/                # model providers (API fuel): openai-/anthropic-compatible, BYOK
     lobby-server/src/             # independent lobby (store + coordinator + HTTP/WS) — npm run lobby
@@ -41,7 +41,9 @@ agent-os-protocol/
     ui-assist-embed/              # repo-local embeddable overlay <script> (embed.js) + demo page
     relay/src/                    # relay-server.ts + lobby-types.ts
   apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
-  docs/adapters/ providers/ lobby/ identity/ ui-assist/ # contracts, spikes, matrices, lobby + identity + UI Assist integration
+  docs/                           # launch guides: getting-started, examples, security, lobby-hosting, training-agents (+ index)
+    adapters/ providers/ lobby/ identity/ ui-assist/  # capability references: contracts, spikes, matrices
+  scripts/                        # repo-level scripts (smoke.sh — fresh-clone boot smoke)
   design-specs/                   # panel design mockups
 ```
 
@@ -73,12 +75,15 @@ npm run ui-assist-integrate -- /path/to/app --json --lobby wss://lobby.example.c
 npm run lobby                                     # ws://localhost:4730
 npm run lobby -- --port 5000
 
-# Verify the adapter + provider + lobby + identity layers (no runtime/key/service needed — injected seams)
+# Verify the layers (no runtime/key/service needed — injected seams)
 npm run verify-adapters
 npm run verify-providers
 npm run verify-lobby
 npm run verify-identity
 npm run verify-ui-assist
+npm run verify-launch     # launch-readiness invariants (docs, scripts, gates, references, license)
+npm run verify-all        # all six suites in one chain
+npm run smoke             # fresh-clone boot smoke: install → verify-all → boot Panel/Lobby/Relay → probe
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),

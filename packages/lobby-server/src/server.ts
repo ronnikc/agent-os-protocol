@@ -17,8 +17,9 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
+import { resolve } from 'node:path';
 import { WebSocketServer, WebSocket } from 'ws';
-import type { AgentToLobbyMessage, LobbyToAgentMessage, LobbySession } from '@agent-os/protocol-core';
+import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
@@ -214,6 +215,10 @@ async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
 // ── CLI entry ──
 const isMain = Boolean(process.argv[1]) && fileURLToPath(import.meta.url) === process.argv[1];
 if (isMain) {
+  // Populate process.env from a repo-root `.env` (real env wins) so AGENT_OS_LOBBY_PORT and
+  // AGENT_OS_CONCORDIUM_INDEXER_URL apply when the lobby runs standalone. Only when run as the CLI —
+  // library consumers (apps/lobby-web, tests) manage their own environment.
+  loadEnv(resolve(import.meta.dirname, '../../..'));
   const portIdx = process.argv.indexOf('--port');
   const port = portIdx >= 0 ? Number(process.argv[portIdx + 1]) : Number(process.env.AGENT_OS_LOBBY_PORT ?? DEFAULT_PORT);
   startLobbyServer({ port })

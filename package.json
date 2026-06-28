@@ -1,6 +1,6 @@
 {
   "name": "agent-os-protocol",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "private": true,
   "description": "An open, runtime-agnostic operating system for agentic software development — orchestrate specialized AI agents locally or across an accountable remote swarm.",
   "license": "Apache-2.0",
@@ -39,7 +39,10 @@
     "verify-providers": "tsx agent-os/scripts/verify-providers.ts",
     "verify-lobby": "tsx agent-os/scripts/verify-lobby.ts",
     "verify-identity": "tsx agent-os/scripts/verify-identity.ts",
-    "verify-ui-assist": "tsx agent-os/scripts/verify-ui-assist.ts"
+    "verify-ui-assist": "tsx agent-os/scripts/verify-ui-assist.ts",
+    "verify-launch": "tsx agent-os/scripts/verify-launch.ts",
+    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-launch",
+    "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",

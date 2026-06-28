@@ -5,16 +5,18 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Status: **Phases 1–8 landed — Local + Swarm Mode, runtime adapters, API providers, the independent lobby & verifiable agent identity**
+&nbsp;Status: **Phases 1–9 landed; Phase 10 (launch readiness) prepares the first `v0.1.0` — Local + Swarm Mode, runtime adapters, API providers, the independent lobby, verifiable agent identity & the UI Assist package**
 
-> 🚧 **Project status.** The platform is mid-fork. **Phases 1–8 are merged:** the Agent OS Panel
+> 🚧 **Project status.** The platform is mid-fork. **Phases 1–9 are merged:** the Agent OS Panel
 > and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the
 > runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider
-> (fuel) layer; the independent public/private **lobby server**; and **read-only Concordium agent
-> identity & verification** with a private-lobby policy ladder. **Phase 9 (the UI Assist integration
-> package — embeddable overlay + Integration Agent) is implemented with a PR open.** Later
-> capabilities — Launch readiness, Loop Mode, the **Panel UI redesign**, and a **public website** —
-> are marked **(planned)** or by the phase that delivers them. See
+> (fuel) layer; the independent public/private **lobby server**; **read-only Concordium agent
+> identity & verification** with a private-lobby policy ladder; and the **UI Assist integration
+> package** (embeddable overlay + Integration Agent). **Phase 10 (launch readiness) is implemented
+> with a PR open:** the full [`docs/`](docs/README.md) guide set, real `.env` configuration, a
+> launch-readiness check (`npm run verify-launch`), a one-shot `npm run verify-all`, and a
+> fresh-clone boot smoke (`npm run smoke`) — with a first **`v0.1.0`** prepared. Later capabilities —
+> Loop Mode, the **Panel UI redesign**, and a **public website** — are marked **(planned)**. See
 > **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
 > **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
 
@@ -338,18 +340,24 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 | 6 | API provider (fuel) layer, BYOK ✅ |
 | 7 | Independent lobby platform (public/private, durable state) ✅ |
 | 8 | Concordium agent identity & verification ✅ |
-| 9 | UI Assist integration package ✅ (PR open) |
-| 10 | Launch readiness (docs, examples, first release) |
+| 9 | UI Assist integration package ✅ |
+| 10 | Launch readiness (docs, examples, `v0.1.0`) ✅ (PR open) |
 | 11 | Loop / autonomous iterative execution |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) |
 | 13 | Agent OS Protocol website (public landing site) |
 
 ## Documentation
 
-Planned under `docs/`: getting-started, architecture, local-mode, swarm-mode, lobby-hosting,
-agent-identity, concordium-agent-registry, runtime-adapters, training-agents,
-ui-assist-integration, security. Until then, see
-**[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** and **[`planning.md`](planning.md)**.
+Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:
+
+- **[Getting started](docs/getting-started.md)** — clone → boot Local Mode → configure → connect a lobby → verify.
+- **[Examples](docs/examples.md)** — local team, swarm connect, BYOK, `/train`, UI Assist embed, work items.
+- **[Security model](docs/security.md)** — trust boundaries, BYOK, server-side lobby control, identity.
+- **[Lobby hosting](docs/lobby-hosting.md)** — built-in, standalone Node, and the planned hosted swarm.
+- **[Training agents](docs/training-agents.md)** — teach a generic agent your domain with `/train`.
+- Capability references: [runtime adapters](docs/adapters/README.md) · [providers](docs/providers/README.md) · [the lobby](docs/lobby/README.md) · [identity](docs/identity/README.md) · [UI Assist](docs/ui-assist/README.md).
+
+Architecture and plan: **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**, **[`agent-os/ARCHITECTURE.md`](agent-os/ARCHITECTURE.md)**, **[`agent-os/STATE.md`](agent-os/STATE.md)**.
 
 ## Contributing
 
