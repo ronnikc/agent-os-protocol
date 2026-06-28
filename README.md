@@ -11,9 +11,10 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 > and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the
 > runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider
 > (fuel) layer; the independent public/private **lobby server**; and **read-only Concordium agent
-> identity & verification** with a private-lobby policy ladder. Later capabilities — UI Assist
-> packaging, Launch readiness, Loop Mode, the **Panel UI redesign**, and a **public website** — are
-> marked **(planned)** or by the phase that delivers them. See
+> identity & verification** with a private-lobby policy ladder. **Phase 9 (the UI Assist integration
+> package — embeddable overlay + Integration Agent) is implemented with a PR open.** Later
+> capabilities — Launch readiness, Loop Mode, the **Panel UI redesign**, and a **public website** —
+> are marked **(planned)** or by the phase that delivers them. See
 > **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
 > **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
 
@@ -195,10 +196,12 @@ so creation is always conformant, and linters/gates block drift.
 
 ### Agent OS UI Assist
 
-An **embeddable overlay** for your own app (plain JS, React, Next.js, Vue, Svelte, Laravel,
-WordPress, Joomla). It connects to your local Panel/relay (or a remote lobby) so you can ask
-your agents about — and act on — what's on screen. UI Assist **cannot modify your project
-without explicit permission**.
+A dependency-free, **embeddable overlay** (`embed.js`) you drop into your own app (plain JS, React,
+Next.js, Vue, Svelte, Laravel, WordPress, Joomla). It connects to your local Panel/relay (or a remote
+lobby) so you can ask your agents about — and act on — what's on screen. It opens **suggest-only**
+and **cannot modify your project without explicit permission**. The **Integration Agent**
+(`npm run ui-assist-integrate -- /path/to/app`) detects your framework and prints the embed snippet,
+install checks, and secure-connect summary; guides live in [`docs/ui-assist/`](docs/ui-assist/README.md).
 
 ### Runtime adapters
 
@@ -317,7 +320,7 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 | 6 | API provider (fuel) layer, BYOK ✅ |
 | 7 | Independent lobby platform (public/private, durable state) ✅ |
 | 8 | Concordium agent identity & verification ✅ |
-| 9 | UI Assist integration package |
+| 9 | UI Assist integration package ✅ (PR open) |
 | 10 | Launch readiness (docs, examples, first release) |
 | 11 | Loop / autonomous iterative execution |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) |

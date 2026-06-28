@@ -3,13 +3,14 @@
 > **Purpose:** Current implementation state of the independent platform. Informative, not
 > normative. Updated as phases progress. The authoritative build plan is
 > [`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md).
-> **Last updated:** Phase 8.
+> **Last updated:** Phase 9.
 
 ## Status summary
 
 The platform is being forked into an independent, Apache-2.0, product-neutral repository per
 the phase plan. **Phases 0–8 are merged to `main` (Phase 8 — Concordium agent identity &
-verification — via #9); Phases 9–13 are planned.**
+verification — via #9). Phase 9 (UI Assist integration package) is implemented on a feature
+branch with a PR open; Phases 10–13 are planned.**
 
 ## Phase status
 
@@ -24,7 +25,7 @@ verification — via #9); Phases 9–13 are planned.**
 | 6 | API provider (fuel) layer, BYOK | ✅ merged (#7) |
 | 7 | Independent lobby platform (public/private, durable state) | ✅ merged (#8) |
 | 8 | Concordium agent identity & verification | ✅ merged (#9) |
-| 9 | UI Assist integration package | ⬜ planned |
+| 9 | UI Assist integration package | ✅ implemented — PR open |
 | 10 | Launch readiness | ⬜ planned |
 | 11 | Loop / autonomous iterative execution | ⬜ planned |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ⬜ planned |
@@ -91,6 +92,22 @@ verification — via #9); Phases 9–13 are planned.**
   injected fake transport/verifier — no network, no key) with the other three suites still green
   (adapters 16, providers 11, lobby 15). The verified Concordium references (CIS-8004/CIS-8, MCP service,
   indexer tools, JS SDK, VCK/VCDC) and the deferred on-chain writes are recorded in `docs/identity/`.
+- **Phase 9 — UI Assist integration package (PR open):** the neutral, embeddable overlay slice.
+  `packages/ui-assist-core` is the framework-agnostic engine — the browser↔runtime **event contract**
+  (named to match the relay wire), a **transport seam** (local relay / remote lobby / fake in tests),
+  the **session** state machine, the explicit-**permission gate** (suggest-only by default; an `act`
+  turn is blocked client-side until the developer grants authority, then carries an authorisation
+  marker), the response-render rule (UI-ASSIST.md Rule 1), and the **integration engine**
+  (`detectProjectType` + `emitIntegrationPlan`). No DOM, no socket — everything injected, so it
+  verifies in Node. `packages/ui-assist-embed` ships `embed.js` — a **dependency-free, repo-local
+  embeddable `<script>`** (no build step) that renders the overlay and speaks the contract to the
+  relay, plus a demo page. The **Integration Agent** is functional via
+  `npm run ui-assist-integrate` (detects plain JS / React / Next.js / Vue / Svelte / Laravel / WordPress
+  / Joomla and prints — never applies — the embed snippet + install checks + secure-connect summary);
+  guides in `docs/ui-assist/`. The reused relay was further **de-branded** (origin roleKeywords/sprint
+  refs removed) and the UI Assist docs neutralized. Verified by `npm run verify-ui-assist` (31/31 — an
+  injected fake WebSocket + a DOM stub that mounts `embed.js` itself and cross-checks its action parser
+  against the core) with the other four suites green (adapters 16, providers 11, lobby 15, identity 23).
 
 ## Known follow-ups
 
@@ -120,3 +137,12 @@ verification — via #9); Phases 9–13 are planned.**
   presenting an identity reference from the Panel join screen + the relay's `lobby-register`, and a
   card-authoring panel view, build on the shipped protocol field. No private keys are ever stored or
   sent in any of these.
+- **UI Assist follow-ups (Phase 9):** the repo-local `<script>` + the core/integration engine are the
+  verifiable core. Three parts are intentionally deferred / infra-gated: (1) a **bundled/minified
+  `dist`** and **npm-published framework wrapper packages** (`-react`/`-next`/`-vue`/…) — needs a
+  bundler + an npm registry (Open Q#9: repo-local script first); (2) **live framework install
+  validation** against real React/Next/WordPress/Joomla apps — needs those toolchains in CI; (3)
+  wiring the overlay's **Suggest/Act mode through to the relay's runtime permission mode** (the relay
+  currently runs the runtime in a permissive edit mode; the explicit-permission gate is enforced
+  overlay-side + by the system prompt until then). Also: routing the Panel's Assist tab + the relay
+  onto `@agent-os/ui-assist-core`'s contract/session (replacing their inline copies) is a follow-up.
