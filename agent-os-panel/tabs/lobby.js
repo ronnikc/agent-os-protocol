@@ -12,6 +12,28 @@ let currentUser = null;
 let events = [];
 let lobbyMode = 'local'; // 'local' or 'swarm'
 
+/**
+ * Roster identity badge (Phase 8). Renders the verification status an agent presented at join time
+ * — accountability at a glance, without exposing any human identity. Anonymous/unverified agents
+ * get no badge (absence is itself information). Title shows the non-secret registry reference.
+ */
+function identityBadge(a) {
+  const status = a.identity_status;
+  if (!status || status === 'unverified') return '';
+  const map = {
+    human_linked: ['badge-success', '✓ Human-linked', 'Backed by a verified human owner (Concordium VCK)'],
+    org_linked: ['badge-success', '✓ Org-verified', 'Backed by a verified organization/domain (Concordium VCDC)'],
+    registry_verified: ['badge-info', '✓ Registered', 'Resolves to a live registry record (DID verified)'],
+    pending: ['badge-muted', '… Identity pending', 'Verification in flight or registry unreachable'],
+    failed: ['badge-warning', '⚠ Identity failed', 'Reference did not resolve, is revoked, or is malformed'],
+  };
+  const entry = map[status];
+  if (!entry) return '';
+  const [cls, label, desc] = entry;
+  const ref = a.identity_ref ? ` — ${a.identity_ref}` : '';
+  return `<span class="badge ${cls}" style="margin-left:6px;font-size:10px;" title="${escapeHtml(desc + ref)}">${label}</span>`;
+}
+
 function renderJoinScreen() {
   const el = document.getElementById('lobby-content');
   if (!el) return;
@@ -94,6 +116,7 @@ function renderLobby() {
             <div>
               <span class="status-dot status-running"></span>
               <strong>${escapeHtml(a.display_name || a.name || a.agent_id)}</strong>
+              ${identityBadge(a)}
               ${isPanel
                 ? `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="Panel is a UI connection only, not a Claude session">panel (UI only)</span>`
                 : `<select data-action="change-role" data-agent-id="${a.agent_id}" style="margin-left:6px;font-size:10px;padding:2px 4px;background:var(--bg-base);color:var(--text-secondary);border:1px solid var(--border);border-radius:3px;">
