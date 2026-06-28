@@ -203,18 +203,35 @@ and **cannot modify your project without explicit permission**. The **Integratio
 (`npm run ui-assist-integrate -- /path/to/app`) detects your framework and prints the embed snippet,
 install checks, and secure-connect summary; guides live in [`docs/ui-assist/`](docs/ui-assist/README.md).
 
-### Runtime adapters
+### Runtime adapters (CLI)
 
-Drive different agent runtimes through one interface. Claude CLI works first; others are added
-without touching the lobby or panel.
+Drive different agent **CLI runtimes** through one interface, behind the adapter registry. Adding a
+runtime never touches the lobby or panel.
 
-| Runtime | Status |
+| CLI runtime | Status |
 |---|---|
-| Claude CLI / Claude Code | ✅ first-class |
-| Codex CLI | 🔜 first additional adapter |
-| OpenCode · Cursor · Hermes · OpenClaw | 🔜 planned |
-| OpenAI-compatible API (BYOK) | 🔜 planned |
-| Anthropic-compatible API (BYOK) | 🔜 planned |
+| Claude CLI / Claude Code | ✅ shipped — first-class (via the relay) |
+| Codex CLI | ✅ shipped (`codex exec --experimental-json`, thread resume) |
+| OpenCode | 🔜 next spike (no hard blocker) |
+| Cursor CLI | ⛔ blocked — needs a PTY shim (TTY-only) |
+| Hermes · OpenClaw | 🔍 unconfirmed CLI surface |
+
+Verified by `npm run verify-adapters`. Per-runtime spikes + blockers live in
+[`docs/adapters/`](docs/adapters/README.md).
+
+### API providers (fuel, BYOK)
+
+Bring your own model API as **fuel** for an agent — a separate layer from the CLI runtimes above.
+**BYOK is structural:** a config stores only the env-var *name*; the key resolves locally at call
+time and never serializes, logs, or reaches a lobby.
+
+| Provider | Status |
+|---|---|
+| OpenAI-compatible (Chat Completions) | ✅ shipped (BYOK) |
+| Anthropic-compatible (Messages) | ✅ shipped (BYOK) |
+
+Verified by `npm run verify-providers`. Contract + BYOK model in
+[`docs/providers/`](docs/providers/README.md).
 
 ### Agent identity & accountability
 
@@ -263,7 +280,8 @@ npm install
 
 ## Quick start
 
-> **Local Mode works today** (`npm run agent-os-panel`). Swarm Mode (`--lobby`) lands in Phase 7.
+> **Local Mode works today** (`npm run agent-os-panel`). **Swarm Mode** connects the Panel/relay to a
+> lobby via `--lobby` — run your own with `npm run lobby`, or point at a hosted one.
 
 ```bash
 # Local Mode — Panel + relay + built-in local lobby
@@ -284,7 +302,7 @@ plan work in the **Sprint** tab → watch it execute in **Tasks**/**Gantt**.
 
 ## Configuration
 
-Copy `.env.example` to `.env`. Key settings **(planned)**:
+Copy `.env.example` to `.env`. Key settings:
 
 | Variable | Purpose |
 |---|---|
