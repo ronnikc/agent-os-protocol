@@ -239,6 +239,13 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - Neutral `ui-assist-core` + `ui-assist-embed`; framework guides (React/Next/Vue/Svelte/
   plain JS/Laravel/WordPress/Joomla); Integration Agent; secure panel/relay/lobby connect (§12).
 - **Exit:** a dev can add UI Assist to a fresh app from docs; no ComplianceOne UI text.
+- **Status (PR open):** `ui-assist-core` (contract + transport seam + session + permission gate +
+  render + integration engine) and `ui-assist-embed` (repo-local `embed.js` + demo) shipped; the
+  Integration Agent runs via `npm run ui-assist-integrate` (8 frameworks); guides in `docs/ui-assist/`;
+  relay + UI Assist docs de-branded. Verified by `npm run verify-ui-assist` (31/31, injected fake
+  WebSocket + DOM stub). **Deferred (infra-gated):** bundled `dist` + npm-published framework wrapper
+  packages, live framework-install validation, and wiring Suggest/Act through to the relay's runtime
+  permission mode. See `agent-os/STATE.md`.
 
 ### Phase 10 — Launch Readiness
 - README/install/quick-start/examples/security/adapter-matrix/lobby-hosting/training guides;
@@ -516,6 +523,11 @@ Docs: `docs/identity/`.
 ---
 
 ## 12. UI Assist Integration Plan (charter §21.12) — confirmed in-scope
+
+> **Status (Phase 9, PR open):** `@agent-os/ui-assist-core` + `@agent-os/ui-assist-embed` shipped;
+> the Integration Agent runs via `npm run ui-assist-integrate` (8 frameworks); guides in
+> `docs/ui-assist/`; verified by `npm run verify-ui-assist` (31/31). The framework wrapper packages
+> + bundled `dist` (npm publish) remain deferred per Open Q#9. See `agent-os/STATE.md`.
 
 - **Packages:** `ui-assist-core` (transport/event contract/session) + `ui-assist-embed`
   (script tag) first; `ui-assist-react` / `-next` / `-vue` later. (Open Q#9: **repo-local

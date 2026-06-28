@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–8 merged — through Concordium agent identity; Phases 9–13 planned). See
+> **Status:** Forking in progress (Phases 0–8 merged — through Concordium agent identity; Phase 9 — UI Assist integration — PR open; Phases 10–13 planned). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -37,9 +37,11 @@ agent-os-protocol/
     lobby-server/src/             # independent lobby (store + coordinator + HTTP/WS) — npm run lobby
     lobby-client/src/             # typed WS lobby client (discover, register, heartbeat)
     identity-concordium/src/      # read-only agent-identity verification + Agent Card authoring (no keys)
+    ui-assist-core/src/           # neutral UI Assist engine: event contract, transport seam, session, permission gate, integration
+    ui-assist-embed/              # repo-local embeddable overlay <script> (embed.js) + demo page
     relay/src/                    # relay-server.ts + lobby-types.ts
   apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
-  docs/adapters/ providers/ lobby/ identity/ # contracts, spikes, matrices, lobby + identity protocol/security
+  docs/adapters/ providers/ lobby/ identity/ ui-assist/ # contracts, spikes, matrices, lobby + identity + UI Assist integration
   design-specs/                   # panel design mockups
 ```
 
@@ -63,6 +65,10 @@ npm run agent-os-panel-tray                       # system-tray launcher
 npm run relay                                     # ws://localhost:4722
 npm run relay -- --port 5001 --cwd /path/to/repo
 
+# UI Assist — embed the overlay into your own app (Integration Agent)
+npm run ui-assist-integrate -- /path/to/app       # detect framework + print the embed plan
+npm run ui-assist-integrate -- /path/to/app --json --lobby wss://lobby.example.com
+
 # Lobby server — standalone Swarm Mode lobby the Panel/relay connect to (--lobby <url>)
 npm run lobby                                     # ws://localhost:4730
 npm run lobby -- --port 5000
@@ -72,6 +78,7 @@ npm run verify-adapters
 npm run verify-providers
 npm run verify-lobby
 npm run verify-identity
+npm run verify-ui-assist
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),

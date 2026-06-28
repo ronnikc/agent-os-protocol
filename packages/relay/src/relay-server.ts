@@ -19,8 +19,6 @@
  *     --agent-name "claude-frontend-1"
  *
  * The relay auto-discovers the active lobby via GET /api/v1/agent-lobby/discover (public, no auth)
- *
- * Sprint 17.8.0: UI Assist — Native React-Grab Retrofit for Claude Code
  */
 
 import { createServer as createHttpServer, type Server as HttpServer } from 'node:http';
@@ -795,7 +793,7 @@ if (lobbyBaseUrl) {
               `[lobby] ${msg.type}${msg.type === 'lobby-registered' ? ` — agent_id: ${msg.agent_id}` : ''}`,
             );
 
-            // ── Task-based coordination (Sprint 35.5.0) ──
+            // ── Task-based coordination ──
             if (msg.type === 'lobby-task-assigned') {
               const task = msg.task;
               bridge.setCurrentTask(task);
@@ -955,7 +953,7 @@ if (lobbyBaseUrl) {
                   `[lobby] Buffered message from ${lobbyMsg.from_agent_id} (${lobbyMsg.content.slice(0, 60)}...)`,
                 );
 
-                // ── Hand-raise evaluation for idle agents (Sprint 35.9.0) ──
+                // ── Hand-raise evaluation for idle agents ──
                 // When an idle agent sees a buffered message that might be relevant
                 // to its role, run a lightweight Claude prompt that can ONLY raise
                 // a hand — never send a chat message. This restores the "specialist
@@ -981,10 +979,8 @@ if (lobbyBaseUrl) {
                       /\b(test|bug|regression|acceptance|criteria|qa|validation|coverage|e2e|spec|fail|broken)\b/i,
                     'design-specialist':
                       /\b(design|color|typography|spacing|icon|brand|visual|figma|mockup|wireframe|theme)\b/i,
-                    'compliance-specialist':
-                      /\b(compliance|regulation|gdpr|framework|audit|control|risk|policy|standard|iso|nist|soc)\b/i,
-                    'compliance':
-                      /\b(compliance|regulation|gdpr|framework|audit|control|risk|policy|standard|iso|nist|soc)\b/i,
+                    'domain-specialist':
+                      /\b(domain|business|terminology|glossary|rules|knowledge|workflow|process|policy|requirement)\b/i,
                     'security-specialist':
                       /\b(security|vulnerability|xss|injection|auth|token|encryption|cors|csp|rbac|permission)\b/i,
                     'security':

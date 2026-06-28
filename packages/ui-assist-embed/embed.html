@@ -1,0 +1,39 @@
+<!doctype html>
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>UI Assist — embed demo</title>
+    <style>
+      body { margin: 0; font-family: ui-sans-serif, system-ui, sans-serif; background: #0f1116; color: #e7e9ee; }
+      main { max-width: 640px; margin: 0 auto; padding: 48px 20px; }
+      h1 { font-size: 20px; }
+      p { color: #9aa3b2; line-height: 1.5; }
+      code { background: #1d2230; padding: 2px 6px; border-radius: 6px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>UI Assist — embed demo</h1>
+      <p>
+        This page mounts the repo-local UI Assist overlay and connects it to a relay. Start the
+        bridge first with <code>npm run relay</code> (defaults to <code>ws://localhost:4722</code>),
+        then open this file through any static server. Click the ✦ launcher (bottom-right).
+      </p>
+      <p>
+        The overlay opens in <strong>suggest-only</strong> mode. Use the <em>Suggest</em> pill in the
+        panel header to grant edit/commit authority — it asks for confirmation first, by design.
+      </p>
+    </main>
+
+    <script type="module">
+      import { mountUiAssist } from './embed.js';
+      mountUiAssist({
+        relayUrl: 'ws://localhost:4722',
+        title: 'UI Assist',
+      });
+    </script>
+  </body>
+</html>
