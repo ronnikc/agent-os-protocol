@@ -44,6 +44,9 @@ import {
   type UiAssistClientMessage,
   type UiAssistServerMessage,
 } from '@agent-os/ui-assist-core';
+// The repo-local embeddable overlay itself — imported by relative path (it ships no bare specifier),
+// exercised here through a DOM + WebSocket stub so the actual <script> a developer drops in is tested.
+import { mountUiAssist, extractActions as embedExtractActions } from '../../packages/ui-assist-embed/embed.js';
 
 // ── Tiny test runner (matches verify-lobby / verify-identity) ──
 let passed = 0;
@@ -117,6 +120,106 @@ function autoOpeningCtor() {
 function neverOpeningCtor(): BrowserWebSocketCtor {
   class Stuck extends FakeWebSocket {}
   return Stuck as unknown as BrowserWebSocketCtor;
+}
+
+// ── A minimal DOM + WebSocket stub for exercising embed.js in Node ──
+
+interface StubEl {
+  tagName: string;
+  children: StubEl[];
+  parentNode: StubEl | null;
+  attributes: Record<string, string>;
+  className: string;
+  value: string;
+  textContent: string;
+  classList: { add(c: string): void; remove(c: string): void; contains(c: string): boolean; toggle(c: string): void };
+  setAttribute(k: string, v: string): void;
+  getAttribute(k: string): string | null;
+  appendChild(c: StubEl): StubEl;
+  removeChild(c: StubEl): void;
+  remove(): void;
+  addEventListener(type: string, fn: (e: unknown) => void): void;
+  _fire(type: string, ev?: unknown): void;
+}
+
+function makeDomStub() {
+  function makeEl(tag: string): StubEl {
+    const listeners: Record<string, Array<(e: unknown) => void>> = {};
+    const classes = new Set<string>();
+    let text = '';
+    const el = {
+      tagName: tag,
+      children: [] as StubEl[],
+      parentNode: null as StubEl | null,
+      attributes: {} as Record<string, string>,
+      className: '',
+      value: '',
+      classList: {
+        add: (c: string) => void classes.add(c),
+        remove: (c: string) => void classes.delete(c),
+        contains: (c: string) => classes.has(c),
+        toggle: (c: string) => (classes.has(c) ? classes.delete(c) : classes.add(c)),
+      },
+      setAttribute(k: string, v: string) {
+        this.attributes[k] = v;
+      },
+      getAttribute(k: string) {
+        return this.attributes[k] ?? null;
+      },
+      appendChild(c: StubEl) {
+        c.parentNode = this;
+        this.children.push(c);
+        return c;
+      },
+      removeChild(c: StubEl) {
+        this.children = this.children.filter((x) => x !== c);
+        c.parentNode = null;
+      },
+      remove() {
+        this.parentNode?.removeChild(this);
+      },
+      addEventListener(type: string, fn: (e: unknown) => void) {
+        (listeners[type] ??= []).push(fn);
+      },
+      _fire(type: string, ev: unknown = {}) {
+        for (const fn of listeners[type] ?? []) fn(ev);
+      },
+    } as StubEl;
+    Object.defineProperty(el, 'textContent', {
+      get: () => text,
+      set: (v: string) => {
+        text = String(v);
+        el.children = []; // mimic the browser: setting textContent clears children
+      },
+    });
+    return el;
+  }
+  const body = makeEl('body');
+  return { document: { createElement: (t: string) => makeEl(t), body }, body };
+}
+
+/** A browser-style WebSocket stub for embed.js (open immediately; scriptable inbound frames). */
+class EmbedWebSocket {
+  static last: EmbedWebSocket | undefined;
+  readyState = 1; // OPEN
+  sent: string[] = [];
+  onmessage: ((e: { data: unknown }) => void) | null = null;
+  onerror: ((e?: unknown) => void) | null = null;
+  constructor(public readonly url: string) {
+    EmbedWebSocket.last = this;
+  }
+  send(data: string): void {
+    this.sent.push(data);
+  }
+  close(): void {
+    this.readyState = 3;
+  }
+  deliver(frame: UiAssistServerMessage): void {
+    this.onmessage?.({ data: JSON.stringify(frame) });
+  }
+  lastSent(): UiAssistClientMessage {
+    return JSON.parse(this.sent[this.sent.length - 1]) as UiAssistClientMessage;
+  }
 }
 
 async function main(): Promise<void> {
@@ -336,6 +439,133 @@ async function main(): Promise<void> {
     for (const brand of ORIGIN_BRANDS) assert.equal(wire.includes(brand), false, brand);
     const SECRET = /sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|ghp_[A-Za-z0-9]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----/;
     assert.equal(SECRET.test(wire), false);
+  });
+
+  // ════════ H — Embeddable overlay (embed.js through a DOM/WS stub) ════════
+  console.log('\nH — embeddable overlay');
+
+  /** Mount embed.js against fresh stubs; returns the handle + stubs. */
+  function mountStubbed(confirmReturns = true) {
+    const dom = makeDomStub();
+    const confirmCalls: string[] = [];
+    const handle = mountUiAssist({
+      document: dom.document,
+      container: dom.body,
+      WebSocketImpl: EmbedWebSocket as unknown as new (url: string) => unknown,
+      confirmImpl: (msg: string) => {
+        confirmCalls.push(msg);
+        return confirmReturns;
+      },
+    });
+    return { dom, handle, confirmCalls, ws: () => EmbedWebSocket.last! };
+  }
+
+  await check("embed.js mounts an overlay and connects to the relay (default 'suggest')", () => {
+    EmbedWebSocket.last = undefined;
+    const { handle, ws } = mountStubbed();
+    assert.equal(handle.getMode(), 'suggest');
+    assert.equal(ws().url, 'ws://localhost:4722');
+    handle.destroy();
+  });
+
+  await check('a suggest turn renders a user bubble and sends agent-request with no marker', () => {
+    const { handle, ws } = mountStubbed();
+    handle.sendPrompt('Why is this misaligned?');
+    const msg = ws().lastSent();
+    assert.equal(msg.type, 'agent-request');
+    assert.ok(msg.type === 'agent-request' && msg.context.prompt === 'Why is this misaligned?');
+    assert.ok(msg.type === 'agent-request' && !msg.context.content.includes(ACT_AUTHORIZATION_MARKER));
+    handle.destroy();
+  });
+
+  await check('a streamed done with a trailing list renders clickable action buttons that re-ask', () => {
+    const { handle, ws } = mountStubbed();
+    handle.sendPrompt('options?');
+    ws().deliver({ type: 'agent-status', content: 'Looking…' });
+    ws().deliver({ type: 'agent-done', content: 'Choose:\n1. Fix & commit now\n2. Add to sprint plan' });
+    // The action buttons send the chosen label as the next prompt.
+    const before = ws().sent.length;
+    // Find the rendered action buttons in the transcript and click the first.
+    const buttons: StubEl[] = [];
+    const walk = (el: StubEl) => {
+      if (el.className === 'uia-action') buttons.push(el);
+      el.children.forEach(walk);
+    };
+    walk(handle.root as unknown as StubEl);
+    assert.equal(buttons.length, 2, 'two action buttons rendered');
+    buttons[0]._fire('click');
+    assert.equal(ws().sent.length, before + 1);
+    assert.ok(ws().lastSent().type === 'agent-request');
+    handle.destroy();
+  });
+
+  await check('the send button and Enter key both dispatch a turn', () => {
+    const { dom, handle, ws } = mountStubbed();
+    // locate input + send button by class
+    const find = (cls: string): StubEl => {
+      let found: StubEl | undefined;
+      const walk = (el: StubEl) => {
+        if (el.className === cls) found = el;
+        el.children.forEach(walk);
+      };
+      walk(handle.root as unknown as StubEl);
+      if (!found) throw new Error(`no ${cls}`);
+      return found;
+    };
+    const input = find('uia-input');
+    input.value = 'typed and clicked';
+    find('uia-send')._fire('click');
+    assert.equal(ws().lastSent().type, 'agent-request');
+    input.value = 'typed and entered';
+    input._fire('keydown', { key: 'Enter', shiftKey: false, preventDefault() {} });
+    const msg = ws().lastSent();
+    assert.ok(msg.type === 'agent-request' && msg.context.prompt === 'typed and entered');
+    void dom;
+    handle.destroy();
+  });
+
+  await check('granting act (confirm=yes) makes the next turn carry the authorisation marker', () => {
+    const { handle, confirmCalls, ws } = mountStubbed(true);
+    handle.toggleMode(); // user clicks the Suggest pill
+    assert.equal(confirmCalls.length, 1, 'consent was requested');
+    assert.equal(handle.getMode(), 'act');
+    handle.sendPrompt('apply the fix and commit');
+    assert.ok(ws().lastSent().type === 'agent-request');
+    const msg = ws().lastSent();
+    assert.ok(msg.type === 'agent-request' && msg.context.content.includes(ACT_AUTHORIZATION_MARKER));
+    handle.destroy();
+  });
+
+  await check('declining the consent prompt (confirm=no) keeps suggest-only', () => {
+    const { handle, confirmCalls } = mountStubbed(false);
+    handle.toggleMode();
+    assert.equal(confirmCalls.length, 1);
+    assert.equal(handle.getMode(), 'suggest', 'no consent → no act');
+    handle.destroy();
+  });
+
+  await check('embed.js adopts the advertised handler id from a handlers frame', () => {
+    const { handle, ws } = mountStubbed();
+    ws().deliver({ type: 'handlers', handlers: ['codex-cli'] });
+    handle.sendPrompt('hi');
+    assert.equal(ws().lastSent().agentId, 'codex-cli');
+    handle.destroy();
+  });
+
+  await check("embed.js's action parser agrees with the core renderer (no drift)", () => {
+    const fixtures = [
+      'Pick:\n1. A\n2. B',
+      'All done.\n\n1. Only one',
+      'Steps:\n1. a\n2. b\n\nWhat next?',
+      'Choose:\n1) Yes\n2) No\n3) Do both\n\n',
+      'No list here at all.',
+    ];
+    for (const f of fixtures) {
+      const a = embedExtractActions(f);
+      const b = extractTrailingActions(f);
+      assert.deepEqual(a.actions, b.actions, `actions mismatch for: ${JSON.stringify(f)}`);
+      assert.equal(a.body, b.body, `body mismatch for: ${JSON.stringify(f)}`);
+    }
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

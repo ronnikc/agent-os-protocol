@@ -1,0 +1,17 @@
+{
+  "name": "@agent-os/ui-assist-embed",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Agent OS Protocol — repo-local, dependency-free embeddable UI Assist overlay (<script> drop-in). The canonical contract lives in @agent-os/ui-assist-core.",
+  "license": "Apache-2.0",
+  "author": "Gothard.dk // Ronni K. Gothard Christiansen",
+  "type": "module",
+  "main": "embed.js",
+  "exports": {
+    ".": "./embed.js"
+  },
+  "files": [
+    "embed.js",
+    "embed.html"
+  ]
+}
