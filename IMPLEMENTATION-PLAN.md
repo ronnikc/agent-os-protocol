@@ -273,6 +273,20 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
   Phase 4; local MVP + swarm in Phase 7.)
 - **Exit:** a loop converges on a real work item against measurable exit criteria; respects
   iteration/budget caps + human checkpoints; is fully auditable + stoppable; works local + swarm.
+- **Status (PR open):** Loop Mode ships on the schema Phase 4 seeded. `packages/loop`
+  (`@agent-os/loop`) is the `LoopOrchestrator` — `Assess → Delegate → Verify → Reflect → Decide`
+  behind injected seams, so the controller + every safety rule (hard `maxIterations` + token/cost/
+  wall-clock budget, convergence + stall detection, regression guard, fail-closed human checkpoints,
+  kill switch, full audit, **unattended OFF by default**) verify with no LLM/lobby/network. Authoring
+  + orchestration via `create-loop` + `loop-orchestrator` skills (wired into boss-agent + SUB-AGENTS).
+  The **`continuous-quality`** preset is the Scheduled-QA workload as a `LoopSpec` (`onConverge:
+  open-pr`; commit-only unattended allowlist). Runnable via `npm run loop` and a Panel **Loop** tab +
+  `/api/loops` endpoints (WS `loop-event`/`loop-done`). Verified by `npm run verify-loop` (17), wired
+  into `verify-all`, required by `verify-launch` (53); guide `docs/loop-mode.md`. **Exit met** —
+  verified by `verify-loop` 17/17, `npm run loop` (attended + unattended converge), the Panel
+  endpoints, and `verify-all` (16/11/15/23/31/17/53). **Deferred (infra-gated):** live evaluate/
+  delegate wiring through the relay/lobby, unattended cron over a swarm, the polished Panel Loop view
+  (→ Phase 12), and loop resumability. See `agent-os/STATE.md`.
 
 ### Phase 12 — Agent OS Panel UI Redesign (DESIGN.md alignment)
 - Evolve the Panel UI from the functional Phase-1 layout into the polished, **dark glass-panel
