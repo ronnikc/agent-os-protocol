@@ -346,10 +346,16 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 
 ## Documentation
 
-Planned under `docs/`: getting-started, architecture, local-mode, swarm-mode, lobby-hosting,
-agent-identity, concordium-agent-registry, runtime-adapters, training-agents,
-ui-assist-integration, security. Until then, see
-**[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** and **[`planning.md`](planning.md)**.
+Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:
+
+- **[Getting started](docs/getting-started.md)** — clone → boot Local Mode → configure → connect a lobby → verify.
+- **[Examples](docs/examples.md)** — local team, swarm connect, BYOK, `/train`, UI Assist embed, work items.
+- **[Security model](docs/security.md)** — trust boundaries, BYOK, server-side lobby control, identity.
+- **[Lobby hosting](docs/lobby-hosting.md)** — built-in, standalone Node, and the planned hosted swarm.
+- **[Training agents](docs/training-agents.md)** — teach a generic agent your domain with `/train`.
+- Capability references: [runtime adapters](docs/adapters/README.md) · [providers](docs/providers/README.md) · [the lobby](docs/lobby/README.md) · [identity](docs/identity/README.md) · [UI Assist](docs/ui-assist/README.md).
+
+Architecture and plan: **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**, **[`agent-os/ARCHITECTURE.md`](agent-os/ARCHITECTURE.md)**, **[`agent-os/STATE.md`](agent-os/STATE.md)**.
 
 ## Contributing
 
