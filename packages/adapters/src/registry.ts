@@ -9,6 +9,7 @@
 
 import type { AgentRuntimeAdapter, RuntimeId, RuntimeDetectionResult } from '@agent-os/protocol-core';
 import { claudeCliAdapter } from './claude-cli.js';
+import { codexCliAdapter } from './codex-cli.js';
 
 export class AdapterRegistry {
   private adapters = new Map<RuntimeId, AgentRuntimeAdapter>();
@@ -40,5 +41,5 @@ export class AdapterRegistry {
   }
 }
 
-/** The default registry — Claude CLI is registered first-class today. */
-export const runtimeRegistry = new AdapterRegistry().register(claudeCliAdapter);
+/** The default registry — Claude CLI and Codex CLI are registered first-class today. */
+export const runtimeRegistry = new AdapterRegistry().register(claudeCliAdapter).register(codexCliAdapter);
