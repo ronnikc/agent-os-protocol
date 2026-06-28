@@ -147,7 +147,7 @@ async function main(): Promise<void> {
   const requiredScripts = [
     'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'ui-assist-integrate',
     'verify-adapters', 'verify-providers', 'verify-lobby', 'verify-identity', 'verify-ui-assist',
-    'verify-launch', 'verify-all',
+    'verify-loop', 'verify-launch', 'verify-all',
   ];
   for (const s of requiredScripts) {
     await check(`package.json: script "${s}" wired`, () =>
@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   }
 
   // ── D. Verify scripts exist on disk ──
-  for (const s of ['adapters', 'providers', 'lobby', 'identity', 'ui-assist', 'launch']) {
+  for (const s of ['adapters', 'providers', 'lobby', 'identity', 'ui-assist', 'loop', 'launch']) {
     await check(`verify script on disk: verify-${s}.ts`, () =>
       assert.ok(nonEmpty(`agent-os/scripts/verify-${s}.ts`), `verify-${s}.ts missing`));
   }
