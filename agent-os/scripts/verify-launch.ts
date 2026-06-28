@@ -133,8 +133,17 @@ async function main(): Promise<void> {
   // ── C. package.json wiring ──
   const pkg = JSON.parse(read('package.json'));
   await check('package.json: license is Apache-2.0', () => assert.equal(pkg.license, 'Apache-2.0'));
-  await check('package.json: version is valid semver', () =>
-    assert.match(pkg.version, /^\d+\.\d+\.\d+(?:[-+].+)?$/, `bad version "${pkg.version}"`));
+  await check('package.json: version is a released semver (not 0.0.0)', () => {
+    assert.match(pkg.version, /^\d+\.\d+\.\d+(?:[-+].+)?$/, `bad version "${pkg.version}"`);
+    assert.notEqual(pkg.version, '0.0.0', 'version must be bumped for a release');
+  });
+  await check('CHANGELOG.md present and its top version matches package.json', () => {
+    assert.ok(nonEmpty('CHANGELOG.md'), 'CHANGELOG.md missing');
+    const m = read('CHANGELOG.md').match(/^##\s*\[([0-9]+\.[0-9]+\.[0-9]+[^\]]*)\]/m);
+    assert.ok(m, 'no released version heading (## [x.y.z]) in CHANGELOG.md');
+    assert.equal(m![1], pkg.version, `CHANGELOG top (${m![1]}) != package.json (${pkg.version})`);
+  });
+  await check('RELEASING.md present', () => assert.ok(nonEmpty('RELEASING.md'), 'RELEASING.md missing'));
   const requiredScripts = [
     'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'ui-assist-integrate',
     'verify-adapters', 'verify-providers', 'verify-lobby', 'verify-identity', 'verify-ui-assist',
