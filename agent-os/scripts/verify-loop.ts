@@ -29,6 +29,8 @@ import type { LoopSpec, ExitCriterion } from '@agent-os/protocol-core';
 import {
   LoopOrchestrator,
   InvalidLoopSpecError,
+  LOOP_PRESETS,
+  continuousQualityLoop,
   type LoopSeams,
   type CriterionResult,
   type IterationWork,
@@ -241,6 +243,30 @@ async function main(): Promise<void> {
     assert.equal(seen[seen.length - 1].type, 'finished');
     assert.ok(seen.some((e) => e.type === 'converged'));
     for (const e of seen) assert.ok(typeof e.at === 'number', 'each event is timestamped');
+  });
+
+  // ── L. Shipped presets ──
+  await check('the continuous-quality preset is a valid, safe LoopSpec', async () => {
+    const spec = continuousQualityLoop();
+    // a deterministic fix-forward world should converge it through the engine
+    const total = spec.exitCriteria.length;
+    let fixed = 0;
+    const res = await new LoopOrchestrator({
+      evaluate: () => spec.exitCriteria.map((c, i) => ({ criterion: c, passed: i < fixed })),
+      delegate: () => { fixed += 1; return { tokensUsed: 1 }; },
+      approveCheckpoint: () => true,
+    }).run(spec, { stallWindow: 10 });
+    assert.equal(res.status, 'converged');
+    // safety posture: every irreversible action is gated, and it never opens unattended by accident
+    for (const a of ['commit', 'merge', 'deploy', 'scope-change']) assert.ok(spec.approvalCheckpoints?.includes(a as CheckpointAction), `${a} must be gated`);
+    assert.equal(spec.onConverge, 'open-pr', 'converges to a PR, never an autonomous merge');
+    assert.ok((spec.maxIterations ?? 0) > 0 && spec.budget, 'has a hard cap + a budget');
+  });
+
+  await check('the preset registry exposes continuous-quality with a tight unattended allowlist', () => {
+    const p = LOOP_PRESETS['continuous-quality'];
+    assert.ok(p, 'continuous-quality preset registered');
+    assert.deepEqual([...p.unattendedAllowlist], ['commit'], 'only commit auto-approves unattended; merge/deploy stay human');
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

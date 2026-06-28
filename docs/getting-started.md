@@ -111,7 +111,7 @@ injected seams). A healthy fresh clone passes all of them:
 
 ```bash
 npm run verify-all
-# adapters (16) + providers (11) + lobby (15) + identity (23) + ui-assist (31) + launch
+# adapters (16) + providers (11) + lobby (15) + identity (23) + ui-assist (31) + loop (17) + launch
 ```
 
 Run any one directly:
@@ -122,6 +122,7 @@ npm run verify-providers    # OpenAI-/Anthropic-compatible fuel + BYOK redaction
 npm run verify-lobby        # coordinator rules + a real two-client WS run
 npm run verify-identity     # read-only Concordium verification + policy ladder
 npm run verify-ui-assist    # the embeddable overlay contract + permission gate
+npm run verify-loop         # Loop Mode engine: caps, convergence/stall, regression, checkpoints
 npm run verify-launch       # launch invariants (docs, scripts, gates, references, license)
 ```
 

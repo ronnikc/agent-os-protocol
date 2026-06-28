@@ -34,6 +34,7 @@
     "lobby": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
+    "loop": "tsx agent-os/scripts/loop.ts",
     "ui-assist-integrate": "tsx agent-os/scripts/ui-assist-integrate.ts",
     "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
     "verify-providers": "tsx agent-os/scripts/verify-providers.ts",

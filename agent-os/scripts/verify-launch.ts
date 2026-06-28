@@ -117,7 +117,7 @@ async function main(): Promise<void> {
   // ── A. Launch documentation set ──
   const launchDocs = [
     'docs/README.md', 'docs/getting-started.md', 'docs/examples.md', 'docs/security.md',
-    'docs/lobby-hosting.md', 'docs/training-agents.md',
+    'docs/lobby-hosting.md', 'docs/training-agents.md', 'docs/loop-mode.md',
     'docs/adapters/README.md', 'docs/providers/README.md', 'docs/lobby/README.md',
     'docs/identity/README.md', 'docs/ui-assist/README.md',
   ];
@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   });
   await check('RELEASING.md present', () => assert.ok(nonEmpty('RELEASING.md'), 'RELEASING.md missing'));
   const requiredScripts = [
-    'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'ui-assist-integrate',
+    'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'loop', 'ui-assist-integrate',
     'verify-adapters', 'verify-providers', 'verify-lobby', 'verify-identity', 'verify-ui-assist',
     'verify-loop', 'verify-launch', 'verify-all',
   ];
