@@ -181,87 +181,68 @@ async function* runClaudeAgent(
   try {
     yield { type: 'status', content: 'Thinking…' };
 
-    // Clean environment (same as react-grab for VS Code compatibility)
-    const env = { ...process.env };
-    delete env.NODE_OPTIONS;
-    delete env.VSCODE_INSPECTOR_OPTIONS;
+    const runtimeId = (process.env.AGENT_OS_RUNTIME as any) || 'claude-cli';
+    const adapter = runtimeRegistry.get(runtimeId) || runtimeRegistry.get('claude-cli')!;
+    log('info', `Spawning agent using adapter: ${adapter.label} (${adapter.id})`);
 
     const claudeSessionId = sessionId ? claudeSessionMap.get(sessionId) : undefined;
 
-    const queryResult = query({
-      prompt,
-      options: {
-        pathToClaudeCodeExecutable: resolveClaudePath(),
-        includePartialMessages: true,
-        permissionMode: 'bypassPermissions',
-        env,
-        cwd: options?.cwd ?? process.cwd(),
-        ...(claudeSessionId ? { resume: claudeSessionId } : {}),
-      } as Options,
+    const handle = await adapter.startAgent({
+      cwd: options?.cwd ?? process.cwd(),
+      systemPrompt: prompt,
+      resumeSessionId: claudeSessionId,
     });
+
+    if (options?.signal) {
+      options.signal.addEventListener('abort', () => {
+        adapter.stopAgent(handle).catch(() => {});
+      });
+    }
 
     let capturedClaudeSessionId: string | undefined;
 
     // ── Bubble tracking ───────────────────────────────────────────────
-    // Each distinct assistant message (by UUID) AND each ## heading
-    // section within a message gets its own bubble on the frontend.
-    //
-    // messageIndex is the global bubble counter sent to the browser.
-    // The frontend creates a new chat bubble for each new index and
-    // freezes earlier ones.
-    let currentMessageUuid: string | undefined;
-    let nextIndex = 0;
-    // Per-section tracking for the current assistant message
+    let accumulatedText = '';
     let lastSectionTexts: string[] = [];
+    let nextIndex = 0;
 
-    for await (const message of queryResult) {
-      if (isAborted()) break;
-
-      if (!capturedClaudeSessionId && message.session_id) {
-        capturedClaudeSessionId = message.session_id;
+    for await (const message of adapter.readOutput(handle)) {
+      if (isAborted()) {
+        await adapter.stopAgent(handle).catch(() => {});
+        break;
       }
 
-      if (message.type === 'assistant') {
-        const messageUuid = message.uuid;
-        const textContent = message.message.content
-          .filter(isTextBlock)
-          .map((block: TextContentBlock) => block.text)
-          .join(' ');
+      if (message.data && typeof message.data === 'object' && 'session_id' in (message.data as any)) {
+        capturedClaudeSessionId = (message.data as any).session_id;
+      }
 
-        if (textContent) {
-          // New assistant message (different UUID) — all previous
-          // sections are finalized; bump index past them.
-          if (messageUuid && currentMessageUuid && messageUuid !== currentMessageUuid) {
-            // Advance past any sections from the previous message
-            nextIndex += Math.max(lastSectionTexts.length, 1);
-            lastSectionTexts = [];
-          }
-          currentMessageUuid = messageUuid;
+      if ((message.type === 'output' || message.type === 'thinking') && message.content) {
+        accumulatedText += message.content;
 
-          // Split at ## headings so each section gets its own bubble.
-          const sections = textContent.split(/\n(?=## )/);
+        // Split at ## headings so each section gets its own bubble.
+        const sections = accumulatedText.split(/\n(?=## )/);
 
-          for (let i = 0; i < sections.length; i++) {
-            const text = sections[i].trim();
-            if (!text) continue;
+        for (let i = 0; i < sections.length; i++) {
+          const text = sections[i].trim();
+          if (!text) continue;
 
-            // Only yield if this section's content actually changed
-            if (lastSectionTexts[i] !== text) {
-              lastSectionTexts[i] = text;
-              yield { type: 'status', content: text, messageIndex: nextIndex + i };
-            }
+          if (lastSectionTexts[i] !== text) {
+            lastSectionTexts[i] = text;
+            yield { type: 'status', content: text, messageIndex: nextIndex + i };
           }
         }
       }
 
-      if (message.type === 'result') {
-        log('info', `Session result: ${message.subtype}`);
+      if (message.type === 'error') {
+        const errorMsg = message.content || 'Unknown error';
+        log('error', `Agent runtime session failed: ${errorMsg}`);
+        yield { type: 'error', content: errorMsg };
       }
     }
 
     // Build the full response from all tracked sections
     const allSections = lastSectionTexts.filter(Boolean);
-    const finalText = allSections.join('\n\n');
+    const finalText = allSections.join('\n\n') || accumulatedText;
 
     if (!isAborted() && capturedClaudeSessionId) {
       if (sessionId) {
@@ -276,12 +257,8 @@ async function* runClaudeAgent(
   } catch (error) {
     if (!isAborted()) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      const stderr = error instanceof Error && 'stderr' in error ? String(error.stderr) : undefined;
-      const fullError =
-        stderr && stderr.trim() ? `${errorMessage}\n\nstderr:\n${stderr.trim()}` : errorMessage;
-
-      log('error', `Claude Code session failed: ${fullError}`);
-      yield { type: 'error', content: fullError };
+      log('error', `Agent runtime session failed: ${errorMessage}`);
+      yield { type: 'error', content: errorMessage };
       yield { type: 'done', content: '' };
     }
   } finally {

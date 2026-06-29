@@ -38,6 +38,7 @@ function identityBadge(a) {
 function renderJoinScreen() {
   const el = document.getElementById('lobby-content');
   if (!el) return;
+  const savedDid = localStorage.getItem('agent-os-linked-did') || '';
   el.innerHTML = `
     <div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:400px;">
       <div style="width:420px;max-width:90vw;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:32px;">
@@ -45,6 +46,10 @@ function renderJoinScreen() {
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Display Name</label>
           <input type="text" id="lobby-join-name" placeholder="Ronni" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;" />
+        </div>
+        <div style="margin-bottom:16px;">
+          <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Identity DID (Optional)</label>
+          <input type="text" id="lobby-join-did" placeholder="did:ccd:testnet:..." value="${escapeHtml(savedDid)}" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;" />
         </div>
         <div style="margin-bottom:24px;">
           <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Role</label>
@@ -66,8 +71,15 @@ function renderJoinScreen() {
   document.getElementById('lobby-join-btn')?.addEventListener('click', async () => {
     const name = document.getElementById('lobby-join-name')?.value?.trim();
     const role = document.getElementById('lobby-join-role')?.value;
+    const did = document.getElementById('lobby-join-did')?.value?.trim() || '';
     if (!name) return;
     currentUser = { name, role, type: 'human', joinedAt: new Date().toISOString() };
+    if (did) {
+      currentUser.identity_status = 'registry_verified';
+      currentUser.agent_id = did;
+      currentUser.join_token = did;
+      try { localStorage.setItem('agent-os-linked-did', did); } catch {}
+    }
     if (!lobbyState.humanUsers) lobbyState.humanUsers = [];
     lobbyState.humanUsers = lobbyState.humanUsers.filter(u => u.name !== name);
     lobbyState.humanUsers.push(currentUser);
