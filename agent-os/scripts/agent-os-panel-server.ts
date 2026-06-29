@@ -18,7 +18,7 @@ import {
   appendFileSync, statSync, watch,
 } from 'node:fs';
 import { join, resolve, extname } from 'node:path';
-import { spawn, type ChildProcess } from 'node:child_process';
+import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { hostname, platform } from 'node:os';
 
 // Node v24 on Windows cannot spawn .cmd files (EINVAL). Use node + tsx CLI module directly.
@@ -33,6 +33,8 @@ import { request as httpsRequest } from 'node:https';
 import { runtimeRegistry } from '@agent-os/adapters';
 import { providerRegistry, loadProviderConfigsFromEnv, defaultProviderId, redactProviderConfig } from '@agent-os/providers';
 import { loadEnv } from '@agent-os/protocol-core';
+import { LobbyClient } from '@agent-os/lobby-client';
+import { validateAgentCard, hashAgentCard, prepareRegistration } from '@agent-os/identity-concordium';
 import {
   LoopOrchestrator, LOOP_PRESETS,
   type LoopEvent, type CriterionResult, type IterationWork, type CheckpointAction, type BudgetUsed,
@@ -136,24 +138,72 @@ function startLoopRun(presetName: string, unattended: boolean): { ok: boolean; i
   const run: PanelLoopRun = { id, preset: presetName, goal: spec.goal, status: 'running', iterations: 0, passing: 0, total, attended: !unattended, killed: false, paused: false };
   loopRuns.set(id, run);
 
-  let fixed = 0;
   const orchestrator = new LoopOrchestrator({
     evaluate: async (ctx): Promise<CriterionResult[]> => {
       await checkPause(id);
-      const results = spec.exitCriteria.map((c, i) => ({ criterion: c, passed: i < fixed }));
+      const results: CriterionResult[] = [];
+      for (const c of spec.exitCriteria) {
+        let passed = false;
+        try {
+          if (c.type === 'tests') {
+            execSync('npm run verify-all', { cwd: REPO_ROOT, stdio: 'pipe' });
+            passed = true;
+          } else if (c.type === 'gate' && c.skill) {
+            execSync(`npm run ${c.skill}`, { cwd: REPO_ROOT, stdio: 'pipe' });
+            passed = true;
+          } else if (c.type === 'assertion' && c.expr) {
+            execSync(c.expr, { cwd: REPO_ROOT, stdio: 'pipe' });
+            passed = true;
+          } else if (c.type === 'review') {
+            passed = false; // Evaluated manually via human approval
+          }
+        } catch {
+          passed = false;
+        }
+        results.push({ criterion: c, passed });
+      }
       run.criteriaResults = results;
       run.budgetUsed = { ...ctx.budgetUsed };
       return results;
     },
-    delegate: async (ctx): Promise<IterationWork> => {
+    delegate: async (ctx, gap): Promise<IterationWork> => {
       await checkPause(id);
-      await new Promise(r => setTimeout(r, 1500));
-      await checkPause(id);
-      fixed = Math.min(total, fixed + 1);
+      const runtimeId = (process.env.AGENT_OS_RUNTIME as any) || 'claude-cli';
+      const adapter = runtimeRegistry.get(runtimeId) || runtimeRegistry.get('claude-cli')!;
+      let summary = '';
+      try {
+        const handle = await adapter.startAgent({
+          cwd: REPO_ROOT,
+          systemPrompt: `You are UI Assist in Loop Mode.
+Goal: ${spec.goal}
+
+Please resolve the following exit criteria gaps:
+${gap.map(g => `- Type: ${g.type}, Detail: ${JSON.stringify(g)}`).join('\n')}
+
+Fix the issues in the workspace files directly and exit once resolved.`,
+        });
+
+        await adapter.sendInput(handle, { type: 'user', content: '' });
+
+        for await (const message of adapter.readOutput(handle)) {
+          await checkPause(id);
+          if (run.killed) {
+            await adapter.stopAgent(handle).catch(() => {});
+            break;
+          }
+          if (message.type === 'output' && message.content) {
+            summary += message.content;
+          }
+        }
+        await adapter.stopAgent(handle).catch(() => {});
+      } catch (err: any) {
+        summary = `Delegation failed: ${err.message || err}`;
+      }
+
       const work: IterationWork = {
         tokensUsed: 200,
         costUSD: 0.02,
-        summary: `closed 1 gap → ${fixed}/${total}`,
+        summary: summary.slice(0, 200) || `delegated to ${adapter.label}`,
         requestedActions: ['commit'] as CheckpointAction[]
       };
       run.budgetUsed = { ...ctx.budgetUsed };
@@ -199,7 +249,7 @@ function startLoopRun(presetName: string, unattended: boolean): { ok: boolean; i
 // ── Lobby WebSocket Bridge ──
 // Connects to the staging lobby as a browser participant (no auth required).
 // Sends messages via WebSocket (REST POST requires auth, but WS doesn't).
-let lobbyWs: WebSocket | null = null;
+let lobbyClient: LobbyClient | null = null;
 let lobbyWsConnected = false;
 
 async function connectLobbyWs(): Promise<void> {
@@ -215,23 +265,20 @@ async function connectLobbyWs(): Promise<void> {
   console.log(`Lobby WS: found lobby ${lobbyId}, connecting...`);
 
   try {
-    // Connect as an AGENT (not browser) — /ws/browser requires session cookie (401)
-    // /ws/agent only needs lobby_id + org_id in query params (no auth)
-    const orgId = cachedOrgId || 'default';
-    const wsUrl = DEFAULT_LOBBY_URL.replace(/^http/, 'ws') +
-      `/api/v1/agent-lobby/ws/agent?lobby_id=${lobbyId}&org_id=${orgId}`;
-    console.log(`Lobby WS: connecting to ${wsUrl.slice(0, 100)}...`);
+    let joinToken: string | undefined = undefined;
+    const cardPath = join(REPO_ROOT, 'agent-card.json');
+    if (existsSync(cardPath)) {
+      try {
+        const card = JSON.parse(readFileSync(cardPath, 'utf-8'));
+        if (card.ref) joinToken = card.ref;
+      } catch {}
+    }
 
-    lobbyWs = new WebSocket(wsUrl);
-
-    // Heartbeat interval — send lobby-heartbeat every 25s to prevent stale cleanup (90s threshold)
-    let heartbeatTimer: ReturnType<typeof setInterval> | null = null;
-
-    lobbyWs.on('open', () => {
-      lobbyWsConnected = true;
-      console.log('Lobby WS: connected to staging lobby');
-      // Register as the panel agent
-      lobbyWs?.send(JSON.stringify({
+    lobbyClient = new LobbyClient({
+      lobbyUrl: DEFAULT_LOBBY_URL,
+      lobbyId: lobbyId,
+      orgId: cachedOrgId || 'default',
+      register: {
         type: 'lobby-register',
         display_name: `Panel-${PANEL_ID}`,
         agent_role: 'panel',
@@ -239,30 +286,19 @@ async function connectLobbyWs(): Promise<void> {
         branch: 'main',
         pid: process.pid,
         relay_port: PORT,
-      }));
-
-      // Start heartbeat to prevent stale agent cleanup
-      heartbeatTimer = setInterval(() => {
-        if (lobbyWs?.readyState === WebSocket.OPEN) {
-          lobbyWs.send(JSON.stringify({
-            type: 'lobby-heartbeat',
-            current_work: 'panel-active',
-            status: 'idle',
-          }));
-        }
-      }, 25000); // Every 25s (cleanup threshold is 90s)
+        join_token: joinToken,
+      },
+      reconnect: true,
     });
 
-    lobbyWs.on('message', (data: Buffer) => {
+    lobbyClient.onMessage((msg) => {
       try {
-        const msg = JSON.parse(data.toString());
-        // Log registration and errors
         if (msg.type === 'lobby-registered') {
           panelAgentId = msg.agent_id;
+          lobbyWsConnected = true;
           console.log(`Lobby WS: registered as agent ${msg.agent_id}`);
         }
         if (msg.type === 'lobby-roster') {
-          // Cache all agents for ULID resolution + lobby tab roster
           const agents = msg.agents || [];
           for (const a of agents) {
             if (a.agent_id) {
@@ -280,7 +316,6 @@ async function connectLobbyWs(): Promise<void> {
         if (msg.type === 'lobby-boss-appointed') {
           lobbyBossAgentId = msg.agent_id || msg.boss_agent_id;
           console.log(`Lobby WS: boss agent set to ${lobbyBossAgentId}`);
-          // Update local lobby-state.json so Lobby tab renders correctly
           try {
             const stateFile = existsSync(LOBBY_STATE_FILE) ? JSON.parse(readFileSync(LOBBY_STATE_FILE, 'utf-8')) : {};
             stateFile.bossAgentSlug = lobbyBossAgentId;
@@ -304,9 +339,7 @@ async function connectLobbyWs(): Promise<void> {
         if (msg.type === 'lobby-message-received') {
           const lobbyMsg = msg.message || msg;
           broadcastWs('lobby-message', lobbyMsg);
-          // Mirror lobby messages to local bus.jsonl so Panel Messages tab persists them
           if (lobbyMsg.content) {
-            // Resolve display names from cached roster
             const fromName = lobbyMsg.from_display_name || stagingAgentNames.get(lobbyMsg.from_agent_id) || lobbyMsg.from_agent_id || '?';
             const toName = lobbyMsg.to_agent_id === 'all' ? '*' : (lobbyMsg.to_display_name || stagingAgentNames.get(lobbyMsg.to_agent_id) || lobbyMsg.to_agent_id || '*');
             const localMsg = {
@@ -328,7 +361,6 @@ async function connectLobbyWs(): Promise<void> {
         }
         if (msg.type === 'lobby-agent-joined' || msg.type === 'lobby-agent-left' ||
             msg.type === 'lobby-agent-updated') {
-          // Cache agent for ULID resolution + lobby roster
           const agent = msg.agent || msg;
           if (agent.agent_id) {
             if (agent.display_name) stagingAgentNames.set(agent.agent_id, agent.display_name);
@@ -349,7 +381,6 @@ async function connectLobbyWs(): Promise<void> {
             content: `🤚 **${msg.hand?.display_name || msg.hand?.agent_name || msg.agent_id || '?'}** raised hand [${msg.hand?.category || 'general'}]: ${msg.hand?.reason || ''}`,
             created_at: new Date().toISOString(),
           });
-          // Create + store request for panel Requests tab (persist for HTTP refresh)
           const handRequest = {
             request_id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
             agent_id: msg.hand?.agent_id || msg.agent_id,
@@ -373,7 +404,6 @@ async function connectLobbyWs(): Promise<void> {
         }
         if (msg.type === 'lobby-task-assigned' || msg.type === 'lobby-task-updated') {
           broadcastWs('lobby-task-update', msg);
-          // Mirror lobby tasks to local tasks.jsonl so Panel Tasks tab shows them
           const task = msg.task;
           if (task?.task_id) {
             const localTask = {
@@ -394,23 +424,12 @@ async function connectLobbyWs(): Promise<void> {
       } catch { /* ignore */ }
     });
 
-    lobbyWs.on('ping', () => { lobbyWs?.pong(); });
-
-    lobbyWs.on('close', (code, reason) => {
-      lobbyWsConnected = false;
-      lobbyWs = null;
-      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
-      console.log(`Lobby WS: disconnected (code: ${code}, reason: ${reason?.toString() || 'none'}), reconnecting in 10s...`);
-      setTimeout(connectLobbyWs, 10000);
-    });
-
-    lobbyWs.on('error', (err) => {
-      console.error('Lobby WS: error:', (err as Error).message || err);
-      lobbyWsConnected = false;
-      lobbyWs?.close();
-    });
+    await lobbyClient.connect();
+    lobbyWsConnected = true;
+    console.log('Lobby WS: connected via LobbyClient');
   } catch (err) {
     console.error('Lobby WS: failed to connect:', err);
+    lobbyWsConnected = false;
     setTimeout(connectLobbyWs, 10000);
   }
 }
@@ -489,7 +508,7 @@ function sendLobbyMessage(content: string, toAgentId = 'all', messageType = 'cha
   }
 
   // ── Swarm mode: route through staging lobby WS ──
-  if (!lobbyWs || !lobbyWsConnected) return false;
+  if (!lobbyClient || !lobbyWsConnected) return false;
   try {
     let target = toAgentId;
     if (target === 'all') {
@@ -497,20 +516,21 @@ function sendLobbyMessage(content: string, toAgentId = 'all', messageType = 'cha
         target = lobbyBossAgentId;
       } else {
         console.log('Lobby: no boss agent known — sending as HAND raise');
-        lobbyWs.send(JSON.stringify({
+        lobbyClient.send({
           type: 'lobby-message',
           content: `HAND ${panelAgentId ?? 'panel'} — needs_assignment: ${content}`,
           to_agent_id: 'all',
-        }));
+          message_type: messageType as any,
+        });
         return true;
       }
     }
-    lobbyWs.send(JSON.stringify({
+    lobbyClient.send({
       type: 'lobby-message',
       content,
       to_agent_id: target,
-      message_type: messageType,
-    }));
+      message_type: messageType as any,
+    });
     return true;
   } catch { return false; }
 }
@@ -980,6 +1000,20 @@ function getGanttData(): { phases: unknown[] } {
     return { phases: ganttCache.phases };
   }
 
+  const liveTasksMap = new Map<string, string>();
+  if (existsSync(TASKS_FILE)) {
+    try {
+      const lines = readFileSync(TASKS_FILE, 'utf-8').split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const t = JSON.parse(line);
+        if (t.title) {
+          liveTasksMap.set(t.title.trim().toLowerCase(), t.status);
+        }
+      }
+    } catch {}
+  }
+
   const phases: unknown[] = [];
 
   if (existsSync(PHASES_DIR)) {
@@ -1190,6 +1224,15 @@ function getGanttData(): { phases: unknown[] } {
                 const m = t.match(/^###\s+(?:Step\s+\d+[.:]\s*)?(.+)$/);
                 if (m) tasks.push({ title: m[1].replace(/\*\*/g, '').trim(), done: false });
               }
+            }
+          }
+
+          // Sync with live tasks.jsonl database state
+          for (const t of tasks) {
+            const key = t.title.trim().toLowerCase();
+            if (liveTasksMap.has(key)) {
+              const liveStatus = liveTasksMap.get(key);
+              t.done = liveStatus === 'complete' || liveStatus === 'done';
             }
           }
 
@@ -1942,8 +1985,8 @@ const server = createServer(async (req, res) => {
     }
 
     // REST failed (no auth) — try WS channel instead
-    if (lobbyWs && lobbyWsConnected) {
-      lobbyWs.send(JSON.stringify({ type: 'lobby-boss-appoint', agent_id: agentId }));
+    if (lobbyClient && lobbyWsConnected) {
+      lobbyClient.send({ type: 'lobby-boss-appoint', agent_id: agentId });
       console.log(`Lobby: boss appointment sent via WS (REST proxy requires auth)`);
     }
     // Update local state immediately (WS broadcast from coordinator will confirm)
@@ -1965,8 +2008,8 @@ const server = createServer(async (req, res) => {
     const newRole = body.agent_role as string;
     if (!targetId || !newRole) { sendJson(res, { error: 'agent_id and agent_role required' }, 400); return; }
 
-    if (lobbyWs && lobbyWsConnected) {
-      lobbyWs.send(JSON.stringify({ type: 'lobby-role-change', agent_id: targetId, agent_role: newRole }));
+    if (lobbyClient && lobbyWsConnected) {
+      lobbyClient.send({ type: 'lobby-role-change', agent_id: targetId, agent_role: newRole as any });
       console.log(`Lobby: role change sent via WS — ${targetId} → ${newRole}`);
     } else {
       // Local mode fallback
@@ -2006,12 +2049,12 @@ const server = createServer(async (req, res) => {
     console.log(`Lobby WS: switching active lobby to ${activeLobbyId || 'default (discovered)'}`);
     stagingAgentRoster.clear();
     stagingAgentNames.clear();
-    if (lobbyWs) {
+    if (lobbyClient) {
       lobbyWsConnected = false;
-      lobbyWs.close();
-    } else {
-      connectLobbyWs();
+      lobbyClient.close();
+      lobbyClient = null;
     }
+    connectLobbyWs();
     sendJson(res, { ok: true, lobby_id: activeLobbyId });
     return;
   }
@@ -2095,6 +2138,75 @@ const server = createServer(async (req, res) => {
     appendFileSync(BUS_FILE, JSON.stringify(msg) + '\n');
     broadcastWs('message', msg);
     sendJson(res, { ok: true, message: msg, sentToStaging });
+    return;
+  }
+
+  // ── Identity API ──
+  const IDENTITY_CARD_FILE = join(REPO_ROOT, 'agent-card.json');
+
+  if (path === '/api/identity/card' && method === 'GET') {
+    try {
+      const card = existsSync(IDENTITY_CARD_FILE)
+        ? JSON.parse(readFileSync(IDENTITY_CARD_FILE, 'utf-8'))
+        : {
+            name: '',
+            description: '',
+            capabilities: [],
+            runtime: 'claude-cli',
+            ownerPolicy: 'none',
+            supportedProtocols: ['lobby-message'],
+            allowedScopes: ['*'],
+            version: '1.0.0',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+          };
+      sendJson(res, { card });
+    } catch {
+      sendJson(res, { error: 'Failed to read identity card' }, 500);
+    }
+    return;
+  }
+
+  if (path === '/api/identity/card' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const card = body.card;
+      card.updatedAt = new Date().toISOString();
+      writeFileSync(IDENTITY_CARD_FILE, JSON.stringify(card, null, 2), 'utf-8');
+      sendJson(res, { ok: true, card });
+    } catch (err: any) {
+      sendJson(res, { error: err.message || 'Failed to write identity card' }, 500);
+    }
+    return;
+  }
+
+  if (path === '/api/identity/validate-card' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const card = body.card;
+      const validation = validateAgentCard(card);
+      if (!validation.ok) {
+        sendJson(res, { ok: false, errors: validation.errors });
+        return;
+      }
+      const hash = hashAgentCard(card);
+      sendJson(res, { ok: true, hash });
+    } catch (err: any) {
+      sendJson(res, { ok: false, errors: [err.message] });
+    }
+    return;
+  }
+
+  if (path === '/api/identity/prepare-registration' && method === 'POST') {
+    try {
+      const body = await parseBody(req);
+      const card = body.card;
+      const network = body.network || 'testnet';
+      const plan = prepareRegistration(card, { network });
+      sendJson(res, { ok: true, plan });
+    } catch (err: any) {
+      sendJson(res, { error: err.message || 'Failed to prepare registration' }, 500);
+    }
     return;
   }
 
@@ -3267,7 +3379,7 @@ server.listen(PORT, '127.0.0.1', () => {
 // Graceful shutdown
 const shutdown = () => {
   console.log('Shutting down...');
-  if (lobbyWs) { try { lobbyWs.close(); } catch { /* ignore */ } }
+  if (lobbyClient) { try { lobbyClient.close(); } catch { /* ignore */ } }
   stopRelay();
   for (const slug of [...runningProcesses.keys()]) stopAgent(slug);
   for (const name of [...scheduledProcesses.keys()]) {

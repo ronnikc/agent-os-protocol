@@ -32,6 +32,7 @@ export function resolveClaudePath(): string {
 interface Session {
   cwd: string;
   systemPrompt?: string;
+  resumeSessionId?: string;
   queue: string[];
   aborted: boolean;
 }
@@ -67,6 +68,7 @@ export class ClaudeCliAdapter implements AgentRuntimeAdapter {
     this.sessions.set(id, {
       cwd: config.cwd,
       systemPrompt: config.systemPrompt,
+      resumeSessionId: config.resumeSessionId,
       queue: [],
       aborted: false,
     });
@@ -103,12 +105,18 @@ export class ClaudeCliAdapter implements AgentRuntimeAdapter {
         pathToClaudeCodeExecutable: resolveClaudePath(),
         permissionMode: 'bypassPermissions',
         cwd: s.cwd,
+        ...(s.resumeSessionId ? { resume: s.resumeSessionId } : {}),
       } as Options,
     });
+    let capturedSessionId: string | undefined = undefined;
     for await (const message of result) {
       if (s.aborted) {
         yield { type: 'error', content: 'aborted' };
         return;
+      }
+      if (!capturedSessionId && message.session_id) {
+        capturedSessionId = message.session_id;
+        yield { type: 'status', content: '', data: { session_id: capturedSessionId } };
       }
       const m = message as { type?: string; message?: { content?: Array<Record<string, unknown>> } };
       if (m.type === 'assistant') {
