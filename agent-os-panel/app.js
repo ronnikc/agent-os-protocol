@@ -122,16 +122,25 @@ async function updateStatusBar() {
   const el = document.getElementById('status-bar');
   if (!el) return;
   const running = state.agents.filter(a => a.status === 'running').length;
-  // Fetch mode info
   const modeData = await fetchJson('/api/mode');
   const mode = modeData?.mode || 'local';
-  const modeBadge = mode === 'swarm'
-    ? `<span style="background:var(--purple);color:white;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">Swarm: ${(modeData?.lobbyUrl || '').replace(/^https?:\/\//, '').slice(0, 30)}</span>`
-    : `<span style="background:var(--success);color:white;padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;">Local Mode</span>`;
+  
+  const modeHtml = mode === 'swarm'
+    ? `<span class="status-pill swarm" title="${escapeHtml(modeData?.lobbyUrl || '')}">Swarm: ${escapeHtml((modeData?.lobbyUrl || '').replace(/^https?:\/\//, '').slice(0, 30))}</span>`
+    : `<span class="status-pill local">Local Mode</span>`;
+    
+  const wsHtml = `<span class="status-pill ${state.wsConnected ? 'connected' : ''}">
+    <span class="status-dot ${state.wsConnected ? 'status-running' : 'status-stopped'}"></span>WS
+  </span>`;
+  
+  const agentsHtml = `<span class="status-pill">${running} / ${state.agents.length} agents</span>`;
+
   el.innerHTML = `
-    ${modeBadge}
-    <span><span class="status-dot ${state.wsConnected ? 'status-running' : 'status-stopped'}"></span>WS</span>
-    <span>${running} / ${state.agents.length} agents</span>
+    <div class="status-pill-group">
+      ${modeHtml}
+      ${wsHtml}
+      ${agentsHtml}
+    </div>
   `;
 }
 

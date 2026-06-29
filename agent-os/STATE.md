@@ -28,7 +28,7 @@ open; Phases 12–13 are planned.**
 | 9 | UI Assist integration package | ✅ merged (#10) |
 | 10 | Launch readiness (docs, verify-launch, smoke, v0.1.0) | ✅ merged (#11) + `v0.1.0` tagged |
 | 11 | Loop / autonomous iterative execution | ✅ implemented — PR open |
-| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ⬜ planned |
+| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ✅ complete |
 | 13 | Agent OS Protocol website (public landing site) | ⬜ planned |
 
 ## Done so far
@@ -139,11 +139,12 @@ open; Phases 12–13 are planned.**
   `npm run loop` (simulated driver) and a Panel **Loop** tab + `/api/loops` endpoints with
   `loop-event`/`loop-done` WS streaming. New `npm run verify-loop` (17) wired into `verify-all` and
   required by `verify-launch` (now 53); guide at `docs/loop-mode.md`. README given a full
-  stale-information refresh. **Exit met:** a loop converges on a work item against measurable exit
+    stale-information refresh. **Exit met:** a loop converges on a work item against measurable exit
   criteria, respects iteration/budget caps + human checkpoints, is fully auditable + stoppable, and
   is runtime-agnostic (local now via the runner; swarm via the lobby). Verified by `npm run verify-loop`
   (17/17), `npm run loop` (attended + unattended converge), the Panel loop endpoints (attended +
   unattended runs converge 4/4), and `npm run verify-all` (16/11/15/23/31/17/53).
+- **Phase 12 — Panel UI Redesign (complete):** The localhost Panel UI has been fully evolved from its early functional layout into the refined, dark glassmorphic control-plane design defined in `DESIGN.md`. Features a reusable CSS token system (deep-navy `#050B18` bg, radial-gradient, glassmorphism panels, cyan→violet gradients, active glow borders, Outfit/Inter typography, custom scrollbars) ensuring no functional regression across any page. Implemented the brand hex/cube 3D SVG logo mark and a redesigned header status bar. Built the polished Panel Loop view (featuring presets list sidebar, runs logging list, start/pause/stop buttons, individual criterion checkmarks, token/cost/time budget burn progress bars, unattended/attended toggles, and interactive checkpoint approval/rejection card overlays) wired to live endpoints (`/api/loops/pause`, `/api/loops/resume`, `/api/loops/decide`). Integrated overview metrics cards row on the Agents view backed by a new `/api/overview-stats` server aggregator. Verified by new automated verification script `verify-ui` (all 7 suites green in `verify-all`, 55 launch invariants green in `verify-launch`).
 
 ## Known follow-ups
 
@@ -197,8 +198,5 @@ open; Phases 12–13 are planned.**
   engine's `evaluate` seam to real gate-skill runs and `delegate` to the Boss/lobby turn loop (the
   `npm run loop` driver and the Panel runs are deterministic simulations until then; rides on the
   relay-driver refactor); (2) **unattended cron** — the scheduler driving a preset loop on a cadence
-  over a remote swarm with cost budgets + verified identities; (3) the **polished Panel Loop view**
-  (start/pause/stop, per-criterion pass/fail, budget burn, approve-checkpoint, attended⇄unattended
-  mode-changer) — the backend endpoints + a minimal tab land now; the full UI folds into the Phase 12
-  Panel redesign; (4) **loop resumability** — `awaiting_checkpoint` is currently terminal (a paused
-  loop is re-run, not suspended/resumed mid-iteration).
+  over a remote swarm with cost budgets + verified identities; (3) **loop resumability** —
+  `awaiting_checkpoint` is currently terminal (a paused loop is re-run, not suspended/resumed mid-iteration).
