@@ -201,6 +201,8 @@ export class LobbyCoordinator {
       is_boss: false,
       registered_at: now,
       last_seen: now,
+      model: msg.model,
+      runtime: msg.runtime,
       ...(verification ? { identity_status: verification.status } : {}),
       ...(presentedRef ? { identity_ref: verification?.ref?.did ?? presentedRef } : {}),
     };

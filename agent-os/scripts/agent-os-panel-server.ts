@@ -205,8 +205,8 @@ let lobbyWsConnected = false;
 async function connectLobbyWs(): Promise<void> {
   if (!DEFAULT_LOBBY_URL || lobbyWsConnected) return;
 
-  console.log('Lobby WS: discovering lobby...');
-  const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+  console.log('Lobby WS: resolving lobby...');
+  const lobbyId = await resolveLobbyId();
   if (!lobbyId) {
     console.log('Lobby WS: no active lobby found, will retry in 30s');
     setTimeout(connectLobbyWs, 30000);
@@ -457,7 +457,7 @@ function saveLocalLobbyState(): void {
   } catch { /* ignore */ }
 }
 
-function sendLobbyMessage(content: string, toAgentId = 'all'): boolean {
+function sendLobbyMessage(content: string, toAgentId = 'all', messageType = 'chat'): boolean {
   // ── Local mode: route through local lobby directly ──
   if (!activeLobbyUrl) {
     const bossId = localLobbyBossId || lobbyBossAgentId;
@@ -472,7 +472,7 @@ function sendLobbyMessage(content: string, toAgentId = 'all'): boolean {
         message_id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
         from_agent_id: panelAgentId || `Panel-${hostname()}-${PORT}`,
         to_agent_id: target,
-        message_type: 'chat',
+        message_type: messageType,
         content,
         created_at: new Date().toISOString(),
         from_display_name: `Panel-${hostname()}-${PORT}`,
@@ -509,6 +509,7 @@ function sendLobbyMessage(content: string, toAgentId = 'all'): boolean {
       type: 'lobby-message',
       content,
       to_agent_id: target,
+      message_type: messageType,
     }));
     return true;
   } catch { return false; }
@@ -869,6 +870,47 @@ async function discoverLobbyId(lobbyUrl: string): Promise<string | null> {
       req.on('error', (err) => { console.log('Lobby discover error:', (err as Error).message); resolve(null); });
       req.end();
     } catch { resolve(null); }
+  });
+}
+
+let activeLobbyId: string | null = null;
+
+async function resolveLobbyId(): Promise<string | null> {
+  if (activeLobbyId) return activeLobbyId;
+  return discoverLobbyId(DEFAULT_LOBBY_URL);
+}
+
+function postRemoteJson(remoteUrl: string, path: string, body: any): Promise<any> {
+  return new Promise((resolve) => {
+    if (!remoteUrl) { resolve({ error: 'No remote URL' }); return; }
+    try {
+      const url = new URL(path, remoteUrl);
+      const reqFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
+      const dataStr = JSON.stringify(body);
+      const req = reqFn(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(dataStr),
+        },
+        timeout: 5000,
+      }, (res) => {
+        let responseBody = '';
+        res.on('data', (chunk: Buffer) => { responseBody += chunk; });
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(responseBody));
+          } catch {
+            resolve({ error: 'Failed to parse JSON response' });
+          }
+        });
+      });
+      req.on('error', (err) => resolve({ error: (err as Error).message }));
+      req.write(dataStr);
+      req.end();
+    } catch (err) {
+      resolve({ error: String(err) });
+    }
   });
 }
 
@@ -1259,9 +1301,10 @@ const server = createServer(async (req, res) => {
 
       let identity_status = 'unverified';
       let runtime = '—';
+      let model = '—';
 
       if (isRunning) {
-        // Resolve runtime dynamically based on agent type
+        // Resolve default runtime dynamically based on agent type
         if (['test', 'code-review', 'backend'].includes(a.slug)) {
           runtime = 'Codex CLI';
         } else if (a.slug === 'api') {
@@ -1277,11 +1320,14 @@ const server = createServer(async (req, res) => {
           if (activeRemote) {
             identity_status = (activeRemote.identity_status as string) || 'unverified';
             runtime = (activeRemote.runtime as string) || runtime;
+            model = (activeRemote.model as string) || '—';
           }
         } else {
           const activeLocal = [...localLobbyAgents.values()].find(s => s.agent_role === a.slug);
           if (activeLocal) {
             identity_status = (activeLocal as any).identity_status || 'unverified';
+            runtime = (activeLocal as any).runtime || runtime;
+            model = (activeLocal as any).model || '—';
           }
         }
       }
@@ -1293,6 +1339,7 @@ const server = createServer(async (req, res) => {
         startedAt: runningAgents[a.slug]?.startedAt ?? null,
         identity_status,
         runtime,
+        model,
       };
     });
     sendJson(res, { agents, defaultLobbyUrl: DEFAULT_LOBBY_URL });
@@ -1386,6 +1433,8 @@ const server = createServer(async (req, res) => {
     let completed24h = 0;
     let failed24h = 0;
     let blockedTasks = 0;
+    let totalCompleted = 0;
+    let totalFailed = 0;
 
     if (existsSync(TASKS_FILE)) {
       try {
@@ -1400,10 +1449,12 @@ const server = createServer(async (req, res) => {
               tasksInProgress++;
             } else if (t.status === 'blocked') {
               blockedTasks++;
-            } else if (t.status === 'done' || t.status === 'complete') {
+            } else if (t.status === 'done' || t.status === 'complete' || t.status === 'completed') {
+              totalCompleted++;
               const ts = t.updated_at ? new Date(t.updated_at).getTime() : Date.now();
               if (ts > oneDayAgo) completed24h++;
             } else if (t.status === 'failed') {
+              totalFailed++;
               const ts = t.updated_at ? new Date(t.updated_at).getTime() : Date.now();
               if (ts > oneDayAgo) failed24h++;
             }
@@ -1420,6 +1471,9 @@ const server = createServer(async (req, res) => {
       totalSprints += (p as any).sprintCount || 0;
     }
     const sprintProgress = totalSprints > 0 ? Math.round((completedSprints / totalSprints) * 100) : 0;
+
+    const totalRuns = totalCompleted + totalFailed;
+    const successPercent = totalRuns > 0 ? Math.round((totalCompleted / totalRuns) * 100) : 100;
 
     sendJson(res, {
       agents: {
@@ -1439,12 +1493,12 @@ const server = createServer(async (req, res) => {
         total: totalSprints
       },
       throughput: {
-        tasks_per_day: completed24h || 12,
+        tasks_per_day: completed24h,
         window: "24h"
       },
       success_rate: {
-        percent: (completed24h + failed24h) > 0 ? Math.round((completed24h / (completed24h + failed24h)) * 1000) / 10 : 98.7,
-        window: "7d"
+        percent: successPercent,
+        window: "all-time"
       }
     });
     return;
@@ -1452,31 +1506,48 @@ const server = createServer(async (req, res) => {
 
   if (path === '/api/agents/status' && method === 'GET') {
     const agents = discoverAgents().map((a, i) => {
-      let identity_status = 'unverified';
-      if (['boss-agent', 'identity'].includes(a.slug)) {
-        identity_status = 'human_linked';
-      } else if (['lobby-architect', 'runtime-adapter', 'ui-assist-integration'].includes(a.slug)) {
-        identity_status = 'org_linked';
-      } else if (i % 3 === 0) {
-        identity_status = 'registry_verified';
-      } else if (i % 7 === 0) {
-        identity_status = 'failed';
-      }
+      const status = getAgentStatus(a.slug);
+      const isRunning = status === 'running';
 
-      let runtime = 'Claude CLI';
-      if (['test', 'code-review', 'backend'].includes(a.slug)) {
-        runtime = 'Codex CLI';
-      } else if (i % 4 === 0) {
-        runtime = 'API';
+      let identity_status = 'unverified';
+      let runtime = '—';
+      let model = '—';
+
+      if (isRunning) {
+        if (['test', 'code-review', 'backend'].includes(a.slug)) {
+          runtime = 'Codex CLI';
+        } else if (a.slug === 'api') {
+          runtime = 'API';
+        } else {
+          runtime = 'Claude CLI';
+        }
+
+        const isSwarm = DEFAULT_LOBBY_URL && lobbyWsConnected;
+        if (isSwarm) {
+          const activeRemote = [...stagingAgentRoster.values()].find(s => s.agent_role === a.slug);
+          if (activeRemote) {
+            identity_status = (activeRemote.identity_status as string) || 'unverified';
+            runtime = (activeRemote.runtime as string) || runtime;
+            model = (activeRemote.model as string) || '—';
+          }
+        } else {
+          const activeLocal = [...localLobbyAgents.values()].find(s => s.agent_role === a.slug);
+          if (activeLocal) {
+            identity_status = (activeLocal as any).identity_status || 'unverified';
+            runtime = (activeLocal as any).runtime || runtime;
+            model = (activeLocal as any).model || '—';
+          }
+        }
       }
 
       return {
         slug: a.slug,
         name: a.name,
-        status: getAgentStatus(a.slug),
+        status,
         pid: runningAgents[a.slug]?.pid ?? null,
         identity_status,
         runtime,
+        model,
       };
     });
     const running = agents.filter(a => a.status === 'running').length;
@@ -1777,13 +1848,13 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/agents' && method === 'GET') {
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (!lobbyId && stagingAgentRoster.size === 0) {
       sendJson(res, { agents: [], error: 'No active lobby' }); return;
     }
     // Try REST proxy first
     if (lobbyId) {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/agents/all`);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/roster`);
       const agents = (data as any)?.agents;
       if (agents?.length) {
         // Update cache from REST response
@@ -1807,7 +1878,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/messages' && method === 'GET') {
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (!lobbyId) { sendJson(res, { messages: [], error: 'No active lobby' }); return; }
     const limit = url.searchParams.get('limit') || '100';
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/messages?limit=${limit}`);
@@ -1816,7 +1887,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/tasks' && method === 'GET') {
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (!lobbyId) { sendJson(res, { tasks: [], error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`);
     sendJson(res, data);
@@ -1824,7 +1895,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/requests' && method === 'GET') {
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (!lobbyId) { sendJson(res, { requests: [], error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/pending`);
     sendJson(res, data);
@@ -1835,7 +1906,7 @@ const server = createServer(async (req, res) => {
     const params = matchRoute('/api/lobby/remote/requests/:id/decide', path);
     if (params && method === 'POST') {
       const body = await parseBody(req);
-      const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+      const lobbyId = await resolveLobbyId();
       if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
       const data = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/${params.id}/decide`,
@@ -1851,7 +1922,7 @@ const server = createServer(async (req, res) => {
     if (!agentId) { sendJson(res, { error: 'agent_id required' }, 400); return; }
 
     // Try REST proxy first (requires auth)
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (lobbyId) {
       const data = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/boss-agent`,
@@ -1911,7 +1982,7 @@ const server = createServer(async (req, res) => {
 
   if (path === '/api/lobby/remote/status' && method === 'PATCH') {
     const body = await parseBody(req);
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL,
       `/api/v1/agent-lobby/lobbies/${lobbyId}/status`,
@@ -1921,12 +1992,36 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/api/lobby/remote/create' && method === 'POST') {
+    const body = await parseBody(req);
+    const result = await postRemoteJson(DEFAULT_LOBBY_URL, '/api/v1/agent-lobby/lobbies', body);
+    sendJson(res, result);
+    return;
+  }
+
+  if (path === '/api/lobby/remote/join' && method === 'POST') {
+    const body = await parseBody(req);
+    const newLobbyId = body.lobby_id as string || null;
+    activeLobbyId = newLobbyId;
+    console.log(`Lobby WS: switching active lobby to ${activeLobbyId || 'default (discovered)'}`);
+    stagingAgentRoster.clear();
+    stagingAgentNames.clear();
+    if (lobbyWs) {
+      lobbyWsConnected = false;
+      lobbyWs.close();
+    } else {
+      connectLobbyWs();
+    }
+    sendJson(res, { ok: true, lobby_id: activeLobbyId });
+    return;
+  }
+
   // ── Messages API — staging-first with local fallback ──
   if (path === '/api/messages' && method === 'GET') {
     const limit = parseInt(url.searchParams.get('limit') ?? '50');
 
     // Build agent ID → display name lookup from cached roster + local agents
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     const agentNameMap = new Map<string, string>(stagingAgentNames); // WS-cached staging names
     for (const [id, agent] of localLobbyAgents) {
       agentNameMap.set(id, agent.display_name);
@@ -1994,7 +2089,7 @@ const server = createServer(async (req, res) => {
 
     // Send to staging lobby via WebSocket bridge (REST POST requires auth)
     const toAgent = body.to === '*' ? 'all' : String(body.to ?? 'all');
-    const sentToStaging = sendLobbyMessage(String(body.content ?? ''), toAgent);
+    const sentToStaging = sendLobbyMessage(String(body.content ?? ''), toAgent, body.message_type ?? 'chat');
 
     // Always write to local bus.jsonl as mirror
     appendFileSync(BUS_FILE, JSON.stringify(msg) + '\n');
@@ -2080,7 +2175,7 @@ const server = createServer(async (req, res) => {
     const limit = parseInt(url.searchParams.get('limit') ?? '100');
 
     // Try staging lobby tasks first
-    const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+    const lobbyId = await resolveLobbyId();
     if (lobbyId) {
       const staging = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`);
@@ -2124,7 +2219,7 @@ const server = createServer(async (req, res) => {
     // Send to staging lobby if agent is assigned and lobby active
     let sentToStaging = false;
     if (task.assigned_to) {
-      const lobbyId = await discoverLobbyId(DEFAULT_LOBBY_URL);
+      const lobbyId = await resolveLobbyId();
       if (lobbyId) {
         const result = await proxyToStaging(DEFAULT_LOBBY_URL,
           `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`,
@@ -2754,6 +2849,8 @@ localLobbyWss.on('connection', (ws: WebSocket) => {
           relay_port: msg.relay_port,
           pid: msg.pid,
           last_heartbeat: new Date().toISOString(),
+          model: msg.model,
+          runtime: msg.runtime,
         };
         localLobbyAgents.set(agentId, agent);
         localLobbyAgentConns.set(agentId, ws);
