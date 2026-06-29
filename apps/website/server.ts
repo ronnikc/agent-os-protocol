@@ -2,14 +2,15 @@
 // Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
 
 import { createServer } from 'node:http';
-import { readFileSync, existsSync } from 'node:fs';
-import { join, dirname } from 'node:path';
+import { readFileSync, existsSync, statSync } from 'node:fs';
+import { join, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PORT = Number(process.env.AGENT_OS_WEBSITE_PORT) || 4802;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const DIR = __dirname;
+const SAFE_DIR = DIR.endsWith(sep) ? DIR : DIR + sep;
 
 const MIME: Record<string, string> = {
   '.html': 'text/html; charset=utf-8',
@@ -25,13 +26,15 @@ const server = createServer((req, res) => {
   if (urlPath === '/') urlPath = '/index.html';
 
   const file = join(DIR, urlPath);
-  if (!file.startsWith(DIR) || !existsSync(file)) {
+  
+  // Protect against sibling path traversal, non-existent files, and directory reads (EISDIR)
+  if (!file.startsWith(SAFE_DIR) || !existsSync(file) || !statSync(file).isFile()) {
     res.writeHead(404, { 'Content-Type': 'text/plain' });
     res.end('404 Not Found');
     return;
   }
 
-  const ext = file.substring(file.lastIndexOf('.'));
+  const ext = extname(file);
   const mime = MIME[ext] || 'application/octet-stream';
 
   try {

@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–12 merged; Phase 13 implemented with a PR open). See
+> **Status:** Forking in progress (Phases 0–12 merged; Phases 13–14 implemented with a PR open). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.

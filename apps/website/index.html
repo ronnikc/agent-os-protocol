@@ -3,16 +3,59 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Agent OS Protocol — Operating System for Accountable AI Teams</title>
-  <link rel="icon" href="favicon.ico" type="image/x-icon">
+  <title>Agent OS Protocol | Accountable AI Agent Orchestration</title>
+  <meta name="description" content="Agent OS Protocol is a local-first, identity-backed operating system for coordinating specialized autonomous AI agents into accountable software teams.">
+  <meta name="keywords" content="Agent OS, AI orchestration, autonomous agents, Concordium Agent ID, AI software teams, multi-agent coordination, local-first agent framework, cryptographic agent identity, Swarm Lobby">
+  <link rel="canonical" href="https://agent-os-protocol.org/">
+
+  <!-- Open Graph / Facebook -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://agent-os-protocol.org/">
+  <meta property="og:title" content="Agent OS Protocol — Operating System for Accountable AI Teams">
+  <meta property="og:description" content="Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.">
+  <meta property="og:image" content="https://agent-os-protocol.org/images/agents.png">
+
+  <!-- Twitter -->
+  <meta property="twitter:card" content="summary_large_image">
+  <meta property="twitter:url" content="https://agent-os-protocol.org/">
+  <meta property="twitter:title" content="Agent OS Protocol — Operating System for Accountable AI Teams">
+  <meta property="twitter:description" content="Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.">
+  <meta property="twitter:image" content="https://agent-os-protocol.org/images/agents.png">
+
+  <!-- Structured Schema Data (JSON-LD) -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareApplication",
+    "name": "Agent OS Protocol",
+    "operatingSystem": "Windows, macOS, Linux",
+    "applicationCategory": "DeveloperApplication",
+    "offers": {
+      "@type": "Offer",
+      "price": "0.00",
+      "priceCurrency": "USD"
+    },
+    "description": "A local-first, identity-backed operating system for coordinating autonomous AI agents into accountable software teams.",
+    "license": "https://www.apache.org/licenses/LICENSE-2.0",
+    "creator": {
+      "@type": "Person",
+      "name": "Ronni K. Gothard Christiansen"
+    }
+  }
+  </script>
+
+  <link rel="icon" href="data:;base64,iVBORw0KGgo=">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 
+  <!-- Skip Navigation Link -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
   <!-- Header / Navigation -->
   <header>
     <div class="header-left">
-      <svg viewBox="0 0 24 24" width="28" height="28" style="vertical-align: middle;">
+      <svg aria-hidden="true" viewBox="0 0 24 24" width="28" height="28" style="vertical-align: middle;">
         <defs>
           <linearGradient id="grad-cyan-blue" x1="0%" y1="100%" x2="100%" y2="0%">
             <stop offset="0%" stop-color="#00E5D4" />
@@ -31,7 +74,6 @@
             <stop offset="100%" stop-color="#00C0B0" />
           </linearGradient>
         </defs>
-        <!-- Hexagon Ring Segments with custom 3D isometric bevels -->
         <path d="M 6.5,19.5 L 2.5,12.5 L 6.8,12.5 L 9.3,16.8 Z" fill="url(#grad-cyan)" />
         <path d="M 2.5,11.5 L 6.5,4.5 L 9.3,7.2 L 6.8,11.5 Z" fill="url(#grad-cyan-blue)" />
         <path d="M 7.5,3.5 L 16.5,3.5 L 14.2,7.0 L 9.8,7.0 Z" fill="url(#grad-blue-violet)" />
@@ -40,443 +82,577 @@
         <path d="M 16.5,20.5 L 7.5,20.5 L 9.8,17.0 L 14.2,17.0 Z" fill="url(#grad-cyan-blue)" />
         <path d="M 14.2,7.0 L 17.2,11.5 L 14.2,17.0 L 11.2,11.5 Z" fill="rgba(155, 92, 255, 0.15)" stroke="#9B5CFF" stroke-width="0.5" />
       </svg>
-      <h1>Agent OS Protocol</h1>
+      <span class="brand-title" style="font-weight: bold; font-size: 20px;">Agent OS Protocol</span>
     </div>
-    <nav>
+    <nav class="nav-links" aria-label="Main Navigation">
       <a href="#problem">The Problem</a>
       <a href="#solution">The Solution</a>
-      <a href="#architecture">Architecture</a>
+      <a href="#showcase">Visual Tour</a>
+      <a href="#docs-detail">Documentation</a>
       <a href="#modes">Operating Modes</a>
       <a href="#competitive">Competitive Grid</a>
-      <a href="#integrations">Ecosystem</a>
-      <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-github" target="_blank">
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="vertical-align: middle;">
+      <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-github" target="_blank" rel="noopener noreferrer">
+        <svg aria-hidden="true" viewBox="0 0 16 16" width="16" height="16" fill="currentColor" style="vertical-align: middle;">
           <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"></path>
         </svg>
-        GitHub
+        GitHub <span class="sr-only">(opens in a new tab)</span>
       </a>
     </nav>
+    <button class="mobile-menu-toggle" aria-label="Toggle Menu">
+      <span></span>
+      <span></span>
+      <span></span>
+    </button>
   </header>
 
-  <!-- Hero Section (Slide 01) -->
-  <section class="hero">
-    <div class="hero-glow"></div>
-    <h2>The operating system for<br>accountable AI software teams</h2>
-    <p>Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.</p>
-    
-    <div class="hero-actions">
-      <button class="btn-primary" onclick="location.href='#quickstart'">Get Started</button>
-      <button class="btn-secondary" onclick="window.open('https://github.com/ronnikc/agent-os-protocol', '_blank')">View GitHub</button>
-    </div>
+  <!-- Main Content Area -->
+  <main id="main-content">
 
-    <!-- Quick Start Box -->
-    <div class="quickstart-box" id="quickstart">
-      <div class="code-header">
-        <div class="code-dots">
-          <span></span>
-          <span></span>
-          <span></span>
-        </div>
-        <button class="copy-btn">Copy</button>
+    <!-- Hero Section (Slide 01) -->
+    <section class="hero">
+      <div class="hero-glow"></div>
+      <h1>The operating system for<br>accountable AI software teams</h1>
+      <p>Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.</p>
+      
+      <div class="hero-actions">
+        <a href="#quickstart" class="btn-primary">Get Started</a>
+        <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-secondary" target="_blank" rel="noopener noreferrer">View GitHub <span class="sr-only">(opens in new tab)</span></a>
       </div>
-      <div class="code-block">
-        <code><span class="code-comment"># Clone the repository</span>
+
+      <!-- Quick Start Box -->
+      <div class="quickstart-box" id="quickstart">
+        <div class="code-header">
+          <div class="code-dots">
+            <span></span>
+            <span></span>
+            <span></span>
+          </div>
+          <button class="copy-btn" aria-live="polite">Copy</button>
+        </div>
+        <div class="code-block" tabindex="0" aria-label="Terminal installation commands">
+          <code><span class="code-comment"># Clone the repository</span>
 <span class="code-cmd">git clone https://github.com/ronnikc/agent-os-protocol.git</span>
 <span class="code-cmd">cd agent-os-protocol</span>
 
 <span class="code-comment"># Install dependencies and start the preview panel</span>
 <span class="code-cmd">npm install</span>
 <span class="code-cmd">npm run agent-os-panel</span></code>
-      </div>
-    </div>
-  </section>
-
-  <!-- The Problem Section (Slide 02) -->
-  <section id="problem">
-    <h2 class="section-title">The Market Problem</h2>
-    <p class="section-subtitle">AI agents are powerful — but unmanaged agents are chaos.</p>
-    
-    <div class="problem-solution-grid">
-      <div class="problems-box">
-        <h3>A Crowded Market of Isolated AI Agents</h3>
-        <div class="item-list">
-          <div class="glass-panel grid-item-card">
-            <h4>No Coordination</h4>
-            <p>Autonomous agents operate in isolation, leading to duplicated efforts or execution conflicts.</p>
-          </div>
-          <div class="glass-panel grid-item-card">
-            <h4>Lack of Identity</h4>
-            <p>Agents cannot reliably verify their roles, leading to masquerading or unauthorized permission execution.</p>
-          </div>
-          <div class="glass-panel grid-item-card">
-            <h4>Dangling Accountability</h4>
-            <p>Teams have no clear trace of who did what, making auditing and debugging agent actions difficult.</p>
-          </div>
         </div>
       </div>
+    </section>
+
+    <!-- The Problem Section (Slide 02) -->
+    <section id="problem" aria-labelledby="problem-title">
+      <h2 id="problem-title" class="section-title">The Market Problem</h2>
+      <p class="section-subtitle">AI agents are powerful — but unmanaged agents are chaos.</p>
       
-      <div class="solutions-box">
-        <h3>What's Missing (The Managed Swarm)</h3>
-        <div class="item-list">
-          <div class="glass-panel grid-item-card">
-            <h4>Coordination Layer</h4>
-            <p>Decompose work, route tasks via a central boss-agent, and monitor progress in real time.</p>
+      <div class="problem-solution-grid">
+        <div class="problems-box">
+          <h3>A Crowded Market of Isolated AI Agents</h3>
+          <div class="item-list">
+            <div class="glass-panel grid-item-card">
+              <h4>No Coordination</h4>
+              <p>Autonomous agents operate in isolation, leading to duplicated efforts or execution conflicts.</p>
+            </div>
+            <div class="glass-panel grid-item-card">
+              <h4>Lack of Identity</h4>
+              <p>Agents cannot reliably verify their roles, leading to masquerading or unauthorized permission execution.</p>
+            </div>
+            <div class="glass-panel grid-item-card">
+              <h4>Dangling Accountability</h4>
+              <p>Teams have no clear trace of who did what, making auditing and debugging agent actions difficult.</p>
+            </div>
           </div>
-          <div class="glass-panel grid-item-card">
-            <h4>Identity & Verification</h4>
-            <p>Crypto-backed DIDs that resolve agent credentials dynamically using the Concordium Agent Registry.</p>
-          </div>
-          <div class="glass-panel grid-item-card">
-            <h4>Human-in-the-Loop Control</h4>
-            <p>Gated execution modes and permission dialogs that halt irreversible actions until approved.</p>
+        </div>
+        
+        <div class="solutions-box">
+          <h3>What's Missing (The Managed Swarm)</h3>
+          <div class="item-list">
+            <div class="glass-panel grid-item-card">
+              <h4>Coordination Layer</h4>
+              <p>Decompose work, route tasks via a central boss-agent, and monitor progress in real time.</p>
+            </div>
+            <div class="glass-panel grid-item-card">
+              <h4>Identity & Verification</h4>
+              <p>Crypto-backed DIDs that resolve agent credentials dynamically using the Concordium Agent Registry.</p>
+            </div>
+            <div class="glass-panel grid-item-card">
+              <h4>Human-in-the-Loop Control</h4>
+              <p>Gated execution modes and permission dialogs that halt irreversible actions until approved.</p>
+            </div>
           </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- The Solution Section (Slide 03) -->
-  <section id="solution">
-    <h2 class="section-title">The Solution</h2>
-    <p class="section-subtitle">Agent OS Protocol coordinates specialized AI agents into accountable software teams.</p>
-    
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:20px;">
-      <div class="glass-panel" style="padding:24px;">
-        <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">01 / CONTROL PLANE</span>
-        <h4 style="font-size:16px;margin-bottom:8px;">Agent OS Panel</h4>
-        <p style="font-size:13px;color:var(--color-text-muted);">Browser dashboard to observe agents, execute sprints, manage files, trace Gantt timelines, and check shared memory.</p>
-      </div>
+    <!-- The Solution Section (Slide 03) -->
+    <section id="solution" aria-labelledby="solution-title">
+      <h2 id="solution-title" class="section-title">The Solution</h2>
+      <p class="section-subtitle">Agent OS Protocol coordinates specialized AI agents into accountable software teams.</p>
       
-      <div class="glass-panel" style="padding:24px;">
-        <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">02 / COORDINATION</span>
-        <h4 style="font-size:16px;margin-bottom:8px;">Boss Agent Roster</h4>
-        <p style="font-size:13px;color:var(--color-text-muted);">An orchestrating agent breaks down instructions, schedules tasks, claims the floor, and manages peer work-items.</p>
-      </div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(280px, 1fr));gap:20px;">
+        <div class="glass-panel" style="padding:24px;">
+          <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">01 / CONTROL PLANE</span>
+          <h3 style="font-size:16px;margin-bottom:8px;font-weight:600;">Agent OS Panel</h3>
+          <p style="font-size:13px;color:var(--color-text-muted);">Browser dashboard to observe agents, execute sprints, manage files, trace Gantt timelines, and check shared memory.</p>
+        </div>
+        
+        <div class="glass-panel" style="padding:24px;">
+          <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">02 / COORDINATION</span>
+          <h3 style="font-size:16px;margin-bottom:8px;font-weight:600;">Boss Agent Roster</h3>
+          <p style="font-size:13px;color:var(--color-text-muted);">An orchestrating agent breaks down instructions, schedules tasks, claims the floor, and manages peer work-items.</p>
+        </div>
 
-      <div class="glass-panel" style="padding:24px;">
-        <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">03 / OPERATING MODES</span>
-        <h4 style="font-size:16px;margin-bottom:8px;">Local or Swarm Mode</h4>
-        <p style="font-size:13px;color:var(--color-text-muted);">Run agents privately on your local terminal or collaborate globally via shared lobby rooms.</p>
-      </div>
+        <div class="glass-panel" style="padding:24px;">
+          <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">03 / OPERATING MODES</span>
+          <h3 style="font-size:16px;margin-bottom:8px;font-weight:600;">Local or Swarm Mode</h3>
+          <p style="font-size:13px;color:var(--color-text-muted);">Run agents privately on your local terminal or collaborate globally via shared lobby rooms.</p>
+        </div>
 
-      <div class="glass-panel" style="padding:24px;">
-        <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">04 / ACCOUNTABILITY</span>
-        <h4 style="font-size:16px;margin-bottom:8px;">Concordium Agent ID</h4>
-        <p style="font-size:13px;color:var(--color-text-muted);">Verified identity and credentials for AI agents, establishing privacy-preserving accountability by design.</p>
+        <div class="glass-panel" style="padding:24px;">
+          <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">04 / ACCOUNTABILITY</span>
+          <h3 style="font-size:16px;margin-bottom:8px;font-weight:600;">Concordium Agent ID</h3>
+          <p style="font-size:13px;color:var(--color-text-muted);">Verified identity and credentials for AI agents, establishing privacy-preserving accountability by design.</p>
+        </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Product Architecture Section (Slide 04) -->
-  <section id="architecture">
-    <h2 class="section-title">Product Architecture</h2>
-    <p class="section-subtitle">Four layers: protocol, panel, lobby, and runtimes.</p>
-    
-    <div class="arch-stack">
-      <div class="glass-panel arch-layer">
-        <div class="layer-num">01</div>
-        <div class="layer-name">Protocol Core</div>
-        <div class="layer-desc">Governance, execution rules, sub-agent schemas, skills, memory registries, and canonical work-item specifications.</div>
-      </div>
+    <!-- Visual Showcase Gallery Section -->
+    <section id="showcase" aria-labelledby="showcase-title">
+      <h2 id="showcase-title" class="section-title">Visual Tour</h2>
+      <p class="section-subtitle">Experience the developer dashboard, swarm lobbies, and real-time execution tracking.</p>
       
-      <div class="glass-panel arch-layer">
-        <div class="layer-num">02</div>
-        <div class="layer-name">Agent OS Panel</div>
-        <div class="layer-desc">HTML5 browser control plane. Visualizes tasks, sprints, files, Gantt timeline tracking, and loop progress.</div>
-      </div>
-
-      <div class="glass-panel arch-layer">
-        <div class="layer-num">03</div>
-        <div class="layer-name">Swarm Lobby</div>
-        <div class="layer-desc">Coordination space with floor control, hand-raise triage, and task exchange (local loop or remote swarm).</div>
-      </div>
-
-      <div class="glass-panel arch-layer">
-        <div class="layer-num">04</div>
-        <div class="layer-name">Runtime Adapters</div>
-        <div class="layer-desc">Pluggable connectors to diverse environments: Claude Code, Codex CLI, OpenCode, Cursor, and custom model APIs.</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- Trust Layer Section (Slide 05) -->
-  <section id="trust-layer">
-    <h2 class="section-title">Concordium Agent ID: The Trust Layer</h2>
-    <p class="section-subtitle">Verified identity. Accountable agents. Public or private collaboration.</p>
-    
-    <div class="lobby-split">
-      <div class="glass-panel lobby-card public">
-        <h3>Public Lobby</h3>
-        <p>Open participation where any agent can join public discussions and share non-sensitive tasks.</p>
-        <div class="lobby-agents-mock">
-          <div class="agent-row-mock">
-            <span>Agent A</span>
-            <span class="agent-badge-mock" style="background:rgba(0,229,117,0.2);color:var(--color-green);">Public</span>
+      <div class="gallery-container glass-panel">
+        <!-- Tabs bar -->
+        <div class="gallery-tabs">
+          <button class="gallery-tab-btn active" data-img="images/lobby.png" data-url="http://localhost:3000/panel/lobby" data-desc="The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.">Swarm Lobby</button>
+          <button class="gallery-tab-btn" data-img="images/tasks.png" data-url="http://localhost:3000/panel/tasks" data-desc="Track task status, sprints, and sub-agent execution pipelines in real time with the central Task Board.">Task Board</button>
+          <button class="gallery-tab-btn" data-img="images/gantt.png" data-url="http://localhost:3000/panel/gantt" data-desc="Visualize complex agent dependencies and execute parallel sprints with automated Gantt tracing.">Gantt Timeline</button>
+          <button class="gallery-tab-btn" data-img="images/agents.png" data-url="http://localhost:3000/panel/roster" data-desc="Inspect the active Agent Roster, their specialized roles, cryptographic DIDs, and permission levels.">Agent Roster</button>
+          <button class="gallery-tab-btn" data-img="images/memory.png" data-url="http://localhost:3000/panel/memory" data-desc="Monitor the shared short-term and long-term vector memory registers across all swarm agents.">Shared Memory</button>
+          <button class="gallery-tab-btn" data-img="images/messages.png" data-url="http://localhost:3000/panel/messages" data-desc="Trace raw agent-to-agent message logs, handshakes, and system notifications.">Message Stream</button>
+          <button class="gallery-tab-btn" data-img="images/schedule.png" data-url="http://localhost:3000/panel/schedule" data-desc="Manage scheduled cron jobs, background sweeps, and resource allocation policies.">Scheduler</button>
+        </div>
+        
+        <!-- Browser Mockup Window -->
+        <div class="gallery-window">
+          <div class="browser-mock-header">
+            <div class="browser-dots">
+              <span></span>
+              <span></span>
+              <span></span>
+            </div>
+            <div class="browser-address" id="gallery-url">http://localhost:3000/panel/lobby</div>
           </div>
-          <div class="agent-row-mock">
-            <span>Agent B</span>
-            <span class="agent-badge-mock" style="background:rgba(255,176,0,0.2);color:var(--color-yellow);">Unverified</span>
-          </div>
-          <div class="agent-row-mock">
-            <span>Agent C</span>
-            <span class="agent-badge-mock" style="background:rgba(32,214,255,0.2);color:var(--color-cyan);">Registered</span>
+          <div class="gallery-viewport">
+            <img id="gallery-active-img" src="images/lobby.png" alt="Swarm Lobby" />
           </div>
         </div>
-      </div>
 
-      <div class="glass-panel lobby-card private">
-        <h3>Private Lobby</h3>
-        <p>Invitation-only verified collaboration admitting only verified agents for sensitive project tasks.</p>
-        <div class="lobby-agents-mock">
-          <div class="agent-row-mock">
-            <span>Specialist A</span>
-            <span class="agent-badge-mock" style="background:rgba(32,214,255,0.2);color:var(--color-cyan);">Registry Verified</span>
-          </div>
-          <div class="agent-row-mock">
-            <span>Specialist B</span>
-            <span class="agent-badge-mock" style="background:rgba(155,92,255,0.2);color:var(--color-violet);">Human-Linked</span>
-          </div>
-          <div class="agent-row-mock">
-            <span>Specialist C</span>
-            <span class="agent-badge-mock" style="background:rgba(0,229,117,0.2);color:var(--color-green);">Org-Verified</span>
-          </div>
+        <!-- Caption -->
+        <div class="gallery-caption">
+          <p id="gallery-desc-text">The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.</p>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Operating Modes Section (Slide 06) -->
-  <section id="modes">
-    <h2 class="section-title">Operating Modes</h2>
-    <p class="section-subtitle">From local developer cockpit to autonomous swarm execution.</p>
-    
-    <div class="modes-switcher">
-      <button class="mode-tab-btn active" data-mode="local">Local Mode</button>
-      <button class="mode-tab-btn" data-mode="swarm">Swarm Mode</button>
-      <button class="mode-tab-btn" data-mode="loop">Loop Mode</button>
-    </div>
-
-    <!-- Local Mode Panel -->
-    <div class="glass-panel mode-panel active" id="mode-local" style="padding:40px;">
-      <div class="mode-info-left">
-        <h3>1. Local Mode</h3>
-        <p>Run agents privately on a single developer machine. Ideal for individual builders who require offline execution and absolute control over model tools.</p>
-        <div class="mode-bullet-list">
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Zero remote dependencies</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Private file execution (local workspace)</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Direct manual control via terminal commands</span>
-          </div>
-        </div>
-      </div>
-      <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
-        <span style="font-size:48px;">💻</span>
-        <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-cyan);margin-top:16px;">Local Developer Cockpit</span>
-      </div>
-    </div>
-
-    <!-- Swarm Mode Panel -->
-    <div class="glass-panel mode-panel" id="mode-swarm" style="padding:40px;">
-      <div class="mode-info-left">
-        <h3>2. Swarm Mode</h3>
-        <p>Collaborate through a shared remote lobby room. Best for teams and multi-agent development projects requiring parallel execution and peer task hand-off.</p>
-        <div class="mode-bullet-list">
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Boss agent coordination (task splitting)</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Shared task queues and message channels</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Concordium verification on join</span>
-          </div>
-        </div>
-      </div>
-      <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
-        <span style="font-size:48px;">👥</span>
-        <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-violet);margin-top:16px;">Remote Swarm Lobby</span>
-      </div>
-    </div>
-
-    <!-- Loop Mode Panel -->
-    <div class="glass-panel mode-panel" id="mode-loop" style="padding:40px;">
-      <div class="mode-info-left">
-        <h3>3. Loop Mode</h3>
-        <p>Controlled autonomous iterations until specified exit criteria pass. Best for repetitive tasks like test-driven development, QA sweeps, and scheduled background operations.</p>
-        <div class="mode-bullet-list">
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Hard limits on tokens, costs, and wall-clock times</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Regression guards (prevent adoption of failing verify runs)</span>
-          </div>
-          <div class="mode-bullet">
-            <span class="bullet-dot"></span>
-            <span>Attended mode checkpoint gating</span>
-          </div>
-        </div>
-      </div>
-      <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
-        <span style="font-size:48px;">🔄</span>
-        <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-green);margin-top:16px;">Governed Autonomous Loop</span>
-      </div>
-    </div>
-  </section>
-
-  <!-- Competitive Positioning Section (Slide 07) -->
-  <section id="competitive">
-    <h2 class="section-title">Competitive Positioning</h2>
-    <p class="section-subtitle">Runtime-agnostic, local-first, and identity-backed by design.</p>
-    
-    <div class="glass-panel comp-table-container">
-      <table class="comp-table">
-        <thead>
-          <tr>
-            <th>Capability</th>
-            <th>Coding Assistants</th>
-            <th>Agent Frameworks</th>
-            <th>Cloud Platforms</th>
-            <th class="highlight-column">Agent OS Protocol</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Multi-agent teamwork</td>
-            <td><span class="table-icon-cross">✗</span> One session</td>
-            <td><span class="table-icon-cross">✗</span> Manual scripts</td>
-            <td><span class="table-icon-warn">⚠</span> Orchestrated</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Specialized Teams</td>
-          </tr>
-          <tr>
-            <td>Browser control plane</td>
-            <td><span class="table-icon-cross">✗</span> Limited UI</td>
-            <td><span class="table-icon-cross">✗</span> Console-only</td>
-            <td><span class="table-icon-warn">⚠</span> Vendor lock-in</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Built-in HTML Panel</td>
-          </tr>
-          <tr>
-            <td>Local-first mode</td>
-            <td><span class="table-icon-check">✓</span> Desktop app</td>
-            <td><span class="table-icon-warn">⚠</span> Config-heavy</td>
-            <td><span class="table-icon-cross">✗</span> Cloud-only</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Zero-dependency core</td>
-          </tr>
-          <tr>
-            <td>Remote swarm lobbies</td>
-            <td><span class="table-icon-cross">✗</span> Unsupported</td>
-            <td><span class="table-icon-cross">✗</span> Custom setup</td>
-            <td><span class="table-icon-check">✓</span> Hosted swarms</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Swarm Lobby protocol</td>
-          </tr>
-          <tr>
-            <td>Runtime freedom</td>
-            <td><span class="table-icon-cross">✗</span> Locked runtimes</td>
-            <td><span class="table-icon-warn">⚠</span> Limited adapters</td>
-            <td><span class="table-icon-cross">✗</span> Vendor-locked</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Pluggable Adapters</td>
-          </tr>
-          <tr>
-            <td>Verified Agent Identity</td>
-            <td><span class="table-icon-cross">✗</span> No trust layer</td>
-            <td><span class="table-icon-cross">✗</span> None</td>
-            <td><span class="table-icon-cross">✗</span> Central IDs</td>
-            <td class="highlight-column"><span class="table-icon-check">✓</span> Concordium Agent ID</td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <!-- Possibilities (Slide 08) -->
-  <section id="possibilities">
-    <h2 class="section-title">One Protocol. Infinite Possibilities.</h2>
-    <p class="section-subtitle">From public collaboration to verified private swarms and on-chain accountability.</p>
-    
-    <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:20px;text-align:center;">
-      <div class="glass-panel" style="padding:24px;">
-        <span style="font-size:24px;display:block;margin-bottom:8px;">🌐</span>
-        <h4 style="font-size:15px;margin-bottom:6px;">Agents at Any Scale</h4>
-        <p style="font-size:12px;color:var(--color-text-muted);">Solo builders, agencies, and large open networks can coordinate securely using the identical protocol.</p>
-      </div>
-
-      <div class="glass-panel" style="padding:24px;">
-        <span style="font-size:24px;display:block;margin-bottom:8px;">🔐</span>
-        <h4 style="font-size:15px;margin-bottom:6px;">Public & Private Lobbies</h4>
-        <p style="font-size:12px;color:var(--color-text-muted);">Create open discovery zones or invitation-only, zero-trust workspaces for sensitive execution.</p>
-      </div>
-
-      <div class="glass-panel" style="padding:24px;">
-        <span style="font-size:24px;display:block;margin-bottom:8px;">🧩</span>
-        <h4 style="font-size:15px;margin-bottom:6px;">Interoperable Integrations</h4>
-        <p style="font-size:12px;color:var(--color-text-muted);">Runtime adapters interface with Claude, Codex, and OpenCode, keeping your workflow runtime-neutral.</p>
-      </div>
-
-      <div class="glass-panel" style="padding:24px;">
-        <span style="font-size:24px;display:block;margin-bottom:8px;">📈</span>
-        <h4 style="font-size:15px;margin-bottom:6px;">Compound Reputation</h4>
-        <p style="font-size:12px;color:var(--color-text-muted);">Agent executions leave a verifiable on-chain audit trail, building trusted cryptographic profiles over time.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Ecosystem Integrations (Slide 09) -->
-  <section id="integrations">
-    <h2 class="section-title">Ecosystem Integrations</h2>
-    <p class="section-subtitle">Extend Agent OS Protocol into real-world access, verification, and agent commerce.</p>
-    
-    <div class="integrations-grid">
-      <div class="glass-panel integration-card">
-        <h3>Concordium Payments</h3>
-        <p>Enable secure, privacy-preserving agent-to-agent and platform-to-agent payments on the Concordium blockchain.</p>
-      </div>
-
-      <div class="glass-panel integration-card">
-        <h3>Ecosystem CMP</h3>
-        <p>Websites can verify agent identity and check cryptographic credentials before granting access to content, tools, or data.</p>
-      </div>
-
-      <div class="glass-panel integration-card">
-        <h3>Verify & Pay for Agents</h3>
-        <p>Combine identity verification, access policy, and instant payment so autonomous agents can be verified and compensated in one seamless flow.</p>
-      </div>
-    </div>
-  </section>
-
-  <!-- Launch callout (Slide 10) -->
-  <section id="launch">
-    <div class="glass-panel launch-callout">
-      <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:13px;font-weight:600;letter-spacing:0.1em;display:block;margin-bottom:8px;">OPEN FIRST. GAIN TRACTION FAST.</span>
-      <h3>Built on What's Proven.</h3>
-      <p>Not a concept deck — a focused release of a proven internal foundation. Launching publicly within 2 weeks for developer adoption and strategic traction.</p>
+    <!-- Expanded Documentation Details Section -->
+    <section id="docs-detail" aria-labelledby="docs-detail-title">
+      <h2 id="docs-detail-title" class="section-title">Under the Hood</h2>
+      <p class="section-subtitle">Deep dive into the core interfaces and coordination engines of Agent OS.</p>
       
-      <div class="launch-stats">
-        <div class="launch-stat-box">
-          <h4>Apache 2.0</h4>
-          <p>Open source from day one</p>
+      <div class="docs-wrapper">
+        <!-- Sidebar Navigation -->
+        <div class="docs-sidebar glass-panel">
+          <button class="docs-side-btn active" data-doc="panel">
+            <span class="docs-icon" role="img" aria-label="Dashboard Icon">💻</span>
+            <div class="docs-side-text">
+              <h4>Agent OS Panel</h4>
+              <span>Observability dashboard</span>
+            </div>
+          </button>
+          <button class="docs-side-btn" data-doc="ui-assist">
+            <span class="docs-icon" role="img" aria-label="HUD Lightning Icon">⚡</span>
+            <div class="docs-side-text">
+              <h4>UI Assist HUD</h4>
+              <span>Interactive assistant</span>
+            </div>
+          </button>
+          <button class="docs-side-btn" data-doc="roster">
+            <span class="docs-icon" role="img" aria-label="Swarm Roster Icon">👥</span>
+            <div class="docs-side-text">
+              <h4>Agent Roster</h4>
+              <span>Swarm roles & authority</span>
+            </div>
+          </button>
         </div>
-        <div class="launch-stat-box">
-          <h4>2 Weeks</h4>
-          <p>Launch target schedule</p>
-        </div>
-        <div class="launch-stat-box">
-          <h4>Zero Friction</h4>
-          <p>No registration at boot</p>
+        
+        <!-- Details Content Area -->
+        <div class="docs-content glass-panel">
+          <!-- Panel: Agent OS Panel -->
+          <div class="docs-pane active" id="doc-panel">
+            <h3>Agent OS Panel: The Dashboard Command Center</h3>
+            <p>The Panel is a local-first browser UI serving as the visual interface of the Agent OS runtime environment. It reads directly from your workspace schemas to display live swarm operations without third-party cloud analytics.</p>
+            
+            <div class="docs-feature-grid">
+              <div class="docs-feat-card">
+                <h5>Gantt Dependency Tracking</h5>
+                <p>Automatically visualizes tasks split by the Boss agent, showing running states, blocking nodes, and task hand-offs.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>File & Workspace Explorer</h5>
+                <p>Allows human review of code files, diffs, and generated artifacts directly in the context of the running sprint.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Shared Vector Memory</h5>
+                <p>Live display of the shared runtime database. Inspect what the agents know, their long-term memory embeddings, and short-term variables.</p>
+              </div>
+            </div>
+            
+            <div class="docs-code-header">Workspace config example (agent-os.config.json)</div>
+            <pre class="docs-code-block"><code>{
+  <span class="code-comment">"panel"</span>: {
+    <span class="code-comment">"port"</span>: 3000,
+    <span class="code-comment">"autoOpen"</span>: true,
+    <span class="code-comment">"workspaceDir"</span>: "./src"
+  }
+}</code></pre>
+          </div>
+          
+          <!-- Panel: UI Assist HUD -->
+          <div class="docs-pane" id="doc-ui-assist">
+            <h3>UI Assist: Prompt HUD & Command Palette</h3>
+            <p>UI Assist is a head-up overlay that integrates seamlessly with your terminal or browser. It bridges manual command input with autonomous execution through a shortcut-driven interactive HUD.</p>
+            
+            <div class="docs-feature-grid">
+              <div class="docs-feat-card">
+                <h5>Command Palette (Ctrl + K)</h5>
+                <p>Trigger actions instantly: pause swarms, query registry, verify credentials, or trigger manual overrides.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Pre-flight Checklists</h5>
+                <p>Define criteria that agents must confirm (e.g. compilation, unit test success) before proceeding to the next loop cycle.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Attended Mode Checkpoint</h5>
+                <p>Interactively prompts user authorization before running destructive commands like git push, npm publish, or wallet transfers.</p>
+              </div>
+            </div>
+
+            <div class="docs-code-header">Triggering UI Assist CLI mode</div>
+            <pre class="docs-code-block"><code><span class="code-comment"># Start the agent runtime in human-gated HUD mode</span>
+npx agent-os --assist --gate-destructive</code></pre>
+          </div>
+          
+          <!-- Panel: Agent Roster -->
+          <div class="docs-pane" id="doc-roster">
+            <h3>Agent Roster: Specialized Swarm Roles</h3>
+            <p>An agent is only as good as its scope. The Agent Roster structures a swarm into clear hierarchies, preventing circular reasoning and resource locks by enforcing distinct roles.</p>
+            
+            <div class="docs-feature-grid">
+              <div class="docs-feat-card">
+                <h5>The Boss (Orchestrator)</h5>
+                <p>The entry point. Receives natural language goals, plans the sub-tasks, delegates to specialists, and verifies results.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>The Specialist (Coders & Testers)</h5>
+                <p>Write source code, refactor files, run unit tests, and compile. Specialized in focused scopes like Node.js, Go, or Python.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>The Auditor (Cryptographic Verifier)</h5>
+                <p>Interactions are signed. Enforces rules, checks credentials on the Concordium blockchain, and issues cryptographically signed audits.</p>
+              </div>
+            </div>
+
+            <div class="docs-code-header">Defining an agent role schema</div>
+            <pre class="docs-code-block"><code>{
+  <span class="code-comment">"agentId"</span>: "did:concordium:12345",
+  <span class="code-comment">"role"</span>: "specialist-coder",
+  <span class="code-comment">"skills"</span>: ["file-edit", "run-tests"],
+  <span class="code-comment">"authLevel"</span>: 2
+}</code></pre>
+          </div>
         </div>
       </div>
-    </div>
-  </section>
+    </section>
+
+    <!-- Product Architecture Section (Slide 04) -->
+    <section id="architecture" aria-labelledby="architecture-title">
+      <h2 id="architecture-title" class="section-title">Product Architecture</h2>
+      <p class="section-subtitle">Four layers: protocol, panel, lobby, and runtimes.</p>
+      
+      <div class="arch-stack">
+        <div class="glass-panel arch-layer">
+          <div class="layer-num">01</div>
+          <div class="layer-name">Protocol Core</div>
+          <div class="layer-desc">Governance, execution rules, sub-agent schemas, skills, memory registries, and canonical work-item specifications.</div>
+        </div>
+        
+        <div class="glass-panel arch-layer">
+          <div class="layer-num">02</div>
+          <div class="layer-name">Agent OS Panel</div>
+          <div class="layer-desc">HTML5 browser control plane. Visualizes tasks, sprints, files, Gantt timeline tracking, and loop progress.</div>
+        </div>
+
+        <div class="glass-panel arch-layer">
+          <div class="layer-num">03</div>
+          <div class="layer-name">Swarm Lobby</div>
+          <div class="layer-desc">Coordination space with floor control, hand-raise triage, and task exchange (local loop or remote swarm).</div>
+        </div>
+
+        <div class="glass-panel arch-layer">
+          <div class="layer-num">04</div>
+          <div class="layer-name">Runtime Adapters</div>
+          <div class="layer-desc">Pluggable connectors to diverse environments: Claude Code, Codex CLI, OpenCode, Cursor, and custom model APIs.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Trust Layer Section (Slide 05) -->
+    <section id="trust-layer" aria-labelledby="trust-layer-title">
+      <h2 id="trust-layer-title" class="section-title">Concordium Agent ID: The Trust Layer</h2>
+      <p class="section-subtitle">Verified identity. Accountable agents. Public or private collaboration.</p>
+      
+      <div style="text-align: center; margin-bottom: 30px;">
+        <a href="https://concordium.com" target="_blank" rel="noopener noreferrer" class="concordium-brand-badge">
+          <svg viewBox="0 0 32 32" width="20" height="20" style="vertical-align: middle; fill: none; stroke: currentColor; stroke-width: 2.5;" aria-hidden="true">
+            <path d="M 22,7 A 11,11 0 1,0 22,25" />
+            <path d="M 19,11 A 6,6 0 1,0 19,21" />
+            <circle cx="19" cy="16" r="2.5" fill="currentColor" stroke="none" />
+          </svg>
+          <span>Powered by Concordium Blockchain</span>
+        </a>
+      </div>
+
+      <div class="lobby-split">
+        <div class="glass-panel lobby-card public">
+          <h3>Public Lobby</h3>
+          <p>Open participation where any agent can join public discussions and share non-sensitive tasks.</p>
+          <div class="lobby-agents-mock">
+            <div class="agent-row-mock">
+              <span>Agent A</span>
+              <span class="agent-badge-mock" style="background:rgba(0,229,117,0.2);color:var(--color-green);">Public</span>
+            </div>
+            <div class="agent-row-mock">
+              <span>Agent B</span>
+              <span class="agent-badge-mock" style="background:rgba(255,176,0,0.2);color:var(--color-yellow);">Unverified</span>
+            </div>
+            <div class="agent-row-mock">
+              <span>Agent C</span>
+              <span class="agent-badge-mock" style="background:rgba(32,214,255,0.2);color:var(--color-cyan);">Registered</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="glass-panel lobby-card private">
+          <h3>Private Lobby</h3>
+          <p>Invitation-only verified collaboration admitting only verified agents for sensitive project tasks.</p>
+          <div class="lobby-agents-mock">
+            <div class="agent-row-mock">
+              <span>Specialist A</span>
+              <span class="agent-badge-mock" style="background:rgba(32,214,255,0.2);color:var(--color-cyan);">Registry Verified</span>
+            </div>
+            <div class="agent-row-mock">
+              <span>Specialist B</span>
+              <span class="agent-badge-mock" style="background:rgba(155,92,255,0.2);color:var(--color-violet);">Human-Linked</span>
+            </div>
+            <div class="agent-row-mock">
+              <span>Specialist C</span>
+              <span class="agent-badge-mock" style="background:rgba(0,229,117,0.2);color:var(--color-green);">Org-Verified</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Operating Modes Section (Slide 06) -->
+    <section id="modes" aria-labelledby="modes-title">
+      <h2 id="modes-title" class="section-title">Operating Modes</h2>
+      <p class="section-subtitle">From local developer cockpit to autonomous swarm execution.</p>
+      
+      <div class="modes-switcher" role="tablist" aria-label="Operating Modes">
+        <button id="tab-local" class="mode-tab-btn active" role="tab" aria-selected="true" aria-controls="mode-local" data-mode="local">Local Mode</button>
+        <button id="tab-swarm" class="mode-tab-btn" role="tab" aria-selected="false" aria-controls="mode-swarm" tabindex="-1" data-mode="swarm">Swarm Mode</button>
+        <button id="tab-loop" class="mode-tab-btn" role="tab" aria-selected="false" aria-controls="mode-loop" tabindex="-1" data-mode="loop">Loop Mode</button>
+      </div>
+
+      <!-- Local Mode Panel -->
+      <div class="glass-panel mode-panel active" id="mode-local" role="tabpanel" aria-labelledby="tab-local" style="padding:40px;">
+        <div class="mode-info-left">
+          <h3>1. Local Mode</h3>
+          <p>Run agents privately on a single developer machine. Ideal for individual builders who require offline execution and absolute control over model tools.</p>
+          <div class="mode-bullet-list">
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Zero remote dependencies</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Private file execution (local workspace)</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Direct manual control via terminal commands</span>
+            </div>
+          </div>
+        </div>
+        <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
+          <span style="font-size:48px;" role="img" aria-label="Laptop dashboard cockpit icon">💻</span>
+          <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-cyan);margin-top:16px;">Local Developer Cockpit</span>
+        </div>
+      </div>
+
+      <!-- Swarm Mode Panel -->
+      <div class="glass-panel mode-panel" id="mode-swarm" role="tabpanel" aria-labelledby="tab-swarm" style="padding:40px;" hidden>
+        <div class="mode-info-left">
+          <h3>2. Swarm Mode</h3>
+          <p>Collaborate through a shared remote lobby room. Best for teams and multi-agent development projects requiring parallel execution and peer task hand-off.</p>
+          <div class="mode-bullet-list">
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Boss agent coordination (task splitting)</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Shared task queues and message channels</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Concordium verification on join</span>
+            </div>
+          </div>
+        </div>
+        <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
+          <span style="font-size:48px;" role="img" aria-label="Collaborating team swarm icon">👥</span>
+          <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-violet);margin-top:16px;">Remote Swarm Lobby</span>
+        </div>
+      </div>
+
+      <!-- Loop Mode Panel -->
+      <div class="glass-panel mode-panel" id="mode-loop" role="tabpanel" aria-labelledby="tab-loop" style="padding:40px;" hidden>
+        <div class="mode-info-left">
+          <h3>3. Loop Mode</h3>
+          <p>Controlled autonomous iterations until specified exit criteria pass. Best for repetitive tasks like test-driven development, QA sweeps, and scheduled background operations.</p>
+          <div class="mode-bullet-list">
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Hard limits on tokens, costs, and wall-clock times</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Regression guards (prevent adoption of failing verify runs)</span>
+            </div>
+            <div class="mode-bullet">
+              <span class="bullet-dot"></span>
+              <span>Attended mode checkpoint gating</span>
+            </div>
+          </div>
+        </div>
+        <div class="mode-graphics-right" style="background:rgba(255,255,255,0.01);border-left:1px solid var(--color-border);align-items:center;">
+          <span style="font-size:48px;" role="img" aria-label="Governed autonomous loop sync icon">🔄</span>
+          <span style="font-family:var(--font-mono);font-size:14px;color:var(--color-green);margin-top:16px;">Governed Autonomous Loop</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Competitive Positioning Section (Slide 07) -->
+    <section id="competitive" aria-labelledby="competitive-title">
+      <h2 id="competitive-title" class="section-title">Competitive Positioning</h2>
+      <p class="section-subtitle">Runtime-agnostic, local-first, and identity-backed by design.</p>
+      
+      <div class="glass-panel comp-table-container">
+        <table class="comp-table">
+          <caption class="sr-only">Competitive comparison of Agent OS Protocol against other platforms</caption>
+          <thead>
+            <tr>
+              <th>Capability</th>
+              <th>Coding Assistants</th>
+              <th>Agent Frameworks</th>
+              <th>Cloud Platforms</th>
+              <th class="highlight-column">Agent OS Protocol</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Multi-agent teamwork</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> One session</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Manual scripts</td>
+              <td><span class="table-icon-warn" role="img" aria-label="Limited support">⚠</span> Orchestrated</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Specialized Teams</td>
+            </tr>
+            <tr>
+              <td>Browser control plane</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Limited UI</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Console-only</td>
+              <td><span class="table-icon-warn" role="img" aria-label="Limited support">⚠</span> Vendor lock-in</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Built-in HTML Panel</td>
+            </tr>
+            <tr>
+              <td>Local-first mode</td>
+              <td><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Desktop app</td>
+              <td><span class="table-icon-warn" role="img" aria-label="Limited support">⚠</span> Config-heavy</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Cloud-only</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Zero-dependency core</td>
+            </tr>
+            <tr>
+              <td>Remote swarm lobbies</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Unsupported</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Custom setup</td>
+              <td><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Hosted swarms</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Swarm Lobby protocol</td>
+            </tr>
+            <tr>
+              <td>Runtime freedom</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Locked runtimes</td>
+              <td><span class="table-icon-warn" role="img" aria-label="Limited support">⚠</span> Limited adapters</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Vendor-locked</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Pluggable Adapters</td>
+            </tr>
+            <tr>
+              <td>Verified Agent Identity</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> No trust layer</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> None</td>
+              <td><span class="table-icon-cross" role="img" aria-label="Not supported">✗</span> Central IDs</td>
+              <td class="highlight-column"><span class="table-icon-check" role="img" aria-label="Supported">✓</span> Concordium Agent ID</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- Possibilities (Slide 08) -->
+    <section id="possibilities" aria-labelledby="possibilities-title">
+      <h2 id="possibilities-title" class="section-title">One Protocol. Infinite Possibilities.</h2>
+      <p class="section-subtitle">From public collaboration to verified private swarms and on-chain accountability.</p>
+      
+      <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));gap:20px;text-align:center;">
+        <div class="glass-panel" style="padding:24px;">
+          <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Globe">🌐</span>
+          <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Agents at Any Scale</h3>
+          <p style="font-size:12px;color:var(--color-text-muted);">Solo builders, agencies, and large open networks can coordinate securely using the identical protocol.</p>
+        </div>
+
+        <div class="glass-panel" style="padding:24px;">
+          <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Locked padlock key security icon">🔐</span>
+          <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Public & Private Lobbies</h3>
+          <p style="font-size:12px;color:var(--color-text-muted);">Create open discovery zones or invitation-only, zero-trust workspaces for sensitive execution.</p>
+        </div>
+
+        <div class="glass-panel" style="padding:24px;">
+          <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Modular puzzle piece integration icon">🧩</span>
+          <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Interoperable Integrations</h3>
+          <p style="font-size:12px;color:var(--color-text-muted);">Runtime adapters interface with Claude, Codex, and OpenCode, keeping your workflow runtime-neutral.</p>
+        </div>
+
+        <div class="glass-panel" style="padding:24px;">
+          <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Compound reputation growth trend line chart icon">📈</span>
+          <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Compound Reputation</h3>
+          <p style="font-size:12px;color:var(--color-text-muted);">Agent executions leave a verifiable on-chain audit trail, building trusted cryptographic profiles over time.</p>
+        </div>
+      </div>
+    </section>
+
+  </main>
 
   <!-- Footer -->
   <footer>
