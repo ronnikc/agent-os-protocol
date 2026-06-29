@@ -29,7 +29,7 @@ open; Phases 12–13 are planned.**
 | 10 | Launch readiness (docs, verify-launch, smoke, v0.1.0) | ✅ merged (#11) + `v0.1.0` tagged |
 | 11 | Loop / autonomous iterative execution | ✅ implemented — PR open |
 | 12 | Agent OS Panel UI redesign (DESIGN.md alignment) | ✅ complete |
-| 13 | Agent OS Protocol website (public landing site) | ⬜ planned |
+| 13 | Agent OS Protocol website (public landing site) | ✅ complete |
 
 ## Done so far
 
@@ -145,6 +145,7 @@ open; Phases 12–13 are planned.**
   (17/17), `npm run loop` (attended + unattended converge), the Panel loop endpoints (attended +
   unattended runs converge 4/4), and `npm run verify-all` (16/11/15/23/31/17/53).
 - **Phase 12 — Panel UI Redesign (complete):** The localhost Panel UI has been fully evolved from its early functional layout into the refined, dark glassmorphic control-plane design defined in `DESIGN.md`. Features a reusable CSS token system (deep-navy `#050B18` bg, radial-gradient, glassmorphism panels, cyan→violet gradients, active glow borders, Outfit/Inter typography, custom scrollbars) ensuring no functional regression across any page. Implemented the brand hex/cube 3D SVG logo mark and a redesigned header status bar. Built the polished Panel Loop view (featuring presets list sidebar, runs logging list, start/pause/stop buttons, individual criterion checkmarks, token/cost/time budget burn progress bars, unattended/attended toggles, and interactive checkpoint approval/rejection card overlays) wired to live endpoints (`/api/loops/pause`, `/api/loops/resume`, `/api/loops/decide`). Integrated overview metrics cards row on the Agents view backed by a new `/api/overview-stats` server aggregator. Verified by new automated verification script `verify-ui` (all 7 suites green in `verify-all`, 55 launch invariants green in `verify-launch`).
+- **Phase 13 — Agent OS Protocol Website (complete):** Built a premium, zero-dependency static public website under `apps/website/` based on the 10-slide deck and the visual style conventions of `DESIGN.md` (deep navy bg, Outfit/Inter typography, linear brand gradients, glassmorphism cards, and comparative matrices). Includes interactive operating modes tabs switcher, problem/solution grids, architecture diagram blocks, trust-layer (identity) charts, ecosystem integrations, and open-source licensing overviews. Implemented a preview HTTP server script `apps/website/server.ts` wired into `package.json` (`npm run website` on port 4802). Integrated automated verification into `verify-ui` and `verify-launch`. All 56 checks green.
 
 ## Known follow-ups
 

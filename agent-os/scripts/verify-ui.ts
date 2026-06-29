@@ -106,6 +106,27 @@ async function main(): Promise<void> {
     assert.ok(agentsJs.includes('updateOverviewStats'), 'agents.js does not support overview-stats API');
   });
 
+  // 5. Verify apps/website static files and assets
+  await check('website index.html exists and contains sections for problem, solution, modes, and competitive grid', () => {
+    assert.ok(existsSync(R('apps/website/index.html')), 'website index.html is missing');
+    const html = read('apps/website/index.html');
+    assert.ok(html.includes('<svg viewBox="0 0 24 24"'), 'website index.html is missing the brand SVG logo mark');
+    assert.ok(html.includes('id="problem"'), 'website index.html is missing the problem section');
+    assert.ok(html.includes('id="solution"'), 'website index.html is missing the solution section');
+    assert.ok(html.includes('id="modes"'), 'website index.html is missing the modes section');
+    assert.ok(html.includes('id="competitive"'), 'website index.html is missing the competitive section');
+    assert.ok(html.includes('styles.css'), 'website index.html does not link styles.css');
+  });
+
+  await check('website styles.css exists and contains design tokens', () => {
+    assert.ok(existsSync(R('apps/website/styles.css')), 'website styles.css is missing');
+    const css = read('apps/website/styles.css');
+    assert.ok(css.includes('--color-bg'), 'website styles.css is missing --color-bg');
+    assert.ok(css.includes('--color-cyan'), 'website styles.css is missing --color-cyan');
+    assert.ok(css.includes('--color-violet'), 'website styles.css is missing --color-violet');
+    assert.ok(css.includes('backdrop-filter'), 'website styles.css does not implement glassmorphism blur');
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length > 0) {
     console.error(`FAILED: ${failures.join(', ')}`);

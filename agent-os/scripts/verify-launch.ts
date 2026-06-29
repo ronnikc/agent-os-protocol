@@ -145,7 +145,7 @@ async function main(): Promise<void> {
   });
   await check('RELEASING.md present', () => assert.ok(nonEmpty('RELEASING.md'), 'RELEASING.md missing'));
   const requiredScripts = [
-    'agent-os-panel', 'relay', 'lobby', 'train', 'work-items', 'loop', 'ui-assist-integrate',
+    'agent-os-panel', 'website', 'relay', 'lobby', 'train', 'work-items', 'loop', 'ui-assist-integrate',
     'verify-adapters', 'verify-providers', 'verify-lobby', 'verify-identity', 'verify-ui-assist',
     'verify-loop', 'verify-ui', 'verify-launch', 'verify-all',
   ];

@@ -302,7 +302,8 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Exit:** each tab visually matches its `design-specs/` mockup; DESIGN.md conventions live as
   reusable CSS tokens; the panel boots and all tabs work (a screenshot pass vs the mockups).
 
-### Phase 13 — Agent OS Protocol Website (public landing site)
+### Phase 13 — Agent OS Protocol Website (public landing site) ✅
+- **Status (PR open):** Completed and verified. The website has been built under `apps/website/`, packing all 10 slides from the official deck into interactive sections, competitive grids, architecture stacks, and ecosystem structures. Accessible via `npm run website` at port 4802.
 - A **simple, static public website** for the platform under `apps/website/`, reusing the DESIGN.md
   visual language: hero, what-it-is, features (Local/Swarm/Loop Mode, UI Assist, agent identity,
   `/train`, runtime adapters), install + quick-start, docs + GitHub links, Apache-2.0.
