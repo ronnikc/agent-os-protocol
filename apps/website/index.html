@@ -281,8 +281,22 @@
           <button class="docs-side-btn" data-doc="roster">
             <span class="docs-icon" role="img" aria-label="Swarm Roster Icon">👥</span>
             <div class="docs-side-text">
-              <h4>Agent Roster</h4>
+              <h4>Agent Roster & Skills</h4>
               <span>Swarm roles & authority</span>
+            </div>
+          </button>
+          <button class="docs-side-btn" data-doc="memory">
+            <span class="docs-icon" role="img" aria-label="Memory Stack Icon">🧠</span>
+            <div class="docs-side-text">
+              <h4>Shared Memory</h4>
+              <span>4-Layer bus & facts.jsonl</span>
+            </div>
+          </button>
+          <button class="docs-side-btn" data-doc="commands">
+            <span class="docs-icon" role="img" aria-label="Terminal Command Icon">⚙️</span>
+            <div class="docs-side-text">
+              <h4>CLI & /train Command</h4>
+              <span>Lifecycle triggers</span>
             </div>
           </button>
         </div>
@@ -346,31 +360,81 @@ npx agent-os --assist --gate-destructive</code></pre>
           
           <!-- Panel: Agent Roster -->
           <div class="docs-pane" id="doc-roster">
-            <h3>Agent Roster: Specialized Swarm Roles</h3>
-            <p>An agent is only as good as its scope. The Agent Roster structures a swarm into clear hierarchies, preventing circular reasoning and resource locks by enforcing distinct roles.</p>
+            <h3>Agent Roster & Specialized Skills: The 30-Agent Fleet</h3>
+            <p>An agent is only as good as its scope. The Agent Roster structures a swarm into clear hierarchies, preventing circular reasoning and resource locks by enforcing distinct roles. Each agent possesses explicit credentials and handles specific tasks.</p>
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h5>The Boss (Orchestrator)</h5>
-                <p>The entry point. Receives natural language goals, plans the sub-tasks, delegates to specialists, and verifies results.</p>
+                <h5>Core Engineering (9 Agents)</h5>
+                <p>Includes **Planning** (breaks down goals), **Research** (analyzes code), **Backend/Frontend** (writes code), **API** (contracts), **Test** (unit/integration suites), **Code Review**, and **Build Integrity** (typescript compile, dependencies).</p>
               </div>
               <div class="docs-feat-card">
-                <h5>The Specialist (Coders & Testers)</h5>
-                <p>Write source code, refactor files, run unit tests, and compile. Specialized in focused scopes like Node.js, Go, or Python.</p>
+                <h5>Platform & Identity (6 Agents)</h5>
+                <p>Includes **Identity Agent** (Concordium DIDs & credentials), **Lobby Architect** (WebSocket transport, heartbeat), **Runtime Adapter** (Claude/Codex/OpenCode/Cursor bridges), and **Training Agent** (handles `/train`).</p>
               </div>
               <div class="docs-feat-card">
-                <h5>The Auditor (Cryptographic Verifier)</h5>
-                <p>Interactions are signed. Enforces rules, checks credentials on the Concordium blockchain, and issues cryptographically signed audits.</p>
+                <h5>Auditing & Validation (8 Agents)</h5>
+                <p>Includes **Security** (auth/access control), **Accessibility** (WCAG 2.1 AA screen readers), **Product QA** (production readiness checks), and **User Validation** (acceptance criteria matches).</p>
               </div>
             </div>
 
-            <div class="docs-code-header">Defining an agent role schema</div>
+            <div class="docs-code-header">Defining an agent role schema (sub-agents/agents/backend.md)</div>
             <pre class="docs-code-block"><code>{
   <span class="code-comment">"agentId"</span>: "did:concordium:12345",
-  <span class="code-comment">"role"</span>: "specialist-coder",
-  <span class="code-comment">"skills"</span>: ["file-edit", "run-tests"],
+  <span class="code-comment">"role"</span>: "backend-specialist",
+  <span class="code-comment">"skills"</span>: ["file-edit", "run-tests", "api-routing"],
   <span class="code-comment">"authLevel"</span>: 2
 }</code></pre>
+          </div>
+
+          <!-- Panel: Shared Memory System -->
+          <div class="docs-pane" id="doc-memory">
+            <h3>Shared Memory: Hierarchical 4-Layer Context Bus</h3>
+            <p>Agent OS features a structured, context-preserving memory architecture that guarantees agents only load what they need. This optimizes token usage, avoids context-window crashes, and enables recall of post-sprint lessons.</p>
+            
+            <div class="docs-feature-grid">
+              <div class="docs-feat-card">
+                <h5>L0 - L1 Context Core</h5>
+                <p>**L0 (Identity):** Precedence pointer preamble.<br>**L1 (Essential Story):** Whisper rules, ethics, and persistent agent diaries (`diary.md` recall corpus).</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>L2 - L3 Retrieval Bus</h5>
+                <p>**L2 (On-Demand):** Lessons, gotchas, and instincts fetched dynamically via anchors (`INDEX.aaak` + semantic recall).<br>**L3 (Deep Search):** Codebase crawlers if L2 misses.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Facts Layer (facts.jsonl)</h5>
+                <p>Structured, append-only, git-merged facts tracking rule changes, sprint closures, and audit trails without database locks.</p>
+              </div>
+            </div>
+
+            <div class="docs-code-header">Memory Retrieval Query (embeddings-recall.sh)</div>
+            <pre class="docs-code-block"><code><span class="code-comment"># Query the semantic memory index for target topics</span>
+bash agent-os/scripts/embeddings-recall.sh "race conditions" --top 5</code></pre>
+          </div>
+
+          <!-- Panel: CLI & /train -->
+          <div class="docs-pane" id="doc-commands">
+            <h3>CLI Workflows & The /train Command</h3>
+            <p>Developer interactions with Agent OS Protocol are orchestrated via clean shell commands. Custom agent behaviors, skills, and memories are generated automatically using the Training Agent CLI loop.</p>
+            
+            <div class="docs-feature-grid">
+              <div class="docs-feat-card">
+                <h5>The /train Command</h5>
+                <p>Allows subject-matter training. Generates reviewable, reversible, secret-detecting skills and memories for custom/trainable agents.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Loop Mode Engine</h5>
+                <p>Starts the autonomous orchestrator runner (`npm run loop`) with preset sweeps (e.g. `continuous-quality`) and attended/unattended modes.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h5>Panel & Relay Infrastructure</h5>
+                <p>Starts local control planes: `npm run agent-os-panel` (observability HUD), `npm run relay` (browser-to-runtime WebSocket bridge), `npm run lobby` (standalone lobby room).</p>
+              </div>
+            </div>
+
+            <div class="docs-code-header">Training a Custom Agent</div>
+            <pre class="docs-code-block"><code><span class="code-comment"># Train the Domain Specialist on custom rules/skills</span>
+npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code></pre>
           </div>
         </div>
       </div>
