@@ -42,8 +42,9 @@
     "verify-identity": "tsx agent-os/scripts/verify-identity.ts",
     "verify-ui-assist": "tsx agent-os/scripts/verify-ui-assist.ts",
     "verify-loop": "tsx agent-os/scripts/verify-loop.ts",
+    "verify-ui": "tsx agent-os/scripts/verify-ui.ts",
     "verify-launch": "tsx agent-os/scripts/verify-launch.ts",
-    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-launch",
+    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch",
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {

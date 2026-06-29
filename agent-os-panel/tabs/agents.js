@@ -6,6 +6,31 @@ import { state, fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
 
 let selected = new Set();
 
+function getIdentityBadge(status) {
+  const map = {
+    human_linked: ['badge-identity-human', 'Human-linked'],
+    org_linked: ['badge-identity-org', 'Org-verified'],
+    registry_verified: ['badge-identity-verified', 'Registered'],
+    pending: ['badge-identity-pending', 'Pending'],
+    failed: ['badge-identity-failed', 'Failed'],
+    unverified: ['badge-identity-unverified', 'Unverified']
+  };
+  const entry = map[status] || ['badge-identity-unverified', 'Unverified'];
+  const [cls, label] = entry;
+  return `<span class="badge ${cls}">${label}</span>`;
+}
+
+function getActivityIndicator(status) {
+  if (status === 'running') {
+    return `<div style="display:flex;align-items:center;gap:3px;height:12px;" title="Active">
+      <div style="width:2px;height:6px;background:var(--color-cyan);animation:act-pulse 0.6s infinite alternate;"></div>
+      <div style="width:2px;height:12px;background:var(--color-cyan);animation:act-pulse 0.6s infinite alternate 0.2s;"></div>
+      <div style="width:2px;height:8px;background:var(--color-cyan);animation:act-pulse 0.6s infinite alternate 0.4s;"></div>
+    </div>`;
+  }
+  return `<span style="color:var(--color-text-soft)">—</span>`;
+}
+
 function renderAgents() {
   const el = document.getElementById('agentList');
   if (!el) return;
@@ -17,7 +42,10 @@ function renderAgents() {
       <td><input type="checkbox" ${checked} data-slug="${a.slug}" /></td>
       <td><strong>${escapeHtml(a.name)}</strong></td>
       <td class="scope" title="${escapeHtml(a.scope)}">${escapeHtml(a.scope)}</td>
+      <td>${getIdentityBadge(a.identity_status)}</td>
       <td><span class="status-dot ${statusClass}"></span>${a.status}</td>
+      <td>${getActivityIndicator(a.status)}</td>
+      <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.runtime || 'Claude CLI')}</span></td>
       <td>${isRunning
         ? `<button class="btn btn-danger btn-sm" data-action="stop" data-slug="${a.slug}">Stop</button>`
         : `<button class="btn btn-primary btn-sm" data-action="start" data-slug="${a.slug}">Start</button>`
@@ -53,12 +81,33 @@ async function stopOne(slug) {
   setTimeout(refresh, 500);
 }
 
+async function updateOverviewStats() {
+  const stats = await fetchJson('/api/overview-stats');
+  if (!stats) return;
+  
+  const onlineEl = document.getElementById('stat-online-val');
+  if (onlineEl) onlineEl.textContent = `${stats.agents.online} / ${stats.agents.total}`;
+  
+  const tasksEl = document.getElementById('stat-tasks-val');
+  if (tasksEl) tasksEl.textContent = stats.tasks.in_progress;
+  
+  const sprintEl = document.getElementById('stat-sprint-val');
+  if (sprintEl) sprintEl.textContent = stats.sprint.active ? `${stats.sprint.progress_percent}%` : 'Inactive';
+  
+  const throughputEl = document.getElementById('stat-throughput-val');
+  if (throughputEl) throughputEl.textContent = `${stats.throughput.tasks_per_day}`;
+  
+  const successEl = document.getElementById('stat-success-val');
+  if (successEl) successEl.textContent = `${stats.success_rate.percent}%`;
+}
+
 async function refresh() {
   const data = await fetchJson('/api/agents');
   if (data) {
     state.agents = data.agents || [];
     renderAgents();
   }
+  await updateOverviewStats();
 }
 
 function init() {

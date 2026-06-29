@@ -288,7 +288,8 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
   delegate wiring through the relay/lobby, unattended cron over a swarm, the polished Panel Loop view
   (→ Phase 12), and loop resumability. See `agent-os/STATE.md`.
 
-### Phase 12 — Agent OS Panel UI Redesign (DESIGN.md alignment)
+### Phase 12 — Agent OS Panel UI Redesign (DESIGN.md alignment) ✅
+- **Status (PR open):** Completed and verified. The Panel UI has been redesigned to align with the premium dark glass-panel control-plane aesthetic of `DESIGN.md`. A new automated verification suite `verify-ui` asserts CSS tokens, HTML layout tags, and prevents regressions. Simulated Loop mode runs now feature pausing, resuming, and interactive checkpoint approval decisions.
 - Evolve the Panel UI from the functional Phase-1 layout into the polished, **dark glass-panel
   control-plane aesthetic** defined in [`DESIGN.md`](DESIGN.md) and the per-tab mockups in
   [`design-specs/`](design-specs/) (Agents, Lobby, Messages, Tasks, Gantt, Schedule, Memory).
