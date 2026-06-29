@@ -1254,27 +1254,41 @@ const server = createServer(async (req, res) => {
   // ── Agent API Routes ──
   if (path === '/api/agents' && method === 'GET') {
     const agents = discoverAgents().map((a, i) => {
-      let identity_status = 'unverified';
-      if (['boss-agent', 'identity'].includes(a.slug)) {
-        identity_status = 'human_linked';
-      } else if (['lobby-architect', 'runtime-adapter', 'ui-assist-integration'].includes(a.slug)) {
-        identity_status = 'org_linked';
-      } else if (i % 3 === 0) {
-        identity_status = 'registry_verified';
-      } else if (i % 7 === 0) {
-        identity_status = 'failed';
-      }
+      const status = getAgentStatus(a.slug);
+      const isRunning = status === 'running';
 
-      let runtime = 'Claude CLI';
-      if (['test', 'code-review', 'backend'].includes(a.slug)) {
-        runtime = 'Codex CLI';
-      } else if (i % 4 === 0) {
-        runtime = 'API';
+      let identity_status = 'unverified';
+      let runtime = '—';
+
+      if (isRunning) {
+        // Resolve runtime dynamically based on agent type
+        if (['test', 'code-review', 'backend'].includes(a.slug)) {
+          runtime = 'Codex CLI';
+        } else if (a.slug === 'api') {
+          runtime = 'API';
+        } else {
+          runtime = 'Claude CLI';
+        }
+
+        // Resolve identity_status dynamically from active local session or staging lobby cache
+        const isSwarm = DEFAULT_LOBBY_URL && lobbyWsConnected;
+        if (isSwarm) {
+          const activeRemote = [...stagingAgentRoster.values()].find(s => s.agent_role === a.slug);
+          if (activeRemote) {
+            identity_status = (activeRemote.identity_status as string) || 'unverified';
+            runtime = (activeRemote.runtime as string) || runtime;
+          }
+        } else {
+          const activeLocal = [...localLobbyAgents.values()].find(s => s.agent_role === a.slug);
+          if (activeLocal) {
+            identity_status = (activeLocal as any).identity_status || 'unverified';
+          }
+        }
       }
 
       return {
         ...a,
-        status: getAgentStatus(a.slug),
+        status,
         pid: runningAgents[a.slug]?.pid ?? null,
         startedAt: runningAgents[a.slug]?.startedAt ?? null,
         identity_status,
