@@ -29,6 +29,7 @@
   ],
   "scripts": {
     "agent-os-panel": "tsx agent-os/scripts/agent-os-panel-server.ts",
+    "website": "tsx apps/website/server.ts",
     "agent-os-panel-tray": "tsx agent-os/scripts/agent-os-panel-tray.ts",
     "relay": "tsx packages/relay/src/relay-server.ts",
     "lobby": "tsx packages/lobby-server/src/server.ts",

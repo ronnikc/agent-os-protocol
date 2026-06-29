@@ -1,7 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–10 merged — through launch readiness; `v0.1.0` tagged. Phase 11 — Loop Mode — PR open; Phases 12–13 planned). See
+> **Status:** Forking in progress (Phases 0–12 merged; Phase 13 implemented with a PR open). See
 > [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
 > [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
@@ -42,6 +42,7 @@ agent-os-protocol/
     loop/src/                     # Loop Mode engine (LoopOrchestrator + presets) — npm run loop
     relay/src/                    # relay-server.ts + lobby-types.ts
   apps/lobby-web/                 # hosted swarm lobby (Vercel + Upstash) — planned increment
+  apps/website/                   # Layer 2 cont. — public landing site (vanilla HTML/CSS)
   docs/                           # launch guides: getting-started, examples, security, lobby-hosting, training-agents (+ index)
     adapters/ providers/ lobby/ identity/ ui-assist/  # capability references: contracts, spikes, matrices
   scripts/                        # repo-level scripts (smoke.sh — fresh-clone boot smoke)
@@ -80,6 +81,9 @@ npm run lobby -- --port 5000
 npm run loop -- --list
 npm run loop -- --preset continuous-quality [--unattended]
 
+# Public Landing Website — static preview server
+npm run website                                   # http://localhost:4802
+
 # Verify the layers (no runtime/key/service needed — injected seams)
 npm run verify-adapters
 npm run verify-providers
@@ -87,8 +91,9 @@ npm run verify-lobby
 npm run verify-identity
 npm run verify-ui-assist
 npm run verify-loop       # Loop Mode engine: caps, convergence/stall, regression, checkpoints
+npm run verify-ui         # UI layout, token systems, and website static validation
 npm run verify-launch     # launch-readiness invariants (docs, scripts, gates, references, license)
-npm run verify-all        # all seven suites in one chain
+npm run verify-all        # all eight suites in one chain
 npm run smoke             # fresh-clone boot smoke: install → verify-all → boot Panel/Lobby/Relay → probe
 ```
 
