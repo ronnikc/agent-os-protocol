@@ -5,24 +5,10 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Version: **v0.1.0**
-&nbsp;Status: **Phases 1–10 released; Phase 11 (Loop Mode) landing — Local + Swarm Mode, runtime adapters, API providers, the independent lobby, verifiable agent identity, the UI Assist package & iterative Loop Mode**
+&nbsp;Version: **v0.2.0**
+&nbsp;Status: **Phases 1–14 released; Phase 15 (Lobby Connection & Stats Realization) landing**
 
-> 🚧 **Project status.** The platform is being forked in phases. **Phases 1–10 are merged and the
-> first release `v0.1.0` is tagged:** the Agent OS Panel and relay run locally
-> (`npm run agent-os-panel`); the generic agent roster + `/train`; the runtime-adapter abstraction
-> with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider (fuel) layer; the
-> independent public/private **lobby server**; **read-only Concordium agent identity & verification**
-> with a private-lobby policy ladder; the **UI Assist integration package** (embeddable overlay +
-> Integration Agent); and a launch-ready repo — the full [`docs/`](docs/README.md) guide set, real
-> `.env` configuration, `npm run verify-all`, and a fresh-clone boot smoke (`npm run smoke`).
-> **Phase 11 (Loop Mode) is implemented with a PR open:** a Boss-driven iterate-until-exit-criteria
-> engine (`@agent-os/loop`) with hard caps, convergence/stall + regression guards, human
-> checkpoints, a kill switch, and unattended-off-by-default — with `create-loop`/`loop-orchestrator`
-> skills, the `continuous-quality` preset, `npm run loop`, and a Panel Loop tab. Remaining
-> capabilities — the **Panel UI redesign** and a **public website** — are **(planned)**. See
-> **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan and
-> **[`agent-os/STATE.md`](agent-os/STATE.md)** for current status.
+> 🚧 **Project status.** The platform is fully functional. **Phases 1–14 are merged and released:** the Agent OS Panel and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider (fuel) layer; the independent public/private **lobby server**; **read-only Concordium agent identity & verification**; the **UI Assist integration package**; the Boss-driven autonomous control loop (**Loop Mode**); a premium responsive **Panel UI redesign** matching modern glassmorphism aesthetics; and the official public **website** with expanded roster, skills, and command guides. **Phase 15 (Lobby Connection Audit & Stats Realization)** is landing next. See **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan.
 
 ---
 
@@ -356,19 +342,12 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 | Phase | Focus |
 |---|---|
 | 0 | Discovery, safety, planning ✅ |
-| 1 | Repo isolation, branding & Apache-2.0 relicensing; runnable local mode ✅ |
-| 2 | Generic agent roster + Domain Specialist + new platform agents ✅ |
-| 3 | `/train [agent]` command ✅ |
-| 4 | Runtime adapter abstraction + canonical work-item schema ✅ |
-| 5 | Additional CLI adapters (Codex first) ✅ |
-| 6 | API provider (fuel) layer, BYOK ✅ |
-| 7 | Independent lobby platform (public/private, durable state) ✅ |
-| 8 | Concordium agent identity & verification ✅ |
-| 9 | UI Assist integration package ✅ |
-| 10 | Launch readiness (docs, examples, `v0.1.0`) ✅ released |
-| 11 | Loop / autonomous iterative execution ✅ (PR open) |
-| 12 | Agent OS Panel UI redesign (DESIGN.md alignment) — planned |
-| 13 | Agent OS Protocol website (public landing site) — planned |
+| 1-10 | Core framework, adapters, providers, lobby, identity, UI Assist, docs & launch-readiness ✅ released |
+| 11 | Loop Mode (autonomous iterative execution engine) ✅ |
+| 12 | Agent OS Panel UI Redesign (premium responsive layout & styles) ✅ |
+| 13 | Agent OS Protocol website (public landing site) ✅ |
+| 14 | Agent Roster, Skills & commands on the website, favicon fixes, OG metadata ✅ |
+| 15 | Lobby Connection Audit & Stats Realization (dynamic provider/model connection & real stats) 🟡 (in progress) |
 
 ## Documentation
 

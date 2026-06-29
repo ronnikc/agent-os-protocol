@@ -45,7 +45,8 @@ function renderAgents() {
       <td>${getIdentityBadge(a.identity_status)}</td>
       <td><span class="status-dot ${statusClass}"></span>${a.status}</td>
       <td>${getActivityIndicator(a.status)}</td>
-      <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.runtime || 'Claude CLI')}</span></td>
+      <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.runtime || '—')}</span></td>
+      <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.model || '—')}</span></td>
       <td>${isRunning
         ? `<button class="btn btn-danger btn-sm" data-action="stop" data-slug="${a.slug}">Stop</button>`
         : `<button class="btn btn-primary btn-sm" data-action="start" data-slug="${a.slug}">Start</button>`

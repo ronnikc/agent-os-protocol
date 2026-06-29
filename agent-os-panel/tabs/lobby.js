@@ -11,6 +11,7 @@ let lobbyConnected = false;
 let currentUser = null;
 let events = [];
 let lobbyMode = 'local'; // 'local' or 'swarm'
+let createLobbyFormOpen = false;
 
 /**
  * Roster identity badge (Phase 8). Renders the verification status an agent presented at join time
@@ -88,6 +89,13 @@ function renderLobby() {
   const online = onlineAgents; // alias for count
   const humanUsers = onlineHumans.length ? onlineHumans : (lobbyState.humanUsers || []);
 
+  const inviteCheckboxes = onlineAgents.map(a => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);cursor:pointer;background:var(--bg-base);padding:4px 8px;border-radius:4px;border:1px solid var(--border);">
+      <input type="checkbox" name="invite-agent" value="${escapeHtml(a.agent_id)}" />
+      ${escapeHtml(a.display_name || a.name || a.agent_id)}
+    </label>
+  `).join('') || '<span style="font-size:11px;color:var(--text-muted)">No other agents online to invite</span>';
+
   el.innerHTML = `
     <div style="padding:12px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--border);">
       <div>
@@ -98,9 +106,44 @@ function renderLobby() {
         </span>
       </div>
       <div style="display:flex;gap:6px;">
+        <button class="btn btn-primary btn-sm" data-action="toggle-create-lobby" style="padding:4px 10px;">Create Lobby</button>
         <button class="btn btn-secondary btn-sm" data-action="leave-lobby">Leave Lobby</button>
         <button class="btn btn-warning btn-sm" data-action="pause-lobby">Pause</button>
         <button class="btn btn-danger btn-sm" data-action="close-lobby">Close Lobby</button>
+      </div>
+    </div>
+    <div id="create-lobby-form-container" style="display: ${createLobbyFormOpen ? 'block' : 'none'}; background: var(--bg-surface); border-bottom: 1px solid var(--border); padding: 16px;">
+      <h4 style="margin: 0 0 12px 0; font-size: 14px; font-weight: 600;">Create Custom Lobby</h4>
+      <div style="display: flex; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 180px;">
+          <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Lobby Name</label>
+          <input type="text" id="new-lobby-name" placeholder="Custom Swarm" style="width: 100%; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+        </div>
+        <div style="width: 100px;">
+          <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Visibility</label>
+          <select id="new-lobby-visibility" style="width: 100%; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px; appearance: auto;">
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </select>
+        </div>
+        <div style="flex: 1; min-width: 180px;">
+          <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Join Policy</label>
+          <select id="new-lobby-policy" style="width: 100%; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px; appearance: auto;">
+            <option value="none">None (Anyone can join)</option>
+            <option value="registered" selected>Registered ID (Verified ID required)</option>
+            <option value="verified_human_link">Verified Human Link (Identity + Human Link)</option>
+          </select>
+        </div>
+      </div>
+      <div style="margin-bottom: 12px;">
+        <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Invite Agents (select from current online agents)</label>
+        <div style="display: flex; flex-wrap: wrap; gap: 8px; padding: 8px; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 4px; max-height: 100px; overflow-y: auto;">
+          ${inviteCheckboxes}
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button class="btn btn-secondary btn-sm" data-action="cancel-create-lobby">Cancel</button>
+        <button class="btn btn-primary btn-sm" data-action="submit-create-lobby">Create & Invite</button>
       </div>
     </div>
     <div style="padding:12px;">
@@ -213,12 +256,54 @@ function init() {
   document.getElementById('lobby-content')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    if (btn.dataset.action === 'toggle-create-lobby') {
+      createLobbyFormOpen = !createLobbyFormOpen;
+      renderLobby();
+    }
+    if (btn.dataset.action === 'cancel-create-lobby') {
+      createLobbyFormOpen = false;
+      renderLobby();
+    }
+    if (btn.dataset.action === 'submit-create-lobby') {
+      const name = document.getElementById('new-lobby-name')?.value?.trim() || 'Custom Swarm';
+      const visibility = document.getElementById('new-lobby-visibility')?.value || 'public';
+      const policy = document.getElementById('new-lobby-policy')?.value || 'none';
+      const invitees = [];
+      const checkboxes = document.querySelectorAll('input[name="invite-agent"]:checked');
+      checkboxes.forEach(cb => invitees.push(cb.value));
+
+      postJson('/api/lobby/remote/create', {
+        name,
+        visibility,
+        join_policy: policy,
+        allowlist: invitees,
+      }).then(async res => {
+        if (res && res.lobby) {
+          const newLobbyId = res.lobby.lobby_id;
+          for (const agentId of invitees) {
+            await postJson('/api/messages', {
+              to: agentId,
+              message_type: 'coordination',
+              content: `INVITE|${newLobbyId}`,
+            });
+          }
+          await postJson('/api/lobby/remote/join', { lobby_id: newLobbyId });
+          createLobbyFormOpen = false;
+          alert(`Lobby "${name}" created. Inviting ${invitees.length} agent(s) and joining...`);
+          refresh();
+        } else {
+          alert('Failed to create custom lobby: ' + (res?.error || 'Unknown error'));
+        }
+      });
+    }
     if (btn.dataset.action === 'leave-lobby') {
       lobbyState.humanUsers = (lobbyState.humanUsers || []).filter(u => u.name !== currentUser?.name);
-      await postJson('/api/lobby/state', lobbyState);
-      currentUser = null;
-      try { localStorage.removeItem('agent-os-lobby-user'); } catch {}
-      renderLobby();
+      postJson('/api/lobby/state', lobbyState).then(async () => {
+        currentUser = null;
+        try { localStorage.removeItem('agent-os-lobby-user'); } catch {}
+        await postJson('/api/lobby/remote/join', { lobby_id: null });
+        renderLobby();
+      });
     }
     if (btn.dataset.action === 'pause-lobby') { await postJson('/api/lobby/remote/status', { status: 'paused' }); refresh(); }
     if (btn.dataset.action === 'close-lobby') {

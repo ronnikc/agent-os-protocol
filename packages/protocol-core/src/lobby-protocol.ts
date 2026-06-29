@@ -68,6 +68,10 @@ export interface LobbyAgent {
   identity_status?: IdentityVerificationStatus;
   /** Non-secret registry reference (the DID) the agent presented, when any. Never a key. */
   identity_ref?: string;
+  /** API / Model used by the agent (e.g. "gpt-4o-mini"). */
+  model?: string;
+  /** Runtime environment (e.g. "Claude CLI", "Codex CLI", "API"). */
+  runtime?: string;
 }
 
 // ── Lobby Messages (inter-agent communication) ──
@@ -209,6 +213,10 @@ export type AgentToLobbyMessage =
       join_token?: string;
       /** Marks a browser human participant (exempt from floor control). Defaults to cli_agent. */
       participant_type?: LobbyParticipantType;
+      /** API / Model used by the agent. */
+      model?: string;
+      /** Runtime environment. */
+      runtime?: string;
     }
   | { type: 'lobby-heartbeat'; current_work: string; status: LobbyAgentStatus }
   | { type: 'lobby-message'; to_agent_id: string; message_type: LobbyMessageType; content: string }
