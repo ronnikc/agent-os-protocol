@@ -314,6 +314,10 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Exit:** `npm run website` serves a coherent landing page that reflects current capabilities and
   is consistent with DESIGN.md; it builds/serves locally with no external service.
 
+### Phase 14 — Website Optimization & Agent Review ✅
+- **Status (PR open):** Completed and verified. Removed Ecosystem and Launch sections. Linked to Concordium with SVG assets. Created a visual gallery with macOS browser mockup and dynamic image/caption transitions. Added detailed documentation tabs detailing Panel features, UI Assist cli overlay, and Swarm specialists. Integrated SEO schema metadata, OpenGraph components, WCAG contrast upgrades, skip links, and ARIA patterns. Hardened local server against directory crashes and sibling traversal.
+- **Exit:** all checks in `verify-ui` and `verify-all` pass; website builds/serves and functions cleanly without visual bugs or console 404 warnings.
+
 ---
 
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)
