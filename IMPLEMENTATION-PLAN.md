@@ -318,6 +318,16 @@ fork/neutralization (low risk); 4–6 are the adapter refactor; 7–10 are new p
 - **Status (PR open):** Completed and verified. Removed Ecosystem and Launch sections. Linked to Concordium with SVG assets. Created a visual gallery with macOS browser mockup and dynamic image/caption transitions. Added detailed documentation tabs detailing Panel features, UI Assist cli overlay, and Swarm specialists. Integrated SEO schema metadata, OpenGraph components, WCAG contrast upgrades, skip links, and ARIA patterns. Hardened local server against directory crashes and sibling traversal.
 - **Exit:** all checks in `verify-ui` and `verify-all` pass; website builds/serves and functions cleanly without visual bugs or console 404 warnings.
 
+### Phase 15 — Panel Connection & Agent Registry Review [PLANNING]
+- **Status:** NOT STARTED.
+- **Objective:** Review Agent OS Panel connection architecture, specifically resolving connection limitations in localhost mode without a relay server, auditing Agent ID configuration paths, and verifying Swarm Lobby join dynamics.
+- **Tasks:**
+  - Audit `packages/lobby-server/`, `packages/relay/`, `agent-os-panel/`, and `packages/identity-concordium/` using research, identity, and lobby sub-agents to trace client-lobby connection sequences.
+  - Investigate the localhost-without-relay lobby join blocker (bug audit).
+  - Define and document where developers configure Agent ID and DIDs for connected agents.
+  - Produce a structured troubleshooting guide for local connection topologies.
+- **Exit:** Structured connection audit review document added; any connection bugs patched; verify-all passes.
+
 ---
 
 ## 6. Copyright, Licensing & Attribution (Ronni's directive)
