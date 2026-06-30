@@ -20,10 +20,10 @@ export interface SessionTokenPayload {
 }
 
 /** Generate a secure random nonce for an identity ref and save it to the store. */
-export async function generateNonceChallenge(identityRef: string, store: LobbyStore): Promise<NonceChallenge> {
+export async function generateNonceChallenge(identityRef: string, lobbyId: string, store: LobbyStore): Promise<NonceChallenge> {
   const nonce = randomBytes(32).toString('hex');
   const expiresAt = Date.now() + NONCE_EXPIRY_MS;
-  await store.saveNonce(identityRef, nonce, expiresAt);
+  await store.saveNonce(identityRef, lobbyId, nonce, expiresAt);
   return { identityRef, nonce, expiresAt };
 }
 
@@ -57,6 +57,9 @@ export async function verifyProofAndIssueToken(
 
   // Expired nonce validation
   if (Date.now() > challenge.expiresAt) return null;
+
+  // Lobby binding validation
+  if (challenge.lobbyId !== lobbyId) return null;
 
   // Signature verification
   const isValid = verifySignature(challenge.nonce, signature, publicKeyPem);

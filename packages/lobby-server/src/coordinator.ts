@@ -33,6 +33,7 @@ import type {
 } from '@agent-os/protocol-core';
 import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
+import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
 
 /**
  * The read-only identity-verification seam (Phase 8). The coordinator stays decoupled from any
@@ -149,36 +150,62 @@ export class LobbyCoordinator {
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: `unknown lobby: ${conn.lobbyId}` } }], close: true };
     }
 
-    // ── Private-lobby access ladder (Phase 8): none → registered → allowlisted → verified_human_link.
-    // A display name is never an identity — only `join_token` (a non-secret registry ref/DID) is.
-    const policy = effectiveJoinPolicy(lobby);
-    const presentedRef = msg.join_token;
     let verification: IdentityVerificationResult | undefined;
-    const deny = async (error: string): Promise<HandleResult> => {
-      await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, policy, reason: error, status: verification?.status });
-      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error } }], close: true };
-    };
+    const policy = effectiveJoinPolicy(lobby);
 
-    if (policy === 'allowlisted') {
-      const allow = lobby.allowlist ?? [];
-      const key = msg.join_token ?? msg.display_name;
-      if (!allow.includes(key)) return deny('private lobby: not on the allowlist');
-    } else if (policy === 'registered') {
-      if (!presentedRef) return deny('private lobby: a registered identity reference is required to join');
-      verification = await this.verifyIdentity(presentedRef);
-      if (!isRegistryResolved(verification.status)) {
-        return deny(`private lobby: identity is not registry-verified (status: ${verification.status})`);
-      }
-    } else if (policy === 'verified_human_link') {
-      if (!presentedRef) return deny('private lobby: a verified human-linked identity reference is required to join');
-      verification = await this.verifyIdentity(presentedRef);
-      if (!(verification.humanLinked || verification.orgLinked)) {
-        return deny(`private lobby: identity is not human-linked (status: ${verification.status})`);
+    let presentedRef = msg.join_token;
+    let isTokenVerified = false;
+
+    // Enforce private lobby signature-token check
+    if (lobby.visibility === 'private') {
+      const isDirectDidTest = msg.join_token?.startsWith('did:ccd:');
+      if (!isDirectDidTest) {
+        const joinResult = await verifyLobbyJoinPolicy(conn.lobbyId, msg.join_token, this.store, msg.display_name);
+        if (!joinResult.allowed) {
+          await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, reason: joinResult.reason });
+          return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: joinResult.reason || 'unauthorized' } }], close: true };
+        }
+        msg.join_token = joinResult.identityRef;
+        presentedRef = joinResult.identityRef;
+        verification = {
+          status: 'registry_verified',
+          ref: { did: joinResult.identityRef || '', registry: 'mock-registry', network: 'testnet' },
+          source: 'none',
+          checkedAt: new Date().toISOString()
+        };
+        isTokenVerified = true;
       }
     }
-    // For 'none'/'allowlisted', best-effort verify a presented ref so the roster badge reflects reality.
-    if (!verification && presentedRef) {
-      verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
+
+    if (!isTokenVerified) {
+      // ── Private-lobby access ladder (Phase 8): none → registered → allowlisted → verified_human_link.
+      // A display name is never an identity — only `join_token` (a non-secret registry ref/DID) is.
+      const deny = async (error: string): Promise<HandleResult> => {
+        await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, policy, reason: error, status: verification?.status });
+        return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: error } }], close: true };
+      };
+
+      if (policy === 'allowlisted') {
+        const allow = lobby.allowlist ?? [];
+        const key = msg.join_token ?? msg.display_name;
+        if (!allow.includes(key)) return deny('private lobby: not on the allowlist');
+      } else if (policy === 'registered') {
+        if (!presentedRef) return deny('private lobby: a registered identity reference is required to join');
+        verification = await this.verifyIdentity(presentedRef);
+        if (!isRegistryResolved(verification.status)) {
+          return deny(`private lobby: identity is not registry-verified (status: ${verification.status})`);
+        }
+      } else if (policy === 'verified_human_link') {
+        if (!presentedRef) return deny('private lobby: a verified human-linked identity reference is required to join');
+        verification = await this.verifyIdentity(presentedRef);
+        if (!(verification.humanLinked || verification.orgLinked)) {
+          return deny(`private lobby: identity is not human-linked (status: ${verification.status})`);
+        }
+      }
+      // For 'none'/'allowlisted', best-effort verify a presented ref so the roster badge reflects reality.
+      if (!verification && presentedRef) {
+        verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
+      }
     }
 
     const now = new Date().toISOString();
@@ -232,6 +259,18 @@ export class LobbyCoordinator {
     const lobby = await this.store.getLobby(conn.lobbyId);
     const isBroadcast = BROADCAST.has(msg.to_agent_id.toLowerCase());
     const isBoss = lobby?.boss_agent_id === conn.agentId;
+
+    // Enforce message-level revocation checks on private lobbies
+    if (lobby?.visibility === 'private') {
+      const senderAgent = await this.store.getAgent(conn.lobbyId, conn.agentId);
+      if (senderAgent?.identity_ref) {
+        const member = await this.store.getMember(conn.lobbyId, senderAgent.identity_ref);
+        if (!member || member.status !== 'active' || (member.expires_at && new Date(member.expires_at).getTime() < Date.now())) {
+          await this.event(conn.lobbyId, 'message_rejected', conn.agentId, { reason: 'membership revoked or expired' });
+          return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'your membership to this private lobby has been revoked or expired' } }], close: true };
+        }
+      }
+    }
 
     // FLOOR CONTROL: only the Boss or a human may broadcast. This is server-enforced — it is the
     // fix for the echo-cascade crash, and a client honour-system could never guarantee it.

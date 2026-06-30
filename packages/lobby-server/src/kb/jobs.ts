@@ -9,6 +9,7 @@ import type { LobbyStore } from '../store.js';
 import type { KnowledgeSyncJob } from '../models.js';
 import { convertFileToMarkdown } from '../../../knowledge-engine/src/converter.js';
 import { graphifyMarkdown } from '../../../knowledge-engine/src/graphify.js';
+import { chunkMarkdown } from '../../../knowledge-engine/src/chunker.js';
 import { commitAndPushRepo } from './repoWriter.js';
 
 const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024; // 50MB limit
@@ -70,6 +71,13 @@ export async function processKnowledgeSyncJob(
 
     // 4. Index nodes and build knowledge graph visual structures
     const graphData = graphifyMarkdown(markdownContent, fileName);
+    const chunksData = chunkMarkdown(markdownContent);
+    const provenanceData = {
+      job_id: job.id,
+      actor_ref: job.created_by_identity_ref,
+      lobby_id: job.lobby_id,
+      timestamp: new Date().toISOString()
+    };
 
     await store.upsertKnowledgeSyncJob({
       ...job,
@@ -89,7 +97,9 @@ export async function processKnowledgeSyncJob(
       kb.branch,
       fileName,
       markdownContent,
-      graphData
+      graphData,
+      chunksData,
+      provenanceData
     );
 
     // 6. Update cache properties

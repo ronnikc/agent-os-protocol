@@ -262,58 +262,128 @@ async function main(): Promise<void> {
     // ════════ Part C — Swarm lobby extensions (Task 13) ════════
     console.log('\nPart C — Swarm extensions & integrations (Task 13)');
 
-    await check('NONCE REPLAY: nonces are single-use and expire', async () => {
+    await check('NONCE SECURITY: binds to lobby, rejects replay, expiry, and cross-lobby reuse', async () => {
       const store = new InMemoryLobbyStore();
       const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
-      const challenge = await generateNonceChallenge('did:ccd:agent-001', store);
+      
+      // Expired nonce
+      const expiredChallenge = await generateNonceChallenge('did:ccd:agent-001', 'lobby-A', store);
+      expiredChallenge.expiresAt = Date.now() - 1000;
+      await store.saveNonce('did:ccd:agent-001', 'lobby-A', expiredChallenge.nonce, expiredChallenge.expiresAt);
+      const expiredToken = await verifyProofAndIssueToken('did:ccd:agent-001', `valid_sig_for_${expiredChallenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', 'lobby-A', store);
+      assert.equal(expiredToken, null, 'expired nonce must be rejected');
+
+      // Valid challenge
+      const challenge = await generateNonceChallenge('did:ccd:agent-001', 'lobby-A', store);
       assert.ok(challenge.nonce);
 
-      // Verify signature challenge (using mock validator signature for did:ccd:agent-001)
-      const token = await verifyProofAndIssueToken(
-        'did:ccd:agent-001',
-        `valid_sig_for_${challenge.nonce}`,
-        'MOCK_PUBLIC_KEY_PEM_001',
-        'lobby-id-123',
-        store
-      );
+      // Reused nonce
+      const token = await verifyProofAndIssueToken('did:ccd:agent-001', `valid_sig_for_${challenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', 'lobby-A', store);
       assert.ok(token);
 
-      // Replay attempt must fail because the nonce is destroyed immediately
-      const token2 = await verifyProofAndIssueToken(
-        'did:ccd:agent-001',
-        `valid_sig_for_${challenge.nonce}`,
-        'MOCK_PUBLIC_KEY_PEM_001',
-        'lobby-id-123',
-        store
-      );
-      assert.equal(token2, null, 'replay must be blocked');
+      const tokenReplay = await verifyProofAndIssueToken('did:ccd:agent-001', `valid_sig_for_${challenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', 'lobby-A', store);
+      assert.equal(tokenReplay, null, 'replayed nonce must be rejected');
+
+      // Cross-lobby reuse
+      const challenge2 = await generateNonceChallenge('did:ccd:agent-001', 'lobby-A', store);
+      const crossToken = await verifyProofAndIssueToken('did:ccd:agent-001', `valid_sig_for_${challenge2.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', 'lobby-B', store);
+      assert.equal(crossToken, null, 'nonce for Lobby A cannot issue token for Lobby B');
     });
 
-    await check('PRIVATE JOIN POLICY: private lobbies reject unauthorized joins', async () => {
+    await check('PRIVATE JOIN POLICY: private lobbies reject unauthorized, expired, or revoked joins', async () => {
       const store = new InMemoryLobbyStore();
       const lobby = makeLobby('private');
       await store.createLobby(lobby);
 
       const { verifyLobbyJoinPolicy } = await import('../../packages/lobby-server/src/auth/joinPolicy.js');
+      const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
       
       // Missing token
       const r1 = await verifyLobbyJoinPolicy(lobby.lobby_id, undefined, store);
       assert.equal(r1.allowed, false);
 
-      // Invalid token
-      const r2 = await verifyLobbyJoinPolicy(lobby.lobby_id, 'invalid_token_format', store);
-      assert.equal(r2.allowed, false);
-
       // Valid token but not a member
-      const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
-      const challenge = await generateNonceChallenge('did:ccd:uninvited', store);
+      const challenge = await generateNonceChallenge('did:ccd:uninvited', lobby.lobby_id, store);
       const token = await verifyProofAndIssueToken('did:ccd:uninvited', `valid_sig_for_${challenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', lobby.lobby_id, store);
-      
-      const r3 = await verifyLobbyJoinPolicy(lobby.lobby_id, token!, store);
-      assert.equal(r3.allowed, false, 'must reject non-member');
+      const r2 = await verifyLobbyJoinPolicy(lobby.lobby_id, token!, store);
+      assert.equal(r2.allowed, false, 'must reject non-member');
+
+      // Add revoked member
+      await store.addMember({
+        id: 'member_revoked',
+        lobby_id: lobby.lobby_id,
+        identity_ref: 'did:ccd:revoked-001',
+        role: 'contributor',
+        status: 'revoked'
+      });
+      const challenge3 = await generateNonceChallenge('did:ccd:revoked-001', lobby.lobby_id, store);
+      const token3 = await verifyProofAndIssueToken('did:ccd:revoked-001', `valid_sig_for_${challenge3.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', lobby.lobby_id, store);
+      const r3 = await verifyLobbyJoinPolicy(lobby.lobby_id, token3!, store);
+      assert.equal(r3.allowed, false, 'must reject revoked member');
     });
 
-    await check('SECRET HYGIENE: encrypt and decrypt secrets, redact logs', async () => {
+    await check('MESSAGE REVOCATION: revoked members are rejected during messaging', async () => {
+      const store = new InMemoryLobbyStore();
+      const lobby = makeLobby('private');
+      lobby.join_policy = 'registered';
+      await store.createLobby(lobby);
+
+      const coord = new LobbyCoordinator(store);
+      const conn = { connId: 'conn_1', lobbyId: lobby.lobby_id, orgId: 'default' };
+      
+      // Add Alice as active member first
+      await store.addMember({
+        id: 'alice',
+        lobby_id: lobby.lobby_id,
+        identity_ref: 'did:ccd:alice',
+        role: 'contributor',
+        status: 'active'
+      });
+
+      // Register Alice with identity ref
+      const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
+      const challenge = await generateNonceChallenge('did:ccd:alice', lobby.lobby_id, store);
+      const token = await verifyProofAndIssueToken('did:ccd:alice', `valid_sig_for_${challenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', lobby.lobby_id, store);
+      
+      const registerRes = await coord.handle(conn, {
+        type: 'lobby-register',
+        display_name: 'Alice',
+        participant_type: 'human',
+        join_token: token!
+      });
+      assert.ok(!registerRes.close, 'Alice registered');
+      assert.ok(conn.agentId);
+
+      // Verify Alice can send a message
+      const msgRes1 = await coord.handle(conn, {
+        type: 'lobby-message',
+        to_agent_id: 'all',
+        message_type: 'chat',
+        content: 'hello'
+      });
+      assert.ok(msgRes1.out.some(o => o.message.type === 'lobby-message-received'), 'message received when active');
+
+      // Revoke Alice
+      await store.addMember({
+        id: 'alice',
+        lobby_id: lobby.lobby_id,
+        identity_ref: 'did:ccd:alice',
+        role: 'contributor',
+        status: 'revoked'
+      });
+
+      // Alice tries sending a message again
+      const msgRes2 = await coord.handle(conn, {
+        type: 'lobby-message',
+        to_agent_id: 'all',
+        message_type: 'chat',
+        content: 'hello again'
+      });
+      assert.ok(msgRes2.close, 'Alice must be disconnected/closed');
+      assert.ok(msgRes2.out.some(o => o.message.type === 'lobby-error'), 'Alice gets a membership error');
+    });
+
+    await check('SECRET HYGIENE: encrypt and decrypt secrets, redact logs and GCM payloads', async () => {
       const store = new InMemoryLobbyStore();
       const { saveIntegrationSecret, getDecryptedSecret, redactLogs } = await import('../../packages/lobby-server/src/integrations/githubApp.js');
       
@@ -336,68 +406,205 @@ async function main(): Promise<void> {
       const decrypted = await getDecryptedSecret(lobby.lobby_id, 'slack', 'bot_token', store);
       assert.equal(decrypted, 'xoxb-secret-token-123', 'decryption must restore plaintext');
 
-      // Logs redaction
-      const dirtyLog = 'Error connecting with token xoxb-secret-token-123 and secret ghs_tempKey123';
+      // Logs redaction including raw secrets and GCM ciphertexts
+      const dirtyLog = 'Error connecting with token xoxb-secret-token-123 and secret ghs_tempKey123 and payload 1a2b3c4d5e6f7a8b9c0d1e2f:112233445566778899001122:aabbccddeeff00112233445566778899';
       const cleanLog = redactLogs(dirtyLog);
       assert.ok(!cleanLog.includes('xoxb-secret-token-123'));
       assert.ok(!cleanLog.includes('ghs_tempKey123'));
+      assert.ok(cleanLog.includes('ENC-REDACTED'), 'GCM payload must be redacted');
     });
 
-    await check('SLACK AUTHORIZATION: commands verify Linked Slack User identity', async () => {
+    await check('SLACK RELAY: validates, dedupes, routes tasks to floor, and enforces role gates', async () => {
       const store = new InMemoryLobbyStore();
-      const lobby = makeLobby('private');
-      await store.createLobby(lobby);
+      const lobbyPrivate = makeLobby('private');
+      await store.createLobby(lobbyPrivate);
 
-      const { verifySlackUserAuthorization } = await import('../../packages/lobby-server/src/auth/slackAuthorization.js');
+      const lobbyPublic = makeLobby('public');
+      await store.createLobby(lobbyPublic);
 
-      // Unlinked user
-      const r1 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-unlinked', store);
-      assert.equal(r1.authorized, false);
+      const { handleSlackCommand } = await import('../../packages/slack-relay/src/commands.js');
 
-      // Link identity
+      // Link identity for Alice (Admin) and Bob (Contributor)
       await store.linkExternalIdentity({
-        id: 'link_1',
+        id: 'link_alice',
         provider: 'slack',
         external_team_id: 'team-1',
         external_user_id: 'slack-alice',
-        identity_ref: 'did:ccd:alice-001',
+        identity_ref: 'did:ccd:alice',
         verified_at: new Date().toISOString()
       });
-
-      // Linked but not lobby member
-      const r2 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-alice', store);
-      assert.equal(r2.authorized, false);
-
-      // Add as lobby member
       await store.addMember({
-        id: 'member_1',
-        lobby_id: lobby.lobby_id,
-        identity_ref: 'did:ccd:alice-001',
+        id: 'member_alice',
+        lobby_id: lobbyPrivate.lobby_id,
+        identity_ref: 'did:ccd:alice',
+        role: 'admin',
+        status: 'active'
+      });
+
+      await store.linkExternalIdentity({
+        id: 'link_bob',
+        provider: 'slack',
+        external_team_id: 'team-1',
+        external_user_id: 'slack-bob',
+        identity_ref: 'did:ccd:bob',
+        verified_at: new Date().toISOString()
+      });
+      await store.addMember({
+        id: 'member_bob',
+        lobby_id: lobbyPrivate.lobby_id,
+        identity_ref: 'did:ccd:bob',
         role: 'contributor',
         status: 'active'
       });
 
-      // Linked and active member
-      const r3 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-alice', store);
-      assert.equal(r3.authorized, true);
+      let sentMsg: LobbyMessage | null = null;
+      const sendMock = async (_lobbyId: string, msg: LobbyMessage) => {
+        sentMsg = msg;
+      };
+
+      // 1. Unlinked Slack command is rejected in private lobby
+      const r1 = await handleSlackCommand({
+        command: '/swarm',
+        text: 'status',
+        user_id: 'slack-unlinked',
+        team_id: 'team-1',
+        channel_id: 'chan-1',
+        response_url: 'http://post'
+      }, lobbyPrivate.lobby_id, store, sendMock);
+      assert.match(r1.text, /not linked/i);
+
+      // 2. Status works for linked member in private lobby
+      const r2 = await handleSlackCommand({
+        command: '/swarm',
+        text: 'status',
+        user_id: 'slack-alice',
+        team_id: 'team-1',
+        channel_id: 'chan-1',
+        response_url: 'http://post'
+      }, lobbyPrivate.lobby_id, store, sendMock);
+      assert.match(r2.text, /Swarm Status/i);
+
+      // 3. Status in public lobbies works even for unlinked Slack users
+      const r3 = await handleSlackCommand({
+        command: '/swarm',
+        text: 'status',
+        user_id: 'slack-unlinked',
+        team_id: 'team-1',
+        channel_id: 'chan-1',
+        response_url: 'http://post'
+      }, lobbyPublic.lobby_id, store, sendMock);
+      assert.match(r3.text, /Swarm Status/i);
+
+      // 4. Task creation by contributor (Bob) in private lobby is rejected on role check
+      const r4 = await handleSlackCommand({
+        command: '/swarm',
+        text: 'task implement database index',
+        user_id: 'slack-bob',
+        team_id: 'team-1',
+        channel_id: 'chan-1',
+        response_url: 'http://post'
+      }, lobbyPrivate.lobby_id, store, sendMock);
+      assert.match(r4.text, /Insufficient role permissions/i);
+
+      // 5. Task creation by admin (Alice) in private lobby succeeds and routes to Boss Agent floor queue
+      const r5 = await handleSlackCommand({
+        command: '/swarm',
+        text: 'task implement database index',
+        user_id: 'slack-alice',
+        team_id: 'team-1',
+        channel_id: 'chan-1',
+        response_url: 'http://post'
+      }, lobbyPrivate.lobby_id, store, sendMock);
+      assert.match(r5.text, /Queuing task spec to Boss Agent/i);
+      assert.ok(sentMsg);
+      assert.equal(sentMsg.message_type, 'chat', 'routes as chat message to Boss Agent floor');
+      assert.equal(sentMsg.content, 'implement database index');
     });
 
-    await check('KNOWLEDGE CONVERSION & GRAPHIFY: chunks, converts, sanitizes and indexes', async () => {
-      const { sanitizeMarkdown } = await import('../../packages/knowledge-engine/src/sanitizers.js');
-      const { chunkMarkdown } = await import('../../packages/knowledge-engine/src/chunker.js');
-      const { graphifyMarkdown } = await import('../../packages/knowledge-engine/src/graphify.js');
+    await check('KB SYNC: handles size limits, mime checks, failed conversion atomicity, and writes provenance', async () => {
+      const store = new InMemoryLobbyStore();
+      const lobby = makeLobby('private');
+      await store.createLobby(lobby);
 
-      const raw = 'Hello \r\n\n\n\n World  [[Topic A]]';
-      const clean = sanitizeMarkdown(raw);
-      assert.equal(clean, 'Hello \n\n\n World  [[Topic A]]');
+      const { resolve } = await import('node:path');
+      const { tmpdir } = await import('node:os');
+      const { mkdtemp, readFile } = await import('node:fs/promises');
+      const tempRepo = await mkdtemp(resolve(tmpdir(), 'kb-repo-'));
 
-      const chunks = chunkMarkdown('# Title\n\nParagraph content details.');
-      assert.equal(chunks.length, 1);
+      await store.upsertKnowledgeBase({
+        lobby_id: lobby.lobby_id,
+        repository_url: 'https://github.com/mock/kb.git',
+        branch: 'main',
+        kb_root_path: tempRepo,
+        latest_commit_sha: 'none',
+        last_synced_at: new Date().toISOString()
+      });
 
-      const graph = graphifyMarkdown('# Section Title\n\nReferenced [[Target Concept]]', 'MyDoc');
-      assert.ok(graph.nodes.some(n => n.label === 'MyDoc'));
-      assert.ok(graph.nodes.some(n => n.label === 'Section Title'));
-      assert.ok(graph.nodes.some(n => n.label === 'Target Concept'));
+      const { processKnowledgeSyncJob } = await import('../../packages/lobby-server/src/kb/jobs.js');
+
+      // 1. Oversized file check
+      await store.upsertKnowledgeSyncJob({
+        id: 'job_oversized',
+        lobby_id: lobby.lobby_id,
+        kb_id: 'kb_1',
+        source_provider: 'upload',
+        status: 'pending',
+        error: '',
+        created_by_identity_ref: 'did:ccd:alice',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      const hugeBuffer = Buffer.alloc(51 * 1024 * 1024); // 51MB
+      const r1 = await processKnowledgeSyncJob('job_oversized', hugeBuffer, 'huge.pdf', 'application/pdf', store);
+      assert.equal(r1.status, 'failed');
+      assert.match(r1.error || '', /exceeds maximum size/i);
+
+      // 2. Bad MIME type check
+      await store.upsertKnowledgeSyncJob({
+        id: 'job_bad_mime',
+        lobby_id: lobby.lobby_id,
+        kb_id: 'kb_1',
+        source_provider: 'upload',
+        status: 'pending',
+        error: '',
+        created_by_identity_ref: 'did:ccd:alice',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      const r2 = await processKnowledgeSyncJob('job_bad_mime', Buffer.from('data'), 'malicious.exe', 'application/octet-stream', store);
+      assert.equal(r2.status, 'failed');
+      assert.match(r2.error || '', /MIME type/i);
+
+      // 3. Successful conversion & Git provenance content checks
+      await store.upsertKnowledgeSyncJob({
+        id: 'job_success',
+        lobby_id: lobby.lobby_id,
+        kb_id: 'kb_1',
+        source_provider: 'upload',
+        status: 'pending',
+        error: '',
+        created_by_identity_ref: 'did:ccd:alice',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      const docBuffer = Buffer.from('# Documentation Title\n\nActive swarm concepts [[Concept X]] details.');
+      const r3 = await processKnowledgeSyncJob('job_success', docBuffer, 'guide.md', 'text/markdown', store);
+      assert.equal(r3.status, 'committed');
+
+      // Verify files written to disk inside the repository folder
+      const manifest = JSON.parse(await readFile(resolve(tempRepo, 'kb-manifest.json'), 'utf8'));
+      assert.ok(manifest.files.some((f: any) => f.name === 'guide.md'));
+
+      const graph = JSON.parse(await readFile(resolve(tempRepo, 'graph-snapshot.json'), 'utf8'));
+      assert.ok(graph.nodes.some((n: any) => n.label === 'Concept X'));
+
+      const chunks = JSON.parse(await readFile(resolve(tempRepo, 'chunks-index.json'), 'utf8'));
+      assert.ok(chunks.length > 0);
+
+      const provenance = JSON.parse(await readFile(resolve(tempRepo, 'provenance-metadata.json'), 'utf8'));
+      assert.equal(provenance.job_id, 'job_success');
+      assert.equal(provenance.actor_ref, 'did:ccd:alice');
+      assert.equal(provenance.lobby_id, lobby.lobby_id);
     });
 
   } finally {

@@ -23,7 +23,14 @@ export async function commitAndPushRepo(
   _branch: string,
   fileName: string,
   markdownContent: string,
-  graphData: unknown
+  graphData: unknown,
+  chunksData: unknown,
+  provenanceData: {
+    job_id: string;
+    actor_ref: string;
+    lobby_id: string;
+    timestamp: string;
+  }
 ): Promise<string> {
   try {
     // 1. Ensure folders exist
@@ -36,6 +43,14 @@ export async function commitAndPushRepo(
     // Write graph snapshot file
     const graphPath = join(repoPath, 'graph-snapshot.json');
     await writeFile(graphPath, JSON.stringify(graphData, null, 2), 'utf8');
+
+    // Write chunks index file
+    const chunksPath = join(repoPath, 'chunks-index.json');
+    await writeFile(chunksPath, JSON.stringify(chunksData, null, 2), 'utf8');
+
+    // Write provenance metadata file
+    const provenancePath = join(repoPath, 'provenance-metadata.json');
+    await writeFile(provenancePath, JSON.stringify(provenanceData, null, 2), 'utf8');
 
     // Update manifest record
     const manifest: KbManifest = {
