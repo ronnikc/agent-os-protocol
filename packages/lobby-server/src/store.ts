@@ -5,10 +5,11 @@
  * LobbyStore — the durable-state seam for the lobby. The in-memory implementation backs Local
  * Mode and the portable Node WS server; a Redis/Postgres implementation backs the remote swarm
  * (apps/lobby-web) without changing the coordinator. All methods are async so a network-backed
- * store drops in unchanged. See IMPLEMENTATION-PLAN.md §9 (durable store).
+ * store drops in unchanged.
  */
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
+import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob } from './models.js';
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
@@ -33,6 +34,36 @@ export interface LobbyStore {
 
   appendEvent(event: LobbyEvent): Promise<void>;
   listEvents(lobbyId: string): Promise<LobbyEvent[]>;
+
+  // --- New DB Model operations ---
+  addMember(member: LobbyMember): Promise<LobbyMember>;
+  getMember(lobbyId: string, identityRef: string): Promise<LobbyMember | undefined>;
+  listMembers(lobbyId: string): Promise<LobbyMember[]>;
+  updateMember(lobbyId: string, memberId: string, patch: Partial<LobbyMember>): Promise<LobbyMember | undefined>;
+
+  addIntegration(integration: LobbyIntegration): Promise<LobbyIntegration>;
+  getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined>;
+  listIntegrations(lobbyId: string): Promise<LobbyIntegration[]>;
+  updateIntegration(lobbyId: string, integrationId: string, patch: Partial<LobbyIntegration>): Promise<LobbyIntegration | undefined>;
+
+  addSecret(secret: IntegrationSecret): Promise<IntegrationSecret>;
+  getSecret(integrationId: string, secretType: string): Promise<IntegrationSecret | undefined>;
+  updateSecret(secretId: string, patch: Partial<IntegrationSecret>): Promise<IntegrationSecret | undefined>;
+
+  linkExternalIdentity(link: ExternalIdentityLink): Promise<ExternalIdentityLink>;
+  getExternalIdentityLink(provider: string, externalUserId: string): Promise<ExternalIdentityLink | undefined>;
+
+  upsertKnowledgeBase(kb: KnowledgeBase): Promise<KnowledgeBase>;
+  getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined>;
+
+  upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob>;
+  getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined>;
+  listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]>;
+
+  // Nonces storage for proof-of-possession verification
+  saveNonce(identityRef: string, nonce: string, expiresAt: number): Promise<void>;
+  getNonce(identityRef: string): Promise<{ nonce: string; expiresAt: number } | undefined>;
+  deleteNonce(identityRef: string): Promise<void>;
 }
 
 interface LobbyBucket {
@@ -47,6 +78,15 @@ interface LobbyBucket {
 /** Process-local store — the default for Local Mode and the standalone Node WS server. */
 export class InMemoryLobbyStore implements LobbyStore {
   private lobbies = new Map<string, LobbyBucket>();
+
+  // New relation storage maps
+  private members = new Map<string, LobbyMember>(); // memberId -> LobbyMember
+  private integrations = new Map<string, LobbyIntegration>(); // integrationId -> LobbyIntegration
+  private secrets = new Map<string, IntegrationSecret>(); // secretId -> IntegrationSecret
+  private externalLinks = new Map<string, ExternalIdentityLink>(); // linkId -> ExternalIdentityLink
+  private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
+  private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
+  private nonces = new Map<string, { nonce: string; expiresAt: number }>(); // identityRef -> nonce details
 
   private bucket(lobbyId: string): LobbyBucket | undefined {
     return this.lobbies.get(lobbyId);
@@ -100,7 +140,6 @@ export class InMemoryLobbyStore implements LobbyStore {
   }
 
   async roster(lobbyId: string): Promise<LobbyAgent[]> {
-    // Connection order (registered_at) determines speaking priority — keep it stable.
     return [...(this.bucket(lobbyId)?.agents.values() ?? [])].sort((a, b) =>
       a.registered_at.localeCompare(b.registered_at),
     );
@@ -136,5 +175,108 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async listEvents(lobbyId: string): Promise<LobbyEvent[]> {
     return this.bucket(lobbyId)?.events ?? [];
+  }
+
+  // --- New DB Model implementations ---
+  async addMember(member: LobbyMember): Promise<LobbyMember> {
+    this.members.set(member.id, member);
+    return member;
+  }
+
+  async getMember(lobbyId: string, identityRef: string): Promise<LobbyMember | undefined> {
+    return [...this.members.values()].find((m) => m.lobby_id === lobbyId && m.identity_ref === identityRef);
+  }
+
+  async listMembers(lobbyId: string): Promise<LobbyMember[]> {
+    return [...this.members.values()].filter((m) => m.lobby_id === lobbyId);
+  }
+
+  async updateMember(lobbyId: string, memberId: string, patch: Partial<LobbyMember>): Promise<LobbyMember | undefined> {
+    const m = this.members.get(memberId);
+    if (!m || m.lobby_id !== lobbyId) return undefined;
+    const updated = { ...m, ...patch };
+    this.members.set(memberId, updated);
+    return updated;
+  }
+
+  async addIntegration(integration: LobbyIntegration): Promise<LobbyIntegration> {
+    this.integrations.set(integration.id, integration);
+    return integration;
+  }
+
+  async getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined> {
+    return [...this.integrations.values()].find((i) => i.lobby_id === lobbyId && i.provider === provider && i.status === 'active');
+  }
+
+  async listIntegrations(lobbyId: string): Promise<LobbyIntegration[]> {
+    return [...this.integrations.values()].filter((i) => i.lobby_id === lobbyId);
+  }
+
+  async updateIntegration(lobbyId: string, integrationId: string, patch: Partial<LobbyIntegration>): Promise<LobbyIntegration | undefined> {
+    const i = this.integrations.get(integrationId);
+    if (!i || i.lobby_id !== lobbyId) return undefined;
+    const updated = { ...i, ...patch, updated_at: new Date().toISOString() };
+    this.integrations.set(integrationId, updated);
+    return updated;
+  }
+
+  async addSecret(secret: IntegrationSecret): Promise<IntegrationSecret> {
+    this.secrets.set(secret.id, secret);
+    return secret;
+  }
+
+  async getSecret(integrationId: string, secretType: string): Promise<IntegrationSecret | undefined> {
+    return [...this.secrets.values()].find((s) => s.integration_id === integrationId && s.secret_type === secretType && !s.revoked_at);
+  }
+
+  async updateSecret(secretId: string, patch: Partial<IntegrationSecret>): Promise<IntegrationSecret | undefined> {
+    const s = this.secrets.get(secretId);
+    if (!s) return undefined;
+    const updated = { ...s, ...patch };
+    this.secrets.set(secretId, updated);
+    return updated;
+  }
+
+  async linkExternalIdentity(link: ExternalIdentityLink): Promise<ExternalIdentityLink> {
+    this.externalLinks.set(link.id, link);
+    return link;
+  }
+
+  async getExternalIdentityLink(provider: string, externalUserId: string): Promise<ExternalIdentityLink | undefined> {
+    return [...this.externalLinks.values()].find((l) => l.provider === provider && l.external_user_id === externalUserId && !l.revoked_at);
+  }
+
+  async upsertKnowledgeBase(kb: KnowledgeBase): Promise<KnowledgeBase> {
+    this.knowledgeBases.set(kb.lobby_id, kb);
+    return kb;
+  }
+
+  async getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined> {
+    return this.knowledgeBases.get(lobbyId);
+  }
+
+  async upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob> {
+    this.syncJobs.set(job.id, job);
+    return job;
+  }
+
+  async getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined> {
+    return this.syncJobs.get(jobId);
+  }
+
+  async listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]> {
+    return [...this.syncJobs.values()].filter((j) => j.lobby_id === lobbyId);
+  }
+
+  async saveNonce(identityRef: string, nonce: string, expiresAt: number): Promise<void> {
+    this.nonces.set(identityRef, { nonce, expiresAt });
+  }
+
+  async getNonce(identityRef: string): Promise<{ nonce: string; expiresAt: number } | undefined> {
+    return this.nonces.get(identityRef);
+  }
+
+  async deleteNonce(identityRef: string): Promise<void> {
+    this.nonces.delete(identityRef);
   }
 }

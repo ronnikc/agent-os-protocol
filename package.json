@@ -68,6 +68,9 @@
     "packages/identity-concordium",
     "packages/ui-assist-core",
     "packages/loop",
-    "packages/relay"
+    "packages/relay",
+    "packages/knowledge-engine",
+    "packages/slack-relay",
+    "packages/registry-identity"
   ]
 }

@@ -7,6 +7,8 @@
   "include": ["src/**/*"],
   "references": [
     { "path": "../protocol-core" },
-    { "path": "../identity-concordium" }
+    { "path": "../identity-concordium" },
+    { "path": "../knowledge-engine" },
+    { "path": "../registry-identity" }
   ]
 }

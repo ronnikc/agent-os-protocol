@@ -137,7 +137,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             connected_users++;
           } else {
             connected_agents++;
-            if (agent.identity_status === 'verified') {
+            if (agent.identity_status === 'registry_verified' || agent.identity_status === 'human_linked' || agent.identity_status === 'org_linked') {
               verified_agents++;
             }
           }

@@ -258,6 +258,148 @@ async function main(): Promise<void> {
       const events = (await (await fetch(new URL(`/api/v1/agent-lobby/lobbies/${lobby.lobby.lobby_id}/events`, lobbyUrl))).json()) as { events: unknown[] };
       assert.ok(Array.isArray(events.events) && events.events.length > 0);
     });
+
+    // ════════ Part C — Swarm lobby extensions (Task 13) ════════
+    console.log('\nPart C — Swarm extensions & integrations (Task 13)');
+
+    await check('NONCE REPLAY: nonces are single-use and expire', async () => {
+      const store = new InMemoryLobbyStore();
+      const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
+      const challenge = await generateNonceChallenge('did:ccd:agent-001', store);
+      assert.ok(challenge.nonce);
+
+      // Verify signature challenge (using mock validator signature for did:ccd:agent-001)
+      const token = await verifyProofAndIssueToken(
+        'did:ccd:agent-001',
+        `valid_sig_for_${challenge.nonce}`,
+        'MOCK_PUBLIC_KEY_PEM_001',
+        'lobby-id-123',
+        store
+      );
+      assert.ok(token);
+
+      // Replay attempt must fail because the nonce is destroyed immediately
+      const token2 = await verifyProofAndIssueToken(
+        'did:ccd:agent-001',
+        `valid_sig_for_${challenge.nonce}`,
+        'MOCK_PUBLIC_KEY_PEM_001',
+        'lobby-id-123',
+        store
+      );
+      assert.equal(token2, null, 'replay must be blocked');
+    });
+
+    await check('PRIVATE JOIN POLICY: private lobbies reject unauthorized joins', async () => {
+      const store = new InMemoryLobbyStore();
+      const lobby = makeLobby('private');
+      await store.createLobby(lobby);
+
+      const { verifyLobbyJoinPolicy } = await import('../../packages/lobby-server/src/auth/joinPolicy.js');
+      
+      // Missing token
+      const r1 = await verifyLobbyJoinPolicy(lobby.lobby_id, undefined, store);
+      assert.equal(r1.allowed, false);
+
+      // Invalid token
+      const r2 = await verifyLobbyJoinPolicy(lobby.lobby_id, 'invalid_token_format', store);
+      assert.equal(r2.allowed, false);
+
+      // Valid token but not a member
+      const { generateNonceChallenge, verifyProofAndIssueToken } = await import('../../packages/lobby-server/src/auth/identityProof.js');
+      const challenge = await generateNonceChallenge('did:ccd:uninvited', store);
+      const token = await verifyProofAndIssueToken('did:ccd:uninvited', `valid_sig_for_${challenge.nonce}`, 'MOCK_PUBLIC_KEY_PEM_001', lobby.lobby_id, store);
+      
+      const r3 = await verifyLobbyJoinPolicy(lobby.lobby_id, token!, store);
+      assert.equal(r3.allowed, false, 'must reject non-member');
+    });
+
+    await check('SECRET HYGIENE: encrypt and decrypt secrets, redact logs', async () => {
+      const store = new InMemoryLobbyStore();
+      const { saveIntegrationSecret, getDecryptedSecret, redactLogs } = await import('../../packages/lobby-server/src/integrations/githubApp.js');
+      
+      const lobby = makeLobby('private');
+      await store.createLobby(lobby);
+
+      const { installSlackIntegration } = await import('../../packages/lobby-server/src/integrations/slackApp.js');
+      const integration = await installSlackIntegration({
+        lobbyId: lobby.lobby_id,
+        userId: 'user-alice',
+        teamId: 'team-T123',
+        teamName: 'Workspace',
+        botToken: 'xoxb-secret-token-123',
+        scopes: ['chat:write']
+      }, store);
+
+      assert.equal(integration.status, 'active');
+
+      // Decrypt
+      const decrypted = await getDecryptedSecret(lobby.lobby_id, 'slack', 'bot_token', store);
+      assert.equal(decrypted, 'xoxb-secret-token-123', 'decryption must restore plaintext');
+
+      // Logs redaction
+      const dirtyLog = 'Error connecting with token xoxb-secret-token-123 and secret ghs_tempKey123';
+      const cleanLog = redactLogs(dirtyLog);
+      assert.ok(!cleanLog.includes('xoxb-secret-token-123'));
+      assert.ok(!cleanLog.includes('ghs_tempKey123'));
+    });
+
+    await check('SLACK AUTHORIZATION: commands verify Linked Slack User identity', async () => {
+      const store = new InMemoryLobbyStore();
+      const lobby = makeLobby('private');
+      await store.createLobby(lobby);
+
+      const { verifySlackUserAuthorization } = await import('../../packages/lobby-server/src/auth/slackAuthorization.js');
+
+      // Unlinked user
+      const r1 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-unlinked', store);
+      assert.equal(r1.authorized, false);
+
+      // Link identity
+      await store.linkExternalIdentity({
+        id: 'link_1',
+        provider: 'slack',
+        external_team_id: 'team-1',
+        external_user_id: 'slack-alice',
+        identity_ref: 'did:ccd:alice-001',
+        verified_at: new Date().toISOString()
+      });
+
+      // Linked but not lobby member
+      const r2 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-alice', store);
+      assert.equal(r2.authorized, false);
+
+      // Add as lobby member
+      await store.addMember({
+        id: 'member_1',
+        lobby_id: lobby.lobby_id,
+        identity_ref: 'did:ccd:alice-001',
+        role: 'contributor',
+        status: 'active'
+      });
+
+      // Linked and active member
+      const r3 = await verifySlackUserAuthorization(lobby.lobby_id, 'team-1', 'slack-alice', store);
+      assert.equal(r3.authorized, true);
+    });
+
+    await check('KNOWLEDGE CONVERSION & GRAPHIFY: chunks, converts, sanitizes and indexes', async () => {
+      const { sanitizeMarkdown } = await import('../../packages/knowledge-engine/src/sanitizers.js');
+      const { chunkMarkdown } = await import('../../packages/knowledge-engine/src/chunker.js');
+      const { graphifyMarkdown } = await import('../../packages/knowledge-engine/src/graphify.js');
+
+      const raw = 'Hello \r\n\n\n\n World  [[Topic A]]';
+      const clean = sanitizeMarkdown(raw);
+      assert.equal(clean, 'Hello \n\n\n World  [[Topic A]]');
+
+      const chunks = chunkMarkdown('# Title\n\nParagraph content details.');
+      assert.equal(chunks.length, 1);
+
+      const graph = graphifyMarkdown('# Section Title\n\nReferenced [[Target Concept]]', 'MyDoc');
+      assert.ok(graph.nodes.some(n => n.label === 'MyDoc'));
+      assert.ok(graph.nodes.some(n => n.label === 'Section Title'));
+      assert.ok(graph.nodes.some(n => n.label === 'Target Concept'));
+    });
+
   } finally {
     for (const c of clients) c.close();
     await server.close();

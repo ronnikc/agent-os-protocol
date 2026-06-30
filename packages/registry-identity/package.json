@@ -1,0 +1,13 @@
+{
+  "name": "@agent-os/registry-identity",
+  "version": "0.2.0",
+  "type": "module",
+  "main": "dist/identityResolver.js",
+  "types": "dist/identityResolver.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}
