@@ -28,6 +28,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `create-sprint` | Create or update a canonical Sprint work-item document |
 | `sprint-decomposition` | Break sprint specifications into sized, ordered developer tasks |
+| `git-branch-management` | Audit and coordinate branch checkouts, rebases, squashing, and commit message formats |
 
 ## Startup Protocol
 

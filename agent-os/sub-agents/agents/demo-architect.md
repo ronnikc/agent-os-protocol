@@ -30,6 +30,8 @@ All source directories (read-only access):
 | `design-ideation` | Structured pre-implementation design: explore context, propose approaches, present design, get approval |
 | `component-pattern` | Frontend component implementation: useLocale, CSS naming, state management, hooks |
 | `create-task` | Create or update a canonical Task work-item document conforming to schemas |
+| `asset-prototyping` | Generate static wireframe sandboxes, wire design layouts, and stub image boundaries |
+| `figma-design-integration` | Interface with Figma REST APIs to extract design tokens, CSS variables, and clean vector SVGs |
 
 ## Startup Protocol
 

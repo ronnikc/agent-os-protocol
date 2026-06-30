@@ -49,6 +49,8 @@ Before making any infrastructure changes:
 | `performance-optimization` | Verify Core Web Vitals via lighthouserc.js in CI; tune nginx caching headers; size container resources; monitor backend p95 latency. |
 | `documentation-and-adrs` | Capture infrastructure decisions (deployment topology, monitoring stack, rollout strategy) as ADRs in docs/decisions/. |
 | `deprecation-and-migration` | Sunset old infra (deprecated services, legacy environments) using strangler-style cutovers; document zero-downtime migrations. |
+| `mcp-server-config` | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings |
+| `vulnerability-auditing` | Run and audit dependency scanner alerts (e.g. npm audit) and securely resolve version increments |
 
 ## Key Rules
 

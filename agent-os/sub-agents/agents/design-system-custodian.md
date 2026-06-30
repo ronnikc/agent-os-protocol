@@ -28,6 +28,8 @@ All source directories (read-only access):
 | `design-token-audit` | Audit visual assets, CSS files, and token specifications for design system compliance |
 | `pattern-compliance` | Review code against established patterns: imports, styling rules, naming |
 | `accessibility-audit` | WCAG 2.1 AA design audit: contrast checks, spacing metrics, labels |
+| `brand-guidelines-alignment` | Audit visual copy, typography weights, logo dimensions, and page styling against official branding specs |
+| `figma-design-integration` | Extract design variables, typography tokens, layout coordinates, and vector SVGs from Figma API schemas |
 
 ## Startup Protocol
 

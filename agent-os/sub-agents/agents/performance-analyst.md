@@ -28,6 +28,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `performance-optimization` | Measure response speeds, index database queries, and reduce payload size |
 | `audit-trail-verification` | Verify execution times, loop cycle timings, and latency logs |
+| `memory-profiling` | Analyze Node/browser heap allocations, locate memory leaks, and profile connection cycles |
 
 ## Startup Protocol
 

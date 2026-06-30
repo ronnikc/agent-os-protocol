@@ -40,6 +40,7 @@ All source directories (read-only access):
 | `root-cause-debugging` | Systematic 4-phase debugging: root cause investigation, pattern analysis, hypothesis testing, implementation |
 | `design-ideation` | Structured pre-implementation design: explore context, propose approaches, present design, get approval |
 | `source-driven-development` | When research touches framework behavior, fetch official docs for the version in package.json; cite sources; flag training-data claims as UNVERIFIED |
+| `structured-data-analysis` | Parse, filter, aggregate, and compile structured logs, CSVs, and telemetry data tables |
 
 ## Startup Protocol
 

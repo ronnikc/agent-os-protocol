@@ -27,6 +27,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `codebase-exploration` | Systematic codebase search: file patterns, grep strategies, impact tracing |
 | `spec-linting` | Validate sprint specifications against gate constraints |
+| `seo-competitor-analysis` | Analyze organic competitor landing page metadata, keywords, and SERP layouts to optimize SEO targets |
 
 ## Startup Protocol
 

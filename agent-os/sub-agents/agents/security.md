@@ -35,6 +35,7 @@ This agent does not own a single source directory. It has cross-cutting ownershi
 | `rbac-verification` | `skills/rbac-verification/SKILL.md` | Verify RBAC enforcement on endpoints, check permission matrix compliance |
 | `security-and-hardening` | `skills/security-and-hardening/SKILL.md` | OWASP Top 10 prevention beyond RBAC: input validation at boundaries, secrets management, helmet/CSP, npm audit triage, file upload safety, SSRF allowlists, sensitive data hygiene |
 | `documentation-and-adrs` | `skills/documentation-and-adrs/SKILL.md` | Capture significant security decisions (auth strategy, encryption, threat model deltas) as ADRs in docs/decisions/ — security choices are expensive to reverse and need traceable rationale |
+| `vulnerability-auditing` | `skills/vulnerability-auditing/SKILL.md` | Run and audit dependency scanner alerts (e.g. npm audit) and securely resolve version increments |
 
 ## Startup Protocol
 

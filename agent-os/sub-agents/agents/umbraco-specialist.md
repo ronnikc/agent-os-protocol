@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `cms-plugin-integration` | Audit and implement custom surface controllers, composers, and notification handlers |
 | `component-pattern` | Frontend component patterns: CSS variables, layout, responsive templates |
 | `database-migration-audit` | Audit database schemas, migrations, indexes, and schema definitions |
+| `mcp-server-config` | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings |
 
 ## Startup Protocol
 

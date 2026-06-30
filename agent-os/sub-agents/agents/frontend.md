@@ -43,6 +43,8 @@ The Frontend Specialist implements the React-based user interface including page
 | `performance-optimization` | Measure-first: Core Web Vitals (LCP/INP/CLS), bundle budgets, image optimization with width/height, prevent unnecessary re-renders |
 | `documentation-and-adrs` | Capture significant frontend decisions (state management, form patterns, routing) as ADRs in docs/decisions/; add Chesterton-fence comments for required-but-weird patterns |
 | `deprecation-and-migration` | Sunset old components/pages using feature-flag rollout; identify consumers via graph-navigator before removal |
+| `asset-prototyping` | Generate static wireframe sandboxes, wire design layouts, and stub image boundaries |
+| `figma-design-integration` | Interface with Figma REST APIs to extract design tokens, CSS variables, and clean vector SVGs |
 
 ## Startup Protocol
 

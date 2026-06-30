@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `cms-plugin-integration` | Audit and implement custom plugin extensions, filters, WordPress 7.0 Abilities registrations, and hooks |
 | `component-pattern` | Frontend component patterns: styling variables, layout, responsive blocks |
 | `security-and-hardening` | Hardening setups: nonces verification, CSRF, escaping database inputs |
+| `mcp-server-config` | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings |
 
 ## Startup Protocol
 

@@ -32,6 +32,7 @@ N/A — this agent is a read-only orchestrator. It does not own or modify any so
 | `code-review-and-quality` | Apply five-axis rubric and severity labels when reviewing decomposition outputs and triaging review-round findings across specialist agents |
 | `documentation-and-adrs` | When sprint planning surfaces a significant architectural decision, require an ADR in docs/decisions/ before the implementation slice begins |
 | `deprecation-and-migration` | When a sprint includes sunsetting old systems, plan migration in slices using strangler/feature-flag patterns; honor Churn Rule for consumer migration |
+| `structured-data-analysis` | Parse, filter, aggregate, and compile structured logs, CSVs, and telemetry data tables |
 
 ## Startup Protocol
 

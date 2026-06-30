@@ -27,6 +27,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `release-notes` | Create factual sprint release notes mirroring acceptance criteria |
 | `doc-housekeeping` | Maintain documentation file sanity, index tables, and updates |
+| `brand-guidelines-alignment` | Audit visual copy, headings, and branding elements to align announcements with corporate guidelines |
 
 ## Startup Protocol
 
