@@ -45,6 +45,9 @@
   </script>
 
   <link rel="icon" type="image/svg+xml" href="favicon.svg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -224,14 +227,14 @@
       
       <div class="gallery-container glass-panel">
         <!-- Tabs bar -->
-        <div class="gallery-tabs">
-          <button class="gallery-tab-btn active" data-img="images/lobby.png" data-url="http://localhost:3000/panel/lobby" data-desc="The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.">Swarm Lobby</button>
-          <button class="gallery-tab-btn" data-img="images/tasks.png" data-url="http://localhost:3000/panel/tasks" data-desc="Track task status, sprints, and sub-agent execution pipelines in real time with the central Task Board.">Task Board</button>
-          <button class="gallery-tab-btn" data-img="images/gantt.png" data-url="http://localhost:3000/panel/gantt" data-desc="Visualize complex agent dependencies and execute parallel sprints with automated Gantt tracing.">Gantt Timeline</button>
-          <button class="gallery-tab-btn" data-img="images/agents.png" data-url="http://localhost:3000/panel/roster" data-desc="Inspect the active Agent Roster, their specialized roles, cryptographic DIDs, and permission levels.">Agent Roster</button>
-          <button class="gallery-tab-btn" data-img="images/memory.png" data-url="http://localhost:3000/panel/memory" data-desc="Monitor the shared short-term and long-term vector memory registers across all swarm agents.">Shared Memory</button>
-          <button class="gallery-tab-btn" data-img="images/messages.png" data-url="http://localhost:3000/panel/messages" data-desc="Trace raw agent-to-agent message logs, handshakes, and system notifications.">Message Stream</button>
-          <button class="gallery-tab-btn" data-img="images/schedule.png" data-url="http://localhost:3000/panel/schedule" data-desc="Manage scheduled cron jobs, background sweeps, and resource allocation policies.">Scheduler</button>
+        <div class="gallery-tabs" role="tablist" aria-label="Visual Tour Tabs">
+          <button class="gallery-tab-btn active" role="tab" aria-selected="true" tabindex="0" data-img="images/lobby.png" data-url="http://localhost:3000/panel/lobby" data-desc="The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.">Swarm Lobby</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/tasks.png" data-url="http://localhost:3000/panel/tasks" data-desc="Track task status, sprints, and sub-agent execution pipelines in real time with the central Task Board.">Task Board</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/gantt.png" data-url="http://localhost:3000/panel/gantt" data-desc="Visualize complex agent dependencies and execute parallel sprints with automated Gantt tracing.">Gantt Timeline</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/agents.png" data-url="http://localhost:3000/panel/roster" data-desc="Inspect the active Agent Roster, their specialized roles, cryptographic DIDs, and permission levels.">Agent Roster</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/memory.png" data-url="http://localhost:3000/panel/memory" data-desc="Monitor the shared short-term and long-term vector memory registers across all swarm agents.">Shared Memory</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/messages.png" data-url="http://localhost:3000/panel/messages" data-desc="Trace raw agent-to-agent message logs, handshakes, and system notifications.">Message Stream</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/schedule.png" data-url="http://localhost:3000/panel/schedule" data-desc="Manage scheduled cron jobs, background sweeps, and resource allocation policies.">Scheduler</button>
         </div>
         
         <!-- Browser Mockup Window -->

@@ -28,8 +28,13 @@ import { readFileSync, existsSync } from 'node:fs';
 import { resolve as pathResolve } from 'node:path';
 import { hostname as osHostname } from 'node:os';
 import { query, type Options, type SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
-import { loadEnv, type LobbyToAgentMessage, type HandRaiseCategory } from '@agent-os/protocol-core';
+import { loadEnv, type LobbyToAgentMessage, type HandRaiseCategory, type RuntimeId } from '@agent-os/protocol-core';
 import { runtimeRegistry } from '@agent-os/adapters';
+import {
+  type UiAssistContext as AgentContext,
+  type UiAssistClientMessage as BrowserToRelayMessage,
+  type UiAssistServerMessage as RelayToBrowserMessage,
+} from '@agent-os/ui-assist-core';
 
 // Populate process.env from a repo-root `.env` (real env wins) so AGENT_OS_RELAY_PORT /
 // AGENT_OS_LOBBY_URL and any runtime/provider credentials apply when the relay runs standalone.
@@ -42,39 +47,6 @@ const DEFAULT_PORT = 4722;
 const KEEPALIVE_INTERVAL_MS = 4 * 60 * 1000;
 const HEARTBEAT_INTERVAL_MS = 30_000;
 const MAX_CONTENT_LENGTH = 50_000;
-
-// ── Protocol types (aligned with react-grab relay protocol) ──
-
-interface AgentMessage {
-  type: 'status' | 'error' | 'done';
-  content: string;
-  /** Index of the current assistant message (0-based). Increments when
-   *  Claude produces a new distinct message within the same turn. */
-  messageIndex?: number;
-}
-
-interface AgentContext {
-  content: string[];
-  prompt: string;
-  sessionId?: string;
-}
-
-interface BrowserToRelayMessage {
-  type: 'agent-request' | 'agent-abort' | 'agent-undo' | 'agent-redo' | 'health';
-  agentId: string;
-  sessionId?: string;
-  context?: AgentContext;
-}
-
-interface RelayToBrowserMessage {
-  type: 'agent-status' | 'agent-done' | 'agent-error' | 'health' | 'handlers';
-  agentId?: string;
-  sessionId?: string;
-  content?: string;
-  /** Index of the current assistant message within this turn. */
-  messageIndex?: number;
-  handlers?: string[];
-}
 
 // ── Claude Code Handler ──
 
@@ -160,6 +132,12 @@ const resolveClaudePath = (): string => {
   }
 };
 
+interface AgentMessage {
+  type: 'status' | 'error' | 'done';
+  content: string;
+  messageIndex?: number;
+}
+
 async function* runClaudeAgent(
   prompt: string,
   options?: { sessionId?: string; signal?: AbortSignal; cwd?: string },
@@ -181,7 +159,7 @@ async function* runClaudeAgent(
   try {
     yield { type: 'status', content: 'Thinking…' };
 
-    const runtimeId = (process.env.AGENT_OS_RUNTIME as any) || 'claude-cli';
+    const runtimeId = (process.env.AGENT_OS_RUNTIME as RuntimeId) || 'claude-cli';
     const adapter = runtimeRegistry.get(runtimeId) || runtimeRegistry.get('claude-cli')!;
     log('info', `Spawning agent using adapter: ${adapter.label} (${adapter.id})`);
 
@@ -212,8 +190,8 @@ async function* runClaudeAgent(
         break;
       }
 
-      if (message.data && typeof message.data === 'object' && 'session_id' in (message.data as any)) {
-        capturedClaudeSessionId = (message.data as any).session_id;
+      if (message.data && typeof message.data === 'object' && 'session_id' in (message.data as Record<string, unknown>)) {
+        capturedClaudeSessionId = (message.data as Record<string, unknown>).session_id as string;
       }
 
       if ((message.type === 'output' || message.type === 'thinking') && message.content) {
@@ -343,7 +321,7 @@ const activeSessions = new Map<string, ActiveSession>();
 let relayCwd = process.cwd();
 
 /** Lobby bridge reference — set when --lobby is active. Used to inject lobby awareness into the main UI Assist agent. */
-let lobbyBridge: import('../agent-lobby/relay-lobby-bridge.js').RelayLobbyBridge | null = null;
+let lobbyBridge: import('./agent-lobby/relay-lobby-bridge.js').RelayLobbyBridge | null = null;
 
 function log(level: string, message: string): void {
   const timestamp = new Date().toISOString();
@@ -756,7 +734,7 @@ if (lobbyBaseUrl) {
         agentName ??
         (agentRole ? `${hostname}-${agentRole}-${port}` : `${hostname}-${branch}-${port}`);
 
-      const { RelayLobbyBridge } = await import('../agent-lobby/relay-lobby-bridge.js');
+      const { RelayLobbyBridge } = await import('./agent-lobby/relay-lobby-bridge.js');
       const bridge = (lobbyBridge = new RelayLobbyBridge({
         lobbyUrl: lobbyWsUrl,
         agentName: name,
@@ -1187,7 +1165,7 @@ if (lobbyBaseUrl) {
             }
           };
         })(),
-        log: (level, message) => log(level as any, `[lobby-bridge] ${message}`),
+        log: (level, message) => log(level, `[lobby-bridge] ${message}`),
       }));
       bridge.connect();
       log('info', `Lobby bridge connecting: lobby=${lobby.lobbyId}, agent=${name}`);

@@ -109,7 +109,10 @@ export function registerTab(id, mod) {
 function switchTab(id) {
   state.activeTab = id;
   document.querySelectorAll('.tab-bar button').forEach(btn => {
-    btn.classList.toggle('active', btn.dataset.tab === id);
+    const isActive = btn.dataset.tab === id;
+    btn.classList.toggle('active', isActive);
+    btn.setAttribute('aria-selected', isActive ? 'true' : 'false');
+    btn.setAttribute('tabindex', isActive ? '0' : '-1');
   });
   document.querySelectorAll('.tab-pane').forEach(pane => {
     pane.classList.toggle('active', pane.id === `tab-${id}`);
@@ -168,9 +171,47 @@ export async function init() {
   connectWs();
 
   // Wire up tab buttons
-  document.querySelectorAll('.tab-bar button[data-tab]').forEach(btn => {
-    btn.addEventListener('click', () => switchTab(btn.dataset.tab));
-  });
+  const tablist = document.querySelector('.tab-bar');
+  const buttons = tablist ? tablist.querySelectorAll('button[data-tab]') : [];
+  if (tablist && buttons.length > 0) {
+    tablist.setAttribute('role', 'tablist');
+    buttons.forEach((btn, idx) => {
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', idx === 0 ? 'true' : 'false');
+      btn.setAttribute('tabindex', idx === 0 ? '0' : '-1');
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+
+    tablist.addEventListener('keydown', (e) => {
+      const activeTab = document.activeElement;
+      if (!activeTab || activeTab.parentElement !== tablist) return;
+
+      const tabs = Array.from(buttons);
+      if (tabs.length === 0) return;
+      const index = tabs.indexOf(activeTab);
+      let nextIndex = index;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = tabs.length - 1;
+      } else {
+        return;
+      }
+
+      e.preventDefault();
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
+    });
+  } else {
+    document.querySelectorAll('.tab-bar button[data-tab]').forEach(btn => {
+      btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+    });
+  }
 
   // Load shared data
   const agentData = await fetchJson('/api/agents');
