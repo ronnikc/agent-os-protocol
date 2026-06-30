@@ -607,6 +607,125 @@ async function main(): Promise<void> {
       assert.equal(provenance.lobby_id, lobby.lobby_id);
     });
 
+    await check('MARKETPLACE: handles posting tasks, bidding with verified DIDs, trust chains, assigning, and settlements', async () => {
+      // 1. Create a custom store and mock verifier
+      const mockStore = new InMemoryLobbyStore();
+      
+      // Setup mock verifier
+      const mockVerifyIdentity = async (ref: string) => {
+        if (ref === 'did:ccd:untrusted-agent') {
+          return {
+            status: 'registry_verified' as const,
+            ref: { did: ref, network: 'testnet' as const },
+            source: 'indexer' as const,
+            checkedAt: new Date().toISOString(),
+            issuerDid: 'did:ccd:untrusted-issuer' // not registered as issuer!
+          };
+        }
+        return {
+          status: 'registry_verified' as const,
+          ref: { did: ref, network: 'testnet' as const },
+          source: 'indexer' as const,
+          checkedAt: new Date().toISOString(),
+          issuerDid: 'did:ccd:trusted-human' // registered!
+        };
+      };
+
+      const mockCoord = new LobbyCoordinator(mockStore, { verifyIdentity: mockVerifyIdentity });
+      const testServer = await startLobbyServer({ port: 4749, store: mockStore, coordinator: mockCoord, autoDefaultLobby: false });
+      const testLobbyUrl = `http://localhost:${testServer.port}`;
+
+      try {
+        const lobby = makeLobby('private');
+        await mockStore.createLobby(lobby);
+
+        // Register human issuer in mock store
+        await mockStore.registerIssuer({
+          issuer_did: 'did:ccd:trusted-human',
+          identity_ref: 'human-ronni',
+          registered_at: new Date().toISOString(),
+          revoked: false
+        });
+
+        // 1. Post a task
+        const postRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: 'Write custom parser',
+            description: 'Implement a TS AST model parser',
+            proposed_budget_ccd: 1000,
+            posted_by_identity_ref: 'did:ccd:bob'
+          })
+        });
+        assert.equal(postRes.status, 201);
+        const { task } = await postRes.json();
+        assert.equal(task.title, 'Write custom parser');
+        assert.equal(task.proposed_budget_ccd, 1000);
+        assert.equal(task.status, 'posted');
+
+        // 2. Try to bid with an untrusted issuer -> Rejected (401)
+        const badBidRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/bid`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_did: 'did:ccd:untrusted-agent',
+            bidder_identity_ref: 'agent-identity-1'
+          })
+        });
+        assert.equal(badBidRes.status, 401);
+        const badBidErr = await badBidRes.json();
+        assert.match(badBidErr.error, /issuer is not registered/i);
+
+        // 3. Bid with a trusted human issuer -> Accepted (201)
+        const goodBidRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/bid`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            agent_did: 'did:ccd:trusted-agent',
+            bidder_identity_ref: 'agent-identity-2'
+          })
+        });
+        assert.equal(goodBidRes.status, 201);
+        const { bid } = await goodBidRes.json();
+        assert.equal(bid.agent_did, 'did:ccd:trusted-agent');
+
+        // Verify task status updated to 'bidded'
+        const updatedTask = await mockStore.getMarketplaceTask(lobby.lobby_id, task.id);
+        assert.equal(updatedTask?.status, 'bidded');
+
+        // 4. Assign task
+        const assignRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/assign`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            assigned_agent_id: 'did:ccd:trusted-agent',
+            assigned_agent_ref: 'agent-identity-2'
+          })
+        });
+        assert.equal(assignRes.status, 200);
+        const assignData = await assignRes.json();
+        assert.equal(assignData.task.status, 'assigned');
+        assert.equal(assignData.task.assigned_agent_id, 'did:ccd:trusted-agent');
+
+        // 5. Complete task & record payment Tx
+        const completeRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/complete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            tx_hash: '0xabc1239999'
+          })
+        });
+        assert.equal(completeRes.status, 200);
+        const completeData = await completeRes.json();
+        assert.equal(completeData.task.status, 'completed');
+        assert.equal(completeData.task.tx_hash, '0xabc1239999');
+
+      } finally {
+        await testServer.close();
+      }
+    });
+
   } finally {
     for (const c of clients) c.close();
     await server.close();

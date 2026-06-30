@@ -90,7 +90,7 @@ function effectiveJoinPolicy(lobby: LobbySession): LobbyJoinPolicy {
 export class LobbyCoordinator {
   private rateLimit: number;
   private rateWindowMs: number;
-  private verifyIdentity: VerifyIdentityFn;
+  public readonly verifyIdentity: VerifyIdentityFn;
   /** agentId → recent send timestamps (ms), trimmed to the window. */
   private sendTimes = new Map<string, number[]>();
 
@@ -195,11 +195,19 @@ export class LobbyCoordinator {
         if (!isRegistryResolved(verification.status)) {
           return deny(`private lobby: identity is not registry-verified (status: ${verification.status})`);
         }
+        const issuer = verification.issuerDid ? await this.store.getIssuer(verification.issuerDid) : undefined;
+        if (!issuer || issuer.revoked) {
+          return deny('private lobby: credential issuer is not registered or is revoked on Concordium');
+        }
       } else if (policy === 'verified_human_link') {
         if (!presentedRef) return deny('private lobby: a verified human-linked identity reference is required to join');
         verification = await this.verifyIdentity(presentedRef);
         if (!(verification.humanLinked || verification.orgLinked)) {
           return deny(`private lobby: identity is not human-linked (status: ${verification.status})`);
+        }
+        const issuer = verification.issuerDid ? await this.store.getIssuer(verification.issuerDid) : undefined;
+        if (!issuer || issuer.revoked) {
+          return deny('private lobby: credential issuer is not registered or is revoked on Concordium');
         }
       }
       // For 'none'/'allowlisted', best-effort verify a presented ref so the roster badge reflects reality.

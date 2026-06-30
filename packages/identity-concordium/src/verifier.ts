@@ -67,6 +67,7 @@ export class IdentityVerifier {
         domain: record.domain,
         source: this.source,
         checkedAt,
+        issuerDid: record.issuerDid,
       };
     } catch (err) {
       // Source unreachable: indeterminate, not a false negative.

@@ -82,3 +82,34 @@ export interface KnowledgeSyncJob {
   created_at: string;
   updated_at: string;
 }
+
+export interface MarketplaceTask {
+  id: string;
+  lobby_id: string;
+  title: string;
+  description: string;
+  proposed_budget_ccd: number;
+  status: 'posted' | 'bidded' | 'assigned' | 'completed' | 'failed';
+  assigned_agent_id?: string;
+  assigned_agent_ref?: string;
+  posted_by_identity_ref: string;
+  created_at: string;
+  updated_at: string;
+  tx_hash?: string;
+}
+
+export interface ConcordiumIssuerRecord {
+  issuer_did: string;
+  identity_ref: string;
+  registered_at: string;
+  revoked: boolean;
+}
+
+export interface TaskBid {
+  id: string;
+  task_id: string;
+  agent_did: string;
+  bidder_identity_ref: string;
+  created_at: string;
+}
+

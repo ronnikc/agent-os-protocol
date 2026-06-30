@@ -233,6 +233,133 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // --- Task Marketplace Routes ---
+    
+    // POST /api/v1/agent-lobby/issuers
+    if (path === '/api/v1/agent-lobby/issuers' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.issuer_did || !body.identity_ref) {
+        return json({ error: 'missing issuer_did or identity_ref' }, 400);
+      }
+      const record = await store.registerIssuer({
+        issuer_did: body.issuer_did,
+        identity_ref: body.identity_ref,
+        registered_at: new Date().toISOString(),
+        revoked: false
+      });
+      return json({ record }, 201);
+    }
+
+    // POST / GET /api/v1/agent-lobby/lobbies/:id/tasks
+    const taskListMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks$/);
+    if (taskListMatch) {
+      const lobbyId = taskListMatch[1];
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        if (!body.title || !body.description || typeof body.proposed_budget_ccd !== 'number') {
+          return json({ error: 'missing title, description, or proposed_budget_ccd' }, 400);
+        }
+        const task = await store.createMarketplaceTask({
+          id: randomUUID(),
+          lobby_id: lobbyId,
+          title: body.title,
+          description: body.description,
+          proposed_budget_ccd: body.proposed_budget_ccd,
+          status: 'posted',
+          posted_by_identity_ref: body.posted_by_identity_ref ?? 'anonymous',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        });
+        return json({ task }, 201);
+      }
+      if (req.method === 'GET') {
+        const tasks = await store.listMarketplaceTasks(lobbyId);
+        return json({ tasks });
+      }
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/bid
+    const bidMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/bid$/);
+    if (bidMatch && req.method === 'POST') {
+      const lobbyId = bidMatch[1];
+      const taskId = bidMatch[2];
+      const body = await readBody(req);
+      if (!body.agent_did || !body.bidder_identity_ref) {
+        return json({ error: 'missing agent_did or bidder_identity_ref' }, 400);
+      }
+      
+      const task = await store.getMarketplaceTask(lobbyId, taskId);
+      if (!task) return json({ error: 'task not found' }, 404);
+      
+      // Verification check for agent DID and trust chain mapping to Concordium ID registry
+      const verification = await coordinator.verifyIdentity(body.agent_did);
+      if (verification.status === 'failed' || verification.status === 'pending' || verification.status === 'unverified') {
+        return json({ error: `agent identity verification failed: ${verification.reason || 'identity unverified'}` }, 401);
+      }
+      const issuer = verification.issuerDid ? await store.getIssuer(verification.issuerDid) : undefined;
+      if (!issuer || issuer.revoked) {
+        return json({ error: 'agent credential issuer is not registered or is revoked on Concordium' }, 401);
+      }
+      
+      const bid = await store.addTaskBid({
+        id: randomUUID(),
+        task_id: taskId,
+        agent_did: body.agent_did,
+        bidder_identity_ref: body.bidder_identity_ref,
+        created_at: new Date().toISOString()
+      });
+      
+      if (task.status === 'posted') {
+        await store.updateMarketplaceTask(lobbyId, taskId, { status: 'bidded' });
+      }
+      
+      return json({ bid }, 201);
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/bids
+    const getBidsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/bids$/);
+    if (getBidsMatch && req.method === 'GET') {
+      const taskId = getBidsMatch[2];
+      const bids = await store.listTaskBids(taskId);
+      return json({ bids });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/assign
+    const assignMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/assign$/);
+    if (assignMatch && req.method === 'POST') {
+      const lobbyId = assignMatch[1];
+      const taskId = assignMatch[2];
+      const body = await readBody(req);
+      if (!body.assigned_agent_id) {
+        return json({ error: 'missing assigned_agent_id' }, 400);
+      }
+      const task = await store.getMarketplaceTask(lobbyId, taskId);
+      if (!task) return json({ error: 'task not found' }, 404);
+      
+      const updated = await store.updateMarketplaceTask(lobbyId, taskId, {
+        status: 'assigned',
+        assigned_agent_id: body.assigned_agent_id,
+        assigned_agent_ref: body.assigned_agent_ref
+      });
+      return json({ task: updated });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/complete
+    const completeMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/complete$/);
+    if (completeMatch && req.method === 'POST') {
+      const lobbyId = completeMatch[1];
+      const taskId = completeMatch[2];
+      const body = await readBody(req);
+      const task = await store.getMarketplaceTask(lobbyId, taskId);
+      if (!task) return json({ error: 'task not found' }, 404);
+      
+      const updated = await store.updateMarketplaceTask(lobbyId, taskId, {
+        status: 'completed',
+        tx_hash: body.tx_hash
+      });
+      return json({ task: updated });
+    }
+
     // Static file serving fallback for local preview/dashboard
     const MIME_TYPES: Record<string, string> = {
       '.html': 'text/html; charset=utf-8',

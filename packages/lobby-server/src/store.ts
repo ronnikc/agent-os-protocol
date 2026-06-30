@@ -9,7 +9,7 @@
  */
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
-import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob } from './models.js';
+import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid } from './models.js';
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
@@ -64,6 +64,18 @@ export interface LobbyStore {
   saveNonce(identityRef: string, lobbyId: string, nonce: string, expiresAt: number): Promise<void>;
   getNonce(identityRef: string): Promise<{ nonce: string; lobbyId: string; expiresAt: number } | undefined>;
   deleteNonce(identityRef: string): Promise<void>;
+
+  // Task Marketplace operations
+  createMarketplaceTask(task: MarketplaceTask): Promise<MarketplaceTask>;
+  getMarketplaceTask(lobbyId: string, taskId: string): Promise<MarketplaceTask | undefined>;
+  listMarketplaceTasks(lobbyId: string): Promise<MarketplaceTask[]>;
+  updateMarketplaceTask(lobbyId: string, taskId: string, patch: Partial<MarketplaceTask>): Promise<MarketplaceTask | undefined>;
+
+  addTaskBid(bid: TaskBid): Promise<TaskBid>;
+  listTaskBids(taskId: string): Promise<TaskBid[]>;
+
+  registerIssuer(issuer: ConcordiumIssuerRecord): Promise<ConcordiumIssuerRecord>;
+  getIssuer(issuerDid: string): Promise<ConcordiumIssuerRecord | undefined>;
 }
 
 interface LobbyBucket {
@@ -87,6 +99,11 @@ export class InMemoryLobbyStore implements LobbyStore {
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
   private nonces = new Map<string, { nonce: string; lobbyId: string; expiresAt: number }>(); // identityRef -> nonce details
+  
+  // Task Marketplace map storage
+  private marketplaceTasks = new Map<string, MarketplaceTask>(); // taskId -> MarketplaceTask
+  private bids = new Map<string, TaskBid[]>(); // taskId -> TaskBid[]
+  private issuers = new Map<string, ConcordiumIssuerRecord>(); // issuerDid -> ConcordiumIssuerRecord
 
   private bucket(lobbyId: string): LobbyBucket | undefined {
     return this.lobbies.get(lobbyId);
@@ -278,5 +295,49 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async deleteNonce(identityRef: string): Promise<void> {
     this.nonces.delete(identityRef);
+  }
+
+  // Task Marketplace implementation
+  async createMarketplaceTask(task: MarketplaceTask): Promise<MarketplaceTask> {
+    this.marketplaceTasks.set(task.id, task);
+    return task;
+  }
+
+  async getMarketplaceTask(lobbyId: string, taskId: string): Promise<MarketplaceTask | undefined> {
+    const t = this.marketplaceTasks.get(taskId);
+    if (!t || t.lobby_id !== lobbyId) return undefined;
+    return t;
+  }
+
+  async listMarketplaceTasks(lobbyId: string): Promise<MarketplaceTask[]> {
+    return [...this.marketplaceTasks.values()].filter((t) => t.lobby_id === lobbyId);
+  }
+
+  async updateMarketplaceTask(lobbyId: string, taskId: string, patch: Partial<MarketplaceTask>): Promise<MarketplaceTask | undefined> {
+    const t = this.marketplaceTasks.get(taskId);
+    if (!t || t.lobby_id !== lobbyId) return undefined;
+    const updated = { ...t, ...patch, updated_at: new Date().toISOString() };
+    this.marketplaceTasks.set(taskId, updated);
+    return updated;
+  }
+
+  async addTaskBid(bid: TaskBid): Promise<TaskBid> {
+    const list = this.bids.get(bid.task_id) ?? [];
+    list.push(bid);
+    this.bids.set(bid.task_id, list);
+    return bid;
+  }
+
+  async listTaskBids(taskId: string): Promise<TaskBid[]> {
+    return this.bids.get(taskId) ?? [];
+  }
+
+  async registerIssuer(issuer: ConcordiumIssuerRecord): Promise<ConcordiumIssuerRecord> {
+    this.issuers.set(issuer.issuer_did, issuer);
+    return issuer;
+  }
+
+  async getIssuer(issuerDid: string): Promise<ConcordiumIssuerRecord | undefined> {
+    return this.issuers.get(issuerDid);
   }
 }
