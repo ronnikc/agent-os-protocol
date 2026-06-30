@@ -186,6 +186,53 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return lobby ? json({ lobby }) : json({ error: 'not found' }, 404);
     }
 
+    if (lobbyMatch && req.method === 'POST') {
+      const lobbyId = lobbyMatch[1];
+      const sub = lobbyMatch[3];
+      if (sub === 'messages') {
+        const body = await readBody(req);
+        const lobby = await store.getLobby(lobbyId);
+        if (!lobby) return json({ error: 'Lobby not found' }, 404);
+
+        const seq = ++lobby.message_seq;
+        await store.upsertLobby(lobby);
+
+        const message = {
+          id: randomUUID(),
+          lobby_id: lobbyId,
+          from_agent_id: body.from_agent_id || 'WebUser',
+          to_agent_id: body.to_agent_id || 'all',
+          message_type: body.message_type || 'chat',
+          content: body.content || '',
+          created_at: new Date().toISOString(),
+          seq
+        };
+        await store.addMessage(message);
+
+        // Record event
+        await store.addEvent({
+          id: randomUUID(),
+          lobby_id: lobbyId,
+          type: 'lobby-message',
+          agent_id: message.from_agent_id,
+          details: `${message.from_agent_id}: ${message.content}`,
+          timestamp: message.created_at
+        });
+
+        // Broadcast to WebSocket connections
+        const outMsg = {
+          type: 'lobby-message-received',
+          message
+        } as unknown as LobbyToAgentMessage;
+
+        for (const cid of lobbyConns.get(lobbyId) ?? []) {
+          send(cid, outMsg);
+        }
+
+        return json({ message }, 201);
+      }
+    }
+
     // Static file serving fallback for local preview/dashboard
     const MIME_TYPES: Record<string, string> = {
       '.html': 'text/html; charset=utf-8',

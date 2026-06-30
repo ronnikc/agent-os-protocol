@@ -273,6 +273,21 @@ async function pollStats() {
   }
 }
 
+async function postJson(url, data) {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  } catch (err) {
+    console.error(`Failed to POST ${url}:`, err);
+    return null;
+  }
+}
+
 // ── Init ──
 
 function init() {
@@ -289,6 +304,75 @@ function init() {
   setInterval(() => {
     if (state.activeLobbyId) pollLobbyDetails();
   }, 2000);
+
+  // Wire up Create Lobby button
+  const btnCreateLobby = document.getElementById('btn-create-lobby');
+  if (btnCreateLobby) {
+    btnCreateLobby.addEventListener('click', async () => {
+      const nameEl = document.getElementById('create-lobby-name');
+      const visibilityEl = document.getElementById('create-lobby-visibility');
+      const policyEl = document.getElementById('create-lobby-policy');
+      const name = nameEl?.value?.trim();
+      if (!name) {
+        alert('Please enter a lobby name.');
+        return;
+      }
+      const visibility = visibilityEl?.value || 'public';
+      const policy = policyEl?.value || 'none';
+
+      const res = await postJson('/api/v1/agent-lobby/lobbies', {
+        name,
+        visibility,
+        join_policy: policy,
+        created_by: 'web-user'
+      });
+
+      if (res && res.lobby) {
+        if (nameEl) nameEl.value = '';
+        await pollLobbies();
+        selectLobby(res.lobby.lobby_id);
+      } else {
+        alert('Failed to create lobby.');
+      }
+    });
+  }
+
+  // Wire up Send Message button
+  const btnSendMessage = document.getElementById('btn-send-message');
+  const chatInputText = document.getElementById('chat-input-text');
+  const chatUsername = document.getElementById('chat-username');
+
+  async function handleSendMessage() {
+    if (!state.activeLobbyId) {
+      alert('Please select a lobby first.');
+      return;
+    }
+    const content = chatInputText?.value?.trim();
+    if (!content) return;
+    const username = chatUsername?.value?.trim() || 'WebUser';
+
+    const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, {
+      from_agent_id: username,
+      content,
+      message_type: 'chat'
+    });
+
+    if (res && res.message) {
+      if (chatInputText) chatInputText.value = '';
+      pollLobbyDetails();
+    }
+  }
+
+  if (btnSendMessage) {
+    btnSendMessage.addEventListener('click', handleSendMessage);
+  }
+  if (chatInputText) {
+    chatInputText.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        handleSendMessage();
+      }
+    });
+  }
 }
 
 document.addEventListener('DOMContentLoaded', init);

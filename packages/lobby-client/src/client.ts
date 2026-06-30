@@ -33,9 +33,14 @@ export interface LobbyClientOptions {
 
 type Listener = (message: LobbyToAgentMessage) => void;
 
+function normalizeHttpUrl(url: string): string {
+  return url.replace(/^ws(s)?:\/\//i, (_, ssl) => ssl ? 'https://' : 'http://');
+}
+
 /** Discover the active lobby on a base URL (`{ lobby: { lobby_id, org_id, name } | null }`). */
 export async function discoverLobby(lobbyUrl: string): Promise<LobbyDiscoverResponse['lobby']> {
-  const res = await fetch(new URL('/api/v1/agent-lobby/discover', lobbyUrl), { signal: AbortSignal.timeout(5000) });
+  const httpUrl = normalizeHttpUrl(lobbyUrl);
+  const res = await fetch(new URL('/api/v1/agent-lobby/discover', httpUrl), { signal: AbortSignal.timeout(5000) });
   if (!res.ok) return null;
   const data = (await res.json()) as LobbyDiscoverResponse;
   return data.lobby ?? null;
@@ -69,9 +74,10 @@ export class LobbyClient {
       if (!lobby) throw new Error(`no active lobby at ${this.options.lobbyUrl}`);
       this.lobbyId = lobby.lobby_id;
     }
-    const wsBase = this.options.lobbyUrl.replace(/^http/, 'ws').replace(/\/$/, '');
+    const wsBase = this.options.lobbyUrl.replace(/^http/i, 'ws').replace(/\/$/, '');
     const orgId = this.options.orgId ?? 'default';
-    const url = `${wsBase}${WS_PATH}?lobby_id=${encodeURIComponent(this.lobbyId)}&org_id=${encodeURIComponent(orgId)}`;
+    const rawUrl = wsBase.startsWith('ws') ? wsBase : `ws://${wsBase}`;
+    const url = `${rawUrl}${WS_PATH}?lobby_id=${encodeURIComponent(this.lobbyId)}&org_id=${encodeURIComponent(orgId)}`;
     await new Promise<void>((resolve, reject) => {
       const ws = new WebSocket(url);
       this.ws = ws;
