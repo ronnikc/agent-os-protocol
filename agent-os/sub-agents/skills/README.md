@@ -116,6 +116,7 @@ agent-os/sub-agents/skills/<slug>/
 | Accessibility Testing | [accessibility-testing/SKILL.md](accessibility-testing/SKILL.md) | Test accessibility: axe-core checks, keyboard testing, screen reader verification | accessibility |
 | Design Token Audit | [design-token-audit/SKILL.md](design-token-audit/SKILL.md) | Verify styling variables, visual design system tokens, layout compliance, and contrast ratios | design-system-custodian, ux-researcher |
 | Localization Verification | [localization-verification/SKILL.md](localization-verification/SKILL.md) | Audit translation keys synchronization, missing locale keys, and Dynamic UI localization hooks | i18n-specialist, content |
+| CMS Hook & Plugin Integration | [cms-plugin-integration/SKILL.md](cms-plugin-integration/SKILL.md) | Audit, design, and implement custom plugin extensions, event hooks, and configuration overrides | wordpress-specialist, drupal-specialist, joomla-specialist, umbraco-specialist |
 
 ### Product & Validation Skills
 
@@ -137,6 +138,7 @@ agent-os/sub-agents/skills/<slug>/
 
 | Skill | File | Summary | Used by agents |
 |-------|------|---------|----------------|
+| Campaign Metric Auditing | [campaign-metric-audit/SKILL.md](campaign-metric-audit/SKILL.md) | Audit advertising conversion tracking codes, UTM query codes, and calculate acquisition metrics | ad-campaign-manager, newsletter-strategist, comms-specialist |
 
 ---
 
