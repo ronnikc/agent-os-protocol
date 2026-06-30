@@ -1,0 +1,54 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+
+import type { LobbyStore } from '../store.js';
+import { validateSessionToken } from './identityProof.js';
+
+export interface JoinPolicyResult {
+  allowed: boolean;
+  identityRef?: string;
+  reason?: string;
+}
+
+/** Check whether an identity ref is allowed to join a specific lobby. */
+export async function verifyLobbyJoinPolicy(
+  lobbyId: string,
+  token: string | undefined,
+  store: LobbyStore
+): Promise<JoinPolicyResult> {
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) {
+    return { allowed: false, reason: 'lobby not found' };
+  }
+
+  // Public lobbies do not require verification or tokens by default
+  if (lobby.visibility !== 'private') {
+    return { allowed: true };
+  }
+
+  // Private lobbies require a valid token
+  if (!token) {
+    return { allowed: false, reason: 'authentication token is required' };
+  }
+
+  const payload = validateSessionToken(token, lobbyId);
+  if (!payload) {
+    return { allowed: false, reason: 'invalid or expired session token' };
+  }
+
+  // Verify membership record in database
+  const member = await store.getMember(lobbyId, payload.identityRef);
+  if (!member) {
+    return { allowed: false, reason: 'not a member of this private lobby' };
+  }
+
+  if (member.status !== 'active') {
+    return { allowed: false, reason: 'membership has been revoked or is pending' };
+  }
+
+  if (member.expires_at && new Date(member.expires_at).getTime() < Date.now()) {
+    return { allowed: false, reason: 'membership has expired' };
+  }
+
+  return { allowed: true, identityRef: payload.identityRef };
+}
