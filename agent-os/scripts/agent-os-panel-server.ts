@@ -863,6 +863,11 @@ function fetchRemoteLobbyRoster(lobbyUrl: string): Promise<unknown> {
 
 // ── Generic Staging API Proxy ──
 // Proxies requests to the staging server's REST API (avoids CORS from browser)
+function normalizeLobbyHttpUrl(lobbyUrl: string): string {
+  if (!lobbyUrl) return '';
+  return lobbyUrl.replace(/^ws(s)?:\/\//i, (_, ssl) => ssl ? 'https://' : 'http://');
+}
+
 let cachedLobbyId: string | null = null;
 let cachedOrgId: string | null = null;
 
@@ -871,7 +876,8 @@ async function discoverLobbyId(lobbyUrl: string): Promise<string | null> {
   return new Promise((resolve) => {
     if (!lobbyUrl) { resolve(null); return; }
     try {
-      const url = new URL('/api/v1/agent-lobby/discover', lobbyUrl);
+      const httpUrl = normalizeLobbyHttpUrl(lobbyUrl);
+      const url = new URL('/api/v1/agent-lobby/discover', httpUrl);
       const reqFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
       const req = reqFn(url, { timeout: 5000 }, (res) => {
         let body = '';
@@ -904,7 +910,8 @@ function postRemoteJson(remoteUrl: string, path: string, body: any): Promise<any
   return new Promise((resolve) => {
     if (!remoteUrl) { resolve({ error: 'No remote URL' }); return; }
     try {
-      const url = new URL(path, remoteUrl);
+      const httpUrl = normalizeLobbyHttpUrl(remoteUrl);
+      const url = new URL(path, httpUrl);
       const reqFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
       const dataStr = JSON.stringify(body);
       const req = reqFn(url, {
@@ -938,7 +945,8 @@ function proxyToStaging(lobbyUrl: string, apiPath: string, method = 'GET', body?
   return new Promise((resolve) => {
     if (!lobbyUrl) { resolve({ error: 'No lobby URL configured' }); return; }
     try {
-      const url = new URL(apiPath, lobbyUrl);
+      const httpUrl = normalizeLobbyHttpUrl(lobbyUrl);
+      const url = new URL(apiPath, httpUrl);
       const reqFn = url.protocol === 'https:' ? httpsRequest : httpRequest;
       const opts: import('node:http').RequestOptions = {
         method,

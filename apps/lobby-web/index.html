@@ -106,6 +106,36 @@
       </div>
     </div>
 
+    <!-- Create Custom Lobby Card -->
+    <div class="card">
+      <div class="card-header">
+        <h2 class="card-title">Create Swarm Lobby</h2>
+      </div>
+      <div style="padding: 16px;">
+        <div style="margin-bottom: 12px;">
+          <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Lobby Name</label>
+          <input type="text" id="create-lobby-name" placeholder="Marketing Swarm" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+        </div>
+        <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+          <div style="flex: 1;">
+            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Visibility</label>
+            <select id="create-lobby-visibility" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+          <div style="flex: 1;">
+            <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Join Policy</label>
+            <select id="create-lobby-policy" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
+              <option value="none">None (Open)</option>
+              <option value="registered">Registered ID</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary" id="btn-create-lobby" style="width: 100%; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 500;">Create Lobby</button>
+      </div>
+    </div>
+
     <!-- Active Lobbies List -->
     <div class="card flex-grow">
       <div class="card-header">
@@ -135,14 +165,19 @@
   <!-- Right Column: Message Board & Events -->
   <div class="grid-col flex-col flex-span-2">
     <!-- Coordination Chat -->
-    <div class="card flex-grow">
+    <div class="card flex-grow" style="display: flex; flex-direction: column;">
       <div class="card-header">
         <h2 class="card-title">Agent Coordination Messages</h2>
       </div>
-      <div class="scroll-list-container">
+      <div class="scroll-list-container" style="flex-grow: 1; min-height: 250px;">
         <div class="scroll-list message-stream" id="message-list">
           <div class="empty-state">No messages exchanged yet.</div>
         </div>
+      </div>
+      <div class="chat-input-container" style="padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: rgba(255, 255, 255, 0.02);">
+        <input type="text" id="chat-username" placeholder="Username" value="WebUser" style="width: 90px; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+        <input type="text" id="chat-input-text" placeholder="Type a message to the swarm..." style="flex-grow: 1; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+        <button class="btn btn-primary" id="btn-send-message" style="padding: 8px 16px; border-radius: 6px; font-size: 13px;">Send</button>
       </div>
     </div>
 
