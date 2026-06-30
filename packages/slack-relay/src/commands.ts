@@ -57,16 +57,26 @@ export async function handleSlackCommand(
     };
   }
 
-  // Enforce Concordium authorization check for all other Swarm commands
-  const auth = await verifySlackUserAuthorization(lobbyId, team_id, user_id, store);
-  if (!auth.authorized) {
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) {
     return {
       response_type: 'ephemeral',
-      text: auth.reason || 'Unauthorized'
+      text: 'Lobby not found.'
     };
   }
 
-  const identityRef = auth.identityRef!;
+  // Enforce Concordium authorization check: status in public lobbies is allowed unlinked, other commands require verification.
+  let auth: any = null;
+  if (lobby.visibility === 'private' || !text.startsWith('status')) {
+    const authResult = await verifySlackUserAuthorization(lobbyId, team_id, user_id, store);
+    if (!authResult.authorized) {
+      return {
+        response_type: 'ephemeral',
+        text: authResult.reason || 'Unauthorized'
+      };
+    }
+    auth = authResult;
+  }
 
   if (command === '/swarm' && text.startsWith('task')) {
     const taskSpec = text.replace(/^task\s+/, '').trim();
@@ -75,6 +85,16 @@ export async function handleSlackCommand(
         response_type: 'ephemeral',
         text: 'Usage: `/swarm task <describe what the swarm should do>`'
       };
+    }
+
+    // Role-based permission check in private lobbies
+    if (lobby.visibility === 'private' && auth) {
+      if (auth.role !== 'admin' && auth.role !== 'owner' && auth.role !== 'boss_agent') {
+        return {
+          response_type: 'ephemeral',
+          text: 'Insufficient role permissions. Creating tasks from Slack in a private lobby requires an admin, owner, or boss role.'
+        };
+      }
     }
 
     // Format the command request as a floor-controlled Lobby Message to the Boss Agent.

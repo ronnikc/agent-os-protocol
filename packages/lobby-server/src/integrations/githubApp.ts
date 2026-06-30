@@ -105,11 +105,12 @@ export async function saveIntegrationSecret(
 
 /** Redact sensitive credentials from error logs or strings. */
 export function redactLogs(message: string): string {
-  // Redacts slack tokens (xoxb- / xapp-), github tokens (ghs_ / ghp_), and bearer auth credentials
+  // Redacts slack tokens (xoxb- / xapp-), github tokens (ghs_ / ghp_), bearer auth credentials, and GCM ciphertexts
   return message
     .replace(/xoxb-[a-zA-Z0-9-]+/g, 'xoxb-REDACTED')
     .replace(/xapp-[a-zA-Z0-9-]+/g, 'xapp-REDACTED')
     .replace(/ghs_[a-zA-Z0-9]+/g, 'ghs_REDACTED')
     .replace(/ghp_[a-zA-Z0-9]+/g, 'ghp_REDACTED')
-    .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, 'Bearer REDACTED');
+    .replace(/Bearer\s+[a-zA-Z0-9._-]+/gi, 'Bearer REDACTED')
+    .replace(/[a-f0-9]{16,}:[a-f0-9]{24}:[a-f0-9]{32}/gi, 'ENC-REDACTED');
 }

@@ -14,7 +14,8 @@ export interface JoinPolicyResult {
 export async function verifyLobbyJoinPolicy(
   lobbyId: string,
   token: string | undefined,
-  store: LobbyStore
+  store: LobbyStore,
+  displayName?: string
 ): Promise<JoinPolicyResult> {
   const lobby = await store.getLobby(lobbyId);
   if (!lobby) {
@@ -24,6 +25,17 @@ export async function verifyLobbyJoinPolicy(
   // Public lobbies do not require verification or tokens by default
   if (lobby.visibility !== 'private') {
     return { allowed: true };
+  }
+
+  const policy = lobby.join_policy || (lobby.visibility === 'private' ? 'allowlisted' : 'none');
+
+  if (policy === 'allowlisted') {
+    const allow = lobby.allowlist ?? [];
+    const key = token || displayName || '';
+    if (allow.includes(key)) {
+      return { allowed: true, identityRef: key };
+    }
+    return { allowed: false, reason: 'private lobby: not on the allowlist' };
   }
 
   // Private lobbies require a valid token

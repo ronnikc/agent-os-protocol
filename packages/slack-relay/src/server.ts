@@ -28,16 +28,42 @@ export function startSlackRelayServer(options: SlackRelayOptions) {
     })
   );
 
+  const processedRequests = new Map<string, number>();
+
   app.post('/api/v1/slack/commands', async (req: Request, res: Response) => {
     const rawBody = (req as any).rawBody || '';
     const timestamp = req.headers['x-slack-request-timestamp'] as string;
     const signature = req.headers['x-slack-signature'] as string;
+
+    // Enforce Slack timestamp tolerance (5 minutes / 300 seconds)
+    const nowSec = Math.floor(Date.now() / 1000);
+    const requestSec = parseInt(timestamp, 10);
+    if (isNaN(requestSec) || Math.abs(nowSec - requestSec) > 300) {
+      return res.status(401).json({ error: 'Slack request timestamp outside of tolerable window' });
+    }
 
     // Validate request signature against Slack's signing secret
     const isValid = verifySlackSignature(options.signingSecret, rawBody, timestamp, signature);
     if (!isValid) {
       return res.status(401).json({ error: 'Invalid Slack request signature verification' });
     }
+
+    // Deduplicate duplicate command retries
+    const reqId = req.body.trigger_id || `${req.body.user_id}:${req.body.command}:${req.body.text}:${timestamp}`;
+    const now = Date.now();
+    
+    // Evict expired entries
+    for (const [id, exp] of processedRequests.entries()) {
+      if (now > exp) processedRequests.delete(id);
+    }
+
+    if (processedRequests.has(reqId)) {
+      return res.json({
+        response_type: 'ephemeral',
+        text: 'Duplicate request discarded.'
+      });
+    }
+    processedRequests.set(reqId, now + 10 * 60 * 1000); // cache for 10 minutes
 
     const payload: SlackCommandPayload = {
       command: req.body.command,

@@ -61,8 +61,8 @@ export interface LobbyStore {
   listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]>;
 
   // Nonces storage for proof-of-possession verification
-  saveNonce(identityRef: string, nonce: string, expiresAt: number): Promise<void>;
-  getNonce(identityRef: string): Promise<{ nonce: string; expiresAt: number } | undefined>;
+  saveNonce(identityRef: string, lobbyId: string, nonce: string, expiresAt: number): Promise<void>;
+  getNonce(identityRef: string): Promise<{ nonce: string; lobbyId: string; expiresAt: number } | undefined>;
   deleteNonce(identityRef: string): Promise<void>;
 }
 
@@ -86,7 +86,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private externalLinks = new Map<string, ExternalIdentityLink>(); // linkId -> ExternalIdentityLink
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
-  private nonces = new Map<string, { nonce: string; expiresAt: number }>(); // identityRef -> nonce details
+  private nonces = new Map<string, { nonce: string; lobbyId: string; expiresAt: number }>(); // identityRef -> nonce details
 
   private bucket(lobbyId: string): LobbyBucket | undefined {
     return this.lobbies.get(lobbyId);
@@ -268,11 +268,11 @@ export class InMemoryLobbyStore implements LobbyStore {
     return [...this.syncJobs.values()].filter((j) => j.lobby_id === lobbyId);
   }
 
-  async saveNonce(identityRef: string, nonce: string, expiresAt: number): Promise<void> {
-    this.nonces.set(identityRef, { nonce, expiresAt });
+  async saveNonce(identityRef: string, lobbyId: string, nonce: string, expiresAt: number): Promise<void> {
+    this.nonces.set(identityRef, { nonce, lobbyId, expiresAt });
   }
 
-  async getNonce(identityRef: string): Promise<{ nonce: string; expiresAt: number } | undefined> {
+  async getNonce(identityRef: string): Promise<{ nonce: string; lobbyId: string; expiresAt: number } | undefined> {
     return this.nonces.get(identityRef);
   }
 

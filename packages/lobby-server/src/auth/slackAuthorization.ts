@@ -7,6 +7,7 @@ export interface SlackAuthorizationResult {
   authorized: boolean;
   identityRef?: string;
   reason?: string;
+  role?: string;
 }
 
 /** Check if a Slack User ID is linked to a verified identity allowed in the private lobby. */
@@ -35,8 +36,9 @@ export async function verifySlackUserAuthorization(
     return { authorized: false, reason: 'lobby not found' };
   }
 
+  const member = await store.getMember(lobbyId, link.identity_ref);
+
   if (lobby.visibility === 'private') {
-    const member = await store.getMember(lobbyId, link.identity_ref);
     if (!member || member.status !== 'active') {
       return { authorized: false, reason: 'associated identity is not an active member of this private lobby' };
     }
@@ -46,5 +48,9 @@ export async function verifySlackUserAuthorization(
     }
   }
 
-  return { authorized: true, identityRef: link.identity_ref };
+  return { 
+    authorized: true, 
+    identityRef: link.identity_ref, 
+    role: member?.role 
+  };
 }
