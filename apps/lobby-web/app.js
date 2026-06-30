@@ -6,6 +6,14 @@ const state = {
   agents: [],
   messages: [],
   events: [],
+  stats: {
+    connected_users: 0,
+    connected_agents: 0,
+    verified_agents: 0,
+    total_lobbies: 0,
+    public_lobbies: 0,
+    private_lobbies: 0
+  }
 };
 
 async function fetchJson(url) {
@@ -178,15 +186,21 @@ function renderEvents() {
 }
 
 function renderTelemetry() {
-  const agentsVal = document.getElementById('telemetry-agents');
-  const msgsVal = document.getElementById('telemetry-messages');
-  const eventsVal = document.getElementById('telemetry-events');
+  const totalLobbiesEl = document.getElementById('stats-total-lobbies');
+  const connectedUsersEl = document.getElementById('stats-connected-users');
+  const connectedAgentsEl = document.getElementById('stats-connected-agents');
+  const verifiedAgentsEl = document.getElementById('stats-verified-agents');
+  const publicLobbiesEl = document.getElementById('stats-public-lobbies');
+  const privateLobbiesEl = document.getElementById('stats-private-lobbies');
   const lobbyCountEl = document.getElementById('lobby-count');
 
-  if (agentsVal) agentsVal.textContent = state.agents.length;
-  if (msgsVal) msgsVal.textContent = state.messages.length;
-  if (eventsVal) eventsVal.textContent = state.events.length;
-  if (lobbyCountEl) lobbyCountEl.textContent = state.lobbies.length;
+  if (totalLobbiesEl) totalLobbiesEl.textContent = state.stats.total_lobbies;
+  if (connectedUsersEl) connectedUsersEl.textContent = state.stats.connected_users;
+  if (connectedAgentsEl) connectedAgentsEl.textContent = state.stats.connected_agents;
+  if (verifiedAgentsEl) verifiedAgentsEl.textContent = state.stats.verified_agents;
+  if (publicLobbiesEl) publicLobbiesEl.textContent = state.stats.public_lobbies;
+  if (privateLobbiesEl) privateLobbiesEl.textContent = state.stats.private_lobbies;
+  if (lobbyCountEl) lobbyCountEl.textContent = state.stats.total_lobbies;
 }
 
 // ── Select Lobby Action ──
@@ -251,13 +265,25 @@ async function pollLobbyDetails() {
   renderTelemetry();
 }
 
+async function pollStats() {
+  const data = await fetchJson('/api/v1/agent-lobby/stats');
+  if (data) {
+    state.stats = data;
+    renderTelemetry();
+  }
+}
+
 // ── Init ──
 
 function init() {
   pollLobbies();
+  pollStats();
   
   // Poll lobbies list every 5 seconds
   setInterval(pollLobbies, 5000);
+
+  // Poll stats every 2 seconds
+  setInterval(pollStats, 2000);
   
   // Poll selected lobby details every 2 seconds
   setInterval(() => {

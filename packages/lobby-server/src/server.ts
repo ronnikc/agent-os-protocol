@@ -120,6 +120,40 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ lobbies: await store.listLobbies() });
     }
 
+    if (path === '/api/v1/agent-lobby/stats' && req.method === 'GET') {
+      const lobbies = await store.listLobbies();
+      let connected_users = 0;
+      let connected_agents = 0;
+      let verified_agents = 0;
+      const seenAgents = new Set<string>();
+
+      for (const lobby of lobbies) {
+        const roster = await store.roster(lobby.lobby_id);
+        for (const agent of roster) {
+          if (seenAgents.has(agent.agent_id)) continue;
+          seenAgents.add(agent.agent_id);
+
+          if (agent.participant_type === 'human' || agent.role === 'human') {
+            connected_users++;
+          } else {
+            connected_agents++;
+            if (agent.identity_status === 'verified') {
+              verified_agents++;
+            }
+          }
+        }
+      }
+
+      return json({
+        connected_users,
+        connected_agents,
+        verified_agents,
+        total_lobbies: lobbies.length,
+        public_lobbies: lobbies.filter(l => l.visibility === 'public').length,
+        private_lobbies: lobbies.filter(l => l.visibility === 'private').length
+      });
+    }
+
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'POST') {
       const body = await readBody(req);
       const now = new Date().toISOString();
