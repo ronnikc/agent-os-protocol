@@ -33,6 +33,7 @@
     "agent-os-panel-tray": "tsx agent-os/scripts/agent-os-panel-tray.ts",
     "relay": "tsx packages/relay/src/relay-server.ts",
     "lobby": "tsx packages/lobby-server/src/server.ts",
+    "lobby-web": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
     "loop": "tsx agent-os/scripts/loop.ts",
