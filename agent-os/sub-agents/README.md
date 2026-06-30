@@ -8,7 +8,7 @@ In a Swarm Lobby, the appointed **Boss Agent** (the local team leader) coordinat
 
 ## 1. Roster Divisions
 
-The expanded roster is divided into 8 functional departments to represent a balanced, collaborative development swarm:
+The expanded roster is divided into 9 functional departments to represent a balanced, collaborative development swarm:
 
 ```mermaid
 mindmap
@@ -38,12 +38,20 @@ mindmap
       Design System Custodian
       i18n Specialist
       UX Researcher
+    CMS Specialists
+      WordPress Specialist
+      Drupal Specialist
+      Joomla Specialist
+      Umbraco Specialist
     Sales & Growth
       Demo Architect
       RFP Writer
       Client Onboarder
-    Marketing & DevRel
-      DevRel Advocate
+      CRM Integration Engineer
+    Paid Media & Marketing
+      Ad Campaign Manager
+      SEO Link Architect
+      Newsletter Strategist
       Comms Specialist
       Community Liaison
     QA & Resilience
@@ -82,7 +90,7 @@ Click on any agent's name to view its detailed definition, startup protocol, and
 ### Engineering & Core Architecture
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
-| **[Backend Specialist](agents/backend.md)** | `backend` | Implements backend models, business logic, routes, and services. |
+| **[Backend Specialist](agents/backend.md)** | `backend` | Implements backend data models, business logic, routes, and services. |
 | **[Frontend Specialist](agents/frontend.md)** | `frontend` | Implements UI views, state management, interactive components, and styles. |
 | **[API Specialist](agents/api.md)** | `api` | Designs, documents, and validates REST/WebSocket API contracts. |
 | **[Mobile Specialist](agents/mobile-specialist.md)** | `mobile-specialist` | Adapts web pages, overlays, and relays to run inside hybrid mobile wrappers. |
@@ -108,17 +116,28 @@ Click on any agent's name to view its detailed definition, startup protocol, and
 | **[i18n Specialist](agents/i18n-specialist.md)** | `i18n-specialist` | Manages translation catalogs, currency/date formats, and localization hooks. |
 | **[UX Researcher](agents/ux-researcher.md)** | `ux-researcher` | Audits telemetry click-flows and user interface navigation friction. |
 
+### CMS Specialists
+| Agent | Slug | Core Mission |
+|:---|:---|:---|
+| **[WordPress Specialist](agents/wordpress-specialist.md)** | `wordpress-specialist` | Designs Gutenberg blocks, themes, and audits custom plugin integration codes. |
+| **[Drupal Specialist](agents/drupal-specialist.md)** | `drupal-specialist` | Configures module hooks, dynamic queries, routes, and Twig template files. |
+| **[Joomla! Specialist](agents/joomla-specialist.md)** | `joomla-specialist` | Integrates component layouts, module views, and verifies MVC form tokens. |
+| **[Umbraco Specialist](agents/umbraco-specialist.md)** | `umbraco-specialist` | Configures ASP.NET controllers, Razor templates, and composer event handlers. |
+
 ### Sales & Growth
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
 | **[Demo Architect](agents/demo-architect.md)** | `demo-architect` | Creates mock integration sandboxes and playgrounds to showcase system features. |
 | **[RFP Writer](agents/rfp-writer.md)** | `rfp-writer` | Analyzes client questionnaires, specifications, and compiles technical proposals. |
 | **[Client Onboarder](agents/client-onboarder.md)** | `client-onboarder` | Generates custom integration plans, environment files, and onboarding packages. |
+| **[CRM Integration Engineer](agents/crm-integration-engineer.md)** | `crm-integration-engineer` | Configures webhooks, payload schemas, and CRM data sync (HubSpot, Salesforce). |
 
-### Marketing & Developer Relations
+### Paid Media & Marketing
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
-| **[DevRel Advocate](agents/devrel-advocate.md)** | `devrel-advocate` | Manages contribution guidelines, issue templates, and writes developer guides. |
+| **[Ad Campaign Manager](agents/ad-campaign-manager.md)** | `ad-campaign-manager` | Audits conversion pixel setups, UTM parameters, and CPC/ROAS thresholds. |
+| **[SEO Link Architect](agents/seo-link-architect.md)** | `seo-link-architect` | Verifies domain authority parameters, organic link structures, and sitemaps. |
+| **[Newsletter Strategist](agents/newsletter-strategist.md)** | `newsletter-strategist` | Designs responsive localized email templates and automated double opt-in flows. |
 | **[Comms Specialist](agents/comms-specialist.md)** | `comms-specialist` | Translates technical commit logs and completed PRs into newsletters and blogs. |
 | **[Community Liaison](agents/community-liaison.md)** | `community-liaison` | Monitores forums and discussion boards, triaging questions and drafting answers. |
 
@@ -182,5 +201,9 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[release-notes](skills/release-notes/SKILL.md):** Auto-compiles changelogs matching functional sprint criteria.
 - **[documentation-and-adrs](skills/documentation-and-adrs/SKILL.md):** Records architectural choices as standardized ADRs.
 - **[pipeline-configuration](skills/pipeline-configuration/SKILL.md):** Verifies CI/CD workflow actions, hash caching keys, and runner syntax.
+
+### Content & Growth
+- **[cms-plugin-integration](skills/cms-plugin-integration/SKILL.md):** Audits custom hooks, hook priority filters, and XML manifests.
+- **[campaign-metric-audit](skills/campaign-metric-audit/SKILL.md):** Computes CAC, ROAS metrics, conversion tags, and UTM attribution parameters.
 
 *For the complete detailed skills registry, see the [Skills Registry Index](skills/README.md).*
