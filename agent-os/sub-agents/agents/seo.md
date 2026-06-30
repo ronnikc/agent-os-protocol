@@ -30,7 +30,9 @@ N/A — this agent does not own dedicated documentation files. It consults front
 
 ## Available Skills
 
-None dedicated yet. This is a lightweight agent that performs SEO tasks using standard frontend editing patterns.
+| Skill | Description |
+|-------|-------------|
+| `seo-competitor-analysis` | Analyze organic competitor landing page metadata, keywords, and SERP layouts to optimize SEO targets |
 
 ## Key Rules
 

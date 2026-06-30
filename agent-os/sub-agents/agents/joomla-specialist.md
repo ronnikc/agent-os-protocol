@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `cms-plugin-integration` | Audit and implement Joomla plugin event subscribers, modules, and extensions |
 | `service-pattern` | Backend patterns: constructor models, clean error routing, DB query structures |
 | `security-and-hardening` | Hardening setups: token check verification, escaping inputs, sanitization |
+| `mcp-server-config` | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings |
 
 ## Startup Protocol
 

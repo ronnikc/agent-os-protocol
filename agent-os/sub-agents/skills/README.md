@@ -76,6 +76,9 @@ agent-os/sub-agents/skills/<slug>/
 | Source-Driven Development | [source-driven-development/SKILL.md](source-driven-development/SKILL.md) | Ground every framework-specific decision in official docs for the version in package.json; cite sources; flag UNVERIFIED — anti-hallucination discipline | backend, frontend, api, test, research, documentation, accessibility |
 | Incremental Implementation | [incremental-implementation/SKILL.md](incremental-implementation/SKILL.md) | Build in thin vertical slices: implement → test → verify → commit; scope discipline + feature flags + rollback-friendly increments | backend, frontend, api, test, infrastructure |
 | Database Migration Audit | [database-migration-audit/SKILL.md](database-migration-audit/SKILL.md) | Audit database migrations, schema definitions, indexing efficiency, and rollback operations | database-administrator, backend |
+| Asset Prototyping | [asset-prototyping/SKILL.md](asset-prototyping/SKILL.md) | Generate static wireframe sandboxes, wire design layouts, and stub image boundaries | design, frontend, demo-architect |
+| MCP Server Configuration | [mcp-server-config/SKILL.md](mcp-server-config/SKILL.md) | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings | wordpress-specialist, drupal-specialist, joomla-specialist, umbraco-specialist, infrastructure |
+| Mock API Specification | [mock-api-specification/SKILL.md](mock-api-specification/SKILL.md) | Design mock API handlers, MSW route stubs, and network interceptors for testing | api, e2e-architect, test, crm-integration-engineer |
 
 ### Process & Orchestration Skills
 
@@ -88,6 +91,7 @@ agent-os/sub-agents/skills/<slug>/
 | Branch Completion | [branch-completion/SKILL.md](branch-completion/SKILL.md) | Guide completion of development work: verify tests, present integration options, execute choice | release |
 | Sprint Gate Enforcement | [sprint-gate-enforcement/SKILL.md](sprint-gate-enforcement/SKILL.md) | Run pre-sprint or close-out gate checks via sprint-gate-runner.sh, block progression on failures | sprint-gate-enforcer, planning |
 | Deprecation and Migration | [deprecation-and-migration/SKILL.md](deprecation-and-migration/SKILL.md) | Code-as-liability discipline: deprecation decision, strangler/adapter/feature-flag patterns, Churn Rule, zombie-code response | planning, backend, frontend, api, infrastructure, release, documentation |
+| Structured Data Analysis | [structured-data-analysis/SKILL.md](structured-data-analysis/SKILL.md) | Parse, filter, aggregate, and compile structured logs, CSVs, and telemetry data tables | research, database-administrator, planning |
 
 ### Quality & Discipline Skills
 
@@ -104,6 +108,8 @@ agent-os/sub-agents/skills/<slug>/
 | Security and Hardening | [security-and-hardening/SKILL.md](security-and-hardening/SKILL.md) | OWASP Top 10 prevention: input validation at boundaries, secrets management, helmet/CSP, npm audit triage, file upload safety, SSRF allowlists | security, backend, frontend, api, code-review, infrastructure |
 | Performance Optimization | [performance-optimization/SKILL.md](performance-optimization/SKILL.md) | Measure-first workflow: Core Web Vitals targets, N+1 fixes, Mongo index discipline, image optimization, bundle budgets, regression guardrails | frontend, backend, infrastructure, code-review |
 | Chaos Testing | [chaos-testing/SKILL.md](chaos-testing/SKILL.md) | Inject network failures, service outages, and latency to audit recovery, exceptions, and resilience | chaos-steward, performance-analyst, test |
+| Dependency Vulnerability Auditing | [vulnerability-auditing/SKILL.md](vulnerability-auditing/SKILL.md) | Run and audit dependency scanner alerts (e.g. npm audit) and securely resolve version increments | security, pipeline-specialist, infrastructure |
+| Memory & Performance Profiling | [memory-profiling/SKILL.md](memory-profiling/SKILL.md) | Analyze Node/browser heap allocations, locate memory leaks, and profile connection cycles | performance-analyst, test |
 
 ### Domain Skills
 
@@ -117,6 +123,8 @@ agent-os/sub-agents/skills/<slug>/
 | Design Token Audit | [design-token-audit/SKILL.md](design-token-audit/SKILL.md) | Verify styling variables, visual design system tokens, layout compliance, and contrast ratios | design-system-custodian, ux-researcher |
 | Localization Verification | [localization-verification/SKILL.md](localization-verification/SKILL.md) | Audit translation keys synchronization, missing locale keys, and Dynamic UI localization hooks | i18n-specialist, content |
 | CMS Hook & Plugin Integration | [cms-plugin-integration/SKILL.md](cms-plugin-integration/SKILL.md) | Audit, design, and implement custom plugin extensions, event hooks, and configuration overrides | wordpress-specialist, drupal-specialist, joomla-specialist, umbraco-specialist |
+| Brand Guidelines Alignment | [brand-guidelines-alignment/SKILL.md](brand-guidelines-alignment/SKILL.md) | Audit visual copy, typography weights, logo dimensions, and page styling against official branding specs | design, ux, design-system-custodian, comms-specialist |
+| Figma Design Integration | [figma-design-integration/SKILL.md](figma-design-integration/SKILL.md) | Interface with Figma REST APIs to extract design tokens, CSS variables, and clean vector SVGs | design, ux, design-system-custodian, frontend, demo-architect |
 
 ### Product & Validation Skills
 
@@ -133,12 +141,14 @@ agent-os/sub-agents/skills/<slug>/
 | Deployment Verification | [deployment-verification/SKILL.md](deployment-verification/SKILL.md) | Verify deployment: Docker build, health checks, security headers, CORS | infrastructure |
 | Documentation and ADRs | [documentation-and-adrs/SKILL.md](documentation-and-adrs/SKILL.md) | Capture significant decisions as ADRs (Context/Decision/Alternatives/Consequences); inline why-not-what comments; Chesterton-fence comments for required-but-weird patterns | documentation, planning, product, code-review, backend, frontend, infrastructure, security |
 | Pipeline Configuration | [pipeline-configuration/SKILL.md](pipeline-configuration/SKILL.md) | Manage, validate, and optimize automated CI/CD integration workflows, caching keys, and jobs | pipeline-specialist, infrastructure |
+| Git Branch & Commit Management | [git-branch-management/SKILL.md](git-branch-management/SKILL.md) | Audit and coordinate branch checkouts, rebases, squashing, and commit message formats | release, scrum-coordinator |
 
 ### Content & Growth Skills
 
 | Skill | File | Summary | Used by agents |
 |-------|------|---------|----------------|
 | Campaign Metric Auditing | [campaign-metric-audit/SKILL.md](campaign-metric-audit/SKILL.md) | Audit advertising conversion tracking codes, UTM query codes, and calculate acquisition metrics | ad-campaign-manager, newsletter-strategist, comms-specialist |
+| SEO Competitor Analysis | [seo-competitor-analysis/SKILL.md](seo-competitor-analysis/SKILL.md) | Analyze organic competitor landing page metadata, keywords, and SERP layouts to optimize SEO targets | seo, seo-link-architect, ad-campaign-manager |
 
 ---
 

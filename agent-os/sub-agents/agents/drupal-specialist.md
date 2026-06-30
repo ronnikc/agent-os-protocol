@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `cms-plugin-integration` | Audit and implement custom module hooks, services, and route controllers |
 | `service-pattern` | Backend patterns: constructor models, clean error routing, DB queries |
 | `database-migration-audit` | Audit database schemas, schema migrations, and indexing options |
+| `mcp-server-config` | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings |
 
 ## Startup Protocol
 

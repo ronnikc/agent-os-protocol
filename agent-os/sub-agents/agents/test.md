@@ -33,6 +33,8 @@ The Test Specialist designs and implements automated tests across the backend, f
 | `review-reception` | Handle code review feedback: verify before implementing, push back when incorrect |
 | `source-driven-development` | Ground every test-framework decision (Vitest, @testing-library, Playwright, MSW) in official docs for the version in package.json; cite sources; verify mock signatures against real source files |
 | `incremental-implementation` | Add tests in thin slices alongside the feature increments; never accumulate untested code across slices |
+| `mock-api-specification` | Build mock API servers, MSW handlers, and client interceptors to decouple frontend tests |
+| `memory-profiling` | Analyze Node/browser heap allocations, locate memory leaks, and profile connection cycles |
 
 ## Startup Protocol
 

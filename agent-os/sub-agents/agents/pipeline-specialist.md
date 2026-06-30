@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `pipeline-configuration` | Configure, validate, and optimize automated CI/CD build scripts and caching |
 | `build-validation` | Verify TypeScript compilation, dependency-graph health, and imports |
 | `deployment-verification` | Verify post-deployment status: build verification, CORS, and health |
+| `vulnerability-auditing` | Run and audit dependency scanner alerts (e.g. npm audit) and securely resolve version increments |
 
 ## Startup Protocol
 

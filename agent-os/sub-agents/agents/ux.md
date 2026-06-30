@@ -36,6 +36,8 @@ Before performing any UX work:
 |-------|-------------|
 | `accessibility-audit` | When reviewing pages or components for WCAG 2.1 AA compliance — check keyboard navigation, screen reader compatibility, color contrast, focus management, and ARIA attributes. |
 | `design-ideation` | When starting work on a new feature requiring UX design exploration: explore context, propose approaches, get approval before implementation. |
+| `brand-guidelines-alignment` | When auditing layout copies, typography weights, logo dimensions, and page styling against official branding specs. |
+| `figma-design-integration` | When extracting design variables, typography tokens, layout coordinates, and vector SVGs from Figma API schemas. |
 
 ## Key Rules
 

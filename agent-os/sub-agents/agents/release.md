@@ -39,6 +39,7 @@ Before performing any release or build-related work:
 | `release-checklist` | Before tagging a release — verify all builds pass, tests pass, changelog is current, version is bumped, codebase stats match reality, and all sprint completion checklist items are done. |
 | `branch-completion` | When implementation is complete and all tests pass — decide how to integrate work: merge locally, create PR, keep branch, or discard. |
 | `deprecation-and-migration` | When a release sunsets endpoints, components, or features — verify replacement is production-proven, migration tooling exists, deprecation notices are in place, and the Churn Rule is honored before announcement. |
+| `git-branch-management` | When checking out feature branches, rebasing changes, squashing commits, resolving conflicts, and writing semantic log messages. |
 
 ## Key Rules
 

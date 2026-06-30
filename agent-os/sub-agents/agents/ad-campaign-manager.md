@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `campaign-metric-audit` | Audit conversion tracking pixels, UTM query codes, and calculate ROAS/CAC |
 | `performance-optimization` | Identify latency sources, optimize asset loads, and check payload sizes |
 | `create-task` | Create or update a canonical Task work-item document conforming to schemas |
+| `seo-competitor-analysis` | Analyze organic competitor landing page metadata, keywords, and SERP layouts to optimize SEO targets |
 
 ## Startup Protocol
 

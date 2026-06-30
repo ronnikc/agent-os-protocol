@@ -34,6 +34,7 @@ The API Specialist ensures consistency and correctness of API contracts between 
 | `security-and-hardening` | Validate at the route boundary with Zod, never let raw req.body reach Mongo, verify RBAC + enforceOrgScope on every protected route |
 | `code-review-and-quality` | Self-review API contracts with five-axis rubric and severity labels before requesting external review |
 | `deprecation-and-migration` | Sunset old endpoints with strangler/adapter pattern; document migration in api-contracts.md; honor Churn Rule for consumer migration |
+| `mock-api-specification` | Design mock API handlers, MSW route stubs, and network interceptors for testing |
 
 ## Startup Protocol
 

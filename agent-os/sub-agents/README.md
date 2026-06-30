@@ -179,6 +179,9 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[incremental-implementation](skills/incremental-implementation/SKILL.md):** Builds code in roll-back friendly, thin vertical slices.
 - **[service-pattern](skills/service-pattern/SKILL.md) & [component-pattern](skills/component-pattern/SKILL.md):** Enforces canonical backend service and frontend component templates.
 - **[database-migration-audit](skills/database-migration-audit/SKILL.md):** Audits schema changes, query indexing, constraints, and rollbacks.
+- **[asset-prototyping](skills/asset-prototyping/SKILL.md):** Generates static wireframe sandboxes and stubs mockup images.
+- **[mcp-server-config](skills/mcp-server-config/SKILL.md):** Audits Model Context Protocol schemas, JSON settings, and connector routes.
+- **[mock-api-specification](skills/mock-api-specification/SKILL.md):** Builds mock servers and request interceptors to decouple frontend tests.
 
 ### Quality Assurance & Verification
 - **[verification-gate](skills/verification-gate/SKILL.md):** Requires execution evidence (compile, test, lint outputs) before completing tasks.
@@ -188,12 +191,15 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[security-and-hardening](skills/security-and-hardening/SKILL.md):** Checks security patterns against OWASP Top 10 vulnerabilities.
 - **[performance-optimization](skills/performance-optimization/SKILL.md):** Measures Core Web Vitals, index coverage, and bundle budgets.
 - **[chaos-testing](skills/chaos-testing/SKILL.md):** Injects endpoint latency and process shutdowns to verify failure recovery.
+- **[vulnerability-auditing](skills/vulnerability-auditing/SKILL.md):** Runs dependency audits (e.g. npm audit) and upgrades packages safely.
+- **[memory-profiling](skills/memory-profiling/SKILL.md):** Audits heap allocations and memory leak trajectories.
 
 ### Swarm & Loop Coordination
 - **[loop-orchestrator](skills/loop-orchestrator/SKILL.md):** Controls loops, tracking convergence criteria and budget metrics.
 - **[create-loop](skills/create-loop/SKILL.md):** Authors loops with measurable exit criteria and budget limits.
 - **[task-routing](skills/task-routing/SKILL.md):** Routes tasks to qualified specialists connected in the lobby.
 - **[identity-verification](skills/identity-verification/SKILL.md):** Audits and resolves agent identities against the Concordium registry.
+- **[structured-data-analysis](skills/structured-data-analysis/SKILL.md):** Parses and aggregates logs, CSV sheets, and data tables.
 
 ### Release & Delivery
 - **[deployment-verification](skills/deployment-verification/SKILL.md):** Runs health checks, HSTS checks, and security audits post-deployment.
@@ -201,9 +207,13 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[release-notes](skills/release-notes/SKILL.md):** Auto-compiles changelogs matching functional sprint criteria.
 - **[documentation-and-adrs](skills/documentation-and-adrs/SKILL.md):** Records architectural choices as standardized ADRs.
 - **[pipeline-configuration](skills/pipeline-configuration/SKILL.md):** Verifies CI/CD workflow actions, hash caching keys, and runner syntax.
+- **[git-branch-management](skills/git-branch-management/SKILL.md):** Coordinates checkout branches, rebases, squashing, and commits formats.
 
 ### Content & Growth
 - **[cms-plugin-integration](skills/cms-plugin-integration/SKILL.md):** Audits custom hooks, hook priority filters, and XML manifests.
 - **[campaign-metric-audit](skills/campaign-metric-audit/SKILL.md):** Computes CAC, ROAS metrics, conversion tags, and UTM attribution parameters.
+- **[brand-guidelines-alignment](skills/brand-guidelines-alignment/SKILL.md):** Audits logo dimensions, visual copy, and page styling.
+- **[figma-design-integration](skills/figma-design-integration/SKILL.md):** Syncs colors, font weights, and layout variables from Figma.
+- **[seo-competitor-analysis](skills/seo-competitor-analysis/SKILL.md):** Audits competitor metadata and SERP keywords.
 
 *For the complete detailed skills registry, see the [Skills Registry Index](skills/README.md).*

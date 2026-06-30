@@ -28,6 +28,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `api-contract-validation` | Verify REST/WebSocket API endpoints and payload schemas |
 | `service-pattern` | Backend patterns: constructor models, clean error routing, DB queries |
+| `mock-api-specification` | Build mock API servers, MSW payload handlers, and connector stubs for CRM API tests |
 
 ## Startup Protocol
 

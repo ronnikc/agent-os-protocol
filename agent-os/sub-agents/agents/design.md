@@ -36,6 +36,9 @@ Before performing any design or styling work:
 |-------|-------------|
 | `component-pattern` | When creating a new UI component or refactoring an existing one — ensure it follows the established component structure, uses design tokens, and adheres to the `aos-` CSS prefix convention. |
 | `design-ideation` | When starting work on a new feature requiring visual/interaction design exploration: explore context, propose approaches, get approval before implementation. |
+| `brand-guidelines-alignment` | When auditing visual copy, typography weights, logo dimensions, and layout properties against official branding specifications. |
+| `asset-prototyping` | When setting up static layout mockups, sandboxes, and stubbing local image dimensions for visual review. |
+| `figma-design-integration` | When fetching design variables, typography tokens, layout coordinates, and vector SVGs from Figma API schemas. |
 
 ## Key Rules
 

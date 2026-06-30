@@ -28,6 +28,7 @@ All source directories (read-only access):
 | `database-migration-audit` | Audit database migrations, schema edits, and indexing rules |
 | `performance-optimization` | Identify redundant API calls, index queries, and verify response speeds |
 | `implementation-planning` | Create detailed, bite-sized implementation plans with exact file paths |
+| `structured-data-analysis` | Parse, filter, aggregate, and compile structured logs, CSVs, and telemetry data tables |
 
 ## Startup Protocol
 

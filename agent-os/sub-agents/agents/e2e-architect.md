@@ -27,6 +27,7 @@ All source directories (read-only access):
 |-------|-------------|
 | `test-patterns` | Implement tests using mock patterns, mocks, and assert checks |
 | `tdd-discipline` | Enforce Red-Green-Refactor cycles: fail test first |
+| `mock-api-specification` | Build mock servers, MSW request interceptors, and local API stubs for offline testing |
 
 ## Startup Protocol
 
