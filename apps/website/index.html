@@ -275,15 +275,48 @@
 
       <!-- Agent Showcase Grid -->
       <div class="roster-grid">
-        <!-- Engineering & Coordination -->
+        <!-- Engineering & Coordination (17 Agents) -->
         <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
-            <h4>Planning Agent</h4>
+            <h4>Planning Specialist</h4>
             <span class="badge-cohort engineering">Coordination</span>
           </div>
-          <p>Orchestrates Loop Mode execution, schedules sprints, compiles Gantt dependencies, and monitors critical path blockers.</p>
+          <p>Translates requirements into step-by-step TDD implementation plans and scopes package dependencies.</p>
           <div class="skills-tags">
-            <span>gantt-schedule</span><span>loop-control</span><span>sprint-planning</span>
+            <span>sprint-decomposition</span><span>implementation-planning</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Boss Agent</h4>
+            <span class="badge-cohort engineering">Coordination</span>
+          </div>
+          <p>Orchestrates the lobby, manages floor control, plans sprints, and routes tasks dynamically.</p>
+          <div class="skills-tags">
+            <span>loop-orchestrator</span><span>task-routing</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Sprint Gate Enforcer</h4>
+            <span class="badge-cohort engineering">Coordination</span>
+          </div>
+          <p>Enforces structural check gates before task commits and during sprint close-outs.</p>
+          <div class="skills-tags">
+            <span>verification-gate</span><span>release-checklist</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Lobby Dispatcher</h4>
+            <span class="badge-cohort engineering">Coordination</span>
+          </div>
+          <p>Monitors connected agent rosters and routes tasks matching specialist capabilities.</p>
+          <div class="skills-tags">
+            <span>task-routing</span><span>identity-verification</span>
           </div>
         </div>
 
@@ -292,9 +325,9 @@
             <h4>Scrum Coordinator</h4>
             <span class="badge-cohort engineering">Coordination</span>
           </div>
-          <p>Coordinates standup diaries, tracks roadblock triages, compiles logs, and manages inter-agent communications via the shared inbox.</p>
+          <p>Coordinates standup diaries, tracks roadblock triages, compiles logs, and manages Gantt timelines.</p>
           <div class="skills-tags">
-            <span>roadblock-triage</span><span>diary-compilation</span><span>shared-mem-inbox</span>
+            <span>structured-data-analysis</span><span>sprint-decomposition</span>
           </div>
         </div>
 
@@ -303,9 +336,9 @@
             <h4>Backend Specialist</h4>
             <span class="badge-cohort engineering">Engineering</span>
           </div>
-          <p>Builds backend HTTP routers, implements server API endpoints, configures database schemas, and maintains session security.</p>
+          <p>Implements backend data models, business logic, routes, schemas, and API handlers.</p>
           <div class="skills-tags">
-            <span>api-routing</span><span>schema-migration</span><span>session-handshake</span>
+            <span>service-pattern</span><span>database-migration-audit</span>
           </div>
         </div>
 
@@ -314,21 +347,131 @@
             <h4>Frontend Specialist</h4>
             <span class="badge-cohort engineering">Engineering</span>
           </div>
-          <p>Implements responsive layouts, styles components with CSS, sets accessibility hooks, and builds interactive control planes.</p>
+          <p>Implements UI views, state management, interactive components, and responsive styles.</p>
           <div class="skills-tags">
-            <span>component-design</span><span>responsive-styles</span><span>aria-compliance</span>
+            <span>component-pattern</span><span>figma-design-integration</span>
           </div>
         </div>
 
-        <!-- Auditing & Resilience -->
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>API Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Designs, documents, and validates REST/WebSocket API contracts and payloads.</p>
+          <div class="skills-tags">
+            <span>mock-api-specification</span><span>structured-data-analysis</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Mobile Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Adapts web pages, overlays, and relays to run inside hybrid mobile wrappers.</p>
+          <div class="skills-tags">
+            <span>component-pattern</span><span>incremental-implementation</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Database Administrator</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Audits migrations, queries, indexes, constraints, and database transactions.</p>
+          <div class="skills-tags">
+            <span>database-migration-audit</span><span>performance-optimization</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Tech Debt Steward</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Identifies and refactors complex functions, duplicate imports, and dead code.</p>
+          <div class="skills-tags">
+            <span>incremental-implementation</span><span>vulnerability-auditing</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Infrastructure Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Manages environment configurations, Docker builds, CORS settings, and local servers.</p>
+          <div class="skills-tags">
+            <span>pipeline-configuration</span><span>deployment-verification</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Release Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Audits release branch stability, compiles changelogs, and drafts release tags.</p>
+          <div class="skills-tags">
+            <span>release-checklist</span><span>release-notes</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Build Integrity Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Validates TypeScript compilations, resolves import issues, and checks build maps.</p>
+          <div class="skills-tags">
+            <span>pipeline-configuration</span><span>verification-gate</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Pipeline Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Manages CI/CD configurations, caching keys, build steps, and run logs.</p>
+          <div class="skills-tags">
+            <span>pipeline-configuration</span><span>verification-gate</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Training Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Processes source docs, strips secrets, and outputs custom agent training packs.</p>
+          <div class="skills-tags">
+            <span>structured-data-analysis</span><span>mcp-server-config</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Domain Specialist</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Learns codebase-specific domain knowledge via vectorized training index lookups.</p>
+          <div class="skills-tags">
+            <span>source-driven-development</span><span>structured-data-analysis</span>
+          </div>
+        </div>
+
+        <!-- Auditing & Resilience (12 Agents) -->
         <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
-            <h4>Security Auditor</h4>
+            <h4>Security Specialist</h4>
             <span class="badge-cohort auditing">Auditing</span>
           </div>
-          <p>Performs dependency vulnerabilities checks, reviews signing verifications, scans logs for credentials leakage, and manages key hygiene.</p>
+          <p>Hardens system boundaries, triages package vulnerabilities, and audits RBAC rules.</p>
           <div class="skills-tags">
-            <span>vulnerability-audit</span><span>secret-detection</span><span>credentials-redact</span>
+            <span>security-and-hardening</span><span>vulnerability-auditing</span>
           </div>
         </div>
 
@@ -337,9 +480,9 @@
             <h4>Accessibility Specialist</h4>
             <span class="badge-cohort auditing">Auditing</span>
           </div>
-          <p>Audits visual layouts and HTML semantics against WCAG 2.1 AA guidelines, manages focus traps, and tests screen readers compatibility.</p>
+          <p>Implements ARIA patterns, focus visible states, and verifies WCAG 2.1 AA.</p>
           <div class="skills-tags">
-            <span>wcag-audit</span><span>focus-containment</span><span>aria-announcement</span>
+            <span>brand-guidelines-alignment</span><span>figma-design-integration</span>
           </div>
         </div>
 
@@ -348,9 +491,20 @@
             <h4>Product QA</h4>
             <span class="badge-cohort auditing">Resilience</span>
           </div>
-          <p>Executes automated smoke tests, designs test cases, checks edge conditions, and enforces software test coverage.</p>
+          <p>Validates features against acceptance criteria, using smoke test cycles.</p>
           <div class="skills-tags">
-            <span>smoke-tests</span><span>unit-verification</span><span>coverage-audit</span>
+            <span>verification-gate</span><span>tdd-discipline</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Performance Analyst</h4>
+            <span class="badge-cohort auditing">Resilience</span>
+          </div>
+          <p>Conducts API load testing, monitors memory leaks, and benchmark timings.</p>
+          <div class="skills-tags">
+            <span>performance-optimization</span><span>memory-profiling</span>
           </div>
         </div>
 
@@ -359,21 +513,98 @@
             <h4>Chaos Steward</h4>
             <span class="badge-cohort auditing">Resilience</span>
           </div>
-          <p>Simulates real-world infrastructure failures, tests circuit breakers, and verifies fault-tolerant fallbacks inside loop runs.</p>
+          <p>Injects mock endpoint latencies and service outages to audit resilience.</p>
           <div class="skills-tags">
-            <span>failure-injection</span><span>circuit-breaker</span><span>fallback-testing</span>
+            <span>chaos-testing</span><span>performance-optimization</span>
           </div>
         </div>
 
-        <!-- CMS & Platform -->
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Code Reviewer</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Critiques code quality, naming compliance, structural designs, and reviews diffs.</p>
+          <div class="skills-tags">
+            <span>code-review-and-quality</span><span>git-branch-management</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>UI Designer</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Develops style guides, visual assets, SVG symbols, and CSS component tokens.</p>
+          <div class="skills-tags">
+            <span>figma-design-integration</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>UX Specialist</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Audits layout flows, responsive behaviors, interactive feedback, and copy.</p>
+          <div class="skills-tags">
+            <span>brand-guidelines-alignment</span><span>figma-design-integration</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Design System Custodian</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Audits styling files for variable compliance, color contrast, and token reuse.</p>
+          <div class="skills-tags">
+            <span>figma-design-integration</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>i18n Specialist</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Manages translation catalogs, currency/date formats, and localization hooks.</p>
+          <div class="skills-tags">
+            <span>structured-data-analysis</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>UX Researcher</h4>
+            <span class="badge-cohort auditing">Auditing</span>
+          </div>
+          <p>Audits telemetry click-flows and user interface navigation friction points.</p>
+          <div class="skills-tags">
+            <span>structured-data-analysis</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>User Validation</h4>
+            <span class="badge-cohort auditing">Resilience</span>
+          </div>
+          <p>Executes end-to-end integration flows and checks usability criteria.</p>
+          <div class="skills-tags">
+            <span>verification-gate</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <!-- CMS & Platform (16 Agents) -->
         <div class="roster-card" data-cohort="cms">
           <div class="roster-card-header">
             <h4>WordPress Specialist</h4>
             <span class="badge-cohort cms">CMS</span>
           </div>
-          <p>Audits plugins and themes, registers custom WordPress 7.0 Abilities API tool specifications, and integrates on-chain registry keys.</p>
+          <p>Designs Gutenberg blocks, themes, and audits custom plugin integration codes.</p>
           <div class="skills-tags">
-            <span>plugin-audit</span><span>abilities-api</span><span>registry-link</span>
+            <span>cms-plugin-integration</span><span>brand-guidelines-alignment</span>
           </div>
         </div>
 
@@ -382,20 +613,42 @@
             <h4>Drupal Specialist</h4>
             <span class="badge-cohort cms">CMS</span>
           </div>
-          <p>Manages configuration synchronization and hook patterns, audits database tables, and structures backend modules.</p>
+          <p>Configures module hooks, dynamic queries, routes, and Twig template files.</p>
           <div class="skills-tags">
-            <span>config-sync</span><span>hook-audit</span><span>twig-templates</span>
+            <span>cms-plugin-integration</span><span>service-pattern</span>
           </div>
         </div>
 
         <div class="roster-card" data-cohort="cms">
           <div class="roster-card-header">
-            <h4>Identity Agent</h4>
+            <h4>Joomla! Specialist</h4>
+            <span class="badge-cohort cms">CMS</span>
+          </div>
+          <p>Integrates component layouts, module views, and verifies MVC form tokens.</p>
+          <div class="skills-tags">
+            <span>cms-plugin-integration</span><span>component-pattern</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Umbraco Specialist</h4>
+            <span class="badge-cohort cms">CMS</span>
+          </div>
+          <p>Configures ASP.NET controllers, Razor templates, and composer event handlers.</p>
+          <div class="skills-tags">
+            <span>cms-plugin-integration</span><span>service-pattern</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Identity Specialist</h4>
             <span class="badge-cohort cms">Platform</span>
           </div>
-          <p>Orchestrates wallet authentication challenges, issues short-lived WebSocket session nonces, and queries Concordium DID records.</p>
+          <p>Manages agent cards, hashes profile data, and interfaces with Concordium.</p>
           <div class="skills-tags">
-            <span>wallet-challenge</span><span>nonce-issue</span><span>did-lookup</span>
+            <span>identity-verification</span><span>security-and-hardening</span>
           </div>
         </div>
 
@@ -404,21 +657,175 @@
             <h4>Lobby Architect</h4>
             <span class="badge-cohort cms">Platform</span>
           </div>
-          <p>Manages standalone room dispatchers, resolves multi-user lobbies, and coordinates the secure external identities linking database.</p>
+          <p>Manages lobby configurations, durability stores, and serverless transports.</p>
           <div class="skills-tags">
-            <span>room-dispatch</span><span>external-linking</span><span>lobby-scoping</span>
+            <span>mcp-server-config</span><span>security-and-hardening</span>
           </div>
         </div>
 
-        <!-- Growth & Sales -->
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>UI Assist Specialist</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Integrates overlay hooks, mounts scripts, and configures event contracts.</p>
+          <div class="skills-tags">
+            <span>mcp-server-config</span><span>component-pattern</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>UI Assist Integration</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Detects framework environments and outputs tailored integration plans.</p>
+          <div class="skills-tags">
+            <span>mcp-server-config</span><span>service-pattern</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Graph Navigator</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Resolves complex system graphs, type paths, and module dependencies.</p>
+          <div class="skills-tags">
+            <span>structured-data-analysis</span><span>mcp-server-config</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Research Specialist</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Performs read-only codebase searches, impact analyses, and root-cause tracing.</p>
+          <div class="skills-tags">
+            <span>root-cause-debugging</span><span>source-driven-development</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Test Specialist</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Implements unit and integration test specs, enforcing code coverage metrics.</p>
+          <div class="skills-tags">
+            <span>tdd-discipline</span><span>verification-gate</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>E2E Architect</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Authors and runs browser end-to-end integration test suites.</p>
+          <div class="skills-tags">
+            <span>verification-gate</span><span>mock-api-specification</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>SEO Specialist</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Audits page speed, viewport tags, schema markup, and metadata.</p>
+          <div class="skills-tags">
+            <span>seo-competitor-analysis</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Content Specialist</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Authors public facing copy, email briefs, and technical landing assets.</p>
+          <div class="skills-tags">
+            <span>brand-guidelines-alignment</span><span>documentation-and-adrs</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Lobby Guard</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Hardens WebSocket challenge gateways and monitors session token nonces.</p>
+          <div class="skills-tags">
+            <span>security-and-hardening</span><span>identity-verification</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="cms">
+          <div class="roster-card-header">
+            <h4>Auth Registrar</h4>
+            <span class="badge-cohort cms">Platform</span>
+          </div>
+          <p>Manages Concordium identity registries and trusted issuer verification logs.</p>
+          <div class="skills-tags">
+            <span>identity-verification</span><span>security-and-hardening</span>
+          </div>
+        </div>
+
+        <!-- Growth & Sales (15 Agents) -->
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Demo Architect</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Creates mock integration sandboxes and playgrounds to showcase system features.</p>
+          <div class="skills-tags">
+            <span>asset-prototyping</span><span>component-pattern</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>RFP Writer</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Analyzes client questionnaires and compiles detailed technical proposals.</p>
+          <div class="skills-tags">
+            <span>documentation-and-adrs</span><span>structured-data-analysis</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Client Onboarder</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Generates custom integration plans, environment files, and onboarding packages.</p>
+          <div class="skills-tags">
+            <span>documentation-and-adrs</span><span>asset-prototyping</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>CRM Integration Engineer</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Configures webhooks, payload schemas, and CRM data synchronization links.</p>
+          <div class="skills-tags">
+            <span>service-pattern</span><span>structured-data-analysis</span>
+          </div>
+        </div>
+
         <div class="roster-card" data-cohort="growth">
           <div class="roster-card-header">
             <h4>Ad Campaign Manager</h4>
             <span class="badge-cohort growth">Growth</span>
           </div>
-          <p>Coordinates paid advertising campaigns, audits conversion pixel script placements, and logs CAC/ROAS telemetry indicators.</p>
+          <p>Audits conversion pixels setups, UTM parameters, and CAC/ROAS thresholds.</p>
           <div class="skills-tags">
-            <span>pixel-audit</span><span>cac-tracking</span><span>roas-telemetry</span>
+            <span>campaign-metric-audit</span><span>seo-competitor-analysis</span>
           </div>
         </div>
 
@@ -427,31 +834,108 @@
             <h4>SEO Link Architect</h4>
             <span class="badge-cohort growth">Growth</span>
           </div>
-          <p>Checks backlinks, audits organic search performance, optimizes sitemaps XML, and manages crawl budgets.</p>
+          <p>Verifies domain authority parameters, organic link structures, and sitemaps.</p>
           <div class="skills-tags">
-            <span>backlink-check</span><span>sitemap-optimize</span><span>crawl-budget</span>
+            <span>seo-competitor-analysis</span><span>campaign-metric-audit</span>
           </div>
         </div>
 
         <div class="roster-card" data-cohort="growth">
           <div class="roster-card-header">
             <h4>Newsletter Strategist</h4>
-            <span class="badge-cohort growth">Sales</span>
+            <span class="badge-cohort growth">Growth</span>
           </div>
-          <p>Manages double opt-in signup flows, structures email localization variants, and audits deliverability ratings.</p>
+          <p>Designs responsive localized email templates and automated double opt-in flows.</p>
           <div class="skills-tags">
-            <span>opt-in-flow</span><span>localization</span><span>deliverability</span>
+            <span>campaign-metric-audit</span><span>brand-guidelines-alignment</span>
           </div>
         </div>
 
         <div class="roster-card" data-cohort="growth">
           <div class="roster-card-header">
-            <h4>Demo Architect</h4>
-            <span class="badge-cohort growth">Sales</span>
+            <h4>Comms Specialist</h4>
+            <span class="badge-cohort growth">Growth</span>
           </div>
-          <p>Deploys isolated visual sandbox pages, generates mock data feeds, and creates interactive feature guides.</p>
+          <p>Translates technical commit logs and completed PRs into updates and blogs.</p>
           <div class="skills-tags">
-            <span>sandbox-deploy</span><span>mock-generation</span><span>feature-guides</span>
+            <span>documentation-and-adrs</span><span>release-notes</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Community Liaison</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Monitors forums and discussion boards, triaging questions and drafting answers.</p>
+          <div class="skills-tags">
+            <span>source-driven-development</span><span>documentation-and-adrs</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Sales Advisor</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Analyzes funnel drop-offs and recommends optimization paths.</p>
+          <div class="skills-tags">
+            <span>structured-data-analysis</span><span>campaign-metric-audit</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Market Analyst</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Benchmarks competitor features and monitors software ecosystem trends.</p>
+          <div class="skills-tags">
+            <span>seo-competitor-analysis</span><span>structured-data-analysis</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Conversion Rate Auditor</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Reviews landing pages for user friction points and calls-to-action alignment.</p>
+          <div class="skills-tags">
+            <span>campaign-metric-audit</span><span>figma-design-integration</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Funnel Optimizer</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Trims onboarding multi-step forms and optimizes user signup loops.</p>
+          <div class="skills-tags">
+            <span>campaign-metric-audit</span><span>brand-guidelines-alignment</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Growth Hacker</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Designs viral product loops, invite APIs, and referral discount codes.</p>
+          <div class="skills-tags">
+            <span>campaign-metric-audit</span><span>asset-prototyping</span>
+          </div>
+        </div>
+
+        <div class="roster-card" data-cohort="growth">
+          <div class="roster-card-header">
+            <h4>Brand Custodian</h4>
+            <span class="badge-cohort growth">Growth</span>
+          </div>
+          <p>Audits layouts, logo colors, typography, and visual assets against guide specs.</p>
+          <div class="skills-tags">
+            <span>brand-guidelines-alignment</span><span>figma-design-integration</span>
           </div>
         </div>
       </div>
@@ -504,15 +988,15 @@
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h5>Real-time Telemetry</h5>
+                <h4>Real-time Telemetry</h4>
                 <p>Track sprint progression, manage task backlogs, edit descriptions, and review proposed code diffs directly from the dashboard.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>File & Workspace Explorer</h5>
+                <h4>File & Workspace Explorer</h4>
                 <p>Allows human review of code files, diffs, and generated artifacts directly in the context of the running sprint.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Shared Vector Memory</h5>
+                <h4>Shared Vector Memory</h4>
                 <p>Live display of the shared runtime database. Inspect what the agents know, their long-term memory embeddings, and short-term variables.</p>
               </div>
             </div>
@@ -534,15 +1018,15 @@
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h5>Command Palette (Ctrl + K)</h5>
+                <h4>Command Palette (Ctrl + K)</h4>
                 <p>Trigger actions instantly: pause swarms, query registry, verify credentials, or trigger manual overrides.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Pre-flight Checklists</h5>
+                <h4>Pre-flight Checklists</h4>
                 <p>Define criteria that agents must confirm (e.g. compilation, unit test success) before proceeding to the next loop cycle.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Attended Mode Checkpoint</h5>
+                <h4>Attended Mode Checkpoint</h4>
                 <p>Interactively prompts user authorization before running destructive commands like git push, npm publish, or wallet transfers.</p>
               </div>
             </div>
@@ -559,15 +1043,15 @@ npx agent-os --assist --gate-destructive</code></pre>
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h5>L0 - L1 Context Core</h5>
-                <p>**L0 (Identity):** Precedence pointer preamble.<br>**L1 (Essential Story):** Whisper rules, ethics, and persistent agent diaries (`diary.md` recall corpus).</p>
+                <h4>L0 - L1 Context Core</h4>
+                <p><strong>L0 (Identity):</strong> Precedence pointer preamble.<br><strong>L1 (Essential Story):</strong> Whisper rules, ethics, and persistent agent diaries (<code>diary.md</code> recall corpus).</p>
               </div>
               <div class="docs-feat-card">
-                <h5>L2 - L3 Retrieval Bus</h5>
-                <p>**L2 (On-Demand):** Lessons, gotchas, and instincts fetched dynamically via anchors (`INDEX.aaak` + semantic recall).<br>**L3 (Deep Search):** Codebase crawlers if L2 misses.</p>
+                <h4>L2 - L3 Retrieval Bus</h4>
+                <p><strong>L2 (On-Demand):</strong> Lessons, gotchas, and instincts fetched dynamically via anchors (<code>INDEX.aaak</code> + semantic recall).<br><strong>L3 (Deep Search):</strong> Codebase crawlers if L2 misses.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Facts Layer (facts.jsonl)</h5>
+                <h4>Facts Layer (facts.jsonl)</h4>
                 <p>Structured, append-only, git-merged facts tracking rule changes, sprint closures, and audit trails without database locks.</p>
               </div>
             </div>
@@ -584,16 +1068,16 @@ bash agent-os/scripts/embeddings-recall.sh "race conditions" --top 5</code></pre
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h5>The /train Command</h5>
+                <h4>The /train Command</h4>
                 <p>Allows subject-matter training. Generates reviewable, reversible, secret-detecting skills and memories for custom/trainable agents.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Loop Mode Engine</h5>
-                <p>Starts the autonomous orchestrator runner (`npm run loop`) with preset sweeps (e.g. `continuous-quality`) and attended/unattended modes.</p>
+                <h4>Loop Mode Engine</h4>
+                <p>Starts the autonomous orchestrator runner (<code>npm run loop</code>) with preset sweeps (e.g. <code>continuous-quality</code>) and attended/unattended modes.</p>
               </div>
               <div class="docs-feat-card">
-                <h5>Panel & Relay Infrastructure</h5>
-                <p>Starts local control planes: `npm run agent-os-panel` (observability HUD), `npm run relay` (browser-to-runtime WebSocket bridge), `npm run lobby` (standalone lobby room).</p>
+                <h4>Panel & Relay Infrastructure</h4>
+                <p>Starts local control planes: <code>npm run agent-os-panel</code> (observability HUD), <code>npm run relay</code> (browser-to-runtime WebSocket bridge), <code>npm run lobby</code> (standalone lobby room).</p>
               </div>
             </div>
 
