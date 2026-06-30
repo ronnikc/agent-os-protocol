@@ -29,9 +29,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
   galleryButtons.forEach(btn => {
     btn.addEventListener('click', () => {
-      // Active tab styling
-      galleryButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      // Active tab styling & accessibility state
+      galleryButtons.forEach(b => {
+        const isActive = b === btn;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        b.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
 
       const newImgSrc = btn.getAttribute('data-img');
       const newUrl = btn.getAttribute('data-url');
@@ -51,6 +55,36 @@ document.addEventListener('DOMContentLoaded', () => {
       if (galleryDesc) galleryDesc.textContent = newDesc;
     });
   });
+
+  // Keyboard navigation for visual tour gallery tabs
+  const galleryTablist = document.querySelector('.gallery-tabs[role="tablist"]');
+  if (galleryTablist) {
+    galleryTablist.addEventListener('keydown', (e) => {
+      const activeTab = document.activeElement;
+      if (!activeTab || activeTab.getAttribute('role') !== 'tab') return;
+
+      const tabs = Array.from(galleryButtons);
+      if (tabs.length === 0) return;
+      const index = tabs.indexOf(activeTab);
+      let nextIndex = index;
+
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = tabs.length - 1;
+      } else {
+        return;
+      }
+
+      e.preventDefault();
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
+    });
+  }
 
   // Tabbed Documentation Handler
   const docButtons = document.querySelectorAll('.docs-side-btn');
@@ -108,6 +142,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!activeTab || activeTab.getAttribute('role') !== 'tab') return;
 
       const tabs = Array.from(modeButtons);
+      if (tabs.length === 0) return;
       const index = tabs.indexOf(activeTab);
       let nextIndex = index;
 

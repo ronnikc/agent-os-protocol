@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
 
-import { LobbyClient } from '../../lobby-client/src/client.js';
-import { loadProviderConfigsFromEnv, defaultProviderId } from '../../providers/src/env-config.js';
-import type { LobbyAgent, LobbyMessage, LobbyTask } from '../../protocol-core/src/lobby-protocol.js';
+import { LobbyClient } from '@agent-os/lobby-client';
+import { loadProviderConfigsFromEnv, defaultProviderId } from '@agent-os/providers';
+import type { LobbyAgent, LobbyMessage, LobbyTask } from '@agent-os/protocol-core';
 
 export interface BridgeOptions {
   lobbyUrl: string;
@@ -14,6 +14,7 @@ export interface BridgeOptions {
   relayPort: number;
   agentRole?: string;
   onLobbyMessage: (msg: any) => Promise<void>;
+  log?: (level: string, message: string) => void;
 }
 
 export class RelayLobbyBridge {
@@ -88,9 +89,6 @@ export class RelayLobbyBridge {
       await options.onLobbyMessage(msg);
     });
 
-    this.client.connect().catch((err) => {
-      console.error(`[lobby-bridge] Failed to connect:`, err);
-    });
   }
 
   get currentAgentId(): string {
@@ -198,7 +196,22 @@ export class RelayLobbyBridge {
     return 'ignore';
   }
 
-  close(): void {
+  peekBufferContext(): string {
+    if (this.messageBuffer.length === 0) return '';
+    return `### RECENT BUFFERED LOBBY MESSAGES\n` + 
+      this.messageBuffer.map(m => `[From Agent ${m.from}]: ${m.content}`).join('\n') +
+      `\n--- END OF BUFFERED MESSAGES ---`;
+  }
+
+  async connect(): Promise<void> {
+    await this.client.connect();
+  }
+
+  disconnect(): void {
     this.client.close();
+  }
+
+  close(): void {
+    this.disconnect();
   }
 }

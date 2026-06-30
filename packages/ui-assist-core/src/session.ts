@@ -77,7 +77,7 @@ export class UiAssistSession {
   }
 
   on<E extends EventName>(event: E, listener: Listener<E>): () => void {
-    const set = (this.listeners[event] ??= new Set<Listener<E>>());
+    const set = (this.listeners[event] ??= new Set<any>()) as Set<Listener<E>>;
     set.add(listener);
     return () => set.delete(listener);
   }

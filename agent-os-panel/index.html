@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent OS Panel</title>
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="styles.css">
 <script src="lib/marked.umd.js"></script>
 </head>
@@ -77,7 +80,7 @@
     </div>
     
     <div class="toolbar">
-      <label>Lobby URL:</label>
+      <label for="lobbyUrl">Lobby URL:</label>
       <input type="text" id="lobbyUrl" placeholder="https://your-lobby.example.com" style="flex:1" />
     </div>
     <div class="toolbar" id="presets" style="gap:6px;flex-wrap:wrap;"></div>
@@ -109,17 +112,17 @@
       </div>
     </div>
     <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:none;">
-      <select id="msg-send-to" style="width:160px">
+      <select id="msg-send-to" style="width:160px" aria-label="Recipient Agent">
         <option value="*">All Agents (broadcast)</option>
       </select>
-      <select id="msg-send-type" style="width:100px">
+      <select id="msg-send-type" style="width:100px" aria-label="Message Type">
         <option value="finding">finding</option>
         <option value="handoff">handoff</option>
         <option value="request">request</option>
         <option value="blocker">blocker</option>
         <option value="completion">completion</option>
       </select>
-      <input type="text" id="msg-send-content" placeholder="Send a message..." style="flex:1" />
+      <input type="text" id="msg-send-content" placeholder="Send a message..." style="flex:1" aria-label="Message Content" />
       <button class="btn btn-primary btn-sm" id="msg-send-btn">Send</button>
     </div>
   </div>

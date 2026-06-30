@@ -1,0 +1,14 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/protocol-core" },
+    { "path": "packages/adapters" },
+    { "path": "packages/providers" },
+    { "path": "packages/identity-concordium" },
+    { "path": "packages/lobby-client" },
+    { "path": "packages/lobby-server" },
+    { "path": "packages/ui-assist-core" },
+    { "path": "packages/loop" },
+    { "path": "packages/relay" }
+  ]
+}
