@@ -18,7 +18,7 @@ for the four-layer architecture.
 
 ```
 agent-os-protocol/
-  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  MIGRATION.md  CHANGELOG.md  RELEASING.md
+  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  CHANGELOG.md  RELEASING.md
   LICENSE  NOTICE  .env.example  package.json
   agent-os/                       # Layer 1 — Protocol Core
     RULES.md SPRINTS.md SUB-AGENTS.md ARCHITECTURE.md MEMORY.md
