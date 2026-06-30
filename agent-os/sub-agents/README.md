@@ -2,13 +2,13 @@
 
 This directory contains the definitions for the **Specialist Agents** and **Skills** that comprise the execution layer of the Agent OS Protocol. 
 
-In a Swarm Lobby, the appointed **Boss Agent** (the local team leader) coordinates work by decomposing sprints into tasks, evaluating the capabilities of connected specialists, and routing assignments to specialized agents who raise their hands to contribute.
+In a Swarm Lobby, the appointed **Boss Agent** (the local team leader) coordinates work by decomposing sprints into tasks, evaluating connected specialist capabilities, and routing assignments to specialized agents who raise their hands in the lobby.
 
 ---
 
 ## 1. Roster Divisions
 
-The roster is divided into 6 functional areas to mirror a balanced software development organization:
+The expanded roster is divided into 8 functional departments to represent a balanced, collaborative development swarm:
 
 ```mermaid
 mindmap
@@ -17,25 +17,43 @@ mindmap
       Boss Agent
       Planning
       Sprint Gate Enforcer
-    Engineering & DevOps
+      Lobby Dispatcher
+      Scrum Coordinator
+    Engineering
       Backend Specialist
       Frontend Specialist
       API Specialist
+      Mobile Specialist
+      Database Administrator
+      Tech Debt Steward
+    DevOps & Infrastructure
       Infrastructure Specialist
       Release Specialist
       Build Integrity Specialist
-      Security Specialist
+      Pipeline Specialist
     Design & UX
       UI Designer
       UX Specialist
       Accessibility Specialist
-    Product & Scoping
-      Product Specialist
-      Proposal Architect
-    Operations & Triage
-      Support Triage
-      FinOps Steward
-      Reality Checker
+      Design System Custodian
+      i18n Specialist
+      UX Researcher
+    Sales & Growth
+      Demo Architect
+      RFP Writer
+      Client Onboarder
+    Marketing & DevRel
+      DevRel Advocate
+      Comms Specialist
+      Community Liaison
+    QA & Resilience
+      Product QA
+      Test Specialist
+      User Validation
+      Code Reviewer
+      E2E Architect
+      Performance Analyst
+      Chaos Steward
     Specialized Platform
       Domain Specialist
       Identity Specialist
@@ -58,37 +76,62 @@ Click on any agent's name to view its detailed definition, startup protocol, and
 | **[Boss Agent](agents/boss-agent.md)** | `boss-agent` | Coordinates the lobby, manages floor control, plans sprints, and assigns tasks. |
 | **[Planning Specialist](agents/planning.md)** | `planning` | Translates sprints into technical implementation plans and scopes dependencies. |
 | **[Sprint Gate Enforcer](agents/sprint-gate-enforcer.md)** | `sprint-gate-enforcer` | Enforces structural check gates before task commits and during sprint close-outs. |
+| **[Lobby Dispatcher](agents/lobby-dispatcher.md)** | `lobby-dispatcher` | Monitors connected agent rosters and routes tasks matching specialist capabilities. |
+| **[Scrum Coordinator](agents/scrum-coordinator.md)** | `scrum-coordinator` | Manages backlogs, tracks sprint velocities, and automates Gantt timelines. |
 
-### Engineering & DevOps
+### Engineering & Core Architecture
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
-| **[Backend Specialist](agents/backend.md)** | `backend` | Implements data models, business logic, routing, and controller services. |
+| **[Backend Specialist](agents/backend.md)** | `backend` | Implements backend models, business logic, routes, and services. |
 | **[Frontend Specialist](agents/frontend.md)** | `frontend` | Implements UI views, state management, interactive components, and styles. |
 | **[API Specialist](agents/api.md)** | `api` | Designs, documents, and validates REST/WebSocket API contracts. |
-| **[Infrastructure Specialist](agents/infrastructure.md)** | `infrastructure` | Manages environment setup, Docker builds, CORS, security headers, and servers. |
+| **[Mobile Specialist](agents/mobile-specialist.md)** | `mobile-specialist` | Adapts web pages, overlays, and relays to run inside hybrid mobile wrappers. |
+| **[Database Administrator](agents/database-administrator.md)** | `database-administrator` | Audits migrations, queries, indexes, constraints, and database transactions. |
+| **[Tech Debt Steward](agents/tech-debt-steward.md)** | `tech-debt-steward` | Identifies and refactors complex functions, duplicate imports, and dead code. |
+
+### DevOps & Infrastructure
+| Agent | Slug | Core Mission |
+|:---|:---|:---|
+| **[Infrastructure Specialist](agents/infrastructure.md)** | `infrastructure` | Manages environment configurations, Docker builds, CORS, and servers. |
 | **[Release Specialist](agents/release.md)** | `release` | Audits release branch stability, compiles changelogs, and drafts release tags. |
 | **[Build Integrity Specialist](agents/build-integrity.md)** | `build-integrity` | Validates TypeScript compilations, resolves import issues, and checks build maps. |
+| **[Pipeline Specialist](agents/pipeline-specialist.md)** | `pipeline-specialist` | Manages CI/CD configurations, caching keys, build steps, and run logs. |
 | **[Security Specialist](agents/security.md)** | `security` | Hardens system boundaries, triages package vulnerabilities, and audits RBAC. |
 
-### Design, UX, & Accessibility
+### Design, UX, & Interface
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
 | **[UI Designer](agents/design.md)** | `design` | Develops style guides, visual assets, SVG symbols, and CSS component tokens. |
 | **[UX Specialist](agents/ux.md)** | `ux` | Audits layout flows, responsive behaviors, interactive feedback, and copy. |
 | **[Accessibility Specialist](agents/accessibility.md)** | `accessibility` | Implements ARIA patterns, focus visible states, and verifies WCAG 2.1 AA. |
+| **[Design System Custodian](agents/design-system-custodian.md)** | `design-system-custodian` | Audits styling files for variable compliance, color contrast, and token reuse. |
+| **[i18n Specialist](agents/i18n-specialist.md)** | `i18n-specialist` | Manages translation catalogs, currency/date formats, and localization hooks. |
+| **[UX Researcher](agents/ux-researcher.md)** | `ux-researcher` | Audits telemetry click-flows and user interface navigation friction. |
 
-### Product & Scoping
+### Sales & Growth
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
-| **[Product Specialist](agents/product.md)** | `product` | Manages functional requirements, sprint criteria, and user personas. |
-| **[Proposal Architect](agents/proposal-architect.md)** | `proposal-architect` | Scopes high-level ideas/pitches into sprint backlogs and task queues. |
+| **[Demo Architect](agents/demo-architect.md)** | `demo-architect` | Creates mock integration sandboxes and playgrounds to showcase system features. |
+| **[RFP Writer](agents/rfp-writer.md)** | `rfp-writer` | Analyzes client questionnaires, specifications, and compiles technical proposals. |
+| **[Client Onboarder](agents/client-onboarder.md)** | `client-onboarder` | Generates custom integration plans, environment files, and onboarding packages. |
 
-### Operations, Critique, & Triage
+### Marketing & Developer Relations
 | Agent | Slug | Core Mission |
 |:---|:---|:---|
-| **[Support Triage](agents/support-triage.md)** | `support-triage` | Triages user bug reports and system logs into hotfix specs for developers. |
-| **[FinOps Steward](agents/finops-steward.md)** | `finops-steward` | Monitors token burn rates and API costs to optimize execution budgets. |
-| **[Reality Checker](agents/reality-checker.md)** | `reality-checker` | Serves as the independent critic, auditing assumptions and finding edge-case risks. |
+| **[DevRel Advocate](agents/devrel-advocate.md)** | `devrel-advocate` | Manages contribution guidelines, issue templates, and writes developer guides. |
+| **[Comms Specialist](agents/comms-specialist.md)** | `comms-specialist` | Translates technical commit logs and completed PRs into newsletters and blogs. |
+| **[Community Liaison](agents/community-liaison.md)** | `community-liaison` | Monitores forums and discussion boards, triaging questions and drafting answers. |
+
+### QA, Testing, & Resilience
+| Agent | Slug | Core Mission |
+|:---|:---|:---|
+| **[Product QA](agents/product-qa.md)** | `product-qa` | Validates features against acceptance criteria, using smoke test cycles. |
+| **[Test Specialist](agents/test.md)** | `test` | Implements unit and integration test specs, enforcing code coverage metrics. |
+| **[User Validation](agents/user-validation.md)** | `user-validation` | Executes end-to-end integration flows and checks usability criteria. |
+| **[Code Reviewer](agents/code-review.md)** | `code-review` | Critiques code quality, naming compliance, and checks straggler code. |
+| **[E2E Architect](agents/e2e-architect.md)** | `e2e-architect` | Authors and runs browser end-to-end integration test suites (Playwright/Cypress). |
+| **[Performance Analyst](agents/performance-analyst.md)** | `performance-analyst` | Conducts API load testing, monitors memory leaks, and benchmark timings. |
+| **[Chaos Steward](agents/chaos-steward.md)** | `chaos-steward` | Injects mock endpoint latencies and service outages to audit resilience. |
 
 ### Specialized Platform Tools
 | Agent | Slug | Core Mission |
@@ -101,8 +144,6 @@ Click on any agent's name to view its detailed definition, startup protocol, and
 | **[Graph Navigator](agents/graph-navigator.md)** | `graph-navigator` | Resolves complex system graphs, type paths, and module dependencies. |
 | **[UI Assist Specialist](agents/ui-assist.md)** | `ui-assist` | Integrates overlay hooks, mounts scripts, and configures event contracts. |
 | **[UI Assist Integration](agents/ui-assist-integration.md)** | `ui-assist-integration` | Detects framework environments and outputs tailored integration plans. |
-| **[User Validation Specialist](agents/user-validation.md)** | `user-validation` | Executes end-to-end integration flows and checks usability criteria. |
-| **[Code Review Specialist](agents/code-review.md)** | `code-review` | Critiques code quality, naming compliance, and checks straggler code. |
 | **[Content Specialist](agents/content.md)** | `content` | Authors public facing copy, email briefs, and technical landing assets. |
 | **[SEO Specialist](agents/seo.md)** | `seo` | Audits page speed, viewport tags, schema markup, and metadata. |
 
@@ -118,6 +159,7 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[source-driven-development](skills/source-driven-development/SKILL.md):** Grounds decisions in official local framework docs, preventing hallucinations.
 - **[incremental-implementation](skills/incremental-implementation/SKILL.md):** Builds code in roll-back friendly, thin vertical slices.
 - **[service-pattern](skills/service-pattern/SKILL.md) & [component-pattern](skills/component-pattern/SKILL.md):** Enforces canonical backend service and frontend component templates.
+- **[database-migration-audit](skills/database-migration-audit/SKILL.md):** Audits schema changes, query indexing, constraints, and rollbacks.
 
 ### Quality Assurance & Verification
 - **[verification-gate](skills/verification-gate/SKILL.md):** Requires execution evidence (compile, test, lint outputs) before completing tasks.
@@ -126,6 +168,7 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[code-review-and-quality](skills/code-review-and-quality/SKILL.md):** Audits code along 5 core axes (Correctness, Readability, Architecture, Security, Performance).
 - **[security-and-hardening](skills/security-and-hardening/SKILL.md):** Checks security patterns against OWASP Top 10 vulnerabilities.
 - **[performance-optimization](skills/performance-optimization/SKILL.md):** Measures Core Web Vitals, index coverage, and bundle budgets.
+- **[chaos-testing](skills/chaos-testing/SKILL.md):** Injects endpoint latency and process shutdowns to verify failure recovery.
 
 ### Swarm & Loop Coordination
 - **[loop-orchestrator](skills/loop-orchestrator/SKILL.md):** Controls loops, tracking convergence criteria and budget metrics.
@@ -138,5 +181,6 @@ Agent OS Protocol codifies complex, repetitive developer actions as **Skills** s
 - **[release-checklist](skills/release-checklist/SKILL.md):** Validates release parameters before tag generation.
 - **[release-notes](skills/release-notes/SKILL.md):** Auto-compiles changelogs matching functional sprint criteria.
 - **[documentation-and-adrs](skills/documentation-and-adrs/SKILL.md):** Records architectural choices as standardized ADRs.
+- **[pipeline-configuration](skills/pipeline-configuration/SKILL.md):** Verifies CI/CD workflow actions, hash caching keys, and runner syntax.
 
 *For the complete detailed skills registry, see the [Skills Registry Index](skills/README.md).*

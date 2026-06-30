@@ -75,6 +75,7 @@ agent-os/sub-agents/skills/<slug>/
 | Build Validation | [build-validation/SKILL.md](build-validation/SKILL.md) | TypeScript compilation validation, dependency-graph health, import resolution | build-integrity |
 | Source-Driven Development | [source-driven-development/SKILL.md](source-driven-development/SKILL.md) | Ground every framework-specific decision in official docs for the version in package.json; cite sources; flag UNVERIFIED — anti-hallucination discipline | backend, frontend, api, test, research, documentation, accessibility |
 | Incremental Implementation | [incremental-implementation/SKILL.md](incremental-implementation/SKILL.md) | Build in thin vertical slices: implement → test → verify → commit; scope discipline + feature flags + rollback-friendly increments | backend, frontend, api, test, infrastructure |
+| Database Migration Audit | [database-migration-audit/SKILL.md](database-migration-audit/SKILL.md) | Audit database migrations, schema definitions, indexing efficiency, and rollback operations | database-administrator, backend |
 
 ### Process & Orchestration Skills
 
@@ -102,6 +103,7 @@ agent-os/sub-agents/skills/<slug>/
 | Code Review and Quality | [code-review-and-quality/SKILL.md](code-review-and-quality/SKILL.md) | Five-axis review (correctness/readability/architecture/security/performance), change sizing ~100 lines, severity labels (Blocker/Critical/Nit/Optional/FYI) | code-review, planning, backend, frontend, api |
 | Security and Hardening | [security-and-hardening/SKILL.md](security-and-hardening/SKILL.md) | OWASP Top 10 prevention: input validation at boundaries, secrets management, helmet/CSP, npm audit triage, file upload safety, SSRF allowlists | security, backend, frontend, api, code-review, infrastructure |
 | Performance Optimization | [performance-optimization/SKILL.md](performance-optimization/SKILL.md) | Measure-first workflow: Core Web Vitals targets, N+1 fixes, Mongo index discipline, image optimization, bundle budgets, regression guardrails | frontend, backend, infrastructure, code-review |
+| Chaos Testing | [chaos-testing/SKILL.md](chaos-testing/SKILL.md) | Inject network failures, service outages, and latency to audit recovery, exceptions, and resilience | chaos-steward, performance-analyst, test |
 
 ### Domain Skills
 
@@ -112,6 +114,8 @@ agent-os/sub-agents/skills/<slug>/
 | Accessibility Audit | [accessibility-audit/SKILL.md](accessibility-audit/SKILL.md) | WCAG 2.1 AA domain-specialist audit: checklist, severity rating, remediation guidance | accessibility, ux |
 | Accessibility Implementation | [accessibility-implementation/SKILL.md](accessibility-implementation/SKILL.md) | Implement accessibility: ARIA patterns, focus management, keyboard nav, screen reader support | accessibility, frontend |
 | Accessibility Testing | [accessibility-testing/SKILL.md](accessibility-testing/SKILL.md) | Test accessibility: axe-core checks, keyboard testing, screen reader verification | accessibility |
+| Design Token Audit | [design-token-audit/SKILL.md](design-token-audit/SKILL.md) | Verify styling variables, visual design system tokens, layout compliance, and contrast ratios | design-system-custodian, ux-researcher |
+| Localization Verification | [localization-verification/SKILL.md](localization-verification/SKILL.md) | Audit translation keys synchronization, missing locale keys, and Dynamic UI localization hooks | i18n-specialist, content |
 
 ### Product & Validation Skills
 
@@ -127,6 +131,7 @@ agent-os/sub-agents/skills/<slug>/
 | Release Checklist | [release-checklist/SKILL.md](release-checklist/SKILL.md) | Pre-release verification: builds, tests, stats, i18n, documentation completeness | release |
 | Deployment Verification | [deployment-verification/SKILL.md](deployment-verification/SKILL.md) | Verify deployment: Docker build, health checks, security headers, CORS | infrastructure |
 | Documentation and ADRs | [documentation-and-adrs/SKILL.md](documentation-and-adrs/SKILL.md) | Capture significant decisions as ADRs (Context/Decision/Alternatives/Consequences); inline why-not-what comments; Chesterton-fence comments for required-but-weird patterns | documentation, planning, product, code-review, backend, frontend, infrastructure, security |
+| Pipeline Configuration | [pipeline-configuration/SKILL.md](pipeline-configuration/SKILL.md) | Manage, validate, and optimize automated CI/CD integration workflows, caching keys, and jobs | pipeline-specialist, infrastructure |
 
 ### Content & Growth Skills
 
