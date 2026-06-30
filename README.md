@@ -7,6 +7,7 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 &nbsp;Version: **v0.2.0 Beta**
 &nbsp;Status: **v0.2.0 Beta Released**
+[![Deploy sites](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml/badge.svg)](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml)
 
 > 🚀 **Project status.** The platform is fully released and stable. It includes the browser control panel and relay (`npm run agent-os-panel`), generic agent rosters with `/train` capability, runtime-adapter abstractions for Claude CLI and Codex CLI, an independent WebSocket/HTTP lobby server with Concordium registry identity verification, the autonomous execution engine (**Loop Mode**), and the public website and swarm telemetry web dashboard (`npm run lobby-web`).
 
