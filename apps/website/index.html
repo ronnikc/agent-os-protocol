@@ -948,29 +948,29 @@
       
       <div class="docs-wrapper">
         <!-- Sidebar Navigation -->
-        <div class="docs-sidebar glass-panel">
-          <button class="docs-side-btn active" data-doc="panel">
+        <div class="docs-sidebar glass-panel" role="tablist" aria-label="Documentation Categories">
+          <button class="docs-side-btn active" role="tab" aria-selected="true" tabindex="0" data-doc="panel" id="doc-tab-panel" aria-controls="doc-panel">
             <span class="docs-icon" role="img" aria-label="Dashboard Icon">💻</span>
             <div class="docs-side-text">
               <h4>Agent OS Panel</h4>
               <span>Observability dashboard</span>
             </div>
           </button>
-          <button class="docs-side-btn" data-doc="ui-assist">
+          <button class="docs-side-btn" role="tab" aria-selected="false" tabindex="-1" data-doc="ui-assist" id="doc-tab-ui-assist" aria-controls="doc-ui-assist">
             <span class="docs-icon" role="img" aria-label="HUD Lightning Icon">⚡</span>
             <div class="docs-side-text">
               <h4>UI Assist HUD</h4>
               <span>Interactive assistant</span>
             </div>
           </button>
-          <button class="docs-side-btn" data-doc="memory">
+          <button class="docs-side-btn" role="tab" aria-selected="false" tabindex="-1" data-doc="memory" id="doc-tab-memory" aria-controls="doc-memory">
             <span class="docs-icon" role="img" aria-label="Memory Stack Icon">🧠</span>
             <div class="docs-side-text">
               <h4>Shared Memory</h4>
               <span>4-Layer bus & facts.jsonl</span>
             </div>
           </button>
-          <button class="docs-side-btn" data-doc="commands">
+          <button class="docs-side-btn" role="tab" aria-selected="false" tabindex="-1" data-doc="commands" id="doc-tab-commands" aria-controls="doc-commands">
             <span class="docs-icon" role="img" aria-label="Terminal Command Icon">⚙️</span>
             <div class="docs-side-text">
               <h4>CLI & /train Command</h4>

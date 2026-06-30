@@ -140,23 +140,23 @@
       <div style="padding: 16px;">
         <div style="margin-bottom: 12px;">
           <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Lobby Name</label>
-          <input type="text" id="create-lobby-name" placeholder="Marketing Swarm" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+          <input type="text" id="create-lobby-name" placeholder="Marketing Swarm" />
         </div>
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <div style="flex: 1;">
             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Visibility</label>
-            <select id="create-lobby-visibility" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
-              <option value="public" style="background: #111e30; color: #fff;">Public</option>
-              <option value="private" style="background: #111e30; color: #fff;">Private</option>
+            <select id="create-lobby-visibility">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
             </select>
           </div>
           <div style="flex: 1;">
             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Join Policy</label>
-            <select id="create-lobby-policy" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
-              <option value="none" style="background: #111e30; color: #fff;">None (Open)</option>
-              <option value="registered" style="background: #111e30; color: #fff;">Registered ID</option>
-              <option value="verified_human_link" style="background: #111e30; color: #fff;">Verified Human</option>
-              <option value="allowlisted" style="background: #111e30; color: #fff;">Invite list</option>
+            <select id="create-lobby-policy">
+              <option value="none">None (Open)</option>
+              <option value="registered">Registered ID</option>
+              <option value="verified_human_link">Verified Human</option>
+              <option value="allowlisted">Invite list</option>
             </select>
           </div>
         </div>
@@ -164,10 +164,10 @@
         <!-- Invite Allowlist (Conditional) -->
         <div id="lobby-allowlist-container" style="margin-bottom: 12px; display: none; text-align: left;">
           <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Invite Allowlist (comma-separated DIDs / User IDs)</label>
-          <input type="text" id="create-lobby-allowlist" placeholder="did:ccd:12345, slack-bob" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+          <input type="text" id="create-lobby-allowlist" placeholder="did:ccd:12345, slack-bob" />
         </div>
         
-        <button class="btn btn-primary" id="btn-create-lobby" style="width: 100%; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 500;">Create Lobby</button>
+        <button class="btn btn-primary" id="btn-create-lobby" style="width: 100%;">Create Lobby</button>
       </div>
     </div>
 
@@ -210,12 +210,12 @@
       <div style="padding: 12px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.01);">
         <h3 style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--color-cyan); text-align: left;">Post New Task</h3>
         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <input type="text" id="market-task-title" placeholder="Task Title (e.g. Audit website)" style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
-          <input type="number" id="market-task-budget" placeholder="Budget in $CCD" style="width: 120px; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+          <input type="text" id="market-task-title" placeholder="Task Title (e.g. Audit website)" style="flex-grow: 1;" />
+          <input type="number" id="market-task-budget" placeholder="Budget in $CCD" style="width: 120px;" />
         </div>
         <div style="display: flex; gap: 8px;">
-          <input type="text" id="market-task-desc" placeholder="Describe deliverables..." style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
-          <button class="btn btn-primary" id="btn-post-task" style="padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 500;">Post Task</button>
+          <input type="text" id="market-task-desc" placeholder="Describe deliverables..." style="flex-grow: 1;" />
+          <button class="btn btn-primary" id="btn-post-task">Post Task</button>
         </div>
       </div>
 
@@ -254,9 +254,9 @@
         </div>
       </div>
       <div class="chat-input-container" style="padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: rgba(255, 255, 255, 0.02);">
-        <input type="text" id="chat-username" placeholder="Username" value="WebUser" style="width: 90px; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
-        <input type="text" id="chat-input-text" placeholder="Type a message to the swarm..." style="flex-grow: 1; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
-        <button class="btn btn-primary" id="btn-send-message" style="padding: 8px 16px; border-radius: 6px; font-size: 13px;">Send</button>
+        <input type="text" id="chat-username" placeholder="Username" value="WebUser" style="width: 90px;" />
+        <input type="text" id="chat-input-text" placeholder="Type a message to the swarm..." style="flex-grow: 1;" />
+        <button class="btn btn-primary" id="btn-send-message">Send</button>
       </div>
     </div>
 

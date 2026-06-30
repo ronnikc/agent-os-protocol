@@ -94,8 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       const docId = btn.getAttribute('data-doc');
 
-      // Update active button state
-      docButtons.forEach(b => b.classList.toggle('active', b === btn));
+      // Update active button state and accessibility attributes
+      docButtons.forEach(b => {
+        const isActive = b === btn;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        b.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
 
       // Show active pane
       docPanes.forEach(pane => {
@@ -103,6 +108,36 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // Keyboard navigation for documentation tabs
+  const docsTablist = document.querySelector('.docs-sidebar[role="tablist"]');
+  if (docsTablist) {
+    docsTablist.addEventListener('keydown', (e) => {
+      const activeTab = document.activeElement;
+      if (!activeTab || activeTab.getAttribute('role') !== 'tab') return;
+
+      const tabs = Array.from(docButtons);
+      if (tabs.length === 0) return;
+      const index = tabs.indexOf(activeTab);
+      let nextIndex = index;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = tabs.length - 1;
+      } else {
+        return;
+      }
+
+      e.preventDefault();
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
+    });
+  }
 
   // Operating Modes tab switcher
   const modeButtons = document.querySelectorAll('.mode-tab-btn');
