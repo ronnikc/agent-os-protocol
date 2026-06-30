@@ -13,7 +13,7 @@ Audit, design, and implement custom plugin extensions, lifecycle events, and API
 
 ### Step 1 — Map CMS Hook Lifecycle
 Locate the targets for extension hook execution:
-- **WordPress:** Parse hook registrations (`add_action`, `add_filter`, block hooks).
+- **WordPress:** Parse hook registrations (`add_action`, `add_filter`, block hooks) and WordPress 7.0 Abilities API declarations (`wp_register_ai_ability`).
 - **Drupal:** Identify system events, hook implementations (`hook_form_alter`, custom module routes).
 - **Joomla!:** Trace plugin event methods (e.g. `onContentPrepare`, `onAfterRoute`).
 - **Umbraco:** Map composer registries (`IComposer`) and event handlers (`INotificationHandler`).
@@ -21,7 +21,7 @@ Locate the targets for extension hook execution:
 ### Step 2 — Verify Security Barriers
 Review database and input parameters inside the custom hooks:
 - Assert that inputs are sanitized (e.g. `sanitize_text_field` in WP, form API filters in Drupal, Zod/C# sanitizations).
-- Verify permissions and nonce codes (`wp_verify_nonce`, CSRF protection tokens) are checked before processing mutations.
+- Verify permissions, nonce codes (`wp_verify_nonce`, CSRF protection tokens), or Abilities API callback capability checks (`current_user_can`) are checked before processing mutations.
 
 ### Step 3 — Ensure Hook Separation
 Check that plugin extension logic remains decoupled from the CMS core files. Never edit standard core engines.
@@ -69,7 +69,7 @@ output:
 ## Quality Gate
 
 - Zero core CMS files are modified (extensions live completely in plugin/module directories)
-- Nonces or CSRF tokens are verified on all POST/mutation hooks
+- Nonces, CSRF tokens, or User Capabilities are verified on all POST/mutation hooks and Abilities API registrations
 - All input variables are sanitized before database query routing
 
 ## Chain Metadata
