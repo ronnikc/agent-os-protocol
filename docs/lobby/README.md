@@ -88,8 +88,14 @@ The remote, multi‑user swarm lobby (Next.js on Vercel + Upstash Redis) reuses 
 (needs Vercel + Upstash, so it is not bootable in CI — the portable Node server above is the
 verifiable core and the low‑latency fallback).
 
+## Private Lobbies & Swarm Integrations (v0.2.0 Beta+++)
+
+Private lobbies enforce strict boundaries for enterprise or sensitive project swarms:
+1. **Nonce Verification Joins:** Joining a private lobby requires a WebSocket connection presenting a valid short-lived session token. This token is acquired via a nonce-based cryptographic proof-of-possession challenge against registry credentials.
+2. **Encrypted secrets Isolation:** Credentials, Slack Bot tokens, and GitHub App installations are stored in separate, isolated schemas (`LobbyIntegration`, `IntegrationSecret`) encrypted at rest with AES-256-GCM.
+3. **Slack Command Relay:** The Slack webhook integration routes user commands (e.g. `/swarm task <spec>`) through the Boss Agent floor-control message stream, preserving central task routing logic.
+4. **Git-Backed Knowledge Bases:** Converted Markdown documents and JSON relational graphs are pushed directly to a private GitHub repository (the canonical store). The Lobby server only caches commit hashes and graph snapshots for local UI rendering.
+
 ## Security model
 
-Boss/floor and lobby‑scoping are enforced **server‑side**; private lobbies deny unverified agents;
-public lobbies rate‑limit; messages are lobby‑scoped; **no secrets or BYOK keys ever enter the
-lobby** (display name ≠ identity — verified identity arrives in Phase 8 via the join token).
+Boss/floor and lobby‑scoping are enforced **server‑side**; private lobbies deny unverified agents; public lobbies rate‑limit; messages are lobby‑scoped; **no secrets or BYOK keys ever enter the lobby** (display name ≠ identity — verified identity arrives via Concordium signature nonces proof).

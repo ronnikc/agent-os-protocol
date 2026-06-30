@@ -146,7 +146,7 @@ progress → complete) with monitoring and reassignment. Lobbies can be:
 |---|---|
 | **Local** | On your machine via the Panel |
 | **Public remote** | Anyone with the URL (rate-limited) |
-| **Private remote** | Requires authorization — allowlist and/or verified agent identity |
+| **Private remote** | Requires authorization — Concordium signature nonces, active membership records, and maps commands through Slack relays to Boss Agents using Git-backed Knowledge Bases |
 | **Team remote** | Org-managed private lobby *(future)* |
 
 ### Sub-agents, skills & `/train`
