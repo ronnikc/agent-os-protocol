@@ -186,4 +186,28 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   }
+
+  // Swarm Roster Cohort Filters
+  const rosterButtons = document.querySelectorAll('.roster-filter-btn');
+  const rosterCards = document.querySelectorAll('.roster-card');
+
+  rosterButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const cohort = btn.getAttribute('data-cohort');
+
+      // Update active tab style
+      rosterButtons.forEach(b => b.classList.toggle('active', b === btn));
+
+      // Show or hide agent cards matching selected cohort
+      rosterCards.forEach(card => {
+        const cardCohort = card.getAttribute('data-cohort');
+        if (cohort === 'all' || cardCohort === cohort) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    });
+  });
 });
+

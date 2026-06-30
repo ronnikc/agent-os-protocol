@@ -147,8 +147,36 @@
     </div>
   </div>
 
-  <!-- Center Column: Roster -->
+  <!-- Center Column: Roster & Marketplace -->
   <div class="grid-col flex-col flex-span-2">
+    <!-- Task Marketplace -->
+    <div class="card" style="margin-bottom: 16px; display: flex; flex-direction: column;">
+      <div class="card-header">
+        <h2 class="card-title">Task Marketplace ($CCD)</h2>
+      </div>
+      
+      <!-- Post Task Form -->
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.01);">
+        <h3 style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--color-cyan);">Post New Task</h3>
+        <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+          <input type="text" id="market-task-title" placeholder="Task Title (e.g. Audit website)" style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+          <input type="number" id="market-task-budget" placeholder="Budget in $CCD" style="width: 120px; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+        </div>
+        <div style="display: flex; gap: 8px;">
+          <input type="text" id="market-task-desc" placeholder="Describe deliverables..." style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+          <button class="btn btn-primary" id="btn-post-task" style="padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 500;">Post Task</button>
+        </div>
+      </div>
+
+      <!-- Marketplace Tasks Feed -->
+      <div class="scroll-list-container" style="max-height: 250px; overflow-y: auto;">
+        <div class="scroll-list" id="market-tasks-list">
+          <div class="empty-state">No tasks posted in this lobby.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Agent Roster -->
     <div class="card flex-grow">
       <div class="card-header flex-row">
         <h2 class="card-title">Connected Agent Roster</h2>

@@ -6,6 +6,7 @@ const state = {
   agents: [],
   messages: [],
   events: [],
+  tasks: [],
   stats: {
     connected_users: 0,
     connected_agents: 0,
@@ -262,6 +263,13 @@ async function pollLobbyDetails() {
     renderEvents();
   }
 
+  // Tasks
+  const taskData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/tasks`);
+  if (taskData && id === state.activeLobbyId) {
+    state.tasks = taskData.tasks || [];
+    renderTasks();
+  }
+
   renderTelemetry();
 }
 
@@ -373,6 +381,142 @@ function init() {
       }
     });
   }
+
+  // Wire up Post Task button
+  const btnPostTask = document.getElementById('btn-post-task');
+  if (btnPostTask) {
+    btnPostTask.addEventListener('click', async () => {
+      if (!state.activeLobbyId) {
+        alert('Please select a lobby first.');
+        return;
+      }
+      const titleEl = document.getElementById('market-task-title');
+      const budgetEl = document.getElementById('market-task-budget');
+      const descEl = document.getElementById('market-task-desc');
+      const title = titleEl?.value?.trim();
+      const budget = parseFloat(budgetEl?.value);
+      const description = descEl?.value?.trim();
+      if (!title || isNaN(budget) || !description) {
+        alert('Please enter title, budget ($CCD), and description.');
+        return;
+      }
+
+      const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks`, {
+        title,
+        description,
+        proposed_budget_ccd: budget,
+        posted_by_identity_ref: 'WebUser'
+      });
+
+      if (res && res.task) {
+        if (titleEl) titleEl.value = '';
+        if (budgetEl) budgetEl.value = '';
+        if (descEl) descEl.value = '';
+        pollLobbyDetails();
+      } else {
+        alert('Failed to post task.');
+      }
+    });
+  }
 }
+
+// ── Task Marketplace Callbacks ──
+
+async function renderTasks() {
+  const container = document.getElementById('market-tasks-list');
+  if (!container) return;
+
+  if (state.tasks.length === 0) {
+    container.innerHTML = '<div class="empty-state">No tasks posted in this lobby.</div>';
+    return;
+  }
+
+  let html = '';
+  for (const task of state.tasks) {
+    const bidsData = await fetchJson(`/api/v1/agent-lobby/lobbies/${task.lobby_id}/tasks/${task.id}/bids`);
+    const bidsCount = bidsData && bidsData.bids ? bidsData.bids.length : 0;
+    
+    let actionButtons = '';
+    if (task.status === 'posted' || task.status === 'bidded') {
+      actionButtons += `<button class="btn btn-primary" onclick="bidOnTask('${task.id}')" style="padding: 4px 8px; font-size: 11px; margin-right: 4px;">Bid</button>`;
+      actionButtons += `<button class="btn btn-secondary" onclick="assignTask('${task.id}')" style="padding: 4px 8px; font-size: 11px;">Assign</button>`;
+    } else if (task.status === 'assigned') {
+      actionButtons += `<button class="btn btn-primary" onclick="completeTask('${task.id}')" style="padding: 4px 8px; font-size: 11px;">Complete & Pay</button>`;
+    }
+
+    const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
+    const paymentText = task.tx_hash ? `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">Tx: <code>${escapeHtml(task.tx_hash)}</code></div>` : '';
+
+    html += `
+      <div style="padding: 10px; border-bottom: 1px solid var(--border); text-align: left;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <strong style="font-size:13px; color:var(--text-primary);">${escapeHtml(task.title)}</strong>
+          <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border);">${escapeHtml(task.status)}</span>
+        </div>
+        <p style="font-size:12px; color:var(--text-muted); margin:0 0 6px 0;">${escapeHtml(task.description)}</p>
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size:11px; color:var(--color-cyan); font-weight: 500;">Budget: ${task.proposed_budget_ccd} $CCD (${bidsCount} bids)</span>
+          <div>${actionButtons}</div>
+        </div>
+        ${assignedText}
+        ${paymentText}
+      </div>
+    `;
+  }
+  container.innerHTML = html;
+}
+
+window.bidOnTask = async function(taskId) {
+  if (!state.activeLobbyId) return;
+  const agentDid = prompt("Enter your verified Agent DID (e.g., did:ccd:12345):");
+  if (!agentDid) return;
+  
+  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/bid`, {
+    agent_did: agentDid,
+    bidder_identity_ref: 'agent-owner'
+  });
+  
+  if (res && res.bid) {
+    alert("Bid submitted successfully!");
+    pollLobbyDetails();
+  } else {
+    alert("Verification failed: agent DID must be verified, and the human issuer must be registered and active on Concordium.");
+  }
+};
+
+window.assignTask = async function(taskId) {
+  if (!state.activeLobbyId) return;
+  const agentDid = prompt("Assign to Agent DID:");
+  if (!agentDid) return;
+
+  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/assign`, {
+    assigned_agent_id: agentDid,
+    assigned_agent_ref: 'human-owner'
+  });
+
+  if (res && res.task) {
+    alert("Task assigned!");
+    pollLobbyDetails();
+  } else {
+    alert("Failed to assign task.");
+  }
+};
+
+window.completeTask = async function(taskId) {
+  if (!state.activeLobbyId) return;
+  const txHash = prompt("Enter the Concordium transaction hash for the $CCD payment transfer:");
+  if (!txHash) return;
+
+  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+    tx_hash: txHash
+  });
+
+  if (res && res.task) {
+    alert("Task completed and payment settlement recorded!");
+    pollLobbyDetails();
+  } else {
+    alert("Failed to record completion.");
+  }
+};
 
 document.addEventListener('DOMContentLoaded', init);

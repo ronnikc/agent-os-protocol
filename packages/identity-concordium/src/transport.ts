@@ -61,6 +61,7 @@ function toRecord(json: Record<string, unknown>): RegistryAgentRecord {
     domain: typeof json.domain === 'string' ? json.domain : undefined,
     revoked: Boolean(json.revoked),
     registeredAt: typeof json.registered_at === 'string' ? json.registered_at : undefined,
+    issuerDid: typeof json.issuer_did === 'string' ? json.issuer_did : typeof json.issuerDid === 'string' ? json.issuerDid : undefined,
   };
 }
 

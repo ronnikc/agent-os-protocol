@@ -86,10 +86,10 @@ const DID_ORG = 'did:ccd:mainnet:org-domain';
 const DID_REVOKED = 'did:ccd:mainnet:revoked';
 
 const fixtures: Record<string, RegistryAgentRecord> = {
-  [DID_REG]: { did: DID_REG, name: 'Reg', registeredAt: '2026-01-01T00:00:00Z' },
-  [DID_HUMAN]: { did: DID_HUMAN, name: 'Human', humanLinked: true },
-  [DID_ORG]: { did: DID_ORG, name: 'Org', humanLinked: true, domain: 'example.com' },
-  [DID_REVOKED]: { did: DID_REVOKED, name: 'Revoked', revoked: true },
+  [DID_REG]: { did: DID_REG, name: 'Reg', registeredAt: '2026-01-01T00:00:00Z', issuerDid: 'did:ccd:test-issuer' },
+  [DID_HUMAN]: { did: DID_HUMAN, name: 'Human', humanLinked: true, issuerDid: 'did:ccd:test-issuer' },
+  [DID_ORG]: { did: DID_ORG, name: 'Org', humanLinked: true, domain: 'example.com', issuerDid: 'did:ccd:test-issuer' },
+  [DID_REVOKED]: { did: DID_REVOKED, name: 'Revoked', revoked: true, issuerDid: 'did:ccd:test-issuer' },
 };
 
 const fakeVerifier = new IdentityVerifier({ transport: new FakeTransport(fixtures) });
@@ -281,6 +281,12 @@ async function main(): Promise<void> {
 
   await check("policy 'registered' admits a resolvable ref; denies junk + a missing ref", async () => {
     const store = new InMemoryLobbyStore();
+    await store.registerIssuer({
+      issuer_did: 'did:ccd:test-issuer',
+      identity_ref: 'human-ref-test',
+      registered_at: new Date().toISOString(),
+      revoked: false
+    });
     const coord = new LobbyCoordinator(store, { verifyIdentity: verifyFn });
     assert.ok(!(await registerInto(coord, store, makeLobby('registered'), DID_REG)).r.close, 'reg admits');
     const junk = await registerInto(coord, store, makeLobby('registered'), 'did:ccd:mainnet:ghost');
@@ -291,6 +297,12 @@ async function main(): Promise<void> {
 
   await check("policy 'verified_human_link' admits human/org links; denies registry-only", async () => {
     const store = new InMemoryLobbyStore();
+    await store.registerIssuer({
+      issuer_did: 'did:ccd:test-issuer',
+      identity_ref: 'human-ref-test',
+      registered_at: new Date().toISOString(),
+      revoked: false
+    });
     const coord = new LobbyCoordinator(store, { verifyIdentity: verifyFn });
     assert.ok(!(await registerInto(coord, store, makeLobby('verified_human_link'), DID_HUMAN)).r.close, 'human admits');
     assert.ok(!(await registerInto(coord, store, makeLobby('verified_human_link'), DID_ORG)).r.close, 'org admits');

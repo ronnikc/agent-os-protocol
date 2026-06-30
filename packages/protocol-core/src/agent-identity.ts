@@ -173,6 +173,8 @@ export interface IdentityVerificationResult {
   source: VerificationSource;
   /** ISO timestamp of the check. */
   checkedAt: string;
+  /** Issuer DID of the agent credential, if any. */
+  issuerDid?: string;
 }
 
 /**
@@ -188,12 +190,12 @@ export interface RegistryAgentRecord {
   capabilities?: string[];
   /** True when ownership is bound to a verified human account (VCK). */
   humanLinked?: boolean;
-  /** Verified operating domain (VCDC), when present. */
+  /** The verified domain (VCDC). */
   domain?: string;
-  /** Whether the record has been revoked on-chain. */
   revoked?: boolean;
-  /** ISO timestamp of registration. */
   registeredAt?: string;
+  /** Issuer DID of the agent credential. */
+  issuerDid?: string;
 }
 
 // ── Local profile ↔ registry binding (non-secret) ──
