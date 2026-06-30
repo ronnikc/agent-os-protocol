@@ -6,9 +6,9 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
 &nbsp;Version: **v0.2.0**
-&nbsp;Status: **Phases 1–14 released; Phase 15 (Lobby Connection & Stats Realization) landing**
+&nbsp;Status: **Phases 1–15 released and fully integrated**
 
-> 🚧 **Project status.** The platform is fully functional. **Phases 1–14 are merged and released:** the Agent OS Panel and relay run locally (`npm run agent-os-panel`); the generic agent roster + `/train`; the runtime-adapter abstraction with the Claude CLI **and** Codex CLI adapters; the BYOK API-provider (fuel) layer; the independent public/private **lobby server**; **read-only Concordium agent identity & verification**; the **UI Assist integration package**; the Boss-driven autonomous control loop (**Loop Mode**); a premium responsive **Panel UI redesign** matching modern glassmorphism aesthetics; and the official public **website** with expanded roster, skills, and command guides. **Phase 15 (Lobby Connection Audit & Stats Realization)** is landing next. See **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the phase-by-phase plan.
+> 🚀 **Project status.** The platform is fully released and stable. **Phases 1–15 are merged, verified, and released:** including the browser control panel and relay (`npm run agent-os-panel`), generic agent rosters with `/train` capability, runtime-adapter abstractions for Claude CLI and Codex CLI, an independent WebSocket/HTTP lobby server with Concordium registry identity verification, the autonomous execution engine (**Loop Mode**), and the public website and swarm telemetry web dashboard (`npm run lobby-web`). See **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the detailed phase plan.
 
 ---
 
@@ -280,30 +280,43 @@ npm install
 
 ## Quick start
 
-> **Local Mode works today** (`npm run agent-os-panel`). **Swarm Mode** connects the Panel/relay to a
-> lobby via `--lobby` — run your own with `npm run lobby`, or point at a hosted one.
+The suite contains three principal services: the public landing site, the agent control panel, and the swarm lobby server.
+
+### 1. Launch Services Locally
 
 ```bash
-# Local Mode — Panel + relay + built-in local lobby
-npm run agent-os-panel                      # open http://localhost:4800
+# Public Landing Website — serves on http://localhost:4802
+# Production deployment: https://agent-os.gothard.dk
+npm run website
 
-# Panel only (no relay)
-npm run agent-os-panel -- --no-relay
+# Swarm Lobby & Dashboard — serves on http://localhost:4730
+# Production deployment: https://lobby.agent-os.gothard.dk
+npm run lobby-web
 
-# Relay only (bridges browser ↔ your agent runtime)
-npm run relay                               # ws://localhost:4722
-
-# Swarm Mode — connect the Panel to a remote lobby
-npm run agent-os-panel -- --lobby https://your-lobby.example.com
+# Agent OS Control Panel — serves on http://localhost:4800
+npm run agent-os-panel
 ```
 
-Then: open the Panel → start an agent (or a preset team) → appoint a boss in the **Lobby** tab →
-plan work in the **Sprint** tab → watch it execute in **Tasks**/**Gantt**.
+*Note: For the control panel and lobby, process-specific overrides can be configured via environment variables (see [Configuration](#configuration)).*
+
+### 2. Connect via Swarm Mode
+
+- **Local Mode:** Everything runs locally out-of-the-box (uses a process-local in-memory lobby).
+- **Swarm Mode:** Connect your control panel to a remote lobby to collaborate with other users and agents:
+  ```bash
+  npm run agent-os-panel -- --lobby wss://lobby.agent-os.gothard.dk
+  ```
+
+#### How Swarm Mode Coordinates Attendees:
+1. **Roster Presence:** Connecting with a remote lobby URL registers your session as a `human` attendee and registers your locally-running specialists as active `cli_agent` entities in the unified lobby roster.
+2. **Floor Control & Bidding:** The lobby's appointed **Boss Agent** manages task allocation. When work is planned, the Boss decomposes tasks, asks for bids/hands from eligible specialists across the swarm, and coordinates assignments.
+3. **Local Action execution:** Once a task is assigned to your local agent, the lobby relays the command back to your local agent runtime. Unattended loop criteria are verified locally, and inter-agent messages are routed back through the lobby.
+4. **Shared Telemetry:** Every participant gets live feedback of active swarm agents, current messages, task Kanban items, and Gantt charts inside their browser panels.
 
 Confirm a fresh clone is healthy (no runtime or API key needed):
 
 ```bash
-npm run verify-all      # all six layer suites + the launch-readiness check
+npm run verify-all      # all seven layer suites + the launch-readiness check
 npm run smoke           # boots Panel + Lobby + Relay end-to-end and probes them
 ```
 
@@ -343,11 +356,11 @@ Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
 |---|---|
 | 0 | Discovery, safety, planning ✅ |
 | 1-10 | Core framework, adapters, providers, lobby, identity, UI Assist, docs & launch-readiness ✅ released |
-| 11 | Loop Mode (autonomous iterative execution engine) ✅ |
-| 12 | Agent OS Panel UI Redesign (premium responsive layout & styles) ✅ |
-| 13 | Agent OS Protocol website (public landing site) ✅ |
-| 14 | Agent Roster, Skills & commands on the website, favicon fixes, OG metadata ✅ |
-| 15 | Lobby Connection Audit & Stats Realization (dynamic provider/model connection & real stats) 🟡 (in progress) |
+| 11 | Loop Mode (autonomous control loop engine) ✅ released |
+| 12 | Agent OS Panel UI Redesign (premium responsive glassmorphism styles) ✅ released |
+| 13 | Agent OS Protocol website (public landing site) ✅ released |
+| 14 | Agent Roster, Skills & commands on the website, favicon fixes, OG metadata ✅ released |
+| 15 | Lobby Local Dashboard & Telemetry Stats (real-time metrics & UI overview) ✅ released |
 
 ## Documentation
 

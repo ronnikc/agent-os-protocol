@@ -402,3 +402,67 @@ body {
 .event-type-hand { color: var(--color-red); }
 .event-type-disconnect { color: var(--color-red); }
 .event-type-boss { color: var(--color-purple); }
+
+/* Get Started Card & Terminal Styling */
+.get-started-card {
+  background: rgba(155, 92, 255, 0.02) !important;
+  border-color: rgba(155, 92, 255, 0.25) !important;
+}
+.get-started-content p {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  line-height: 1.5;
+  margin-bottom: 12px;
+}
+.quick-links {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.link-btn {
+  flex: 1;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 8px;
+  border-radius: 6px;
+  background: var(--color-blue);
+  color: #000;
+  text-decoration: none;
+  transition: all 0.2s;
+}
+.link-btn.secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text);
+  border: 1px solid var(--color-border);
+}
+.link-btn:hover {
+  transform: translateY(-1px);
+}
+.link-btn.secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--color-border-active);
+}
+.terminal-box {
+  background: #020610;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 10px;
+  font-family: var(--mono);
+}
+.terminal-header {
+  font-size: 9px;
+  color: var(--color-text-soft);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+.terminal-box code {
+  font-size: 10px;
+  color: var(--color-cyan);
+  word-break: break-all;
+  display: block;
+  line-height: 1.4;
+}
+

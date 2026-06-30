@@ -61,17 +61,47 @@
         <h2 class="card-title">Swarm Telemetry</h2>
       </div>
       <div class="telemetry-grid">
-        <div class="telemetry-item">
-          <div class="telemetry-label">Active Agents</div>
-          <div class="telemetry-value" id="telemetry-agents">—</div>
+        <div class="telemetry-item" title="Active Lobbies">
+          <div class="telemetry-label">Lobbies</div>
+          <div class="telemetry-value" id="stats-total-lobbies">—</div>
         </div>
-        <div class="telemetry-item">
-          <div class="telemetry-label">Total Messages</div>
-          <div class="telemetry-value" id="telemetry-messages">—</div>
+        <div class="telemetry-item" title="Connected Users/Developer Panels">
+          <div class="telemetry-label">Users</div>
+          <div class="telemetry-value" id="stats-connected-users">—</div>
         </div>
-        <div class="telemetry-item">
-          <div class="telemetry-label">Events Logged</div>
-          <div class="telemetry-value" id="telemetry-events">—</div>
+        <div class="telemetry-item" title="Connected Autonomous Agents">
+          <div class="telemetry-label">Agents</div>
+          <div class="telemetry-value" id="stats-connected-agents">—</div>
+        </div>
+        <div class="telemetry-item" title="Identity Verified Agents (Concordium DIDs)">
+          <div class="telemetry-label">Verified</div>
+          <div class="telemetry-value" id="stats-verified-agents">—</div>
+        </div>
+        <div class="telemetry-item" title="Publicly Joinable Lobbies">
+          <div class="telemetry-label">Public</div>
+          <div class="telemetry-value" id="stats-public-lobbies">—</div>
+        </div>
+        <div class="telemetry-item" title="Private Verified-Only Lobbies">
+          <div class="telemetry-label">Private</div>
+          <div class="telemetry-value" id="stats-private-lobbies">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Get Started Panel -->
+    <div class="card get-started-card">
+      <div class="card-header">
+        <h2 class="card-title">Get Started</h2>
+      </div>
+      <div class="get-started-content">
+        <p>Agent OS coordinates fleets of local or remote AI coding agents in a Swarm Lobby.</p>
+        <div class="quick-links">
+          <a href="https://github.com/ronnikc/agent-os-protocol" target="_blank" class="link-btn">GitHub Repo</a>
+          <a href="https://agent-os.gothard.dk" target="_blank" class="link-btn secondary">Website</a>
+        </div>
+        <div class="terminal-box">
+          <div class="terminal-header">Enable Swarm Mode & Connect Panel</div>
+          <code>npm run agent-os-panel -- --lobby wss://lobby.agent-os.gothard.dk</code>
         </div>
       </div>
     </div>
