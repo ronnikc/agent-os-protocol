@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32">
+  <defs>
+    <linearGradient id="grad-cyan-blue" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5D4" />
+      <stop offset="100%" stop-color="#318CFF" />
+    </linearGradient>
+    <linearGradient id="grad-blue-violet" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#318CFF" />
+      <stop offset="100%" stop-color="#9B5CFF" />
+    </linearGradient>
+    <linearGradient id="grad-violet-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#9B5CFF" />
+      <stop offset="100%" stop-color="#C85BFF" />
+    </linearGradient>
+    <linearGradient id="grad-cyan" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#00E5D4" />
+      <stop offset="100%" stop-color="#00C0B0" />
+    </linearGradient>
+  </defs>
+  <path d="M 6.5,19.5 L 2.5,12.5 L 6.8,12.5 L 9.3,16.8 Z" fill="url(#grad-cyan)" />
+  <path d="M 2.5,11.5 L 6.5,4.5 L 9.3,7.2 L 6.8,11.5 Z" fill="url(#grad-cyan-blue)" />
+  <path d="M 7.5,3.5 L 16.5,3.5 L 14.2,7.0 L 9.8,7.0 Z" fill="url(#grad-blue-violet)" />
+  <path d="M 17.5,4.5 L 21.5,11.5 L 17.2,11.5 L 14.7,7.2 Z" fill="url(#grad-violet-purple)" />
+  <path d="M 21.5,12.5 L 17.5,19.5 L 14.7,16.8 L 17.2,12.5 Z" fill="url(#grad-blue-violet)" />
+  <path d="M 16.5,20.5 L 7.5,20.5 L 9.8,17.0 L 14.2,17.0 Z" fill="url(#grad-cyan-blue)" />
+  <path d="M 14.2,7.0 L 17.2,11.5 L 14.2,17.0 L 11.2,11.5 Z" fill="rgba(155,92,255,0.15)" stroke="#9B5CFF" stroke-width="0.5" />
+</svg>

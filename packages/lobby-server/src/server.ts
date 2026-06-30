@@ -17,7 +17,8 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { resolve } from 'node:path';
+import { resolve, extname } from 'node:path';
+import { existsSync, statSync, readFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
@@ -115,6 +116,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ lobby: lobby ? { lobby_id: lobby.lobby_id, org_id: lobby.org_id, name: lobby.name, visibility: lobby.visibility, join_policy: lobby.join_policy } : null });
     }
 
+    if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'GET') {
+      return json({ lobbies: await store.listLobbies() });
+    }
+
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'POST') {
       const body = await readBody(req);
       const now = new Date().toISOString();
@@ -136,14 +141,36 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ lobby }, 201);
     }
 
-    const lobbyMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)(\/(roster|events))?$/);
+    const lobbyMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)(\/(roster|events|messages))?$/);
     if (lobbyMatch && req.method === 'GET') {
       const lobbyId = lobbyMatch[1];
       const sub = lobbyMatch[3];
       if (sub === 'roster') return json({ agents: await store.roster(lobbyId) });
       if (sub === 'events') return json({ events: await store.listEvents(lobbyId) });
+      if (sub === 'messages') return json({ messages: await store.listMessages(lobbyId) });
       const lobby = await store.getLobby(lobbyId);
       return lobby ? json({ lobby }) : json({ error: 'not found' }, 404);
+    }
+
+    // Static file serving fallback for local preview/dashboard
+    const MIME_TYPES: Record<string, string> = {
+      '.html': 'text/html; charset=utf-8',
+      '.css': 'text/css; charset=utf-8',
+      '.js': 'application/javascript; charset=utf-8',
+      '.svg': 'image/svg+xml; charset=utf-8',
+      '.png': 'image/png',
+      '.ico': 'image/x-icon',
+    };
+    const rootDir = resolve(fileURLToPath(import.meta.url), '../../../../apps/lobby-web');
+    let filePath = path === '/' ? '/index.html' : path;
+    const fullPath = resolve(rootDir, filePath.startsWith('/') ? filePath.slice(1) : filePath);
+
+    if (fullPath.startsWith(rootDir) && existsSync(fullPath) && statSync(fullPath).isFile()) {
+      const ext = extname(fullPath);
+      const mime = MIME_TYPES[ext] ?? 'application/octet-stream';
+      res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
+      res.end(readFileSync(fullPath));
+      return;
     }
 
     json({ error: 'not found' }, 404);
@@ -224,7 +251,7 @@ if (isMain) {
   startLobbyServer({ port })
     .then((s) => {
       console.log(`Agent OS Lobby server`);
-      console.log(`  HTTP:      http://localhost:${s.port}`);
+      console.log(`  Dashboard: http://localhost:${s.port}/`);
       console.log(`  WebSocket: ws://localhost:${s.port}${WS_PATH}`);
       console.log(`  Discover:  http://localhost:${s.port}/api/v1/agent-lobby/discover`);
       console.log(`  Mode:      in-memory store (portable Node WS — set a Redis store for swarm durability)`);

@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent OS Swarm Lobby Dashboard</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-left">
+    <svg viewBox="0 0 24 24" width="28" height="28" style="vertical-align: middle;">
+      <defs>
+        <linearGradient id="grad-cyan-blue" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#00E5D4" />
+          <stop offset="100%" stop-color="#318CFF" />
+        </linearGradient>
+        <linearGradient id="grad-blue-violet" x1="0%" y1="100%" x2="100%" y2="0%">
+          <stop offset="0%" stop-color="#318CFF" />
+          <stop offset="100%" stop-color="#9B5CFF" />
+        </linearGradient>
+        <linearGradient id="grad-violet-purple" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#9B5CFF" />
+          <stop offset="100%" stop-color="#C85BFF" />
+        </linearGradient>
+        <linearGradient id="grad-violet" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#9B5CFF" />
+          <stop offset="100%" stop-color="#7B3CFF" />
+        </linearGradient>
+      </defs>
+      <path d="M 6.5,19.5 L 2.5,12.5 L 6.8,12.5 L 9.3,16.8 Z" fill="url(#grad-violet)" />
+      <path d="M 2.5,11.5 L 6.5,4.5 L 9.3,7.2 L 6.8,11.5 Z" fill="url(#grad-cyan-blue)" />
+      <path d="M 7.5,3.5 L 16.5,3.5 L 14.2,7.0 L 9.8,7.0 Z" fill="url(#grad-blue-violet)" />
+      <path d="M 17.5,4.5 L 21.5,11.5 L 17.2,11.5 L 14.7,7.2 Z" fill="url(#grad-violet-purple)" />
+      <path d="M 21.5,12.5 L 17.5,19.5 L 14.7,16.8 L 17.2,12.5 Z" fill="url(#grad-blue-violet)" />
+      <path d="M 16.5,20.5 L 7.5,20.5 L 9.8,17.0 L 14.2,17.0 Z" fill="url(#grad-cyan-blue)" />
+      <path d="M 14.2,7.0 L 17.2,11.5 L 14.2,17.0 L 11.2,11.5 Z" fill="rgba(155, 92, 255, 0.15)" stroke="#9B5CFF" stroke-width="0.5" />
+    </svg>
+    <h1>Agent OS Swarm Lobby</h1>
+  </div>
+  <div class="status-bar">
+    <span class="status-pill connected" id="lobby-status-pill">
+      <span class="status-dot"></span>Active Lobbies: <span id="lobby-count">—</span>
+    </span>
+  </div>
+</div>
+
+<!-- Main Content Grid -->
+<div class="dashboard-grid">
+  <!-- Left Column: Lobbies & Stats -->
+  <div class="grid-col flex-col">
+    <!-- Quick Statistics -->
+    <div class="card panel-stats">
+      <div class="card-header">
+        <h2 class="card-title">Swarm Telemetry</h2>
+      </div>
+      <div class="telemetry-grid">
+        <div class="telemetry-item">
+          <div class="telemetry-label">Active Agents</div>
+          <div class="telemetry-value" id="telemetry-agents">—</div>
+        </div>
+        <div class="telemetry-item">
+          <div class="telemetry-label">Total Messages</div>
+          <div class="telemetry-value" id="telemetry-messages">—</div>
+        </div>
+        <div class="telemetry-item">
+          <div class="telemetry-label">Events Logged</div>
+          <div class="telemetry-value" id="telemetry-events">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Active Lobbies List -->
+    <div class="card flex-grow">
+      <div class="card-header">
+        <h2 class="card-title">Lobbies Available</h2>
+      </div>
+      <div class="scroll-list" id="lobby-list">
+        <div class="empty-state">Loading lobbies...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Center Column: Roster -->
+  <div class="grid-col flex-col flex-span-2">
+    <div class="card flex-grow">
+      <div class="card-header flex-row">
+        <h2 class="card-title">Connected Agent Roster</h2>
+        <span class="badge" id="roster-count">0 agents</span>
+      </div>
+      <div class="scroll-list-container">
+        <div class="scroll-list" id="agent-roster-list">
+          <div class="empty-state">No agents currently connected to this lobby.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Message Board & Events -->
+  <div class="grid-col flex-col flex-span-2">
+    <!-- Coordination Chat -->
+    <div class="card flex-grow">
+      <div class="card-header">
+        <h2 class="card-title">Agent Coordination Messages</h2>
+      </div>
+      <div class="scroll-list-container">
+        <div class="scroll-list message-stream" id="message-list">
+          <div class="empty-state">No messages exchanged yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Event Audit Log -->
+    <div class="card flex-shrink" style="height: 250px;">
+      <div class="card-header">
+        <h2 class="card-title">Lobby Event Log</h2>
+      </div>
+      <div class="scroll-list-container">
+        <div class="scroll-list event-log" id="event-log-list">
+          <div class="empty-state">No events logged.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
