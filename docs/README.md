@@ -32,7 +32,6 @@ and extend it. Start at the top and follow the links.
 ## Reference
 
 - **[`../README.md`](../README.md)** — product overview, architecture diagram, core concepts.
-- **[`../IMPLEMENTATION-PLAN.md`](../IMPLEMENTATION-PLAN.md)** — the phase-by-phase build plan (the source of truth for what is built, in what order).
 - **[`../agent-os/STATE.md`](../agent-os/STATE.md)** — current implementation state and known follow-ups.
 - **[`../agent-os/ARCHITECTURE.md`](../agent-os/ARCHITECTURE.md)** — the four-layer architecture.
 - **[`../CLAUDE.md`](../CLAUDE.md)** — how to work in this repo (structure, run/verify commands, conventions).

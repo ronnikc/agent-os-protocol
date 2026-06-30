@@ -88,8 +88,8 @@ function textFiles(roots: string[]): string[] {
 // Forbidden tokens assembled from fragments (see NOTE above) so this file stays gate-clean.
 const BRAND_TOKENS = ['Aesir' + 'X', 'Compliance' + 'One', 'compliance' + 'one.demo', 'grc' + '-suite', 'Forse' + 'ti'];
 const DOMAIN_TOKENS = ['PD' + 'PL', 'DP' + 'IA', 'DS' + 'AR', 'Viet' + 'nam', 'Dec' + 'ree'];
-// The three fork-describing docs are the only sanctioned home for historical origin references.
-const FORK_DOCS = new Set(['planning.md', 'MIGRATION.md', 'IMPLEMENTATION-PLAN.md'].map((f) => R(f)));
+// The only sanctioned home for historical origin references is planning.md.
+const FORK_DOCS = new Set(['planning.md'].map((f) => R(f)));
 
 function scanContains(files: string[], tokens: string[], opts: { wordBoundary?: boolean } = {}): string[] {
   const hits: string[] = [];
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   }
 
   // ── B. Top-level entry files ──
-  for (const f of ['README.md', 'LICENSE', 'NOTICE', '.env.example', 'CLAUDE.md', 'IMPLEMENTATION-PLAN.md', 'package.json']) {
+  for (const f of ['README.md', 'LICENSE', 'NOTICE', '.env.example', 'CLAUDE.md', 'package.json']) {
     await check(`entry file present: ${f}`, () => assert.ok(nonEmpty(f), `${f} missing or empty`));
   }
 

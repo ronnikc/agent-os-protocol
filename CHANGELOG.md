@@ -7,35 +7,16 @@ All notable changes to **Agent OS Protocol** are documented here. The format fol
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.2.0] — 2026-06-30
 
-### Added — Loop Mode (Phase 11)
+The first beta release of the independent platform. Integrates autonomous Loop Mode, a fully responsive glassmorphism control panel redesign, a public landing website, and a local swarm lobby preview dashboard with stats telemetry.
 
-- **`@agent-os/loop` engine** — a Boss-driven `Assess → Delegate → Verify → Reflect → Decide`
-  control loop over a work item (the `LoopSpec`/`ExitCriterion` schema seeded in Phase 4), behind
-  injected seams so the whole controller verifies with no LLM/lobby/network. Safety: hard
-  `maxIterations` + token/cost/wall-clock budget, convergence + stall detection, a regression guard,
-  human approval checkpoints (fail-closed), a kill switch, full audit, and **unattended OFF by
-  default** (opt-in at run time, allowlisted actions only).
-- **Authoring + orchestration skills** — `create-loop` (forces machine-checkable exit criteria,
-  hard caps, gated checkpoints) and `loop-orchestrator` (the Boss control-loop skill); wired into
-  the boss-agent definition and SUB-AGENTS routing.
-- **`continuous-quality` preset** — the Scheduled-QA workload as a `LoopSpec` (build + tests +
-  coverage + Product-QA review; `onConverge: open-pr`, never an autonomous merge); the canonical
-  deliberately-operated unattended loop with a commit-only allowlist.
-- **`npm run loop`** — a simulated/dry-run driver that runs a preset through the real engine and
-  prints the iteration audit trail (attended and unattended).
-- **Panel Loop tab + endpoints** — `GET /api/loops`, `POST /api/loops/run`, `POST /api/loops/stop`
-  with `loop-event`/`loop-done` WS streaming, and a minimal Loop tab.
-- **`npm run verify-loop`** (17 checks) — wired into `verify-all` and required by `verify-launch`
-  (now 53). **[`docs/loop-mode.md`](docs/loop-mode.md)** guide.
+### Added
 
-### Planned
-
-- Panel UI redesign (Phase 12) and the public website (Phase 13). See
-  [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md).
-- Loop Mode follow-ups (infra-gated): live `evaluate`/`delegate` wiring through the relay/lobby,
-  unattended cron over a swarm, and the polished Panel Loop view (folds into Phase 12).
+- **Loop Mode (Phase 11):** `@agent-os/loop` engine with autonomous iterative execution to meet exit criteria. Includes scheduling, attended/unattended modes, and `npm run loop`.
+- **Panel UI Redesign (Phase 12):** Premium dark glassmorphism styling, keyboard navigation, and WCAG AA contrast compliance.
+- **Landing Website (Phase 13-14):** Main website served locally via `npm run website` containing visual showcases, roster references, and command guides.
+- **Lobby Dashboard & Swarm Telemetry (Phase 15):** Standalone lobby dashboard serving on `http://localhost:4730/` featuring real-time telemetry counters (users, agents, verified Concordium identities, public/private lobbies) and Swarm Mode connection documentation.
 
 ## [0.1.0] — 2026-06-28
 
@@ -109,5 +90,6 @@ Mode, connects to a configured lobby, and passes every verification suite — pr
 - Routing the relay's turn loop through the runtime adapter so `AGENT_OS_RUNTIME` selects the
   driver (and a panel provider/runtime selector).
 
-[Unreleased]: https://github.com/ronnikc/agent-os-protocol/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/ronnikc/agent-os-protocol/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/ronnikc/agent-os-protocol/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/ronnikc/agent-os-protocol/releases/tag/v0.1.0
