@@ -1,9 +1,7 @@
 # Agent OS Protocol — Project Context (CLAUDE.md)
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
-> **Status:** Forking in progress (Phases 0–12 merged; Phases 13–14 implemented with a PR open). See
-> [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) for the phase-by-phase plan and
-> [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
+> **Status:** v0.2.0 Beta Released. See [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
 > **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
 
 ## What this is
@@ -18,7 +16,7 @@ for the four-layer architecture.
 
 ```
 agent-os-protocol/
-  README.md  CLAUDE.md  planning.md  IMPLEMENTATION-PLAN.md  CHANGELOG.md  RELEASING.md
+  README.md  CLAUDE.md  planning.md  CHANGELOG.md  RELEASING.md
   LICENSE  NOTICE  .env.example  package.json
   agent-os/                       # Layer 1 — Protocol Core
     RULES.md SPRINTS.md SUB-AGENTS.md ARCHITECTURE.md MEMORY.md
@@ -109,7 +107,6 @@ registry indexer for the private-lobby identity policy ladder — no private key
 
 | File | What it covers |
 |------|----------------|
-| [`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) | The fork build plan (Phases 0–13), extraction manifest, risks |
 | [`agent-os/RULES.md`](agent-os/RULES.md) | Non-negotiable operational rules + precedence |
 | [`agent-os/SPRINTS.md`](agent-os/SPRINTS.md) | Sprint lifecycle, gates, close-out |
 | [`agent-os/SUB-AGENTS.md`](agent-os/SUB-AGENTS.md) | Sub-agent roster, routing, verification |
@@ -130,10 +127,8 @@ registry indexer for the private-lobby identity policy ladder — no private key
   graph artifacts, scheduler state, trained packs are gitignored).
 - **Branch + PR.** Develop on a feature branch; never push straight to `main`; open a PR to merge.
 - **Verify before done.** A change isn't done because it compiles — boot the panel/relay and
-  exercise the affected flow (see IMPLEMENTATION-PLAN.md §13.1 Functional Flow Verification).
+  exercise the affected flow.
 
 ## Working in this repo
 
-The platform is mid-fork. When in doubt about scope or sequencing, consult
-[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md) — it is the source of truth for what is being
-built, in what order, and what must not be touched (the original source repo is read-only reference).
+The platform is fully independent. When in doubt about scope or conventions, consult the governance docs list above.

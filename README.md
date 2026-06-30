@@ -5,10 +5,10 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Version: **v0.2.0**
-&nbsp;Status: **Phases 1–15 released and fully integrated**
+&nbsp;Version: **v0.2.0 Beta**
+&nbsp;Status: **v0.2.0 Beta Released**
 
-> 🚀 **Project status.** The platform is fully released and stable. **Phases 1–15 are merged, verified, and released:** including the browser control panel and relay (`npm run agent-os-panel`), generic agent rosters with `/train` capability, runtime-adapter abstractions for Claude CLI and Codex CLI, an independent WebSocket/HTTP lobby server with Concordium registry identity verification, the autonomous execution engine (**Loop Mode**), and the public website and swarm telemetry web dashboard (`npm run lobby-web`). See **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)** for the detailed phase plan.
+> 🚀 **Project status.** The platform is fully released and stable. It includes the browser control panel and relay (`npm run agent-os-panel`), generic agent rosters with `/train` capability, runtime-adapter abstractions for Claude CLI and Codex CLI, an independent WebSocket/HTTP lobby server with Concordium registry identity verification, the autonomous execution engine (**Loop Mode**), and the public website and swarm telemetry web dashboard (`npm run lobby-web`).
 
 ---
 
@@ -348,19 +348,9 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
   Unattended loops are opt-in, capped, guarded, audited, and stoppable.
 - **Identity ≠ display name.** Trust comes from verified registry identity, shown explicitly.
 
-## Roadmap
+## Project Status & Version
 
-Tracked in detail in **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**.
-
-| Phase | Focus |
-|---|---|
-| 0 | Discovery, safety, planning ✅ |
-| 1-10 | Core framework, adapters, providers, lobby, identity, UI Assist, docs & launch-readiness ✅ released |
-| 11 | Loop Mode (autonomous control loop engine) ✅ released |
-| 12 | Agent OS Panel UI Redesign (premium responsive glassmorphism styles) ✅ released |
-| 13 | Agent OS Protocol website (public landing site) ✅ released |
-| 14 | Agent Roster, Skills & commands on the website, favicon fixes, OG metadata ✅ released |
-| 15 | Lobby Local Dashboard & Telemetry Stats (real-time metrics & UI overview) ✅ released |
+The codebase is currently in its first official beta release (**v0.2.0 Beta**). All core features—including the control panel, runtime adapters, providers, loop orchestration, website, and swarm lobbies—are fully implemented, verified, and integrated.
 
 ## Documentation
 
@@ -374,12 +364,11 @@ Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:
 - **[Training agents](docs/training-agents.md)** — teach a generic agent your domain with `/train`.
 - Capability references: [runtime adapters](docs/adapters/README.md) · [providers](docs/providers/README.md) · [the lobby](docs/lobby/README.md) · [identity](docs/identity/README.md) · [UI Assist](docs/ui-assist/README.md).
 
-Architecture and plan: **[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md)**, **[`agent-os/ARCHITECTURE.md`](agent-os/ARCHITECTURE.md)**, **[`agent-os/STATE.md`](agent-os/STATE.md)**.
+Architecture: **[`agent-os/ARCHITECTURE.md`](agent-os/ARCHITECTURE.md)**, **[`agent-os/STATE.md`](agent-os/STATE.md)**.
 
 ## Contributing
 
-The platform is in active early development; the architecture is set in
-[`IMPLEMENTATION-PLAN.md`](IMPLEMENTATION-PLAN.md). Issues and discussion are welcome. Please
+The platform is in active early development. Issues and discussion are welcome. Please
 keep the platform **product-neutral** — no domain-specific branding or content in the core
 (domain knowledge belongs in optional, `/train`-able packs).
 
