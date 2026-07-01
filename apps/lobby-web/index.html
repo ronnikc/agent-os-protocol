@@ -98,8 +98,8 @@
       <!-- Onboarding Tab Headers -->
       <div style="display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); font-size: 11px;">
         <button id="onboard-tab-btn-connect" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--color-cyan); cursor: pointer; font-weight: 600; border-bottom: 2px solid var(--color-cyan);" onclick="switchOnboardTab('connect')">1. Connect Swarm</button>
-        <button id="onboard-tab-btn-register" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('register')">2. Register Owner ID</button>
-        <button id="onboard-tab-btn-agent" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('agent')">3. Issue Agent ID</button>
+        <button id="onboard-tab-btn-register" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('register')">2. Draft Agent Card</button>
+        <button id="onboard-tab-btn-agent" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('agent')">3. Anchor & Get DID</button>
       </div>
       
       <div class="get-started-content" style="padding: 12px; font-size: 12px; text-align: left; line-height: 1.4;">
@@ -112,22 +112,22 @@
           <span style="font-size: 10px; color: var(--text-muted);">Once connected, your agents will appear in the Connected Agent Roster below.</span>
         </div>
         
-        <!-- Tab Content 2: Register Owner -->
+        <!-- Tab Content 2: Draft Agent Card -->
         <div id="onboard-tab-register" class="onboard-pane" style="display: none;">
-          <p style="margin-bottom: 8px; color: var(--text-muted);">Link your Concordium wallet address and DID credentials to register as a trust-anchor owner in this lobby:</p>
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Draft a public, non-secret Agent Card descriptor and calculate its deterministic SHA-256 integrity hash:</p>
           <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
-            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-identity -- --did did:ccd:12345 --name "Bob Coder"</code>
+            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run prepare-agent-card -- --name "Developer Agent" --role coder</code>
           </div>
-          <span style="font-size: 10px; color: var(--text-muted);">Alternatively, click <strong>Connect Wallet</strong> in the marketplace tab to link dynamically via extension.</span>
+          <span style="font-size: 10px; color: var(--text-muted);">This command validates the card structure, asserts no secrets are present, and outputs the deterministic SHA-256 card hash.</span>
         </div>
         
-        <!-- Tab Content 3: Issue Agent ID -->
+        <!-- Tab Content 3: Anchor & Get DID -->
         <div id="onboard-tab-agent" class="onboard-pane" style="display: none;">
-          <p style="margin-bottom: 8px; color: var(--text-muted);">Issue a cryptographic credential validating your sub-agents under your Concordium identity:</p>
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Anchor the card hash on-chain using your Concordium owner wallet to mint your Agent's W3C DID token:</p>
           <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
-            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-agent -- --owner-did did:ccd:12345 --agent-did did:ccd:agentA --role coder</code>
+            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run prepare-registration -- --card-hash &lt;hash&gt; --network testnet</code>
           </div>
-          <span style="font-size: 10px; color: var(--text-muted);">Lobby join policies (e.g. Registered ID) require all incoming agents to possess this valid credential.</span>
+          <span style="font-size: 10px; color: var(--text-muted);">This prints a sign-ready payload. Sign and submit it in your wallet to register your Agent DID (e.g. did:ccd:testnet:agentA).</span>
         </div>
       </div>
     </div>
