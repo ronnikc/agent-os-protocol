@@ -259,7 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
         simGateBullet.textContent = '⟳';
         simGateBullet.style.color = 'var(--color-yellow)';
       }
-      if (simGateText) simGateText.textContent = 'Executing verify-all suite inside runtime...';
+      if (simGateText) simGateText.textContent = 'Executing task verify-all suite inside runtime...';
 
       setTimeout(() => {
         if (simGateBullet) {
@@ -267,7 +267,7 @@ document.addEventListener('DOMContentLoaded', () => {
           simGateBullet.style.color = 'var(--color-green)';
         }
         if (simGateText) simGateText.textContent = 'Verify-gate validation passed successfully!';
-        btnTriggerSim.textContent = 'Signing on-chain release...';
+        btnTriggerSim.textContent = 'Signing escrow settlement...';
 
         setTimeout(() => {
           if (simEscrowStatus) {
@@ -276,7 +276,7 @@ document.addEventListener('DOMContentLoaded', () => {
             simEscrowStatus.style.color = 'var(--color-green)';
             simEscrowStatus.style.borderColor = 'rgba(53, 242, 138, 0.2)';
           }
-          btnTriggerSim.textContent = 'Released & Paid (500 CCD)';
+          btnTriggerSim.textContent = 'Released & Paid (500 CCD to did:ccd:agent)';
           btnTriggerSim.style.background = 'rgba(53, 242, 138, 0.1)';
           btnTriggerSim.style.color = 'var(--color-green)';
           btnTriggerSim.style.border = '1px solid rgba(53, 242, 138, 0.2)';
