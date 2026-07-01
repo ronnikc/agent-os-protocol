@@ -105,6 +105,85 @@ function getExplorerLink(did) {
   return `https://ccdexplorer.io/${network}/tokens/agent-registry/${id}`;
 }
 
+const MODAL_TYPES = {
+  success: { icon: '✓', color: 'var(--color-green)',  label: 'Success' },
+  error:   { icon: '✗', color: '#ff5c5c',             label: 'Error' },
+  warning: { icon: '⚠', color: 'var(--color-yellow)', label: 'Warning' },
+  info:    { icon: 'ℹ', color: 'var(--color-cyan)',    label: 'Info' }
+};
+
+function showStyledAlert(title, message, type) {
+  const overlay = document.getElementById('styled-modal-overlay');
+  const titleEl = document.getElementById('styled-modal-title');
+  const msgEl = document.getElementById('styled-modal-message');
+  const buttonsEl = document.getElementById('styled-modal-buttons');
+  if (!overlay) return;
+
+  const mt = MODAL_TYPES[type] || MODAL_TYPES.info;
+  titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${mt.color}22;color:${mt.color};font-size:16px;margin-right:8px;">${mt.icon}</span>${escapeHtml(title)}`;
+  titleEl.style.color = mt.color;
+  msgEl.textContent = message;
+  buttonsEl.innerHTML = `<button class="btn btn-primary btn-sm" style="min-width: 100px;" onclick="closeStyledModal()">OK</button>`;
+  overlay.style.display = 'flex';
+  overlay.querySelector('.styled-modal-card').style.animation = 'modalSlideIn 0.2s ease-out';
+  // auto-focus the OK button for keyboard
+  setTimeout(() => buttonsEl.querySelector('button')?.focus(), 50);
+}
+
+function showStyledConfirm(title, message, onConfirm) {
+  const overlay = document.getElementById('styled-modal-overlay');
+  const titleEl = document.getElementById('styled-modal-title');
+  const msgEl = document.getElementById('styled-modal-message');
+  const buttonsEl = document.getElementById('styled-modal-buttons');
+  if (!overlay) return;
+
+  const mt = MODAL_TYPES.warning;
+  titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${mt.color}22;color:${mt.color};font-size:16px;margin-right:8px;">${mt.icon}</span>${escapeHtml(title)}`;
+  titleEl.style.color = mt.color;
+  msgEl.textContent = message;
+  buttonsEl.innerHTML = `
+    <button class="btn btn-secondary btn-sm" style="min-width: 100px;" onclick="closeStyledModal()">Cancel</button>
+    <button class="btn btn-primary btn-sm" style="min-width: 100px;" id="btn-styled-modal-confirm">Confirm</button>
+  `;
+  
+  document.getElementById('btn-styled-modal-confirm').onclick = () => {
+    closeStyledModal();
+    if (onConfirm) onConfirm();
+  };
+
+  overlay.style.display = 'flex';
+  overlay.querySelector('.styled-modal-card').style.animation = 'modalSlideIn 0.2s ease-out';
+  setTimeout(() => document.getElementById('btn-styled-modal-confirm')?.focus(), 50);
+}
+
+window.closeStyledModal = function() {
+  const overlay = document.getElementById('styled-modal-overlay');
+  if (overlay) overlay.style.display = 'none';
+};
+
+// Close modal on ESC key
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeStyledModal();
+});
+
+// Override native window.alert with contextual styled alert
+window.alert = function(message) {
+  // Auto-detect type from message content
+  const msgLower = (message || '').toLowerCase();
+  let type = 'info';
+  let title = 'Notice';
+  if (msgLower.includes('success') || msgLower.includes('registered') || msgLower.includes('released') || msgLower.includes('verified') || msgLower.includes('issued')) {
+    type = 'success'; title = 'Success';
+  } else if (msgLower.includes('fail') || msgLower.includes('error') || msgLower.includes('insufficient')) {
+    type = 'error'; title = 'Error';
+  } else if (msgLower.includes('please') || msgLower.includes('warning') || msgLower.includes('enter')) {
+    type = 'warning'; title = 'Attention';
+  } else if (msgLower.includes('simulated') || msgLower.includes('note:')) {
+    type = 'info'; title = 'Info';
+  }
+  showStyledAlert(title, message, type);
+};
+
 async function fetchJson(url) {
   try {
     const res = await fetch(url);
@@ -1019,78 +1098,81 @@ window.completeTask = async function(taskId) {
     return;
   }
 
-  const confirmPay = confirm("Are you sure you want to release the escrowed CCD to the agent?");
-  if (!confirmPay) return;
-
-  const btnEl = document.querySelector(`button[onclick="completeTask('${taskId}')"]`);
-  if (btnEl) {
-    btnEl.disabled = true;
-    btnEl.textContent = "Signing Release...";
-  }
-
-  const provider = window.concordium;
-  if (state.wallet.isReal && provider) {
-    try {
-      const systemEscrowAddress = '3x19a8f273be92100cb9287c10d3e49e1';
-      
-      if (btnEl) btnEl.textContent = "Approve in Wallet...";
-      
-      // Concordium Browser Wallet API uses 3 parameters: (accountAddress, transactionType, payload)
-      // TransactionType.SimpleTransfer = 3
-      const txHash = await provider.sendTransaction(
-        state.wallet.address,
-        3, // AccountTransactionType.SimpleTransfer
-        {
-          toAddress: systemEscrowAddress,
-          amount: {
-            microCcd: BigInt(0) // 0 CCD triggers contract release message
-          }
-        }
-      );
-      
-      if (btnEl) btnEl.textContent = "Releasing Escrow...";
-      const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
-        tx_hash: txHash
-      });
-
-      if (res && res.task) {
-        alert(`Escrow released successfully to the agent!\nTransaction Hash: ${txHash}`);
-        pollLobbyDetails();
-      } else {
-        alert("Failed to record completion on the server.");
-      }
-    } catch (err) {
-      console.error('Release transaction failed:', err);
-      alert(`Release failed: ${err.message || err}`);
-    } finally {
+  showStyledConfirm(
+    "Release Escrow Payment",
+    "Are you sure you want to release the escrowed CCD to the agent?",
+    async () => {
+      const btnEl = document.querySelector(`button[onclick="completeTask('${taskId}')"]`);
       if (btnEl) {
-        btnEl.disabled = false;
-        btnEl.textContent = "Release Escrow & Pay";
+        btnEl.disabled = true;
+        btnEl.textContent = "Signing Release...";
       }
-    }
-  } else {
-    setTimeout(async () => {
-      if (btnEl) btnEl.textContent = "Transferring CCD...";
-      
-      setTimeout(async () => {
-        const txHash = 'tx_release_' + Math.random().toString(36).substr(2, 9);
-        const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
-          tx_hash: txHash
-        });
 
-        if (res && res.task) {
-          alert(`Simulated Payment released! Transfer transaction hash: ${txHash}`);
-          pollLobbyDetails();
-        } else {
-          alert("Failed to release payment.");
+      const provider = window.concordium;
+      if (state.wallet.isReal && provider) {
+        try {
+          const systemEscrowAddress = '3x19a8f273be92100cb9287c10d3e49e1';
+          
+          if (btnEl) btnEl.textContent = "Approve in Wallet...";
+          
+          // Concordium Browser Wallet API uses 3 parameters: (accountAddress, transactionType, payload)
+          // TransactionType.SimpleTransfer = 3
+          const txHash = await provider.sendTransaction(
+            state.wallet.address,
+            3, // AccountTransactionType.SimpleTransfer
+            {
+              toAddress: systemEscrowAddress,
+              amount: {
+                microCcd: BigInt(0) // 0 CCD triggers contract release message
+              }
+            }
+          );
+          
+          if (btnEl) btnEl.textContent = "Releasing Escrow...";
+          const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+            tx_hash: txHash
+          });
+
+          if (res && res.task) {
+            alert(`Escrow released successfully to the agent!\nTransaction Hash: ${txHash}`);
+            pollLobbyDetails();
+          } else {
+            alert("Failed to record completion on the server.");
+          }
+        } catch (err) {
+          console.error('Release transaction failed:', err);
+          alert(`Release failed: ${err.message || err}`);
+        } finally {
           if (btnEl) {
             btnEl.disabled = false;
             btnEl.textContent = "Release Escrow & Pay";
           }
         }
-      }, 1000);
-    }, 1000);
-  }
+      } else {
+        setTimeout(async () => {
+          if (btnEl) btnEl.textContent = "Transferring CCD...";
+          
+          setTimeout(async () => {
+            const txHash = 'tx_release_' + Math.random().toString(36).substr(2, 9);
+            const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+              tx_hash: txHash
+            });
+
+            if (res && res.task) {
+              alert(`Simulated Payment released! Transfer transaction hash: ${txHash}`);
+              pollLobbyDetails();
+            } else {
+              alert("Failed to release payment.");
+              if (btnEl) {
+                btnEl.disabled = false;
+                btnEl.textContent = "Release Escrow & Pay";
+              }
+            }
+          }, 1000);
+        }, 1000);
+      }
+    }
+  );
 };
 
 window.switchOnboardTab = function(tabName) {
