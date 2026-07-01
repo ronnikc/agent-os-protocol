@@ -13,6 +13,12 @@ const state = {
     balance: 0,
     isReal: false
   },
+  identity: {
+    ownerRegistered: false,
+    ownerName: null,
+    ownerDid: null,
+    registeredAgentDid: null
+  },
   stats: {
     connected_users: 0,
     connected_agents: 0,
@@ -308,10 +314,50 @@ function updateWalletUI() {
     textEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">Connected:</span> ${shortAddr} | <span style="color:var(--color-cyan); font-weight:600;">${state.wallet.balance.toLocaleString()} CCD</span>`;
     btnEl.textContent = 'Disconnect';
     if (postBtnEl) postBtnEl.textContent = 'Post & Lock Escrow';
+
+    // Show/hide owner identity elements
+    const ownerDisconnectedView = document.getElementById('owner-disconnected-view');
+    const ownerRegisterView = document.getElementById('owner-register-view');
+    const ownerWalletAddressDisplay = document.getElementById('owner-wallet-address-display');
+    const ownerDidInput = document.getElementById('owner-did-input');
+    const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+
+    if (ownerDisconnectedView) ownerDisconnectedView.style.display = 'none';
+    if (!state.identity.ownerRegistered) {
+      if (ownerRegisterView) ownerRegisterView.style.display = 'flex';
+      if (ownerWalletAddressDisplay) ownerWalletAddressDisplay.textContent = state.wallet.address;
+      if (ownerDidInput && !ownerDidInput.value) {
+        ownerDidInput.value = `did:ccd:owner-${state.wallet.address.slice(0, 8)}`;
+      }
+    } else {
+      if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+      if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
+    }
   } else {
     textEl.textContent = 'Disconnected';
     btnEl.textContent = 'Connect Wallet';
     if (postBtnEl) postBtnEl.textContent = 'Post Task';
+
+    // Reset owner identity views
+    const ownerDisconnectedView = document.getElementById('owner-disconnected-view');
+    const ownerRegisterView = document.getElementById('owner-register-view');
+    const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+    if (ownerDisconnectedView) ownerDisconnectedView.style.display = 'block';
+    if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+    if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'none';
+
+    // Reset state values
+    state.identity.ownerRegistered = false;
+    state.identity.ownerName = null;
+    state.identity.ownerDid = null;
+    state.identity.registeredAgentDid = null;
+
+    const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
+    const agentIssueView = document.getElementById('agent-issue-view');
+    const agentIssuedSuccessView = document.getElementById('agent-issued-success-view');
+    if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'block';
+    if (agentIssueView) agentIssueView.style.display = 'none';
+    if (agentIssuedSuccessView) agentIssuedSuccessView.style.display = 'none';
   }
 }
 
@@ -422,6 +468,185 @@ function init() {
       if (e.key === 'Enter') {
         handleSendMessage();
       }
+    });
+  }
+
+  // ── Onboarding & Setup Identity Actions ──
+  const btnOnboardConnectWallet = document.getElementById('btn-onboard-connect-wallet');
+  if (btnOnboardConnectWallet) {
+    btnOnboardConnectWallet.addEventListener('click', () => {
+      const btnConnectWallet = document.getElementById('btn-connect-wallet');
+      if (btnConnectWallet) btnConnectWallet.click();
+    });
+  }
+
+  const btnRegisterOwnerAction = document.getElementById('btn-register-owner-action');
+  if (btnRegisterOwnerAction) {
+    btnRegisterOwnerAction.addEventListener('click', async () => {
+      if (!state.wallet.connected) {
+        alert("Please connect your Concordium Wallet first.");
+        return;
+      }
+      const ownerNameEl = document.getElementById('owner-name-input');
+      const ownerDidEl = document.getElementById('owner-did-input');
+      const name = ownerNameEl?.value?.trim() || 'Bob Coder';
+      const did = ownerDidEl?.value?.trim() || `did:ccd:owner-${state.wallet.address.slice(0, 8)}`;
+
+      btnRegisterOwnerAction.disabled = true;
+      btnRegisterOwnerAction.textContent = "Registering Owner ID...";
+
+      setTimeout(async () => {
+        state.identity.ownerRegistered = true;
+        state.identity.ownerName = name;
+        state.identity.ownerDid = did;
+
+        // Sync UI
+        const ownerRegisterView = document.getElementById('owner-register-view');
+        const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+        const successOwnerName = document.getElementById('success-owner-name');
+        const successOwnerDid = document.getElementById('success-owner-did');
+
+        if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+        if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
+        if (successOwnerName) successOwnerName.textContent = name;
+        if (successOwnerDid) successOwnerDid.textContent = did;
+
+        // Post to lobby server (register issuer)
+        await postJson('/api/v1/agent-lobby/issuers', {
+          issuer_did: did,
+          identity_ref: `did:ccd:testnet:${state.wallet.address}`
+        });
+
+        // Add event
+        state.events.push({
+          id: Math.random().toString(36).substring(2, 10),
+          lobby_id: state.activeLobbyId || 'default',
+          type: 'owner-registered',
+          details: `Concordium Owner ID registered: ${name} (${did.slice(0, 15)}...)`,
+          timestamp: new Date().toISOString()
+        });
+        renderEvents();
+
+        // Unlock agent issue view
+        const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
+        const agentIssueView = document.getElementById('agent-issue-view');
+        const issueAgentDid = document.getElementById('issue-agent-did');
+        if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
+        if (agentIssueView) agentIssueView.style.display = 'flex';
+        if (issueAgentDid) {
+          issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+        }
+
+        btnRegisterOwnerAction.disabled = false;
+        btnRegisterOwnerAction.textContent = "Register Owner ID";
+        alert("Owner ID registered successfully in lobby!");
+      }, 1000);
+    });
+  }
+
+  // SHA-256 helper
+  async function sha256(message) {
+    const msgBuffer = new TextEncoder().encode(message);
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+  }
+
+  const btnIssueAgentAction = document.getElementById('btn-issue-agent-action');
+  if (btnIssueAgentAction) {
+    btnIssueAgentAction.addEventListener('click', async () => {
+      if (!state.identity.ownerRegistered) {
+        alert("Please register your Owner ID first.");
+        return;
+      }
+      const agentNameEl = document.getElementById('issue-agent-name');
+      const agentRoleEl = document.getElementById('issue-agent-role');
+      const agentDidEl = document.getElementById('issue-agent-did');
+      
+      const agentName = agentNameEl?.value?.trim() || 'Coder Agent';
+      const agentRole = agentRoleEl?.value || 'coder';
+      const agentDid = agentDidEl?.value?.trim() || `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+
+      btnIssueAgentAction.disabled = true;
+      btnIssueAgentAction.textContent = "Minting Agent DID...";
+
+      // Build card, calculate hash, register card metadata, sign & anchor
+      const card = {
+        mediaType: "application/a2a-agent-card+json",
+        name: agentName,
+        description: `Specialized sub-agent running ${agentRole} role.`,
+        runtime: "Claude Code",
+        capabilities: [agentRole, "pair-programming"],
+        ownerPolicy: "self",
+        supportedProtocols: ["agent-os-lobby"],
+        allowedScopes: [],
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      
+      // Sort keys canonically
+      const sortedKeys = Object.keys(card).sort();
+      const sortedCard = {};
+      for (const k of sortedKeys) sortedCard[k] = card[k];
+
+      const cardHash = await sha256(JSON.stringify(sortedCard));
+
+      // Post the metadata to the Lobby server so it is hosted at lobby.agent-os.gothard.dk/agent-cards/did
+      const registerRes = await postJson('/api/v1/agent-lobby/agent-cards', {
+        did: agentDid,
+        card: sortedCard
+      });
+
+      const metadataUrl = registerRes?.url || `${window.location.origin}/agent-cards/${agentDid}`;
+
+      setTimeout(() => {
+        state.identity.registeredAgentDid = agentDid;
+
+        // Sync UI
+        const agentIssueView = document.getElementById('agent-issue-view');
+        const agentIssuedSuccessView = document.getElementById('agent-issued-success-view');
+        const successAgentName = document.getElementById('success-agent-name');
+        const successAgentDid = document.getElementById('success-agent-did');
+
+        if (agentIssueView) agentIssueView.style.display = 'none';
+        if (agentIssuedSuccessView) agentIssuedSuccessView.style.display = 'block';
+        if (successAgentName) successAgentName.textContent = agentName;
+        if (successAgentDid) {
+          successAgentDid.innerHTML = `DID: <span style="color:var(--color-cyan);">${agentDid}</span><br>Metadata URL: <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a><br>Card Hash: <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span>`;
+        }
+
+        // Push new Agent into the Connected Swarm roster dynamically!
+        const newAgent = {
+          agent_id: agentDid,
+          display_name: agentName,
+          agent_role: agentRole === 'coder' ? 'Coder' : agentRole === 'qa' ? 'QA Specialist' : agentRole === 'ux' ? 'UX Specialist' : 'SEO Specialist',
+          status: 'idle',
+          identity_status: 'verified',
+          runtime: 'Claude Code',
+          model: 'claude-3-5-sonnet',
+          branch: 'main',
+          cwd: '/workspace'
+        };
+
+        if (!state.agents.some(a => a.agent_id === agentDid)) {
+          state.agents.push(newAgent);
+          renderRoster();
+        }
+
+        // Add event
+        state.events.push({
+          id: Math.random().toString(36).substring(2, 10),
+          lobby_id: state.activeLobbyId || 'default',
+          type: 'agent-did-issued',
+          details: `Concordium Agent DID issued: ${agentName} (${agentDid.slice(0, 15)}...)`,
+          timestamp: new Date().toISOString()
+        });
+        renderEvents();
+
+        btnIssueAgentAction.disabled = false;
+        btnIssueAgentAction.textContent = "Issue Agent ID";
+        alert(`Agent DID issued & registered successfully!\nMetadata URL: ${metadataUrl}`);
+      }, 1500);
     });
   }
 
