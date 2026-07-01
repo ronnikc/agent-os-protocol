@@ -219,6 +219,26 @@ nav a:hover::after {
   border-color: var(--color-border-active);
 }
 
+.btn-lobby {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(0, 229, 117, 0.1);
+  border: 1px solid rgba(0, 229, 117, 0.3);
+  color: #00e575;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background 0.2s, border-color 0.2s, box-shadow 0.2s;
+}
+
+.btn-lobby:hover {
+  background: rgba(0, 229, 117, 0.18);
+  border-color: rgba(0, 229, 117, 0.5);
+  box-shadow: 0 0 12px rgba(0, 229, 117, 0.15);
+}
+
 /* Sections Base */
 section {
   padding: 100px 40px;

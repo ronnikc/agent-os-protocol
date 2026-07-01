@@ -1,5 +1,10 @@
 // Agent OS Swarm Lobby — Dashboard Controller
 
+// ── Concordium Network Configuration ──
+const CCD_NETWORK = 'mainnet'; // 'mainnet' or 'testnet'
+const CCD_EXPLORER_BASE = `https://ccdexplorer.io/${CCD_NETWORK}`;
+const CCD_AGENT_REGISTRY_CONTRACT = '9458,0'; // Agent Registry contract <index,subindex>
+
 const state = {
   lobbies: [],
   activeLobbyId: null,
@@ -97,12 +102,18 @@ function getExplorerLink(did) {
   const parts = did.split(':');
   if (parts.length < 4) return null;
   const network = parts[2]; // 'mainnet' or 'testnet'
-  const id = parts[3]; // token ID or address
-  if (id.startsWith('agent-') || id.length < 10) {
-    // Fallback if not a real 64-character token hex ID or address
-    return `https://ccdexplorer.io/${network}`;
+  const id = parts.slice(3).join(':'); // token ID, address, or agent sub-ID
+  // If the ID is a wallet address (long hex), link to account page
+  if (id.length >= 40 && !id.startsWith('agent-')) {
+    return `https://ccdexplorer.io/${network}/accounts/${id}`;
   }
-  return `https://ccdexplorer.io/${network}/tokens/agent-registry/${id}`;
+  // If it contains a token index number, link to agent registry token
+  const tokenIdMatch = id.match(/^(\d+)$/);
+  if (tokenIdMatch) {
+    return `https://ccdexplorer.io/${network}/tokens/agent-registry/${tokenIdMatch[1]}`;
+  }
+  // Fallback: link to the agent registry contract on the right network
+  return `${CCD_EXPLORER_BASE}/tokens/agent-registry`;
 }
 
 const MODAL_TYPES = {
@@ -486,7 +497,7 @@ function updateWalletUI() {
       if (ownerRegisterView) ownerRegisterView.style.display = 'flex';
       if (ownerWalletAddressDisplay) ownerWalletAddressDisplay.textContent = state.wallet.address;
       if (ownerDidInput && !ownerDidInput.value) {
-        ownerDidInput.value = `did:ccd:owner-${state.wallet.address.slice(0, 8)}`;
+        ownerDidInput.value = `did:ccd:${CCD_NETWORK}:${state.wallet.address}`;
       }
     } else {
       if (ownerRegisterView) ownerRegisterView.style.display = 'none';
@@ -593,7 +604,25 @@ function init() {
         await pollLobbies();
         selectLobby(res.lobby.lobby_id);
       } else {
-        alert('Failed to create lobby.');
+        // Fallback: create lobby locally when server is unreachable
+        const localLobby = {
+          lobby_id: 'local-' + Math.random().toString(36).substring(2, 10),
+          name,
+          visibility,
+          join_policy: policy,
+          allowlist,
+          status: 'active',
+          org_id: 'local',
+          created_by: 'web-user',
+          created_at: new Date().toISOString()
+        };
+        state.lobbies.push(localLobby);
+        renderLobbies();
+        selectLobby(localLobby.lobby_id);
+        if (nameEl) nameEl.value = '';
+        if (allowlistInput) allowlistInput.value = '';
+        if (allowlistContainer) allowlistContainer.style.display = 'none';
+        alert(`Lobby "${name}" created locally. Connect the lobby server for full persistence.`);
       }
     });
   }
@@ -654,7 +683,7 @@ function init() {
       const ownerNameEl = document.getElementById('owner-name-input');
       const ownerDidEl = document.getElementById('owner-did-input');
       const name = ownerNameEl?.value?.trim() || 'Bob Coder';
-      const did = ownerDidEl?.value?.trim() || `did:ccd:owner-${state.wallet.address.slice(0, 8)}`;
+      const did = ownerDidEl?.value?.trim() || `did:ccd:${CCD_NETWORK}:${state.wallet.address}`;
 
       btnRegisterOwnerAction.disabled = true;
       btnRegisterOwnerAction.textContent = "Signing in Wallet...";
@@ -688,7 +717,7 @@ function init() {
           // Post to lobby server (register issuer)
           await postJson('/api/v1/agent-lobby/issuers', {
             issuer_did: did,
-            identity_ref: `did:ccd:testnet:${state.wallet.address}`,
+            identity_ref: `did:ccd:${CCD_NETWORK}:${state.wallet.address}`,
             signature: signature
           });
 
@@ -709,7 +738,7 @@ function init() {
           if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
           if (agentIssueView) agentIssueView.style.display = 'flex';
           if (issueAgentDid) {
-            issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+            issueAgentDid.value = `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
           }
 
           alert("Owner ID registered and cryptographically verified!");
@@ -742,7 +771,7 @@ function init() {
           // Post to lobby server (register issuer)
           await postJson('/api/v1/agent-lobby/issuers', {
             issuer_did: did,
-            identity_ref: `did:ccd:testnet:${state.wallet.address}`
+            identity_ref: `did:ccd:${CCD_NETWORK}:${state.wallet.address}`
           });
 
           // Add event
@@ -762,7 +791,7 @@ function init() {
           if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
           if (agentIssueView) agentIssueView.style.display = 'flex';
           if (issueAgentDid) {
-            issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+            issueAgentDid.value = `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
           }
 
           btnRegisterOwnerAction.disabled = false;
@@ -794,7 +823,7 @@ function init() {
       
       const agentName = agentNameEl?.value?.trim() || 'Coder Agent';
       const agentRole = agentRoleEl?.value || 'coder';
-      const agentDid = agentDidEl?.value?.trim() || `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+      const agentDid = agentDidEl?.value?.trim() || `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
 
       btnIssueAgentAction.disabled = true;
       btnIssueAgentAction.textContent = "Minting Agent DID...";
@@ -841,7 +870,7 @@ function init() {
         if (agentIssuedSuccessView) agentIssuedSuccessView.style.display = 'block';
         if (successAgentName) successAgentName.textContent = agentName;
         if (successAgentDid) {
-          const explorerUrl = getExplorerLink(agentDid) || `https://ccdexplorer.io/testnet`;
+          const explorerUrl = getExplorerLink(agentDid) || `${CCD_EXPLORER_BASE}/tokens/agent-registry`;
           successAgentDid.innerHTML = `DID: <span style="color:var(--color-cyan);">${agentDid}</span><br>Metadata URL: <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a><br>CCDexplorer Link: <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${explorerUrl}</a><br>Card Hash: <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span>`;
         }
 
@@ -903,19 +932,48 @@ function init() {
               throw new Error('Connection rejected by user.');
             }
             
-            let balanceCcd = 1000;
+            let balanceCcd = 0;
             try {
-              const client = await provider.getJsonRpcClient();
-              const accountInfo = await client.getAccountInfo(accountAddress);
-              if (accountInfo && accountInfo.accountAmount) {
-                const amt = accountInfo.accountAmount.microCcd !== undefined 
-                  ? accountInfo.accountAmount.microCcd 
-                  : accountInfo.accountAmount;
-                balanceCcd = parseFloat(amt) / 1000000;
+              // Strategy 1: gRPC client (Concordium Browser Wallet v2)
+              if (provider.getGrpcClient) {
+                const grpcClient = await provider.getGrpcClient();
+                const accountInfo = await grpcClient.getAccountInfo(accountAddress);
+                if (accountInfo && accountInfo.accountAmount) {
+                  const amt = typeof accountInfo.accountAmount === 'bigint'
+                    ? accountInfo.accountAmount
+                    : (accountInfo.accountAmount.microCcd ?? accountInfo.accountAmount);
+                  balanceCcd = Number(amt) / 1_000_000;
+                }
+              }
+              // Strategy 2: JSON-RPC client (older wallet API)
+              else if (provider.getJsonRpcClient) {
+                const client = await provider.getJsonRpcClient();
+                const accountInfo = await client.getAccountInfo(accountAddress);
+                if (accountInfo && accountInfo.accountAmount) {
+                  const amt = accountInfo.accountAmount.microCcd !== undefined
+                    ? accountInfo.accountAmount.microCcd
+                    : accountInfo.accountAmount;
+                  balanceCcd = Number(amt) / 1_000_000;
+                }
               }
             } catch (rpcErr) {
-              console.warn('Concordium RPC balance fetch failed, using fallback:', rpcErr);
-              balanceCcd = 25000;
+              console.warn('Concordium wallet RPC balance fetch failed, trying public node:', rpcErr);
+              // Strategy 3: Public CCDScan/node API as last-resort fallback
+              try {
+                const nodeRes = await fetch(`https://grpc.${CCD_NETWORK}.concordium.com/v2/accounts/${accountAddress}/info`);
+                if (nodeRes.ok) {
+                  const info = await nodeRes.json();
+                  if (info && info.accountAmount) {
+                    balanceCcd = Number(info.accountAmount) / 1_000_000;
+                  }
+                }
+              } catch (nodeErr) {
+                console.warn('Public node balance query also failed:', nodeErr);
+              }
+            }
+
+            if (balanceCcd === 0) {
+              console.warn('Could not fetch wallet balance from any source. Showing 0 CCD.');
             }
 
             state.wallet.connected = true;
