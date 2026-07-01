@@ -94,8 +94,13 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.addEventListener('click', () => {
       const docId = btn.getAttribute('data-doc');
 
-      // Update active button state
-      docButtons.forEach(b => b.classList.toggle('active', b === btn));
+      // Update active button state and accessibility attributes
+      docButtons.forEach(b => {
+        const isActive = b === btn;
+        b.classList.toggle('active', isActive);
+        b.setAttribute('aria-selected', isActive ? 'true' : 'false');
+        b.setAttribute('tabindex', isActive ? '0' : '-1');
+      });
 
       // Show active pane
       docPanes.forEach(pane => {
@@ -103,6 +108,36 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // Keyboard navigation for documentation tabs
+  const docsTablist = document.querySelector('.docs-sidebar[role="tablist"]');
+  if (docsTablist) {
+    docsTablist.addEventListener('keydown', (e) => {
+      const activeTab = document.activeElement;
+      if (!activeTab || activeTab.getAttribute('role') !== 'tab') return;
+
+      const tabs = Array.from(docButtons);
+      if (tabs.length === 0) return;
+      const index = tabs.indexOf(activeTab);
+      let nextIndex = index;
+
+      if (e.key === 'ArrowDown' || e.key === 'ArrowRight') {
+        nextIndex = (index + 1) % tabs.length;
+      } else if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
+        nextIndex = (index - 1 + tabs.length) % tabs.length;
+      } else if (e.key === 'Home') {
+        nextIndex = 0;
+      } else if (e.key === 'End') {
+        nextIndex = tabs.length - 1;
+      } else {
+        return;
+      }
+
+      e.preventDefault();
+      tabs[nextIndex].focus();
+      tabs[nextIndex].click();
+    });
+  }
 
   // Operating Modes tab switcher
   const modeButtons = document.querySelectorAll('.mode-tab-btn');
@@ -209,5 +244,45 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
+
+  // Escrow and Observatory Simulator
+  const btnTriggerSim = document.getElementById('btn-trigger-escrow-sim');
+  const simEscrowStatus = document.getElementById('sim-escrow-status');
+  const simGateBullet = document.getElementById('sim-gate-bullet');
+  const simGateText = document.getElementById('sim-gate-text');
+
+  if (btnTriggerSim) {
+    btnTriggerSim.addEventListener('click', () => {
+      btnTriggerSim.disabled = true;
+      btnTriggerSim.textContent = 'Running verify-gate checks...';
+      if (simGateBullet) {
+        simGateBullet.textContent = '⟳';
+        simGateBullet.style.color = 'var(--color-yellow)';
+      }
+      if (simGateText) simGateText.textContent = 'Executing verify-all suite inside runtime...';
+
+      setTimeout(() => {
+        if (simGateBullet) {
+          simGateBullet.textContent = '✓';
+          simGateBullet.style.color = 'var(--color-green)';
+        }
+        if (simGateText) simGateText.textContent = 'Verify-gate validation passed successfully!';
+        btnTriggerSim.textContent = 'Signing on-chain release...';
+
+        setTimeout(() => {
+          if (simEscrowStatus) {
+            simEscrowStatus.textContent = '✓ ESCROW SETTLED';
+            simEscrowStatus.style.background = 'rgba(53, 242, 138, 0.1)';
+            simEscrowStatus.style.color = 'var(--color-green)';
+            simEscrowStatus.style.borderColor = 'rgba(53, 242, 138, 0.2)';
+          }
+          btnTriggerSim.textContent = 'Released & Paid (500 CCD)';
+          btnTriggerSim.style.background = 'rgba(53, 242, 138, 0.1)';
+          btnTriggerSim.style.color = 'var(--color-green)';
+          btnTriggerSim.style.border = '1px solid rgba(53, 242, 138, 0.2)';
+        }, 1200);
+      }, 1500);
+    });
+  }
 });
 

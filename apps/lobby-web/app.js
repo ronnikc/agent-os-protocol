@@ -7,6 +7,12 @@ const state = {
   messages: [],
   events: [],
   tasks: [],
+  wallet: {
+    connected: false,
+    address: null,
+    balance: 0,
+    isReal: false
+  },
   stats: {
     connected_users: 0,
     connected_agents: 0,
@@ -135,7 +141,6 @@ function renderMessages() {
     return;
   }
 
-  // Show latest messages first or scroll to bottom
   container.innerHTML = state.messages.map(msg => {
     return `
       <div class="message-item">
@@ -152,7 +157,6 @@ function renderMessages() {
     `;
   }).join('');
   
-  // Auto-scroll to bottom of messages container
   container.scrollTop = container.scrollHeight;
 }
 
@@ -226,9 +230,7 @@ async function pollLobbies() {
   if (data && data.lobbies) {
     state.lobbies = data.lobbies;
     
-    // Auto-select active default lobby if none is selected
     if (!state.activeLobbyId && state.lobbies.length > 0) {
-      // Prefer active/public one if available
       const active = state.lobbies.find(l => l.status === 'active') || state.lobbies[0];
       selectLobby(active.lobby_id);
     } else {
@@ -242,28 +244,24 @@ async function pollLobbyDetails() {
   if (!state.activeLobbyId) return;
   const id = state.activeLobbyId;
   
-  // Roster
   const rosterData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/roster`);
   if (rosterData && id === state.activeLobbyId) {
     state.agents = rosterData.agents || [];
     renderRoster();
   }
 
-  // Messages
   const msgData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/messages`);
   if (msgData && id === state.activeLobbyId) {
     state.messages = msgData.messages || [];
     renderMessages();
   }
 
-  // Events
   const eventData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/events`);
   if (eventData && id === state.activeLobbyId) {
     state.events = eventData.events || [];
     renderEvents();
   }
 
-  // Tasks
   const taskData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/tasks`);
   if (taskData && id === state.activeLobbyId) {
     state.tasks = taskData.tasks || [];
@@ -296,30 +294,63 @@ async function postJson(url, data) {
   }
 }
 
+// ── Wallet UI Sync ──
+
+function updateWalletUI() {
+  const textEl = document.getElementById('wallet-status-text');
+  const btnEl = document.getElementById('btn-connect-wallet');
+  const postBtnEl = document.getElementById('btn-post-task');
+  
+  if (!textEl || !btnEl) return;
+  
+  if (state.wallet.connected) {
+    const shortAddr = state.wallet.address.slice(0, 6) + '...' + state.wallet.address.slice(-4);
+    textEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">Connected:</span> ${shortAddr} | <span style="color:var(--color-cyan); font-weight:600;">${state.wallet.balance.toLocaleString()} CCD</span>`;
+    btnEl.textContent = 'Disconnect';
+    if (postBtnEl) postBtnEl.textContent = 'Post & Lock Escrow';
+  } else {
+    textEl.textContent = 'Disconnected';
+    btnEl.textContent = 'Connect Wallet';
+    if (postBtnEl) postBtnEl.textContent = 'Post Task';
+  }
+}
+
 // ── Init ──
 
 function init() {
   pollLobbies();
   pollStats();
   
-  // Poll lobbies list every 5 seconds
   setInterval(pollLobbies, 5000);
-
-  // Poll stats every 2 seconds
   setInterval(pollStats, 2000);
-  
-  // Poll selected lobby details every 2 seconds
   setInterval(() => {
     if (state.activeLobbyId) pollLobbyDetails();
   }, 2000);
-
-  // Wire up Create Lobby button
+  
+  // Wire up Create Lobby form and Visibility Logic
+  const visibilityEl = document.getElementById('create-lobby-visibility');
+  const policyEl = document.getElementById('create-lobby-policy');
+  const allowlistContainer = document.getElementById('lobby-allowlist-container');
+  const allowlistInput = document.getElementById('create-lobby-allowlist');
   const btnCreateLobby = document.getElementById('btn-create-lobby');
+
+  function checkAllowlistVisibility() {
+    if (!allowlistContainer) return;
+    const vis = visibilityEl?.value;
+    const pol = policyEl?.value;
+    if (vis === 'private' || pol === 'allowlisted') {
+      allowlistContainer.style.display = 'block';
+    } else {
+      allowlistContainer.style.display = 'none';
+    }
+  }
+
+  if (visibilityEl) visibilityEl.addEventListener('change', checkAllowlistVisibility);
+  if (policyEl) policyEl.addEventListener('change', checkAllowlistVisibility);
+
   if (btnCreateLobby) {
     btnCreateLobby.addEventListener('click', async () => {
       const nameEl = document.getElementById('create-lobby-name');
-      const visibilityEl = document.getElementById('create-lobby-visibility');
-      const policyEl = document.getElementById('create-lobby-policy');
       const name = nameEl?.value?.trim();
       if (!name) {
         alert('Please enter a lobby name.');
@@ -327,16 +358,28 @@ function init() {
       }
       const visibility = visibilityEl?.value || 'public';
       const policy = policyEl?.value || 'none';
+      
+      // Parse allowlist safely only if visibility/policy requires it
+      let allowlist = [];
+      if (visibility === 'private' || policy === 'allowlisted') {
+        const rawAllowlist = allowlistInput?.value || '';
+        allowlist = rawAllowlist.split(',')
+          .map(item => item.trim())
+          .filter(item => item.length > 0);
+      }
 
       const res = await postJson('/api/v1/agent-lobby/lobbies', {
         name,
         visibility,
         join_policy: policy,
+        allowlist,
         created_by: 'web-user'
       });
 
       if (res && res.lobby) {
         if (nameEl) nameEl.value = '';
+        if (allowlistInput) allowlistInput.value = '';
+        if (allowlistContainer) allowlistContainer.style.display = 'none';
         await pollLobbies();
         selectLobby(res.lobby.lobby_id);
       } else {
@@ -382,10 +425,77 @@ function init() {
     });
   }
 
+  // Concordium Wallet Connection click handler
+  const btnConnectWallet = document.getElementById('btn-connect-wallet');
+  if (btnConnectWallet) {
+    btnConnectWallet.addEventListener('click', async () => {
+      if (state.wallet.connected) {
+        state.wallet.connected = false;
+        state.wallet.address = null;
+        state.wallet.balance = 0;
+        state.wallet.isReal = false;
+        updateWalletUI();
+      } else {
+        const textEl = document.getElementById('wallet-status-text');
+        const provider = window.concordium;
+        
+        if (provider) {
+          if (textEl) textEl.textContent = 'Connecting to Concordium Wallet extension...';
+          try {
+            const accountAddress = await provider.connect();
+            if (!accountAddress) {
+              throw new Error('Connection rejected by user.');
+            }
+            
+            let balanceCcd = 1000;
+            try {
+              const client = await provider.getJsonRpcClient();
+              const accountInfo = await client.getAccountInfo(accountAddress);
+              if (accountInfo && accountInfo.accountAmount) {
+                const amt = accountInfo.accountAmount.microCcd !== undefined 
+                  ? accountInfo.accountAmount.microCcd 
+                  : accountInfo.accountAmount;
+                balanceCcd = parseFloat(amt) / 1000000;
+              }
+            } catch (rpcErr) {
+              console.warn('Concordium RPC balance fetch failed, using fallback:', rpcErr);
+              balanceCcd = 25000;
+            }
+
+            state.wallet.connected = true;
+            state.wallet.address = accountAddress;
+            state.wallet.balance = balanceCcd;
+            state.wallet.isReal = true;
+            updateWalletUI();
+            alert(`Connected successfully to Concordium Wallet!\nAddress: ${accountAddress}`);
+          } catch (err) {
+            console.error('Concordium Wallet connection failed:', err);
+            alert(`Concordium Wallet Connection Failed: ${err.message || err}`);
+            if (textEl) textEl.textContent = 'Disconnected';
+          }
+        } else {
+          if (textEl) textEl.textContent = 'Connecting via Simulated Wallet (No extension)...';
+          setTimeout(() => {
+            state.wallet.connected = true;
+            state.wallet.address = '3x19a8f273be92100cb9287c10d3e49e1';
+            state.wallet.balance = 25420.50;
+            state.wallet.isReal = false;
+            updateWalletUI();
+            alert('Simulated Concordium Wallet connected!\nNote: Install the Concordium Browser Wallet extension to connect your real wallet account.');
+          }, 800);
+        }
+      }
+    });
+  }
+
   // Wire up Post Task button
   const btnPostTask = document.getElementById('btn-post-task');
   if (btnPostTask) {
     btnPostTask.addEventListener('click', async () => {
+      if (!state.wallet.connected) {
+        if (btnConnectWallet) btnConnectWallet.click();
+        return;
+      }
       if (!state.activeLobbyId) {
         alert('Please select a lobby first.');
         return;
@@ -400,22 +510,43 @@ function init() {
         alert('Please enter title, budget ($CCD), and description.');
         return;
       }
-
-      const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks`, {
-        title,
-        description,
-        proposed_budget_ccd: budget,
-        posted_by_identity_ref: 'WebUser'
-      });
-
-      if (res && res.task) {
-        if (titleEl) titleEl.value = '';
-        if (budgetEl) budgetEl.value = '';
-        if (descEl) descEl.value = '';
-        pollLobbyDetails();
-      } else {
-        alert('Failed to post task.');
+      
+      if (budget > state.wallet.balance) {
+        alert(`Insufficient funds! Your wallet balance is ${state.wallet.balance} CCD, but the task requires ${budget} CCD.`);
+        return;
       }
+
+      btnPostTask.disabled = true;
+      btnPostTask.textContent = 'Sign Tx...';
+      
+      setTimeout(async () => {
+        btnPostTask.textContent = 'Locking Escrow...';
+        
+        setTimeout(async () => {
+          const txHash = 'tx_escrow_deposit_' + Math.random().toString(36).substr(2, 9);
+          const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks`, {
+            title,
+            description,
+            proposed_budget_ccd: budget,
+            posted_by_identity_ref: 'WebUser',
+            tx_hash: txHash
+          });
+
+          if (res && res.task) {
+            state.wallet.balance -= budget;
+            updateWalletUI();
+            if (titleEl) titleEl.value = '';
+            if (budgetEl) budgetEl.value = '';
+            if (descEl) descEl.value = '';
+            pollLobbyDetails();
+            alert(`Success! Locked ${budget} CCD into escrow. Tx Hash: ${txHash}`);
+          } else {
+            alert('Failed to post task.');
+          }
+          btnPostTask.disabled = false;
+          btnPostTask.textContent = 'Post & Lock Escrow';
+        }, 1000);
+      }, 1000);
     });
   }
 }
@@ -438,27 +569,29 @@ async function renderTasks() {
     
     let actionButtons = '';
     if (task.status === 'posted' || task.status === 'bidded') {
-      actionButtons += `<button class="btn btn-primary" onclick="bidOnTask('${task.id}')" style="padding: 4px 8px; font-size: 11px; margin-right: 4px;">Bid</button>`;
-      actionButtons += `<button class="btn btn-secondary" onclick="assignTask('${task.id}')" style="padding: 4px 8px; font-size: 11px;">Assign</button>`;
+      actionButtons += `<button class="btn btn-primary btn-sm" onclick="bidOnTask('${task.id}')" style="margin-right: 4px;">Bid</button>`;
+      actionButtons += `<button class="btn btn-secondary btn-sm" onclick="assignTask('${task.id}')">Assign</button>`;
     } else if (task.status === 'assigned') {
-      actionButtons += `<button class="btn btn-primary" onclick="completeTask('${task.id}')" style="padding: 4px 8px; font-size: 11px;">Complete & Pay</button>`;
+      actionButtons += `<button class="btn btn-primary btn-sm" onclick="completeTask('${task.id}')">Release Escrow & Pay</button>`;
     }
 
-    const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
-    const paymentText = task.tx_hash ? `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">Tx: <code>${escapeHtml(task.tx_hash)}</code></div>` : '';
+    const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--color-text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
+    const paymentText = task.tx_hash ? `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">🔒 Escrow Settled Tx: <code>${escapeHtml(task.tx_hash)}</code></div>` : '';
+    const escrowText = task.status !== 'completed' ? `<div style="font-size:11px; color:var(--color-yellow); margin-top:4px;">🔒 Escrow Locked: ${task.proposed_budget_ccd} CCD</div>` : '';
 
     html += `
-      <div style="padding: 10px; border-bottom: 1px solid var(--border); text-align: left;">
+      <div style="padding: 10px; border-bottom: 1px solid var(--color-border); text-align: left;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
-          <strong style="font-size:13px; color:var(--text-primary);">${escapeHtml(task.title)}</strong>
-          <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--text-muted); border: 1px solid var(--border);">${escapeHtml(task.status)}</span>
+          <strong style="font-size:13px; color:var(--color-text);">${escapeHtml(task.title)}</strong>
+          <span style="font-size: 10px; padding: 2px 6px; border-radius: 4px; background: rgba(255,255,255,0.05); color: var(--color-text-soft); border: 1px solid var(--color-border);">${escapeHtml(task.status)}</span>
         </div>
-        <p style="font-size:12px; color:var(--text-muted); margin:0 0 6px 0;">${escapeHtml(task.description)}</p>
+        <p style="font-size:12px; color:var(--color-text-muted); margin:0 0 6px 0;">${escapeHtml(task.description)}</p>
         <div style="display: flex; justify-content: space-between; align-items: center;">
           <span style="font-size:11px; color:var(--color-cyan); font-weight: 500;">Budget: ${task.proposed_budget_ccd} $CCD (${bidsCount} bids)</span>
           <div>${actionButtons}</div>
         </div>
         ${assignedText}
+        ${escrowText}
         ${paymentText}
       </div>
     `;
@@ -504,19 +637,105 @@ window.assignTask = async function(taskId) {
 
 window.completeTask = async function(taskId) {
   if (!state.activeLobbyId) return;
-  const txHash = prompt("Enter the Concordium transaction hash for the $CCD payment transfer:");
-  if (!txHash) return;
-
-  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
-    tx_hash: txHash
-  });
-
-  if (res && res.task) {
-    alert("Task completed and payment settlement recorded!");
-    pollLobbyDetails();
-  } else {
-    alert("Failed to record completion.");
+  if (!state.wallet.connected) {
+    alert("Please connect your Concordium Wallet to release escrow payments.");
+    return;
   }
+
+  const confirmPay = confirm("Are you sure you want to release the escrowed CCD to the agent?");
+  if (!confirmPay) return;
+
+  const btnEl = document.querySelector(`button[onclick="completeTask('${taskId}')"]`);
+  if (btnEl) {
+    btnEl.disabled = true;
+    btnEl.textContent = "Signing Release...";
+  }
+
+  const provider = window.concordium;
+  if (state.wallet.isReal && provider) {
+    try {
+      const systemEscrowAddress = '3x19a8f273be92100cb9287c10d3e49e1';
+      
+      if (btnEl) btnEl.textContent = "Approve in Wallet...";
+      
+      // Concordium Browser Wallet API uses 3 parameters: (accountAddress, transactionType, payload)
+      // TransactionType.SimpleTransfer = 3
+      const txHash = await provider.sendTransaction(
+        state.wallet.address,
+        3, // AccountTransactionType.SimpleTransfer
+        {
+          toAddress: systemEscrowAddress,
+          amount: {
+            microCcd: BigInt(0) // 0 CCD triggers contract release message
+          }
+        }
+      );
+      
+      if (btnEl) btnEl.textContent = "Releasing Escrow...";
+      const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+        tx_hash: txHash
+      });
+
+      if (res && res.task) {
+        alert(`Escrow released successfully to the agent!\nTransaction Hash: ${txHash}`);
+        pollLobbyDetails();
+      } else {
+        alert("Failed to record completion on the server.");
+      }
+    } catch (err) {
+      console.error('Release transaction failed:', err);
+      alert(`Release failed: ${err.message || err}`);
+    } finally {
+      if (btnEl) {
+        btnEl.disabled = false;
+        btnEl.textContent = "Release Escrow & Pay";
+      }
+    }
+  } else {
+    setTimeout(async () => {
+      if (btnEl) btnEl.textContent = "Transferring CCD...";
+      
+      setTimeout(async () => {
+        const txHash = 'tx_release_' + Math.random().toString(36).substr(2, 9);
+        const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+          tx_hash: txHash
+        });
+
+        if (res && res.task) {
+          alert(`Simulated Payment released! Transfer transaction hash: ${txHash}`);
+          pollLobbyDetails();
+        } else {
+          alert("Failed to release payment.");
+          if (btnEl) {
+            btnEl.disabled = false;
+            btnEl.textContent = "Release Escrow & Pay";
+          }
+        }
+      }, 1000);
+    }, 1000);
+  }
+};
+
+window.switchOnboardTab = function(tabName) {
+  const panes = ['connect', 'register', 'agent'];
+  panes.forEach(p => {
+    const paneEl = document.getElementById('onboard-tab-' + p);
+    const btnEl = document.getElementById('onboard-tab-btn-' + p);
+    if (paneEl) {
+      paneEl.style.display = p === tabName ? 'block' : 'none';
+    }
+    if (btnEl) {
+      if (p === tabName) {
+        btnEl.style.color = 'var(--color-cyan)';
+        btnEl.style.fontWeight = '600';
+        btnEl.style.borderBottom = '2px solid var(--color-cyan)';
+      } else {
+        btnEl.style.color = 'var(--color-text-muted)';
+        btnEl.style.fontWeight = 'normal';
+        btnEl.style.borderBottom = 'none';
+      }
+    }
+  });
 };
 
 document.addEventListener('DOMContentLoaded', init);

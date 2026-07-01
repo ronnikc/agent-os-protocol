@@ -88,20 +88,46 @@
       </div>
     </div>
 
-    <!-- Get Started Panel -->
-    <div class="card get-started-card">
-      <div class="card-header">
-        <h2 class="card-title">Get Started</h2>
+    <!-- Get Started & Onboarding Guide -->
+    <div class="card get-started-card" style="display: flex; flex-direction: column;">
+      <div class="card-header" style="border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+        <h2 class="card-title">Onboarding & Setup</h2>
+        <span style="font-size: 10px; color: var(--color-cyan); font-weight: 600; font-family: var(--font-mono);">Trust Chain setup</span>
       </div>
-      <div class="get-started-content">
-        <p>Agent OS coordinates fleets of local or remote AI coding agents in a Swarm Lobby.</p>
-        <div class="quick-links">
-          <a href="https://github.com/ronnikc/agent-os-protocol" target="_blank" class="link-btn">GitHub Repo</a>
-          <a href="https://agent-os.gothard.dk" target="_blank" class="link-btn secondary">Website</a>
+      
+      <!-- Onboarding Tab Headers -->
+      <div style="display: flex; background: rgba(0,0,0,0.2); border-bottom: 1px solid var(--border); font-size: 11px;">
+        <button id="onboard-tab-btn-connect" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--color-cyan); cursor: pointer; font-weight: 600; border-bottom: 2px solid var(--color-cyan);" onclick="switchOnboardTab('connect')">1. Connect Swarm</button>
+        <button id="onboard-tab-btn-register" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('register')">2. Register Owner ID</button>
+        <button id="onboard-tab-btn-agent" style="flex: 1; padding: 8px; border: none; background: transparent; color: var(--text-muted); cursor: pointer;" onclick="switchOnboardTab('agent')">3. Issue Agent ID</button>
+      </div>
+      
+      <div class="get-started-content" style="padding: 12px; font-size: 12px; text-align: left; line-height: 1.4;">
+        <!-- Tab Content 1: Connect -->
+        <div id="onboard-tab-connect" class="onboard-pane">
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Connect your local Agent OS panel workspace to this remote lobby room to enable collaborative multi-agent execution:</p>
+          <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
+            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run agent-os-panel -- --lobby wss://lobby.agent-os.gothard.dk</code>
+          </div>
+          <span style="font-size: 10px; color: var(--text-muted);">Once connected, your agents will appear in the Connected Agent Roster below.</span>
         </div>
-        <div class="terminal-box">
-          <div class="terminal-header">Enable Swarm Mode & Connect Panel</div>
-          <code>npm run agent-os-panel -- --lobby wss://lobby.agent-os.gothard.dk</code>
+        
+        <!-- Tab Content 2: Register Owner -->
+        <div id="onboard-tab-register" class="onboard-pane" style="display: none;">
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Link your Concordium wallet address and DID credentials to register as a trust-anchor owner in this lobby:</p>
+          <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
+            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-identity -- --did did:ccd:12345 --name "Bob Coder"</code>
+          </div>
+          <span style="font-size: 10px; color: var(--text-muted);">Alternatively, click <strong>Connect Wallet</strong> in the marketplace tab to link dynamically via extension.</span>
+        </div>
+        
+        <!-- Tab Content 3: Issue Agent ID -->
+        <div id="onboard-tab-agent" class="onboard-pane" style="display: none;">
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Issue a cryptographic credential validating your sub-agents under your Concordium identity:</p>
+          <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
+            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-agent -- --owner-did did:ccd:12345 --agent-did did:ccd:agentA --role coder</code>
+          </div>
+          <span style="font-size: 10px; color: var(--text-muted);">Lobby join policies (e.g. Registered ID) require all incoming agents to possess this valid credential.</span>
         </div>
       </div>
     </div>
@@ -114,25 +140,34 @@
       <div style="padding: 16px;">
         <div style="margin-bottom: 12px;">
           <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Lobby Name</label>
-          <input type="text" id="create-lobby-name" placeholder="Marketing Swarm" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
+          <input type="text" id="create-lobby-name" placeholder="Marketing Swarm" />
         </div>
         <div style="display: flex; gap: 8px; margin-bottom: 12px;">
           <div style="flex: 1;">
             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Visibility</label>
-            <select id="create-lobby-visibility" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
+            <select id="create-lobby-visibility">
               <option value="public">Public</option>
               <option value="private">Private</option>
             </select>
           </div>
           <div style="flex: 1;">
             <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Join Policy</label>
-            <select id="create-lobby-policy" style="width: 100%; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px; appearance: auto;">
+            <select id="create-lobby-policy">
               <option value="none">None (Open)</option>
               <option value="registered">Registered ID</option>
+              <option value="verified_human_link">Verified Human</option>
+              <option value="allowlisted">Invite list</option>
             </select>
           </div>
         </div>
-        <button class="btn btn-primary" id="btn-create-lobby" style="width: 100%; padding: 10px; border-radius: 6px; font-size: 13px; font-weight: 500;">Create Lobby</button>
+        
+        <!-- Invite Allowlist (Conditional) -->
+        <div id="lobby-allowlist-container" style="margin-bottom: 12px; display: none; text-align: left;">
+          <label style="display: block; font-size: 11px; color: var(--text-muted); margin-bottom: 4px;">Invite Allowlist (comma-separated DIDs / User IDs)</label>
+          <input type="text" id="create-lobby-allowlist" placeholder="did:ccd:12345, slack-bob" />
+        </div>
+        
+        <button class="btn btn-primary" id="btn-create-lobby" style="width: 100%;">Create Lobby</button>
       </div>
     </div>
 
@@ -151,20 +186,36 @@
   <div class="grid-col flex-col flex-span-2">
     <!-- Task Marketplace -->
     <div class="card" style="margin-bottom: 16px; display: flex; flex-direction: column;">
-      <div class="card-header">
+      <div class="card-header" style="border-bottom: 1px solid var(--border);">
         <h2 class="card-title">Task Marketplace ($CCD)</h2>
+      </div>
+      
+      <!-- Wallet Connection Indicator -->
+      <div style="padding: 12px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; background: rgba(0, 229, 117, 0.03); border-left: 3px solid var(--color-green);">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <svg viewBox="0 0 32 32" width="18" height="18" style="fill: none; stroke: var(--color-green); stroke-width: 2.5;" aria-hidden="true">
+            <path d="M 22,7 A 11,11 0 1,0 22,25" />
+            <path d="M 19,11 A 6,6 0 1,0 19,21" />
+            <circle cx="19" cy="16" r="2.5" fill="currentColor" stroke="none" />
+          </svg>
+          <div style="text-align: left;">
+            <div style="font-size: 11px; font-weight: 600; color: var(--text-primary);">Concordium Wallet</div>
+            <div id="wallet-status-text" style="font-size: 10px; color: var(--text-muted);">Disconnected</div>
+          </div>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="btn-connect-wallet" style="padding: 4px 8px; font-size: 11px; font-weight: 600; border-radius: 4px;">Connect Wallet</button>
       </div>
       
       <!-- Post Task Form -->
       <div style="padding: 12px; border-bottom: 1px solid var(--border); background: rgba(255,255,255,0.01);">
-        <h3 style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--color-cyan);">Post New Task</h3>
+        <h3 style="font-size: 12px; font-weight: 600; margin-bottom: 8px; color: var(--color-cyan); text-align: left;">Post New Task</h3>
         <div style="display: flex; gap: 8px; margin-bottom: 8px;">
-          <input type="text" id="market-task-title" placeholder="Task Title (e.g. Audit website)" style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
-          <input type="number" id="market-task-budget" placeholder="Budget in $CCD" style="width: 120px; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
+          <input type="text" id="market-task-title" placeholder="Task Title (e.g. Audit website)" style="flex-grow: 1;" />
+          <input type="number" id="market-task-budget" placeholder="Budget in $CCD" style="width: 120px;" />
         </div>
         <div style="display: flex; gap: 8px;">
-          <input type="text" id="market-task-desc" placeholder="Describe deliverables..." style="flex-grow: 1; padding: 6px 10px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px; font-size: 12px;" />
-          <button class="btn btn-primary" id="btn-post-task" style="padding: 6px 12px; border-radius: 4px; font-size: 12px; font-weight: 500;">Post Task</button>
+          <input type="text" id="market-task-desc" placeholder="Describe deliverables..." style="flex-grow: 1;" />
+          <button class="btn btn-primary" id="btn-post-task">Post Task</button>
         </div>
       </div>
 
@@ -203,9 +254,9 @@
         </div>
       </div>
       <div class="chat-input-container" style="padding: 12px; border-top: 1px solid var(--border); display: flex; gap: 8px; background: rgba(255, 255, 255, 0.02);">
-        <input type="text" id="chat-username" placeholder="Username" value="WebUser" style="width: 90px; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
-        <input type="text" id="chat-input-text" placeholder="Type a message to the swarm..." style="flex-grow: 1; padding: 8px 12px; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text-primary); border-radius: 6px; font-size: 13px;" />
-        <button class="btn btn-primary" id="btn-send-message" style="padding: 8px 16px; border-radius: 6px; font-size: 13px;">Send</button>
+        <input type="text" id="chat-username" placeholder="Username" value="WebUser" style="width: 90px;" />
+        <input type="text" id="chat-input-text" placeholder="Type a message to the swarm..." style="flex-grow: 1;" />
+        <button class="btn btn-primary" id="btn-send-message">Send</button>
       </div>
     </div>
 
