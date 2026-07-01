@@ -29,6 +29,82 @@ const state = {
   }
 };
 
+const AGENT_ROLES = [
+  { value: 'accessibility', label: 'Accessibility Specialist' },
+  { value: 'ad-campaign-manager', label: 'Ad Campaign Manager' },
+  { value: 'api', label: 'API Engineer' },
+  { value: 'backend', label: 'Backend Engineer' },
+  { value: 'boss-agent', label: 'Boss Agent' },
+  { value: 'build-integrity', label: 'Build Integrity Engineer' },
+  { value: 'chaos-steward', label: 'Chaos Steward' },
+  { value: 'client-onboarder', label: 'Client Onboarder' },
+  { value: 'code-review', label: 'Code Reviewer' },
+  { value: 'comms-specialist', label: 'Comms Specialist' },
+  { value: 'community-liaison', label: 'Community Liaison' },
+  { value: 'content', label: 'Content Specialist' },
+  { value: 'crm-integration-engineer', label: 'CRM Integration Engineer' },
+  { value: 'database-administrator', label: 'Database Administrator' },
+  { value: 'demo-architect', label: 'Demo Architect' },
+  { value: 'design-system-custodian', label: 'Design System Custodian' },
+  { value: 'design', label: 'Design Specialist' },
+  { value: 'devrel-advocate', label: 'DevRel Advocate' },
+  { value: 'documentation', label: 'Documentation Writer' },
+  { value: 'domain-specialist', label: 'Domain Specialist' },
+  { value: 'drupal-specialist', label: 'Drupal Specialist' },
+  { value: 'e2e-architect', label: 'E2E Architect' },
+  { value: 'finops-steward', label: 'FinOps Steward' },
+  { value: 'frontend', label: 'Frontend Engineer' },
+  { value: 'graph-navigator', label: 'Graph Navigator' },
+  { value: 'i18n-specialist', label: 'i18n Specialist' },
+  { value: 'identity', label: 'Identity Specialist' },
+  { value: 'infrastructure', label: 'Infrastructure Engineer' },
+  { value: 'joomla-specialist', label: 'Joomla Specialist' },
+  { value: 'lobby-architect', label: 'Lobby Architect' },
+  { value: 'lobby-dispatcher', label: 'Lobby Dispatcher' },
+  { value: 'mobile-specialist', label: 'Mobile Specialist' },
+  { value: 'newsletter-strategist', label: 'Newsletter Strategist' },
+  { value: 'performance-analyst', label: 'Performance Analyst' },
+  { value: 'pipeline-specialist', label: 'Pipeline Specialist' },
+  { value: 'planning', label: 'Planning Specialist' },
+  { value: 'product-qa', label: 'Product QA' },
+  { value: 'product', label: 'Product Manager' },
+  { value: 'proposal-architect', label: 'Proposal Architect' },
+  { value: 'reality-checker', label: 'Reality Checker' },
+  { value: 'release', label: 'Release Manager' },
+  { value: 'research', label: 'Research Specialist' },
+  { value: 'rfp-writer', label: 'RFP Writer' },
+  { value: 'runtime-adapter', label: 'Runtime Adapter' },
+  { value: 'scrum-coordinator', label: 'Scrum Coordinator' },
+  { value: 'security', label: 'Security Specialist' },
+  { value: 'seo-link-architect', label: 'SEO Link Architect' },
+  { value: 'seo', label: 'SEO Specialist' },
+  { value: 'sprint-gate-enforcer', label: 'Sprint Gate Enforcer' },
+  { value: 'support-triage', label: 'Support Triage' },
+  { value: 'tech-debt-steward', label: 'Tech Debt Steward' },
+  { value: 'test', label: 'Test Specialist' },
+  { value: 'training', label: 'Training Specialist' },
+  { value: 'ui-assist-integration', label: 'UI Assist Integration' },
+  { value: 'ui-assist', label: 'UI Assist Specialist' },
+  { value: 'umbraco-specialist', label: 'Umbraco Specialist' },
+  { value: 'user-validation', label: 'User Validation Specialist' },
+  { value: 'ux-researcher', label: 'UX Researcher' },
+  { value: 'ux', label: 'UX Specialist' },
+  { value: 'wordpress-specialist', label: 'WordPress Specialist' }
+];
+
+function getExplorerLink(did) {
+  if (!did || !did.startsWith('did:ccd:')) return null;
+  const parts = did.split(':');
+  if (parts.length < 4) return null;
+  const network = parts[2]; // 'mainnet' or 'testnet'
+  const id = parts[3]; // token ID or address
+  if (id.startsWith('agent-') || id.length < 10) {
+    // Fallback if not a real 64-character token hex ID or address
+    return `https://ccdexplorer.io/${network}`;
+  }
+  return `https://ccdexplorer.io/${network}/tokens/agent-registry/${id}`;
+}
+
 async function fetchJson(url) {
   try {
     const res = await fetch(url);
@@ -97,10 +173,14 @@ function renderRoster() {
   }
 
   if (countEl) countEl.textContent = `${state.agents.length} agent${state.agents.length === 1 ? '' : 's'}`;
-
   container.innerHTML = state.agents.map(agent => {
     const isWorking = agent.status === 'working' || agent.status === 'busy';
     const isVerified = agent.identity_status === 'verified';
+    const explorerLink = getExplorerLink(agent.agent_id);
+    const idHtml = explorerLink
+      ? `<a href="${explorerLink}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
+      : `${escapeHtml(agent.agent_id.slice(0, 8))}...`;
+
     return `
       <div class="agent-card-item">
         <div class="agent-card-header">
@@ -111,7 +191,7 @@ function renderRoster() {
         
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Agent ID:</span></div>
-          <div class="agent-meta-val" title="${escapeHtml(agent.agent_id)}">${escapeHtml(agent.agent_id.slice(0, 8))}...</div>
+          <div class="agent-meta-val" title="${escapeHtml(agent.agent_id)}">${idHtml}</div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
@@ -364,6 +444,11 @@ function updateWalletUI() {
 // ── Init ──
 
 function init() {
+  const issueAgentRole = document.getElementById('issue-agent-role');
+  if (issueAgentRole) {
+    issueAgentRole.innerHTML = AGENT_ROLES.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
+  }
+
   pollLobbies();
   pollStats();
   
@@ -612,21 +697,16 @@ function init() {
         if (agentIssuedSuccessView) agentIssuedSuccessView.style.display = 'block';
         if (successAgentName) successAgentName.textContent = agentName;
         if (successAgentDid) {
-          successAgentDid.innerHTML = `DID: <span style="color:var(--color-cyan);">${agentDid}</span><br>Metadata URL: <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a><br>Card Hash: <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span>`;
+          const explorerUrl = getExplorerLink(agentDid) || `https://ccdexplorer.io/testnet`;
+          successAgentDid.innerHTML = `DID: <span style="color:var(--color-cyan);">${agentDid}</span><br>Metadata URL: <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a><br>CCDexplorer Link: <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${explorerUrl}</a><br>Card Hash: <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span>`;
         }
 
-        const roleLabels = {
-          coder: 'Coder',
-          qa: 'QA Specialist',
-          ux: 'UX Specialist',
-          seo: 'SEO Specialist',
-          accessibility: 'Accessibility Specialist',
-          code_quality: 'Code Quality Auditor'
-        };
+        const matchedRole = AGENT_ROLES.find(r => r.value === agentRole);
+        const roleLabel = matchedRole ? matchedRole.label : 'Generalist';
         const newAgent = {
           agent_id: agentDid,
           display_name: agentName,
-          agent_role: roleLabels[agentRole] || 'Generalist',
+          agent_role: roleLabel,
           status: 'idle',
           identity_status: 'verified',
           runtime: 'Claude Code',
