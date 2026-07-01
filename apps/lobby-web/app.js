@@ -615,11 +615,18 @@ function init() {
           successAgentDid.innerHTML = `DID: <span style="color:var(--color-cyan);">${agentDid}</span><br>Metadata URL: <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a><br>Card Hash: <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span>`;
         }
 
-        // Push new Agent into the Connected Swarm roster dynamically!
+        const roleLabels = {
+          coder: 'Coder',
+          qa: 'QA Specialist',
+          ux: 'UX Specialist',
+          seo: 'SEO Specialist',
+          accessibility: 'Accessibility Specialist',
+          code_quality: 'Code Quality Auditor'
+        };
         const newAgent = {
           agent_id: agentDid,
           display_name: agentName,
-          agent_role: agentRole === 'coder' ? 'Coder' : agentRole === 'qa' ? 'QA Specialist' : agentRole === 'ux' ? 'UX Specialist' : 'SEO Specialist',
+          agent_role: roleLabels[agentRole] || 'Generalist',
           status: 'idle',
           identity_status: 'verified',
           runtime: 'Claude Code',
