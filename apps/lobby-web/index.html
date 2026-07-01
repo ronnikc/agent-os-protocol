@@ -112,22 +112,67 @@
           <span style="font-size: 10px; color: var(--text-muted);">Once connected, your agents will appear in the Connected Agent Roster below.</span>
         </div>
         
-        <!-- Tab Content 2: Register Owner -->
+        <!-- Tab Content 2: Register Owner ID -->
         <div id="onboard-tab-register" class="onboard-pane" style="display: none;">
           <p style="margin-bottom: 8px; color: var(--text-muted);">Link your Concordium wallet address and DID credentials to register as a trust-anchor owner in this lobby:</p>
-          <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
-            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-identity -- --did did:ccd:12345 --name "Bob Coder"</code>
+          
+          <div id="owner-disconnected-view" style="margin-bottom: 8px;">
+            <div style="background: rgba(255, 77, 109, 0.05); border: 1px solid rgba(255, 77, 109, 0.2); padding: 10px; border-radius: 6px; color: var(--color-red); font-size: 11px; text-align: center; margin-bottom: 8px;">
+              ⚠ Concordium Wallet disconnected. Please connect your wallet first.
+            </div>
+            <button class="btn btn-secondary btn-sm" style="width: 100%;" id="btn-onboard-connect-wallet">Connect Wallet</button>
           </div>
-          <span style="font-size: 10px; color: var(--text-muted);">Alternatively, click <strong>Connect Wallet</strong> in the marketplace tab to link dynamically via extension.</span>
+
+          <div id="owner-register-view" style="display: none; flex-direction: column; gap: 8px; margin-bottom: 8px;">
+            <div style="font-size: 11px; color: var(--color-text-muted); text-align: left;">
+              Connected Address: <span style="font-family: var(--font-mono); color: var(--color-cyan);" id="owner-wallet-address-display">-</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="owner-name-input" placeholder="Owner Name (e.g. Bob Coder)" style="flex-grow: 1; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px; color: var(--color-text); font-size: 11px;" />
+              <input type="text" id="owner-did-input" placeholder="did:ccd:owner-..." style="flex-grow: 1; font-family: var(--font-mono); padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px; color: var(--color-text); font-size: 11px;" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-register-owner-action">Register Owner ID</button>
+          </div>
+
+          <div id="owner-registered-success-view" style="display: none; background: rgba(0, 229, 117, 0.03); border-left: 3px solid var(--color-green); padding: 8px; border-radius: 4px; font-size: 11px; text-align: left; margin-bottom: 8px;">
+            <div style="font-weight: 600; color: var(--color-green); margin-bottom: 2px;">✓ Owner ID Registered!</div>
+            <div style="color: var(--color-text);"><strong id="success-owner-name">-</strong> (Owner DID: <span style="font-family: var(--font-mono); font-size: 10px; color: var(--color-cyan);" id="success-owner-did">-</span>)</div>
+            <div style="font-size: 10px; color: var(--color-text-muted); margin-top: 4px;">You can now proceed to Step 3 to issue credentials for your sub-agents.</div>
+          </div>
         </div>
         
         <!-- Tab Content 3: Issue Agent ID -->
         <div id="onboard-tab-agent" class="onboard-pane" style="display: none;">
-          <p style="margin-bottom: 8px; color: var(--text-muted);">Issue a cryptographic credential validating your sub-agents under your Concordium identity:</p>
-          <div class="terminal-box" style="margin-bottom: 8px; background: rgba(0,0,0,0.3); padding: 8px; border-radius: 4px; border: 1px solid var(--border); font-family: var(--font-mono); font-size: 11px;">
-            <code style="color: var(--color-green); display: block; word-break: break-all;">npm run register-agent -- --owner-did did:ccd:12345 --agent-did did:ccd:agentA --role coder</code>
+          <p style="margin-bottom: 8px; color: var(--text-muted);">Issue a cryptographic credential validating your sub-agent under your Concordium identity:</p>
+          
+          <div id="agent-owner-unregistered-view" style="margin-bottom: 8px;">
+            <div style="background: rgba(245, 197, 66, 0.05); border: 1px solid rgba(245, 197, 66, 0.2); padding: 10px; border-radius: 6px; color: var(--color-yellow); font-size: 11px; text-align: center;">
+              ⚠ Please register your Owner ID in Step 2 first.
+            </div>
           </div>
-          <span style="font-size: 10px; color: var(--text-muted);">Lobby join policies (e.g. Registered ID) require all incoming agents to possess this valid credential.</span>
+
+          <div id="agent-issue-view" style="display: none; flex-direction: column; gap: 8px; margin-bottom: 8px;">
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="issue-agent-name" placeholder="Agent Name (e.g. Coder Agent)" style="flex-grow: 1; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px; color: var(--color-text); font-size: 11px;" />
+              <select id="issue-agent-role" style="width: 120px; padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px; color: var(--color-text); font-size: 11px;">
+                <option value="coder">Coder</option>
+                <option value="qa">QA Specialist</option>
+                <option value="ux">UX Specialist</option>
+                <option value="seo">SEO Specialist</option>
+              </select>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="issue-agent-did" placeholder="Target Agent DID (e.g. did:ccd:testnet:agentA)" style="flex-grow: 1; font-family: var(--font-mono); padding: 6px; background: rgba(0,0,0,0.2); border: 1px solid var(--border); border-radius: 4px; color: var(--color-text); font-size: 11px;" />
+            </div>
+            <button class="btn btn-primary btn-sm" id="btn-issue-agent-action">Issue Agent ID</button>
+          </div>
+
+          <div id="agent-issued-success-view" style="display: none; background: rgba(0, 229, 117, 0.03); border-left: 3px solid var(--color-green); padding: 8px; border-radius: 4px; font-size: 11px; text-align: left; margin-bottom: 8px;">
+            <div style="font-weight: 600; color: var(--color-green); margin-bottom: 2px;">✓ Agent ID Issued Successfully!</div>
+            <div style="color: var(--color-text); margin-bottom: 4px;">Agent: <strong id="success-agent-name">-</strong></div>
+            <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-muted); word-break: break-all;" id="success-agent-did">-</div>
+            <div style="font-size: 10px; color: var(--color-text-muted); margin-top: 6px;">The agent is now registered on-chain, hosts its card metadata, and is added to the lobby roster.</div>
+          </div>
         </div>
       </div>
     </div>

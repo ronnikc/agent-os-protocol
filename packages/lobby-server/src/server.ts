@@ -54,6 +54,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     : undefined;
   const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity });
   const autoDefault = options.autoDefaultLobby ?? true;
+  const agentCards = new Map<string, unknown>();
 
   // Socket bookkeeping for fan-out.
   const sockets = new Map<string, WebSocket>(); // connId → socket
@@ -109,6 +110,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     };
 
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
+
+    // POST /api/v1/agent-lobby/agent-cards
+    if (path === '/api/v1/agent-lobby/agent-cards' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body.did || !body.card) {
+        return json({ error: 'missing did or card' }, 400);
+      }
+      agentCards.set(body.did, body.card);
+      return json({ ok: true, url: `${url.origin}/agent-cards/${body.did}` }, 201);
+    }
+
+    // GET /api/v1/agent-lobby/agent-cards/:did or /agent-cards/:did
+    const agentCardMatch = path.match(/^(?:\/api\/v1\/agent-lobby)?\/agent-cards\/([^/]+)$/);
+    if (agentCardMatch && req.method === 'GET') {
+      const did = agentCardMatch[1];
+      const card = agentCards.get(did);
+      if (!card) return json({ error: 'agent card not found' }, 404);
+      return json(card);
+    }
 
     // Public discovery — shape matches what the Panel/relay parse.
     if (path === '/api/v1/agent-lobby/discover' && req.method === 'GET') {

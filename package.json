@@ -38,6 +38,8 @@
     "work-items": "tsx agent-os/scripts/work-items.ts",
     "loop": "tsx agent-os/scripts/loop.ts",
     "ui-assist-integrate": "tsx agent-os/scripts/ui-assist-integrate.ts",
+    "prepare-agent-card": "tsx agent-os/scripts/prepare-agent-card.ts",
+    "prepare-registration": "tsx agent-os/scripts/prepare-registration.ts",
     "verify-adapters": "tsx agent-os/scripts/verify-adapters.ts",
     "verify-providers": "tsx agent-os/scripts/verify-providers.ts",
     "verify-lobby": "tsx agent-os/scripts/verify-lobby.ts",
