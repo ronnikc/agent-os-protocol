@@ -92,6 +92,7 @@
       <a href="#solution">The Solution</a>
       <a href="#showcase">Visual Tour</a>
       <a href="#docs-detail">Documentation</a>
+      <a href="#trust-engine">Trust Engine</a>
       <a href="#modes">Operating Modes</a>
       <a href="#competitive">Competitive Grid</a>
       <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-github" target="_blank" rel="noopener noreferrer">
@@ -1174,6 +1175,82 @@ npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code><
               <span class="agent-badge-mock" style="background:rgba(0,229,117,0.2);color:var(--color-green);">Org-Verified</span>
             </div>
           </div>
+        </div>
+    <!-- Federated Trust Engine Section -->
+    <section id="trust-engine" aria-labelledby="trust-engine-title" style="margin-top: 50px; scroll-margin-top: 80px;">
+      <h2 id="trust-engine-title" class="section-title">Federated Swarm Observatory & Escrow Registry</h2>
+      <p class="section-subtitle">Scaling accountability from single-agent verification to multi-agent swarm trust chains.</p>
+      
+      <div class="problem-solution-grid" style="align-items: center; margin-top: 30px;">
+        <!-- Left: Details -->
+        <div style="text-align: left;">
+          <h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; color: var(--color-cyan);">Enterprise Swarm Verification</h3>
+          <p style="font-size: 14px; color: var(--color-text-muted); line-height: 1.6; margin-bottom: 16px;">
+            While single-agent surfaces provide basic credential checks, production-grade AI operations require verifying entire cooperating organizations. Agent OS implements a **Federated Swarm Observatory** that validates the identities of all 60+ agents in the swarm fleet in real time.
+          </p>
+          
+          <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
+            <div style="display: flex; gap: 10px; align-items: flex-start;">
+              <span style="color: var(--color-green); font-weight: bold;">✓</span>
+              <div>
+                <strong>Federated Registry Matching:</strong> Compares active agent card hashes against the on-chain metadata anchor (CIS-8004 tokens) for the entire roster simultaneously.
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: flex-start;">
+              <span style="color: var(--color-green); font-weight: bold;">✓</span>
+              <div>
+                <strong>Smart Escrow Settle:</strong> Integrates task posting with native Concordium $CCD smart contracts, locking budgets in escrow and releasing them only upon proof of successful test coverage gates.
+              </div>
+            </div>
+            <div style="display: flex; gap: 10px; align-items: flex-start;">
+              <span style="color: var(--color-green); font-weight: bold;">✓</span>
+              <div>
+                <strong>Durable Floor-Control Auditing:</strong> Session handshakes and workspace edits are cryptographically signed, preventing replay attacks or unauthorized command injections.
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- Right: Interactive Live Simulation -->
+        <div class="glass-panel" style="padding: 24px; border-radius: 12px; text-align: left; display: flex; flex-direction: column; gap: 16px; border: 1px solid var(--glass-border); background: rgba(11, 19, 38, 0.4);">
+          <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--color-border); padding-bottom: 12px;">
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-soft);">ESCROW CONTRACT TELEMETRY</span>
+            <span class="badge" style="background: rgba(245, 197, 66, 0.1); color: var(--color-yellow); border-color: rgba(245, 197, 66, 0.2);" id="sim-escrow-status">🔒 ESCROW LOCKED</span>
+          </div>
+          
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--color-text-soft);">Registry Token</span>
+              <span style="font-family: var(--font-mono);">CIS-8004 Token #40 - #99</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--color-text-soft);">Locked Budget</span>
+              <span style="font-family: var(--font-mono); color: var(--color-cyan);">500.00 CCD</span>
+            </div>
+            <div style="display: flex; justify-content: space-between;">
+              <span style="color: var(--color-text-soft);">Target Owner</span>
+              <span style="font-family: var(--font-mono);">did:ccd:3x19...e1</span>
+            </div>
+          </div>
+          
+          <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 6px; border: 1px solid var(--color-border); font-size: 12px; display: flex; flex-direction: column; gap: 6px;">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--color-green);">✓</span>
+              <span>Agent card hashes verified</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="color: var(--color-green);">✓</span>
+              <span>Concordium owner signature verified</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;" id="sim-gate-check">
+              <span style="color: var(--color-yellow);" id="sim-gate-bullet">⟳</span>
+              <span id="sim-gate-text">Verify-gate validation pending...</span>
+            </div>
+          </div>
+          
+          <button class="btn btn-primary" id="btn-trigger-escrow-sim" style="width: 100%; border: none;">
+            Test Verify-Gate & Release Escrow
+          </button>
         </div>
       </div>
     </section>
