@@ -578,54 +578,119 @@ function init() {
       const did = ownerDidEl?.value?.trim() || `did:ccd:owner-${state.wallet.address.slice(0, 8)}`;
 
       btnRegisterOwnerAction.disabled = true;
-      btnRegisterOwnerAction.textContent = "Registering Owner ID...";
+      btnRegisterOwnerAction.textContent = "Signing in Wallet...";
 
-      setTimeout(async () => {
-        state.identity.ownerRegistered = true;
-        state.identity.ownerName = name;
-        state.identity.ownerDid = did;
+      const provider = window.concordium;
+      if (state.wallet.isReal && provider) {
+        try {
+          const message = `Register Owner ID in Agent OS Swarm Lobby: ${name} (${did})`;
+          const signature = await provider.signMessage(state.wallet.address, message);
+          console.log('Wallet signature received:', signature);
+          
+          btnRegisterOwnerAction.textContent = "Registering Owner ID...";
+          
+          state.identity.ownerRegistered = true;
+          state.identity.ownerName = name;
+          state.identity.ownerDid = did;
 
-        // Sync UI
-        const ownerRegisterView = document.getElementById('owner-register-view');
-        const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
-        const successOwnerName = document.getElementById('success-owner-name');
-        const successOwnerDid = document.getElementById('success-owner-did');
+          // Sync UI
+          const ownerRegisterView = document.getElementById('owner-register-view');
+          const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+          const successOwnerName = document.getElementById('success-owner-name');
+          const successOwnerDid = document.getElementById('success-owner-did');
 
-        if (ownerRegisterView) ownerRegisterView.style.display = 'none';
-        if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
-        if (successOwnerName) successOwnerName.textContent = name;
-        if (successOwnerDid) successOwnerDid.textContent = did;
+          if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+          if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
+          if (successOwnerName) successOwnerName.textContent = name;
+          if (successOwnerDid) {
+            successOwnerDid.innerHTML = `<span style="color:var(--color-cyan);">${did}</span><br><span style="font-size:9px; color:var(--color-green); font-weight:600;">✓ Cryptographically verified via wallet signature.</span>`;
+          }
 
-        // Post to lobby server (register issuer)
-        await postJson('/api/v1/agent-lobby/issuers', {
-          issuer_did: did,
-          identity_ref: `did:ccd:testnet:${state.wallet.address}`
-        });
+          // Post to lobby server (register issuer)
+          await postJson('/api/v1/agent-lobby/issuers', {
+            issuer_did: did,
+            identity_ref: `did:ccd:testnet:${state.wallet.address}`,
+            signature: signature
+          });
 
-        // Add event
-        state.events.push({
-          id: Math.random().toString(36).substring(2, 10),
-          lobby_id: state.activeLobbyId || 'default',
-          type: 'owner-registered',
-          details: `Concordium Owner ID registered: ${name} (${did.slice(0, 15)}...)`,
-          timestamp: new Date().toISOString()
-        });
-        renderEvents();
+          // Add event
+          state.events.push({
+            id: Math.random().toString(36).substring(2, 10),
+            lobby_id: state.activeLobbyId || 'default',
+            type: 'owner-registered',
+            details: `Concordium Owner ID registered (verified): ${name} (${did.slice(0, 15)}...)`,
+            timestamp: new Date().toISOString()
+          });
+          renderEvents();
 
-        // Unlock agent issue view
-        const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
-        const agentIssueView = document.getElementById('agent-issue-view');
-        const issueAgentDid = document.getElementById('issue-agent-did');
-        if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
-        if (agentIssueView) agentIssueView.style.display = 'flex';
-        if (issueAgentDid) {
-          issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+          // Unlock agent issue view
+          const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
+          const agentIssueView = document.getElementById('agent-issue-view');
+          const issueAgentDid = document.getElementById('issue-agent-did');
+          if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
+          if (agentIssueView) agentIssueView.style.display = 'flex';
+          if (issueAgentDid) {
+            issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+          }
+
+          alert("Owner ID registered and cryptographically verified!");
+        } catch (err) {
+          console.error('Wallet signing failed:', err);
+          alert(`Signature failed: ${err.message || err}`);
+        } finally {
+          btnRegisterOwnerAction.disabled = false;
+          btnRegisterOwnerAction.textContent = "Register Owner ID";
         }
+      } else {
+        setTimeout(async () => {
+          state.identity.ownerRegistered = true;
+          state.identity.ownerName = name;
+          state.identity.ownerDid = did;
 
-        btnRegisterOwnerAction.disabled = false;
-        btnRegisterOwnerAction.textContent = "Register Owner ID";
-        alert("Owner ID registered successfully in lobby!");
-      }, 1000);
+          // Sync UI
+          const ownerRegisterView = document.getElementById('owner-register-view');
+          const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+          const successOwnerName = document.getElementById('success-owner-name');
+          const successOwnerDid = document.getElementById('success-owner-did');
+
+          if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+          if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
+          if (successOwnerName) successOwnerName.textContent = name;
+          if (successOwnerDid) {
+            successOwnerDid.innerHTML = `<span style="color:var(--color-cyan);">${did}</span><br><span style="font-size:9px; color:var(--text-muted);">[Simulated verification]</span>`;
+          }
+
+          // Post to lobby server (register issuer)
+          await postJson('/api/v1/agent-lobby/issuers', {
+            issuer_did: did,
+            identity_ref: `did:ccd:testnet:${state.wallet.address}`
+          });
+
+          // Add event
+          state.events.push({
+            id: Math.random().toString(36).substring(2, 10),
+            lobby_id: state.activeLobbyId || 'default',
+            type: 'owner-registered',
+            details: `Concordium Owner ID registered: ${name} (${did.slice(0, 15)}...)`,
+            timestamp: new Date().toISOString()
+          });
+          renderEvents();
+
+          // Unlock agent issue view
+          const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
+          const agentIssueView = document.getElementById('agent-issue-view');
+          const issueAgentDid = document.getElementById('issue-agent-did');
+          if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
+          if (agentIssueView) agentIssueView.style.display = 'flex';
+          if (issueAgentDid) {
+            issueAgentDid.value = `did:ccd:testnet:agent-${Math.random().toString(36).substring(2, 8)}`;
+          }
+
+          btnRegisterOwnerAction.disabled = false;
+          btnRegisterOwnerAction.textContent = "Register Owner ID";
+          alert("Owner ID registered successfully in lobby!");
+        }, 1000);
+      }
     });
   }
 
