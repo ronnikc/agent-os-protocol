@@ -3,7 +3,10 @@
 // ── Concordium Network Configuration ──
 const CCD_NETWORK = 'mainnet'; // 'mainnet' or 'testnet'
 const CCD_EXPLORER_BASE = `https://ccdexplorer.io/${CCD_NETWORK}`;
-const CCD_AGENT_REGISTRY_CONTRACT = '9458,0'; // Agent Registry contract <index,subindex>
+// Concordium Agent Registry contract instance <index,subindex> — used for explorer links only.
+// Set this to the live registry instance for your network before relying on the links
+// (see https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html).
+const CCD_AGENT_REGISTRY_CONTRACT = '9458,0';
 // Concordium-hosted public REST/GraphQL endpoints for balance lookup (per network).
 const CCD_WALLET_PROXY_BASE = {
   mainnet: 'https://wallet-proxy.mainnet.concordium.software',
@@ -574,6 +577,82 @@ async function fetchWalletBalance(provider, addrStr) {
   return null;
 }
 
+// ── Concordium Agent Registry (on-chain anchoring) ──
+
+/**
+ * Map our card fields onto build_register's advertised input schema by property name, so the
+ * dashboard adapts to the MCP service's exact parameter names instead of hardcoding them.
+ * Throws with the schema attached when a required property cannot be mapped — surfacing the
+ * mismatch beats submitting a payload the registry will reject.
+ */
+function mapRegisterArgs(inputSchema, fields) {
+  const props = inputSchema?.properties || {};
+  const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
+  const args = {};
+  for (const key of Object.keys(props)) {
+    if (/uri|url/i.test(key)) args[key] = fields.metadataUrl;
+    else if (/hash/i.test(key)) args[key] = fields.cardHash;
+    else if (/owner|account|address/i.test(key)) args[key] = fields.owner;
+    else if (/network/i.test(key)) args[key] = fields.network;
+    else if (/name/i.test(key)) args[key] = fields.agentName;
+  }
+  const unmapped = required.filter((k) => args[k] === undefined);
+  if (unmapped.length > 0) {
+    throw new Error(`build_register requires parameters this dashboard cannot map yet: ${unmapped.join(', ')} — schema: ${JSON.stringify(props)}`);
+  }
+  return args;
+}
+
+/**
+ * Anchor a freshly issued Agent Card on-chain through the Concordium Agent Registry:
+ * the lobby relays build_register (sign-ready { hex, schema_json } — the service holds no keys),
+ * and the owner's wallet signs and submits the mint as a contract update.
+ * Returns { txHash, contract, receiveName }, or null when no registry MCP service is configured.
+ */
+async function anchorAgentOnChain(provider, fields) {
+  const status = await fetchJson(`/api/v1/agent-lobby/registry/status?network=${CCD_NETWORK}`);
+  if (!status || !status.configured) return null; // off-chain mode — card stays lobby-hosted
+  if (status.error) throw new Error(`registry MCP service unreachable: ${status.error}`);
+
+  const toolsRes = await fetchJson('/api/v1/agent-lobby/registry/tools');
+  const registerTool = toolsRes?.tools?.find((t) => t.name === 'build_register');
+  if (!registerTool) throw new Error('the registry MCP service does not expose build_register');
+
+  const args = mapRegisterArgs(registerTool.inputSchema, fields);
+  const call = await postJson('/api/v1/agent-lobby/registry/call', { tool: 'build_register', arguments: args });
+  if (!call || !call.ok) throw new Error(call?.error || 'build_register call failed');
+  const payload = call.result || {};
+  if (typeof payload.hex !== 'string' || payload.hex.length === 0) {
+    throw new Error(`build_register did not return a sign-ready hex payload: ${JSON.stringify(payload).slice(0, 200)}`);
+  }
+
+  // Resolve the target contract + entrypoint from the payload metadata, else contract_info.
+  let index = payload.contract_index ?? payload.contract?.index;
+  let subindex = payload.contract_subindex ?? payload.contract?.subindex;
+  let receiveName = payload.receive_name ?? payload.receiveName;
+  if (index === undefined || !receiveName) {
+    const infoCall = await postJson('/api/v1/agent-lobby/registry/call', { tool: 'contract_info', arguments: { network: CCD_NETWORK } });
+    const info = infoCall?.result || {};
+    const cis = info.cis8004 || info['cis-8004'] || info;
+    index = index ?? cis.index ?? cis.contract_index;
+    subindex = subindex ?? cis.subindex ?? cis.contract_subindex;
+    receiveName = receiveName || cis.receive_name || (cis.contract_name ? `${cis.contract_name}.register` : undefined);
+  }
+  if (index === undefined || !receiveName) {
+    throw new Error('could not resolve the registry contract address/entrypoint from build_register or contract_info');
+  }
+
+  // AccountTransactionType.Update = 2 — the wallet shows, signs, and submits the mint.
+  const txHash = await provider.sendTransaction(state.wallet.address, 2, {
+    amount: { microCcd: BigInt(0) },
+    address: { index: BigInt(index), subindex: BigInt(subindex ?? 0) },
+    receiveName,
+    maxContractExecutionEnergy: BigInt(30000),
+    message: payload.hex,
+  });
+  return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName };
+}
+
 /** Extract a hex signature string from the Concordium wallet's { 0: { 0: hex } } response shape. */
 function normalizeSignature(signature) {
   if (typeof signature === 'string') return signature;
@@ -954,6 +1033,24 @@ function init() {
       const metadataUrl = registerRes?.url || `${window.location.origin}/agent-cards/${encodeURIComponent(agentDid)}`;
       const metadataStored = !!registerRes?.ok;
 
+      // On-chain anchoring through the Concordium Agent Registry (when the lobby has a
+      // registry MCP endpoint configured; otherwise the card stays wallet-signed + hosted).
+      let anchor = null;
+      let anchorError = null;
+      try {
+        btnIssueAgentAction.textContent = "Anchoring On-Chain...";
+        anchor = await anchorAgentOnChain(provider, {
+          metadataUrl,
+          cardHash,
+          owner: state.wallet.address,
+          network: CCD_NETWORK,
+          agentName
+        });
+      } catch (err) {
+        console.error('[Agent Issue] On-chain anchoring failed:', err);
+        anchorError = err.message || String(err);
+      }
+
       // Update state
       state.identity.registeredAgentDid = agentDid;
 
@@ -973,14 +1070,23 @@ function init() {
         const storedBadge = metadataStored
           ? `<span style="color:var(--color-green);">✓ Hosted</span>`
           : `<span style="color:var(--color-yellow);">⚠ Server unreachable — card not hosted</span>`;
+        let onChainLine;
+        if (anchor) {
+          onChainLine = `<span style="color:var(--color-green); font-weight:600;">✓ Mint submitted</span> — Tx <a href="https://ccdexplorer.io/${CCD_NETWORK}/transaction/${escapeHtml(String(anchor.txHash))}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(String(anchor.txHash).slice(0, 16))}… ↗</a> (registry ${anchor.contract.index},${anchor.contract.subindex})`;
+        } else if (anchorError) {
+          onChainLine = `<span style="color:#ff5c5c;">✗ anchoring failed</span> — <span style="font-size:10px;">${escapeHtml(anchorError)}</span>`;
+        } else {
+          onChainLine = `<span style="color:var(--color-yellow);">not anchored</span> — no Agent Registry MCP endpoint configured on this lobby (<a href="https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">docs ↗</a>)`;
+        }
         successAgentDid.innerHTML = `
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
             <strong>Metadata:</strong> <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a> ${storedBadge}<br>
-            <strong>Registry:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
+            <strong>On-Chain:</strong> ${onChainLine}<br>
+            <strong>Owner Account:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
-            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Cryptographically signed by wallet</span>
+            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? ' · on-chain mint submitted' : ' · card hosted off-chain by this lobby'}
           </div>`;
       }
 
@@ -991,7 +1097,13 @@ function init() {
       btnIssueAgentAction.disabled = false;
       btnIssueAgentAction.textContent = "Issue Agent ID";
 
-      alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}`);
+      if (anchor) {
+        alert(`Agent DID issued, signed, and mint submitted on-chain!\nDID: ${agentDid}\nTransaction: ${anchor.txHash}\nMetadata: ${metadataUrl}`);
+      } else if (anchorError) {
+        alert(`Agent DID issued and signed, but on-chain anchoring failed: ${anchorError}\nThe card remains hosted by this lobby at ${metadataUrl}.`);
+      } else {
+        alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}\nNote: the card is hosted by this lobby and is not yet anchored on-chain — configure AGENT_OS_AGENT_REGISTRY_MCP_URL on the lobby server to enable Concordium Agent Registry minting.`);
+      }
     });
   }
 

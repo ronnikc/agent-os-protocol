@@ -99,6 +99,9 @@ Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (em
 `AGENT_OS_PANEL_PORT`, `AGENT_OS_RELAY_PORT`. BYOK provider keys stay local and are never sent to a lobby.
 `AGENT_OS_CONCORDIUM_INDEXER_URL` (empty = no identity verification) points the lobby at a **read-only**
 registry indexer for the private-lobby identity policy ladder — no private keys are ever stored or sent.
+`AGENT_OS_AGENT_REGISTRY_MCP_URL` (empty = off-chain mode) points the lobby at the Concordium Agent
+Registry **MCP service** so issued Agent Cards can be minted on-chain: the service builds sign-ready
+payloads and the owner's wallet signs and submits — the lobby never holds keys.
 
 ## Governance map
 
