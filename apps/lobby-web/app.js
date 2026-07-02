@@ -4,6 +4,15 @@
 const CCD_NETWORK = 'mainnet'; // 'mainnet' or 'testnet'
 const CCD_EXPLORER_BASE = `https://ccdexplorer.io/${CCD_NETWORK}`;
 const CCD_AGENT_REGISTRY_CONTRACT = '9458,0'; // Agent Registry contract <index,subindex>
+// Concordium-hosted public REST/GraphQL endpoints for balance lookup (per network).
+const CCD_WALLET_PROXY_BASE = {
+  mainnet: 'https://wallet-proxy.mainnet.concordium.software',
+  testnet: 'https://wallet-proxy.testnet.concordium.com'
+}[CCD_NETWORK];
+const CCD_SCAN_API_BASE = {
+  mainnet: 'https://api-ccdscan.mainnet.concordium.software',
+  testnet: 'https://api-ccdscan.testnet.concordium.com'
+}[CCD_NETWORK];
 
 const state = {
   lobbies: [],
@@ -15,8 +24,7 @@ const state = {
   wallet: {
     connected: false,
     address: null,
-    balance: 0,
-    isReal: false
+    balance: null // CCD amount, or null while unknown/unavailable
   },
   identity: {
     ownerRegistered: false,
@@ -103,22 +111,23 @@ function getExplorerLink(did) {
   if (parts.length < 4) return null;
   const network = parts[2]; // 'mainnet' or 'testnet'
   const id = parts.slice(3).join(':'); // token ID, address, or agent sub-ID
-  // If the ID is a wallet address (long hex/base58), link to account page
+  const [registryIndex, registrySubindex] = CCD_AGENT_REGISTRY_CONTRACT.split(',');
+  const registryInstanceUrl = `https://ccdexplorer.io/${network}/instance/${registryIndex}/${registrySubindex}`;
+  // If the ID is a wallet address (long base58), link to the account page
   if (id.length >= 40 && !id.startsWith('agent-')) {
-    return `https://ccdexplorer.io/${network}/accounts/${id}`;
+    return `https://ccdexplorer.io/${network}/account/${id}`;
   }
-  // If it contains a token index number, link to agent registry token
-  const tokenIdMatch = id.match(/^(\d+)$/);
-  if (tokenIdMatch) {
-    return `https://ccdexplorer.io/${network}/tokens/agent-registry/${tokenIdMatch[1]}`;
+  // If it is a numeric token index, link to the Agent Registry contract instance holding it
+  if (/^\d+$/.test(id)) {
+    return registryInstanceUrl;
   }
   // For agent sub-IDs (agent-XXXX), link to the owner's wallet account page
   // where they can see all their registered agent tokens
   if (id.startsWith('agent-') && state.wallet.address) {
-    return `https://ccdexplorer.io/${network}/accounts/${state.wallet.address}`;
+    return `https://ccdexplorer.io/${network}/account/${state.wallet.address}`;
   }
-  // Fallback: link to the agent registry contract on the right network
-  return `${CCD_EXPLORER_BASE}/tokens/agent-registry`;
+  // Fallback: link to the agent registry contract instance on the right network
+  return registryInstanceUrl;
 }
 
 const MODAL_TYPES = {
@@ -270,7 +279,8 @@ function renderRoster() {
   if (countEl) countEl.textContent = `${state.agents.length} agent${state.agents.length === 1 ? '' : 's'}`;
   container.innerHTML = state.agents.map(agent => {
     const isWorking = agent.status === 'working' || agent.status === 'busy';
-    const isVerified = agent.identity_status === 'verified';
+    // Verified statuses from the identity ladder (registry_verified / human_linked / org_linked)
+    const isVerified = ['verified', 'registry_verified', 'human_linked', 'org_linked'].includes(agent.identity_status);
     const explorerLink = getExplorerLink(agent.agent_id);
     const idHtml = explorerLink
       ? `<a href="${explorerLink}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
@@ -351,7 +361,8 @@ function renderEvents() {
   }
 
   container.innerHTML = state.events.map(ev => {
-    const timestamp = formatDate(ev.timestamp);
+    // Canonical LobbyEvent uses at/actor_id/detail (object); tolerate legacy timestamp/details.
+    const timestamp = formatDate(ev.at || ev.timestamp);
     let classType = 'event-type-register';
     if (ev.type.includes('disconnect') || ev.type.includes('left')) classType = 'event-type-disconnect';
     if (ev.type.includes('message')) classType = 'event-type-message';
@@ -359,11 +370,20 @@ function renderEvents() {
     if (ev.type.includes('hand')) classType = 'event-type-hand';
     if (ev.type.includes('boss')) classType = 'event-type-boss';
 
+    let detailText = ev.details || '';
+    if (!detailText && ev.detail && typeof ev.detail === 'object') {
+      detailText = Object.entries(ev.detail)
+        .filter(([, v]) => v !== undefined && v !== null)
+        .map(([k, v]) => `${k}: ${v}`)
+        .join(' · ');
+    }
+    const actor = ev.actor_id && ev.actor_id !== 'system' ? `${ev.actor_id} — ` : '';
+
     return `
       <div class="event-item">
         <span class="event-timestamp">[${timestamp}]</span>
         <span class="${classType}">${escapeHtml(ev.type)}</span>
-        <span>${escapeHtml(ev.details || '')}</span>
+        <span>${escapeHtml(actor + detailText)}</span>
       </div>
     `;
   }).join('');
@@ -475,6 +495,101 @@ async function postJson(url, data) {
   }
 }
 
+// ── Wallet Helpers ──
+
+/**
+ * Coerce the many shapes Concordium APIs use for an amount into microCCD (BigInt), or null.
+ * Covers: BigInt (gRPC v2), number/numeric string, SDK CcdAmount ({ microCcd } / { microCcdAmount }),
+ * generic { value }, and wallet-proxy balance objects ({ accountAmount }).
+ */
+function toMicroCcd(value) {
+  if (value === undefined || value === null) return null;
+  if (typeof value === 'bigint') return value;
+  if (typeof value === 'number' || typeof value === 'string') {
+    try { return BigInt(value); } catch { return null; }
+  }
+  if (typeof value === 'object') {
+    if (value.microCcd !== undefined) return toMicroCcd(value.microCcd);
+    if (value.microCcdAmount !== undefined) return toMicroCcd(value.microCcdAmount);
+    if (value.accountAmount !== undefined) return toMicroCcd(value.accountAmount);
+    if (value.value !== undefined) return toMicroCcd(value.value);
+  }
+  return null;
+}
+
+/**
+ * Resolve the CCD balance for an account, trying the wallet's own RPC client first, then the
+ * Concordium wallet-proxy REST API, then the CCDScan GraphQL API. Returns a number (CCD) or
+ * null when no source could resolve it — never NaN.
+ */
+async function fetchWalletBalance(provider, addrStr) {
+  // Strategy 1: wallet extension's built-in RPC client (gRPC or legacy JSON-RPC)
+  try {
+    let accountInfo = null;
+    if (provider?.getGrpcClient) {
+      accountInfo = await (await provider.getGrpcClient()).getAccountInfo(addrStr);
+    } else if (provider?.getJsonRpcClient) {
+      accountInfo = await (await provider.getJsonRpcClient()).getAccountInfo(addrStr);
+    }
+    const micro = toMicroCcd(accountInfo?.accountAmount);
+    if (micro !== null) return Number(micro) / 1_000_000;
+  } catch (rpcErr) {
+    console.warn('[Wallet] RPC balance fetch failed:', rpcErr);
+  }
+
+  // Strategy 2: Concordium public wallet-proxy REST API.
+  // NOTE: finalizedBalance/currentBalance are OBJECTS whose accountAmount holds microCCD.
+  try {
+    const proxyRes = await fetch(`${CCD_WALLET_PROXY_BASE}/v0/accBalance/${addrStr}`);
+    if (proxyRes.ok) {
+      const balInfo = await proxyRes.json();
+      const micro = toMicroCcd(balInfo?.finalizedBalance ?? balInfo?.currentBalance);
+      if (micro !== null) return Number(micro) / 1_000_000;
+    } else {
+      console.warn('[Wallet] wallet-proxy returned:', proxyRes.status);
+    }
+  } catch (proxyErr) {
+    console.warn('[Wallet] wallet-proxy request failed:', proxyErr);
+  }
+
+  // Strategy 3: CCDScan public GraphQL API
+  try {
+    const scanRes = await fetch(`${CCD_SCAN_API_BASE}/graphql/`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query: `{ accountByAddress(accountAddress: "${addrStr}") { amount } }`
+      })
+    });
+    if (scanRes.ok) {
+      const scanData = await scanRes.json();
+      const micro = toMicroCcd(scanData?.data?.accountByAddress?.amount);
+      if (micro !== null) return Number(micro) / 1_000_000;
+    }
+  } catch (scanErr) {
+    console.warn('[Wallet] CCDScan query failed:', scanErr);
+  }
+
+  console.warn('[Wallet] Could not fetch balance from any source. Check browser console for details.');
+  return null;
+}
+
+/** Extract a hex signature string from the Concordium wallet's { 0: { 0: hex } } response shape. */
+function normalizeSignature(signature) {
+  if (typeof signature === 'string') return signature;
+  if (signature && typeof signature === 'object') {
+    const firstKey = Object.keys(signature)[0];
+    if (firstKey !== undefined) {
+      const inner = signature[firstKey];
+      if (typeof inner === 'string') return inner;
+      const innerKey = inner && Object.keys(inner)[0];
+      if (innerKey !== undefined) return inner[innerKey];
+    }
+    return JSON.stringify(signature);
+  }
+  return null;
+}
+
 // ── Wallet UI Sync ──
 
 function updateWalletUI() {
@@ -486,7 +601,10 @@ function updateWalletUI() {
   
   if (state.wallet.connected) {
     const shortAddr = state.wallet.address.slice(0, 6) + '...' + state.wallet.address.slice(-4);
-    textEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">Connected:</span> ${shortAddr} | <span style="color:var(--color-cyan); font-weight:600;">${state.wallet.balance.toLocaleString()} CCD</span>`;
+    const balanceText = Number.isFinite(state.wallet.balance)
+      ? `${state.wallet.balance.toLocaleString(undefined, { maximumFractionDigits: 6 })} CCD`
+      : 'balance unavailable';
+    textEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">Connected:</span> ${shortAddr} | <span style="color:var(--color-cyan); font-weight:600;">${balanceText}</span>`;
     btnEl.textContent = 'Disconnect';
     if (postBtnEl) postBtnEl.textContent = 'Post & Lock Escrow';
 
@@ -609,25 +727,7 @@ function init() {
         await pollLobbies();
         selectLobby(res.lobby.lobby_id);
       } else {
-        // Fallback: create lobby locally when server is unreachable
-        const localLobby = {
-          lobby_id: 'local-' + Math.random().toString(36).substring(2, 10),
-          name,
-          visibility,
-          join_policy: policy,
-          allowlist,
-          status: 'active',
-          org_id: 'local',
-          created_by: 'web-user',
-          created_at: new Date().toISOString()
-        };
-        state.lobbies.push(localLobby);
-        renderLobbies();
-        selectLobby(localLobby.lobby_id);
-        if (nameEl) nameEl.value = '';
-        if (allowlistInput) allowlistInput.value = '';
-        if (allowlistContainer) allowlistContainer.style.display = 'none';
-        alert(`Lobby "${name}" created locally. Connect the lobby server for full persistence.`);
+        alert(`Failed to create lobby "${name}" — the lobby server did not respond. Check that it is running and reachable, then try again.`);
       }
     });
   }
@@ -687,122 +787,76 @@ function init() {
       }
       const ownerNameEl = document.getElementById('owner-name-input');
       const ownerDidEl = document.getElementById('owner-did-input');
-      const name = ownerNameEl?.value?.trim() || 'Bob Coder';
+      const name = ownerNameEl?.value?.trim();
+      if (!name) {
+        alert("Please enter an owner name.");
+        return;
+      }
       const did = ownerDidEl?.value?.trim() || `did:ccd:${CCD_NETWORK}:${state.wallet.address}`;
+
+      const provider = window.concordium;
+      if (!provider) {
+        alert("Concordium Browser Wallet extension not found. Please install it and reconnect.");
+        return;
+      }
 
       btnRegisterOwnerAction.disabled = true;
       btnRegisterOwnerAction.textContent = "Signing in Wallet...";
 
-      const provider = window.concordium;
-      if (state.wallet.isReal && provider) {
-        try {
-          const message = `Register Owner ID in Agent OS Swarm Lobby: ${name} (${did})`;
-          const signature = await provider.signMessage(state.wallet.address, message);
-          console.log('Wallet signature received:', signature);
-          
-          btnRegisterOwnerAction.textContent = "Registering Owner ID...";
-          
-          state.identity.ownerRegistered = true;
-          state.identity.ownerName = name;
-          state.identity.ownerDid = did;
+      try {
+        const message = `Register Owner ID in Agent OS Swarm Lobby: ${name} (${did})`;
+        const signature = normalizeSignature(await provider.signMessage(state.wallet.address, message));
+        console.log('[Owner Register] Wallet signature:', signature?.slice(0, 40) + '...');
 
-          // Sync UI
-          const ownerRegisterView = document.getElementById('owner-register-view');
-          const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
-          const successOwnerName = document.getElementById('success-owner-name');
-          const successOwnerDid = document.getElementById('success-owner-did');
+        btnRegisterOwnerAction.textContent = "Registering Owner ID...";
 
-          if (ownerRegisterView) ownerRegisterView.style.display = 'none';
-          if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
-          if (successOwnerName) successOwnerName.textContent = name;
-          if (successOwnerDid) {
-            successOwnerDid.innerHTML = `<span style="color:var(--color-cyan);">${did}</span><br><span style="font-size:9px; color:var(--color-green); font-weight:600;">✓ Cryptographically verified via wallet signature.</span>`;
-          }
-
-          // Post to lobby server (register issuer)
-          await postJson('/api/v1/agent-lobby/issuers', {
-            issuer_did: did,
-            identity_ref: `did:ccd:${CCD_NETWORK}:${state.wallet.address}`,
-            signature: signature
-          });
-
-          // Add event
-          state.events.push({
-            id: Math.random().toString(36).substring(2, 10),
-            lobby_id: state.activeLobbyId || 'default',
-            type: 'owner-registered',
-            details: `Concordium Owner ID registered (verified): ${name} (${did.slice(0, 15)}...)`,
-            timestamp: new Date().toISOString()
-          });
-          renderEvents();
-
-          // Unlock agent issue view
-          const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
-          const agentIssueView = document.getElementById('agent-issue-view');
-          const issueAgentDid = document.getElementById('issue-agent-did');
-          if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
-          if (agentIssueView) agentIssueView.style.display = 'flex';
-          if (issueAgentDid) {
-            issueAgentDid.value = `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
-          }
-
-          alert("Owner ID registered and cryptographically verified!");
-        } catch (err) {
-          console.error('Wallet signing failed:', err);
-          alert(`Signature failed: ${err.message || err}`);
-        } finally {
-          btnRegisterOwnerAction.disabled = false;
-          btnRegisterOwnerAction.textContent = "Register Owner ID";
+        // Register as a credential issuer on the lobby server (also records the lobby event)
+        const res = await postJson('/api/v1/agent-lobby/issuers', {
+          issuer_did: did,
+          identity_ref: `did:ccd:${CCD_NETWORK}:${state.wallet.address}`,
+          signature,
+          owner_name: name,
+          lobby_id: state.activeLobbyId
+        });
+        if (!res || !res.record) {
+          throw new Error('The lobby server rejected the issuer registration.');
         }
-      } else {
-        setTimeout(async () => {
-          state.identity.ownerRegistered = true;
-          state.identity.ownerName = name;
-          state.identity.ownerDid = did;
 
-          // Sync UI
-          const ownerRegisterView = document.getElementById('owner-register-view');
-          const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
-          const successOwnerName = document.getElementById('success-owner-name');
-          const successOwnerDid = document.getElementById('success-owner-did');
+        state.identity.ownerRegistered = true;
+        state.identity.ownerName = name;
+        state.identity.ownerDid = did;
 
-          if (ownerRegisterView) ownerRegisterView.style.display = 'none';
-          if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
-          if (successOwnerName) successOwnerName.textContent = name;
-          if (successOwnerDid) {
-            successOwnerDid.innerHTML = `<span style="color:var(--color-cyan);">${did}</span><br><span style="font-size:9px; color:var(--text-muted);">[Simulated verification]</span>`;
-          }
+        // Sync UI
+        const ownerRegisterView = document.getElementById('owner-register-view');
+        const ownerRegisteredSuccessView = document.getElementById('owner-registered-success-view');
+        const successOwnerName = document.getElementById('success-owner-name');
+        const successOwnerDid = document.getElementById('success-owner-did');
 
-          // Post to lobby server (register issuer)
-          await postJson('/api/v1/agent-lobby/issuers', {
-            issuer_did: did,
-            identity_ref: `did:ccd:${CCD_NETWORK}:${state.wallet.address}`
-          });
+        if (ownerRegisterView) ownerRegisterView.style.display = 'none';
+        if (ownerRegisteredSuccessView) ownerRegisteredSuccessView.style.display = 'block';
+        if (successOwnerName) successOwnerName.textContent = name;
+        if (successOwnerDid) {
+          successOwnerDid.innerHTML = `<span style="color:var(--color-cyan);">${escapeHtml(did)}</span><br><span style="font-size:9px; color:var(--color-green); font-weight:600;">✓ Cryptographically verified via wallet signature.</span>`;
+        }
 
-          // Add event
-          state.events.push({
-            id: Math.random().toString(36).substring(2, 10),
-            lobby_id: state.activeLobbyId || 'default',
-            type: 'owner-registered',
-            details: `Concordium Owner ID registered: ${name} (${did.slice(0, 15)}...)`,
-            timestamp: new Date().toISOString()
-          });
-          renderEvents();
+        // Unlock agent issue view
+        const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
+        const agentIssueView = document.getElementById('agent-issue-view');
+        const issueAgentDid = document.getElementById('issue-agent-did');
+        if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
+        if (agentIssueView) agentIssueView.style.display = 'flex';
+        if (issueAgentDid) {
+          issueAgentDid.value = `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
+        }
 
-          // Unlock agent issue view
-          const agentOwnerUnregisteredView = document.getElementById('agent-owner-unregistered-view');
-          const agentIssueView = document.getElementById('agent-issue-view');
-          const issueAgentDid = document.getElementById('issue-agent-did');
-          if (agentOwnerUnregisteredView) agentOwnerUnregisteredView.style.display = 'none';
-          if (agentIssueView) agentIssueView.style.display = 'flex';
-          if (issueAgentDid) {
-            issueAgentDid.value = `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
-          }
-
-          btnRegisterOwnerAction.disabled = false;
-          btnRegisterOwnerAction.textContent = "Register Owner ID";
-          alert("Owner ID registered successfully in lobby!");
-        }, 1000);
+        pollLobbyDetails();
+        alert("Owner ID registered and cryptographically verified!");
+      } catch (err) {
+        console.error('Owner registration failed:', err);
+        alert(`Owner registration failed: ${err.message || err}`);
+      } finally {
+        btnRegisterOwnerAction.disabled = false;
+        btnRegisterOwnerAction.textContent = "Register Owner ID";
       }
     });
   }
@@ -826,7 +880,11 @@ function init() {
       const agentRoleEl = document.getElementById('issue-agent-role');
       const agentDidEl = document.getElementById('issue-agent-did');
       
-      const agentName = agentNameEl?.value?.trim() || 'Coder Agent';
+      const agentName = agentNameEl?.value?.trim();
+      if (!agentName) {
+        alert("Please enter an agent name.");
+        return;
+      }
       const agentRole = agentRoleEl?.value || 'coder';
       const agentDid = agentDidEl?.value?.trim() || `did:ccd:${CCD_NETWORK}:agent-${Math.random().toString(36).substring(2, 8)}`;
 
@@ -841,8 +899,8 @@ function init() {
         did: agentDid,
         owner: state.identity.ownerDid,
         ownerAddress: state.wallet.address,
-        runtime: "Claude Code",
-        capabilities: [agentRole, "pair-programming"],
+        runtime: "agent-os", // runtime-agnostic — the adapter reports the concrete runtime when the agent connects
+        capabilities: [agentRole],
         ownerPolicy: "self",
         supportedProtocols: ["agent-os-lobby"],
         allowedScopes: [],
@@ -857,55 +915,40 @@ function init() {
       for (const k of sortedKeys) sortedCard[k] = card[k];
       const cardHash = await sha256(JSON.stringify(sortedCard));
 
-      // Sign with real wallet if available
+      // Sign with the connected wallet — issuing a credential requires a real signature
       const provider = window.concordium;
-      let signature = null;
-      let signatureHex = null;
-      let isRealSig = false;
+      if (!provider) {
+        alert("Concordium Browser Wallet extension not found. Please install it and reconnect.");
+        btnIssueAgentAction.disabled = false;
+        btnIssueAgentAction.textContent = "Issue Agent ID";
+        return;
+      }
 
-      if (state.wallet.isReal && provider) {
-        try {
-          btnIssueAgentAction.textContent = "Sign in Wallet...";
-          const signPayload = `Agent OS Agent Card\nDID: ${agentDid}\nName: ${agentName}\nRole: ${agentRole}\nOwner: ${state.identity.ownerDid}\nCard Hash: ${cardHash}`;
-          signature = await provider.signMessage(state.wallet.address, signPayload);
-          isRealSig = true;
-          // Extract hex signature for display
-          if (typeof signature === 'string') {
-            signatureHex = signature;
-          } else if (signature && typeof signature === 'object') {
-            // Concordium wallet returns { 0: { 0: hex } } structure
-            const firstKey = Object.keys(signature)[0];
-            if (firstKey !== undefined) {
-              const inner = signature[firstKey];
-              const innerKey = Object.keys(inner)[0];
-              signatureHex = innerKey !== undefined ? inner[innerKey] : JSON.stringify(signature);
-            } else {
-              signatureHex = JSON.stringify(signature);
-            }
-          }
-          console.log('[Agent Issue] Wallet signature:', signatureHex?.slice(0, 40) + '...');
-        } catch (err) {
-          console.error('[Agent Issue] Wallet signing failed:', err);
-          alert(`Agent signing failed: ${err.message || err}`);
-          btnIssueAgentAction.disabled = false;
-          btnIssueAgentAction.textContent = "Issue Agent ID";
-          return;
-        }
+      let signatureHex = null;
+      try {
+        btnIssueAgentAction.textContent = "Sign in Wallet...";
+        const signPayload = `Agent OS Agent Card\nDID: ${agentDid}\nName: ${agentName}\nRole: ${agentRole}\nOwner: ${state.identity.ownerDid}\nCard Hash: ${cardHash}`;
+        signatureHex = normalizeSignature(await provider.signMessage(state.wallet.address, signPayload));
+        console.log('[Agent Issue] Wallet signature:', signatureHex?.slice(0, 40) + '...');
+      } catch (err) {
+        console.error('[Agent Issue] Wallet signing failed:', err);
+        alert(`Agent signing failed: ${err.message || err}`);
+        btnIssueAgentAction.disabled = false;
+        btnIssueAgentAction.textContent = "Issue Agent ID";
+        return;
       }
 
       btnIssueAgentAction.textContent = "Publishing Agent Card...";
 
       // Add signature to card metadata
-      if (isRealSig) {
-        sortedCard.signature = signatureHex;
-        sortedCard.signedBy = state.wallet.address;
-        sortedCard.signatureVerified = true;
-      }
+      sortedCard.signature = signatureHex;
+      sortedCard.signedBy = state.wallet.address;
 
-      // Post the metadata to the Lobby server for hosting
+      // Post the metadata to the Lobby server for hosting (also records the lobby event)
       const registerRes = await postJson('/api/v1/agent-lobby/agent-cards', {
         did: agentDid,
-        card: sortedCard
+        card: sortedCard,
+        lobby_id: state.activeLobbyId
       });
 
       const metadataUrl = registerRes?.url || `${window.location.origin}/agent-cards/${encodeURIComponent(agentDid)}`;
@@ -927,61 +970,28 @@ function init() {
       if (agentIssuedSuccessView) agentIssuedSuccessView.style.display = 'block';
       if (successAgentName) successAgentName.textContent = agentName;
       if (successAgentDid) {
-        const verifyBadge = isRealSig
-          ? `<span style="color:var(--color-green); font-weight:600;">✓ Cryptographically signed by wallet</span>`
-          : `<span style="color:var(--color-yellow);">⚠ Simulated (no wallet extension)</span>`;
         const storedBadge = metadataStored
           ? `<span style="color:var(--color-green);">✓ Hosted</span>`
-          : `<span style="color:var(--color-yellow);">⚠ Server offline — card stored locally</span>`;
+          : `<span style="color:var(--color-yellow);">⚠ Server unreachable — card not hosted</span>`;
         successAgentDid.innerHTML = `
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
             <strong>Metadata:</strong> <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a> ${storedBadge}<br>
-            <strong>On-Chain:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
+            <strong>Registry:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
-            ${isRealSig ? `<strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>` : ''}
-            <strong>Status:</strong> ${verifyBadge}
+            <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
+            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Cryptographically signed by wallet</span>
           </div>`;
       }
 
-      // Add to connected agents roster
-      const matchedRole = AGENT_ROLES.find(r => r.value === agentRole);
-      const roleLabel = matchedRole ? matchedRole.label : 'Generalist';
-      const newAgent = {
-        agent_id: agentDid,
-        display_name: agentName,
-        agent_role: roleLabel,
-        status: 'idle',
-        identity_status: isRealSig ? 'verified' : 'unverified',
-        runtime: 'Claude Code',
-        model: 'claude-3-5-sonnet',
-        branch: 'main',
-        cwd: '/workspace'
-      };
-
-      if (!state.agents.some(a => a.agent_id === agentDid)) {
-        state.agents.push(newAgent);
-        renderRoster();
-      }
-
-      // Add event
-      state.events.push({
-        id: Math.random().toString(36).substring(2, 10),
-        lobby_id: state.activeLobbyId || 'default',
-        type: 'agent-did-issued',
-        details: `Agent DID issued${isRealSig ? ' (wallet-signed)' : ''}: ${agentName} (${agentDid.slice(0, 20)}...)`,
-        timestamp: new Date().toISOString()
-      });
-      renderEvents();
+      // The roster shows genuinely connected agents (registered over the lobby WS protocol);
+      // an issued credential appears there once the agent connects and presents its DID.
+      pollLobbyDetails();
 
       btnIssueAgentAction.disabled = false;
       btnIssueAgentAction.textContent = "Issue Agent ID";
-      
-      if (isRealSig) {
-        alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}`);
-      } else {
-        alert(`Agent DID issued locally.\nDID: ${agentDid}\nNote: Connect the Concordium Browser Wallet for on-chain signing.`);
-      }
+
+      alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}`);
     });
   }
 
@@ -992,142 +1002,45 @@ function init() {
       if (state.wallet.connected) {
         state.wallet.connected = false;
         state.wallet.address = null;
-        state.wallet.balance = 0;
-        state.wallet.isReal = false;
+        state.wallet.balance = null;
         updateWalletUI();
-      } else {
-        const textEl = document.getElementById('wallet-status-text');
-        const provider = window.concordium;
-        
-        if (provider) {
-          if (textEl) textEl.textContent = 'Connecting to Concordium Wallet extension...';
-          try {
-            const accountAddress = await provider.connect();
-            if (!accountAddress) {
-              throw new Error('Connection rejected by user.');
-            }
-            
-            let balanceCcd = 0;
+        return;
+      }
 
-            // Normalize address to a plain string (some wallet versions return an object)
-            const addrStr = (typeof accountAddress === 'string')
-              ? accountAddress
-              : (accountAddress?.address || accountAddress?.toString?.() || String(accountAddress));
+      const textEl = document.getElementById('wallet-status-text');
+      const provider = window.concordium;
 
-            console.log('[Wallet] Connected address:', addrStr, '| Raw type:', typeof accountAddress);
+      if (!provider) {
+        if (textEl) textEl.textContent = 'Disconnected — wallet extension not found';
+        alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+        return;
+      }
 
-            // Helper: extract microCCD from various response shapes
-            function extractMicroCcd(accountInfo) {
-              if (!accountInfo) return null;
-              const aa = accountInfo.accountAmount;
-              if (aa === undefined || aa === null) return null;
-              // BigInt (gRPC v2)
-              if (typeof aa === 'bigint') return aa;
-              // Plain number or numeric string
-              if (typeof aa === 'number' || typeof aa === 'string') return BigInt(aa);
-              // Object with .microCcd (SDK CcdAmount)
-              if (aa.microCcd !== undefined) return BigInt(aa.microCcd);
-              // Object with .value
-              if (aa.value !== undefined) return BigInt(aa.value);
-              return null;
-            }
-
-            // Strategy 1: Try wallet's built-in RPC client (gRPC or JSON-RPC)
-            try {
-              let accountInfo = null;
-              if (provider.getGrpcClient) {
-                console.log('[Wallet] Trying gRPC client...');
-                const grpcClient = await provider.getGrpcClient();
-                accountInfo = await grpcClient.getAccountInfo(addrStr);
-                console.log('[Wallet] gRPC accountInfo:', JSON.stringify(accountInfo, (_, v) => typeof v === 'bigint' ? v.toString() : v));
-              } else if (provider.getJsonRpcClient) {
-                console.log('[Wallet] Trying JSON-RPC client...');
-                const client = await provider.getJsonRpcClient();
-                accountInfo = await client.getAccountInfo(addrStr);
-                console.log('[Wallet] JSON-RPC accountInfo:', JSON.stringify(accountInfo, (_, v) => typeof v === 'bigint' ? v.toString() : v));
-              }
-              const microCcd = extractMicroCcd(accountInfo);
-              if (microCcd !== null) {
-                balanceCcd = Number(microCcd) / 1_000_000;
-                console.log('[Wallet] Balance from RPC:', balanceCcd, 'CCD');
-              }
-            } catch (rpcErr) {
-              console.warn('[Wallet] RPC balance fetch failed:', rpcErr);
-            }
-
-            // Strategy 2: Concordium public wallet-proxy REST API (maintained by Concordium)
-            if (balanceCcd === 0) {
-              console.log('[Wallet] Trying Concordium wallet-proxy API...');
-              try {
-                const proxyRes = await fetch(`https://wallet-proxy.${CCD_NETWORK}.concordium.software/v0/accBalance/${addrStr}`);
-                if (proxyRes.ok) {
-                  const balInfo = await proxyRes.json();
-                  console.log('[Wallet] wallet-proxy response:', JSON.stringify(balInfo));
-                  if (balInfo && balInfo.finalizedBalance) {
-                    balanceCcd = Number(balInfo.finalizedBalance) / 1_000_000;
-                  } else if (balInfo && balInfo.currentBalance) {
-                    balanceCcd = Number(balInfo.currentBalance) / 1_000_000;
-                  } else if (balInfo && balInfo.accountAmount) {
-                    balanceCcd = Number(balInfo.accountAmount) / 1_000_000;
-                  }
-                } else {
-                  console.warn('[Wallet] wallet-proxy returned:', proxyRes.status);
-                }
-              } catch (proxyErr) {
-                console.warn('[Wallet] wallet-proxy request failed:', proxyErr);
-              }
-            }
-
-            // Strategy 3: CCDScan public API
-            if (balanceCcd === 0) {
-              console.log('[Wallet] Trying CCDScan API...');
-              try {
-                const scanRes = await fetch(`https://${CCD_NETWORK}.ccdscan.io/graphiql`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    query: `{ accountByAddress(accountAddress: "${addrStr}") { amount } }`
-                  })
-                });
-                if (scanRes.ok) {
-                  const scanData = await scanRes.json();
-                  console.log('[Wallet] CCDScan response:', JSON.stringify(scanData));
-                  const amount = scanData?.data?.accountByAddress?.amount;
-                  if (amount) {
-                    balanceCcd = Number(amount) / 1_000_000;
-                  }
-                }
-              } catch (scanErr) {
-                console.warn('[Wallet] CCDScan query failed:', scanErr);
-              }
-            }
-
-            if (balanceCcd === 0) {
-              console.warn('[Wallet] Could not fetch balance from any source. Check browser console for details.');
-            }
-
-            state.wallet.connected = true;
-            state.wallet.address = accountAddress;
-            state.wallet.balance = balanceCcd;
-            state.wallet.isReal = true;
-            updateWalletUI();
-            alert(`Connected successfully to Concordium Wallet!\nAddress: ${accountAddress}`);
-          } catch (err) {
-            console.error('Concordium Wallet connection failed:', err);
-            alert(`Concordium Wallet Connection Failed: ${err.message || err}`);
-            if (textEl) textEl.textContent = 'Disconnected';
-          }
-        } else {
-          if (textEl) textEl.textContent = 'Connecting via Simulated Wallet (No extension)...';
-          setTimeout(() => {
-            state.wallet.connected = true;
-            state.wallet.address = '3x19a8f273be92100cb9287c10d3e49e1';
-            state.wallet.balance = 25420.50;
-            state.wallet.isReal = false;
-            updateWalletUI();
-            alert('Simulated Concordium Wallet connected!\nNote: Install the Concordium Browser Wallet extension to connect your real wallet account.');
-          }, 800);
+      if (textEl) textEl.textContent = 'Connecting to Concordium Wallet extension...';
+      try {
+        const accountAddress = await provider.connect();
+        if (!accountAddress) {
+          throw new Error('Connection rejected by user.');
         }
+
+        // Normalize address to a plain string (some wallet versions return an object)
+        const addrStr = (typeof accountAddress === 'string')
+          ? accountAddress
+          : (accountAddress?.address || accountAddress?.toString?.() || String(accountAddress));
+
+        console.log('[Wallet] Connected address:', addrStr, '| Raw type:', typeof accountAddress);
+
+        const balanceCcd = await fetchWalletBalance(provider, addrStr);
+
+        state.wallet.connected = true;
+        state.wallet.address = addrStr;
+        state.wallet.balance = balanceCcd;
+        updateWalletUI();
+        alert(`Connected successfully to Concordium Wallet!\nAddress: ${addrStr}`);
+      } catch (err) {
+        console.error('Concordium Wallet connection failed:', err);
+        alert(`Concordium Wallet Connection Failed: ${err.message || err}`);
+        if (textEl) textEl.textContent = 'Disconnected';
       }
     });
   }
@@ -1150,47 +1063,56 @@ function init() {
       const title = titleEl?.value?.trim();
       const budget = parseFloat(budgetEl?.value);
       const description = descEl?.value?.trim();
-      if (!title || isNaN(budget) || !description) {
+      if (!title || isNaN(budget) || budget <= 0 || !description) {
         alert('Please enter title, budget ($CCD), and description.');
         return;
       }
-      
-      if (budget > state.wallet.balance) {
-        alert(`Insufficient funds! Your wallet balance is ${state.wallet.balance} CCD, but the task requires ${budget} CCD.`);
+
+      if (Number.isFinite(state.wallet.balance) && budget > state.wallet.balance) {
+        alert(`Insufficient funds! Your wallet balance is ${state.wallet.balance.toLocaleString()} CCD, but the task requires ${budget} CCD.`);
+        return;
+      }
+
+      const provider = window.concordium;
+      if (!provider) {
+        alert('Concordium Browser Wallet extension not found. Please install it and reconnect.');
         return;
       }
 
       btnPostTask.disabled = true;
-      btnPostTask.textContent = 'Sign Tx...';
-      
-      setTimeout(async () => {
-        btnPostTask.textContent = 'Locking Escrow...';
-        
-        setTimeout(async () => {
-          const txHash = 'tx_escrow_deposit_' + Math.random().toString(36).substr(2, 9);
-          const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks`, {
-            title,
-            description,
-            proposed_budget_ccd: budget,
-            posted_by_identity_ref: 'WebUser',
-            tx_hash: txHash
-          });
+      btnPostTask.textContent = 'Sign in Wallet...';
 
-          if (res && res.task) {
-            state.wallet.balance -= budget;
-            updateWalletUI();
-            if (titleEl) titleEl.value = '';
-            if (budgetEl) budgetEl.value = '';
-            if (descEl) descEl.value = '';
-            pollLobbyDetails();
-            alert(`Success! Locked ${budget} CCD into escrow. Tx Hash: ${txHash}`);
-          } else {
-            alert('Failed to post task.');
-          }
-          btnPostTask.disabled = false;
-          btnPostTask.textContent = 'Post & Lock Escrow';
-        }, 1000);
-      }, 1000);
+      try {
+        // Wallet-signed escrow authorization. On-chain escrow settlement arrives with the
+        // escrow contract increment; until then the signed authorization is the accountable record.
+        const escrowPayload = `Agent OS Task Escrow Authorization\nLobby: ${state.activeLobbyId}\nTask: ${title}\nBudget: ${budget} CCD\nSigned: ${new Date().toISOString()}`;
+        const escrowSignature = normalizeSignature(await provider.signMessage(state.wallet.address, escrowPayload));
+
+        btnPostTask.textContent = 'Posting Task...';
+        const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks`, {
+          title,
+          description,
+          proposed_budget_ccd: budget,
+          posted_by_identity_ref: state.identity.ownerDid || `did:ccd:${CCD_NETWORK}:${state.wallet.address}`,
+          escrow_signature: escrowSignature
+        });
+
+        if (res && res.task) {
+          if (titleEl) titleEl.value = '';
+          if (budgetEl) budgetEl.value = '';
+          if (descEl) descEl.value = '';
+          pollLobbyDetails();
+          alert(`Success! Task posted with a wallet-signed escrow authorization for ${budget} CCD.`);
+        } else {
+          alert('Failed to post task.');
+        }
+      } catch (err) {
+        console.error('Escrow signing failed:', err);
+        alert(`Escrow signing failed: ${err.message || err}`);
+      } finally {
+        btnPostTask.disabled = false;
+        btnPostTask.textContent = 'Post & Lock Escrow';
+      }
     });
   }
 }
@@ -1220,8 +1142,19 @@ async function renderTasks() {
     }
 
     const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--color-text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
-    const paymentText = task.tx_hash ? `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">🔒 Escrow Settled Tx: <code>${escapeHtml(task.tx_hash)}</code></div>` : '';
-    const escrowText = task.status !== 'completed' ? `<div style="font-size:11px; color:var(--color-yellow); margin-top:4px;">🔒 Escrow Locked: ${task.proposed_budget_ccd} CCD</div>` : '';
+    let paymentText = '';
+    if (task.status === 'completed') {
+      if (task.tx_hash) {
+        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Escrow Settled Tx: <code>${escapeHtml(task.tx_hash)}</code></div>`;
+      } else if (task.release_signature) {
+        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Release authorized — wallet signature <code>${escapeHtml(String(task.release_signature).slice(0, 24))}…</code></div>`;
+      } else {
+        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Completed</div>`;
+      }
+    }
+    const escrowText = task.status !== 'completed'
+      ? `<div style="font-size:11px; color:var(--color-yellow); margin-top:4px;">🔒 Escrow authorization: ${task.proposed_budget_ccd} CCD${task.escrow_signature ? ' (wallet-signed)' : ''}</div>`
+      : '';
 
     html += `
       <div style="padding: 10px; border-bottom: 1px solid var(--color-border); text-align: left;">
@@ -1297,67 +1230,42 @@ window.completeTask = async function(taskId) {
       }
 
       const provider = window.concordium;
-      if (state.wallet.isReal && provider) {
-        try {
-          const systemEscrowAddress = '3x19a8f273be92100cb9287c10d3e49e1';
-          
-          if (btnEl) btnEl.textContent = "Approve in Wallet...";
-          
-          // Concordium Browser Wallet API uses 3 parameters: (accountAddress, transactionType, payload)
-          // TransactionType.SimpleTransfer = 3
-          const txHash = await provider.sendTransaction(
-            state.wallet.address,
-            3, // AccountTransactionType.SimpleTransfer
-            {
-              toAddress: systemEscrowAddress,
-              amount: {
-                microCcd: BigInt(0) // 0 CCD triggers contract release message
-              }
-            }
-          );
-          
-          if (btnEl) btnEl.textContent = "Releasing Escrow...";
-          const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
-            tx_hash: txHash
-          });
-
-          if (res && res.task) {
-            alert(`Escrow released successfully to the agent!\nTransaction Hash: ${txHash}`);
-            pollLobbyDetails();
-          } else {
-            alert("Failed to record completion on the server.");
-          }
-        } catch (err) {
-          console.error('Release transaction failed:', err);
-          alert(`Release failed: ${err.message || err}`);
-        } finally {
-          if (btnEl) {
-            btnEl.disabled = false;
-            btnEl.textContent = "Release Escrow & Pay";
-          }
+      if (!provider) {
+        alert("Concordium Browser Wallet extension not found. Please install it and reconnect.");
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = "Release Escrow & Pay";
         }
-      } else {
-        setTimeout(async () => {
-          if (btnEl) btnEl.textContent = "Transferring CCD...";
-          
-          setTimeout(async () => {
-            const txHash = 'tx_release_' + Math.random().toString(36).substr(2, 9);
-            const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
-              tx_hash: txHash
-            });
+        return;
+      }
 
-            if (res && res.task) {
-              alert(`Simulated Payment released! Transfer transaction hash: ${txHash}`);
-              pollLobbyDetails();
-            } else {
-              alert("Failed to release payment.");
-              if (btnEl) {
-                btnEl.disabled = false;
-                btnEl.textContent = "Release Escrow & Pay";
-              }
-            }
-          }, 1000);
-        }, 1000);
+      try {
+        if (btnEl) btnEl.textContent = "Approve in Wallet...";
+
+        // Wallet-signed release authorization. On-chain settlement arrives with the escrow
+        // contract increment; until then the signed authorization is the accountable record.
+        const releasePayload = `Agent OS Escrow Release Authorization\nLobby: ${state.activeLobbyId}\nTask: ${taskId}\nSigned: ${new Date().toISOString()}`;
+        const releaseSignature = normalizeSignature(await provider.signMessage(state.wallet.address, releasePayload));
+
+        if (btnEl) btnEl.textContent = "Releasing Escrow...";
+        const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
+          release_signature: releaseSignature
+        });
+
+        if (res && res.task) {
+          alert(`Escrow release authorization signed and recorded!\nSignature: ${releaseSignature?.slice(0, 32)}...`);
+          pollLobbyDetails();
+        } else {
+          alert("Failed to record completion on the server.");
+        }
+      } catch (err) {
+        console.error('Release signing failed:', err);
+        alert(`Release failed: ${err.message || err}`);
+      } finally {
+        if (btnEl) {
+          btnEl.disabled = false;
+          btnEl.textContent = "Release Escrow & Pay";
+        }
       }
     }
   );

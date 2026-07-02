@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, extname } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession } from '@agent-os/protocol-core';
+import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
@@ -119,7 +119,32 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── HTTP control plane ──
-  const httpServer = createServer((req, res) => void handleHttp(req, res));
+  const httpServer = createServer((req, res) => {
+    handleHttp(req, res).catch((err) => {
+      console.error('[lobby-server] HTTP handler error:', err);
+      if (!res.headersSent) {
+        res.writeHead(500, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+        res.end(JSON.stringify({ error: 'internal server error' }));
+      } else {
+        res.end();
+      }
+    });
+  });
+
+  /** Append a canonical event to a lobby's durable log (no-op when the lobby does not exist). */
+  async function recordEvent(lobbyId: string, type: LobbyEventType, actorId: string, detail?: Record<string, unknown>): Promise<void> {
+    if (!(await store.getLobby(lobbyId))) return;
+    const seq = await store.nextSeq(lobbyId);
+    await store.appendEvent({
+      event_id: randomUUID(),
+      lobby_id: lobbyId,
+      seq,
+      type,
+      actor_id: actorId,
+      at: new Date().toISOString(),
+      detail,
+    });
+  }
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
@@ -140,6 +165,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       agentCards.set(body.did, body.card);
       persistCards();
       console.log(`[lobby-server] Stored agent card: ${body.did}`);
+      if (typeof body.lobby_id === 'string') {
+        const card = body.card as Record<string, unknown>;
+        await recordEvent(body.lobby_id, 'agent_card_published', String(card?.owner ?? 'unknown'), {
+          did: body.did,
+          name: card?.name,
+          signed: Boolean(card?.signature),
+        });
+      }
       return json({ ok: true, url: `${url.origin}/agent-cards/${encodeURIComponent(body.did)}` }, 201);
     }
 
@@ -237,37 +270,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const lobby = await store.getLobby(lobbyId);
         if (!lobby) return json({ error: 'Lobby not found' }, 404);
 
-        const seq = ++lobby.message_seq;
-        await store.upsertLobby(lobby);
-
-        const message = {
-          id: randomUUID(),
-          lobby_id: lobbyId,
+        const seq = await store.nextSeq(lobbyId);
+        const message: LobbyMessage = {
+          message_id: randomUUID(),
+          seq,
           from_agent_id: body.from_agent_id || 'WebUser',
           to_agent_id: body.to_agent_id || 'all',
           message_type: body.message_type || 'chat',
           content: body.content || '',
           created_at: new Date().toISOString(),
-          seq
+          delivered: false,
         };
-        await store.addMessage(message);
-
-        // Record event
-        await store.addEvent({
-          id: randomUUID(),
-          lobby_id: lobbyId,
-          type: 'lobby-message',
-          agent_id: message.from_agent_id,
-          details: `${message.from_agent_id}: ${message.content}`,
-          timestamp: message.created_at
+        await store.appendMessage(lobbyId, message);
+        await recordEvent(lobbyId, 'message_sent', message.from_agent_id, {
+          to: message.to_agent_id,
+          content: message.content,
         });
 
-        // Broadcast to WebSocket connections
-        const outMsg = {
-          type: 'lobby-message-received',
-          message
-        } as unknown as LobbyToAgentMessage;
-
+        // Broadcast to WebSocket connections in this lobby
+        const outMsg: LobbyToAgentMessage = { type: 'lobby-message-received', message };
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, outMsg);
         }
@@ -290,6 +311,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         registered_at: new Date().toISOString(),
         revoked: false
       });
+      if (typeof body.lobby_id === 'string') {
+        await recordEvent(body.lobby_id, 'owner_registered', body.identity_ref, {
+          issuer_did: body.issuer_did,
+          owner_name: body.owner_name,
+          signed: Boolean(body.signature),
+        });
+      }
       return json({ record }, 201);
     }
 
@@ -311,7 +339,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           status: 'posted',
           posted_by_identity_ref: body.posted_by_identity_ref ?? 'anonymous',
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          escrow_signature: typeof body.escrow_signature === 'string' ? body.escrow_signature : undefined,
+        });
+        await recordEvent(lobbyId, 'task_created', task.posted_by_identity_ref, {
+          task_id: task.id,
+          title: task.title,
+          budget_ccd: task.proposed_budget_ccd,
+          escrow_signed: Boolean(task.escrow_signature),
         });
         return json({ task }, 201);
       }
@@ -384,6 +419,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         assigned_agent_id: body.assigned_agent_id,
         assigned_agent_ref: body.assigned_agent_ref
       });
+      await recordEvent(lobbyId, 'task_updated', task.posted_by_identity_ref, {
+        task_id: taskId,
+        status: 'assigned',
+        assigned_agent_id: body.assigned_agent_id,
+      });
       return json({ task: updated });
     }
 
@@ -398,7 +438,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       
       const updated = await store.updateMarketplaceTask(lobbyId, taskId, {
         status: 'completed',
-        tx_hash: body.tx_hash
+        tx_hash: typeof body.tx_hash === 'string' ? body.tx_hash : undefined,
+        release_signature: typeof body.release_signature === 'string' ? body.release_signature : undefined,
+      });
+      await recordEvent(lobbyId, 'task_updated', task.posted_by_identity_ref, {
+        task_id: taskId,
+        status: 'completed',
+        release_signed: Boolean(body.release_signature),
       });
       return json({ task: updated });
     }
