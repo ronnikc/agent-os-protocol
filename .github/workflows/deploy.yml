@@ -78,7 +78,8 @@ jobs:
             git fetch --depth 1 origin main; \
             git reset --hard origin/main; \
             npm ci; \
-            pm2 restart website --update-env; \
+            pm2 startOrReload deploy/ecosystem.config.cjs --only website --update-env; \
+            pm2 save; \
             for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4802/ >/dev/null && exit 0; sleep 2; done; \
             echo 'health check failed' >&2; exit 1"
 
