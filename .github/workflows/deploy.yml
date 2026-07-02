@@ -1,21 +1,33 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
 #
-# Deploy the static sites (apps/website + apps/lobby-web) over SSH.
-# Each app has its own SSH user + private key (same host), and is synced with
-# rsync into its own remote path:
-#   ${SSH_USER_WEBSITE}@${SSH_HOST}:${SSH_PATH_WEBSITE}  <- apps/website
-#   ${SSH_USER_LOBBY}@${SSH_HOST}:${SSH_PATH_LOBBY}      <- apps/lobby-web
+# Deploy the sites over SSH.
+#
+# Both sites deploy the SAME way — the server keeps a git checkout, and each deploy is
+# `git fetch && reset --hard origin/main && npm ci && pm2 restart`. Both run under pm2,
+# fully userspace — NO sudo / systemd / root needed at any point. The repo is public, so
+# no git credentials are needed on the box. See deploy/ecosystem.config.cjs.
+#
+# Website — the server keeps a git checkout at SSH_PATH_WEBSITE; the Node server
+# (apps/website/server.ts) serves the static SPA on 127.0.0.1:4802 (Apache proxies to it,
+# configured directly on the server).
+#
+# Lobby BACKEND + SPA — the server keeps a git checkout at SSH_PATH_LOBBY. The Node
+# backend serves the API + /health + WebSocket on 127.0.0.1:4730 (Apache proxies to it),
+# and Apache serves the lobby-web SPA straight from apps/lobby-web IN THAT SAME CHECKOUT
+# — so the SPA and the API it calls never skew (one git pull updates both). See
+# deploy/apache-lobby.conf.
 #
 # Required repository secrets:
 #   SSH_HOST                 server hostname or IP (shared)
 #   SSH_PORT                 ssh port, e.g. 22 (shared)
-#   SSH_USER_WEBSITE         ssh user for the website
+#   SSH_USER_WEBSITE         ssh user for the website deploy (git pull + restart)
 #   SSH_PRIVATE_KEY_WEBSITE  private key (PEM) for the website user
-#   SSH_PATH_WEBSITE         absolute path on the server for the website
-#   SSH_USER_LOBBY           ssh user for the lobby-web dashboard
-#   SSH_PRIVATE_KEY_LOBBY    private key (PEM) for the lobby-web user
-#   SSH_PATH_LOBBY           absolute path on the server for the lobby-web dashboard
+#   SSH_PATH_WEBSITE         absolute path of the git checkout (website runs here on :4802)
+#   SSH_USER_LOBBY           ssh user for the lobby backend deploy (git pull + restart)
+#   SSH_PRIVATE_KEY_LOBBY    private key (PEM) for the lobby user
+#   SSH_PATH_LOBBY           absolute path of the git checkout (backend runs here;
+#                            Apache serves the SPA from its apps/lobby-web)
 
 name: Deploy sites
 
@@ -23,9 +35,13 @@ on:
   push:
     branches: [main]
     paths:
-      - 'apps/website/**'
-      - 'apps/lobby-web/**'
-      - '.github/workflows/deploy.yml'
+      - "apps/website/**"
+      - "apps/lobby-web/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - "deploy/**"
+      - ".github/workflows/deploy.yml"
   workflow_dispatch:
 
 concurrency:
@@ -47,25 +63,48 @@ jobs:
           chmod 600 ~/.ssh/website_key ~/.ssh/lobby_key
           ssh-keyscan -p "${{ secrets.SSH_PORT }}" -H "${{ secrets.SSH_HOST }}" >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy website
+      - name: Deploy website (Node server)
         run: |
-          ssh -i ~/.ssh/website_key -p "${{ secrets.SSH_PORT }}" \
-            "${{ secrets.SSH_USER_WEBSITE }}@${{ secrets.SSH_HOST }}" \
-            "mkdir -p '${{ secrets.SSH_PATH_WEBSITE }}'"
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/website_key -p ${{ secrets.SSH_PORT }}" \
-            apps/website/ \
-            "${{ secrets.SSH_USER_WEBSITE }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_PATH_WEBSITE }}/"
+          SSH="ssh -i ~/.ssh/website_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER_WEBSITE }}@${{ secrets.SSH_HOST }}"
+          # The server keeps a git checkout at SSH_PATH_WEBSITE (public repo, no creds).
+          # Pull the pushed commit, install deps, restart under pm2, verify health.
+          # Fully userspace — NO sudo. nvm is sourced because a non-interactive SSH shell
+          # doesn't load it, so node/npm/pm2 wouldn't be on PATH otherwise.
+          # NOTE: `npm ci` without --omit=dev — this repo has no build step and runs via
+          # `tsx` (a devDependency) at runtime.
+          $SSH "set -e; \
+            export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; \
+            cd '${{ secrets.SSH_PATH_WEBSITE }}'; \
+            git fetch --depth 1 origin main; \
+            git reset --hard origin/main; \
+            npm ci; \
+            pm2 restart website --update-env; \
+            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4802/ >/dev/null && exit 0; sleep 2; done; \
+            echo 'health check failed' >&2; exit 1"
 
-      - name: Deploy lobby-web
+      # NOTE: no separate rsync for apps/lobby-web. The git checkout below already
+      # contains it, and Apache serves the SPA straight from
+      # ${SSH_PATH_LOBBY}/apps/lobby-web — so the SPA and the API it calls always
+      # come from the same commit (no skew). See deploy/apache-lobby.conf.
+
+      - name: Deploy lobby backend (Node server)
         run: |
-          ssh -i ~/.ssh/lobby_key -p "${{ secrets.SSH_PORT }}" \
-            "${{ secrets.SSH_USER_LOBBY }}@${{ secrets.SSH_HOST }}" \
-            "mkdir -p '${{ secrets.SSH_PATH_LOBBY }}'"
-          rsync -avz --delete \
-            -e "ssh -i ~/.ssh/lobby_key -p ${{ secrets.SSH_PORT }}" \
-            apps/lobby-web/ \
-            "${{ secrets.SSH_USER_LOBBY }}@${{ secrets.SSH_HOST }}:${{ secrets.SSH_PATH_LOBBY }}/"
+          SSH="ssh -i ~/.ssh/lobby_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER_LOBBY }}@${{ secrets.SSH_HOST }}"
+          # The server keeps a git checkout at SSH_PATH_LOBBY (public repo, no creds).
+          # Pull the pushed commit, install deps, restart under pm2, verify health.
+          # Fully userspace — NO sudo. nvm is sourced because a non-interactive SSH shell
+          # doesn't load it, so node/npm/pm2 wouldn't be on PATH otherwise.
+          # NOTE: `npm ci` without --omit=dev — this repo has no build step and runs via
+          # `tsx` (a devDependency) at runtime.
+          $SSH "set -e; \
+            export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; \
+            cd '${{ secrets.SSH_PATH_LOBBY }}'; \
+            git fetch --depth 1 origin main; \
+            git reset --hard origin/main; \
+            npm ci; \
+            pm2 restart lobby-server --update-env; \
+            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4730/health && exit 0; sleep 2; done; \
+            echo 'health check failed' >&2; exit 1"
 
       - name: Clean up SSH keys
         if: always()
