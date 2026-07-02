@@ -24,6 +24,7 @@ import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type Lobby
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
+import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
@@ -54,6 +55,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     : undefined;
   const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity });
   const autoDefault = options.autoDefaultLobby ?? true;
+
+  // Concordium Agent Registry MCP service (on-chain anchoring). When unset, agents stay
+  // off-chain (wallet-signed + lobby-hosted cards) and the dashboard says so honestly.
+  // Point at a hosted instance or a local `concordium/agent-registry-mcp` container's /mcp URL.
+  const registryMcpUrl = process.env.AGENT_OS_AGENT_REGISTRY_MCP_URL;
+  const registryMcp = registryMcpUrl ? new RegistryMcpClient(registryMcpUrl) : undefined;
 
   // Persistent agent card storage — cards survive server restarts
   const CARDS_FILE = resolve(fileURLToPath(import.meta.url), '..', '..', 'agent-cards.json');
@@ -155,6 +162,50 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     };
 
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
+
+    // ── Concordium Agent Registry proxy (on-chain anchoring via the official MCP service) ──
+    // The lobby only relays reads and sign-ready payload builders; signing and submission
+    // happen in the owner's wallet, client-side. No keys pass through here.
+
+    // GET /api/v1/agent-lobby/registry/status
+    if (path === '/api/v1/agent-lobby/registry/status' && req.method === 'GET') {
+      if (!registryMcp) return json({ configured: false });
+      const network = url.searchParams.get('network') ?? 'mainnet';
+      try {
+        const capabilities = await registryMcp.callTool('agent_registry_capabilities', { network });
+        return json({ configured: true, network, capabilities });
+      } catch (e) {
+        return json({ configured: true, network, error: String((e as Error).message ?? e) }, 502);
+      }
+    }
+
+    // GET /api/v1/agent-lobby/registry/tools
+    if (path === '/api/v1/agent-lobby/registry/tools' && req.method === 'GET') {
+      if (!registryMcp) return json({ error: 'agent registry MCP service not configured (set AGENT_OS_AGENT_REGISTRY_MCP_URL)' }, 503);
+      try {
+        const tools = (await registryMcp.listTools()).filter((t) => REGISTRY_TOOL_ALLOWLIST.has(t.name));
+        return json({ tools });
+      } catch (e) {
+        return json({ error: String((e as Error).message ?? e) }, 502);
+      }
+    }
+
+    // POST /api/v1/agent-lobby/registry/call — allowlisted tools/call relay
+    if (path === '/api/v1/agent-lobby/registry/call' && req.method === 'POST') {
+      if (!registryMcp) return json({ error: 'agent registry MCP service not configured (set AGENT_OS_AGENT_REGISTRY_MCP_URL)' }, 503);
+      const body = await readBody(req);
+      const tool = typeof body.tool === 'string' ? body.tool : '';
+      if (!REGISTRY_TOOL_ALLOWLIST.has(tool)) {
+        return json({ error: `tool not allowed: ${tool || '(missing)'}` }, 400);
+      }
+      const args = body.arguments && typeof body.arguments === 'object' ? body.arguments : {};
+      try {
+        const result = await registryMcp.callTool(tool, args);
+        return json({ ok: true, tool, result });
+      } catch (e) {
+        return json({ ok: false, tool, error: String((e as Error).message ?? e) }, 502);
+      }
+    }
 
     // POST /api/v1/agent-lobby/agent-cards
     if (path === '/api/v1/agent-lobby/agent-cards' && req.method === 'POST') {
