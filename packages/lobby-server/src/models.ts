@@ -95,7 +95,12 @@ export interface MarketplaceTask {
   posted_by_identity_ref: string;
   created_at: string;
   updated_at: string;
+  /** On-chain transaction hash, when an escrow contract settles the task on Concordium. */
   tx_hash?: string;
+  /** Wallet signature authorizing the escrow lock at post time (off-chain authorization). */
+  escrow_signature?: string;
+  /** Wallet signature authorizing the escrow release at completion (off-chain authorization). */
+  release_signature?: string;
 }
 
 export interface ConcordiumIssuerRecord {

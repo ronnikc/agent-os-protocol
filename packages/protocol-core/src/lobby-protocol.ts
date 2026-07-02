@@ -441,7 +441,9 @@ export type LobbyEventType =
   | 'hand_raised'
   | 'task_created'
   | 'task_updated'
-  | 'join_denied'; // private-lobby access denial
+  | 'join_denied' // private-lobby access denial
+  | 'owner_registered' // Concordium owner identity registered as a credential issuer
+  | 'agent_card_published'; // agent card metadata published for hosting
 
 /** One append-only entry in a lobby's event log. */
 export interface LobbyEvent {
