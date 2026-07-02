@@ -18,7 +18,7 @@ import { createServer, type Server, type IncomingMessage, type ServerResponse } 
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve, extname } from 'node:path';
-import { existsSync, statSync, readFileSync } from 'node:fs';
+import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
@@ -54,7 +54,27 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     : undefined;
   const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity });
   const autoDefault = options.autoDefaultLobby ?? true;
+
+  // Persistent agent card storage — cards survive server restarts
+  const CARDS_FILE = resolve(fileURLToPath(import.meta.url), '..', '..', 'agent-cards.json');
   const agentCards = new Map<string, unknown>();
+  try {
+    if (existsSync(CARDS_FILE)) {
+      const raw = readFileSync(CARDS_FILE, 'utf-8');
+      const entries = JSON.parse(raw);
+      for (const [k, v] of Object.entries(entries)) agentCards.set(k, v);
+      console.log(`[lobby-server] Loaded ${agentCards.size} agent cards from disk`);
+    }
+  } catch (e) { console.warn('[lobby-server] Could not load agent cards file:', e); }
+
+  function persistCards() {
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of agentCards) obj[k] = v;
+    try {
+      writeFileSync(CARDS_FILE, JSON.stringify(obj, null, 2), 'utf-8');
+      console.log(`[lobby-server] Persisted ${agentCards.size} agent cards to disk`);
+    } catch (e) { console.warn('[lobby-server] Could not persist agent cards:', e); }
+  }
 
   // Socket bookkeeping for fan-out.
   const sockets = new Map<string, WebSocket>(); // connId → socket
@@ -118,15 +138,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ error: 'missing did or card' }, 400);
       }
       agentCards.set(body.did, body.card);
-      return json({ ok: true, url: `${url.origin}/agent-cards/${body.did}` }, 201);
+      persistCards();
+      console.log(`[lobby-server] Stored agent card: ${body.did}`);
+      return json({ ok: true, url: `${url.origin}/agent-cards/${encodeURIComponent(body.did)}` }, 201);
     }
 
     // GET /api/v1/agent-lobby/agent-cards/:did or /agent-cards/:did
-    const agentCardMatch = path.match(/^(?:\/api\/v1\/agent-lobby)?\/agent-cards\/([^/]+)$/);
+    // DID contains colons so we match everything after /agent-cards/
+    const agentCardMatch = path.match(/^(?:\/api\/v1\/agent-lobby)?\/agent-cards\/(.+)$/);
     if (agentCardMatch && req.method === 'GET') {
-      const did = agentCardMatch[1];
+      const did = decodeURIComponent(agentCardMatch[1]);
       const card = agentCards.get(did);
-      if (!card) return json({ error: 'agent card not found' }, 404);
+      if (!card) return json({ error: 'agent card not found', did, stored: Array.from(agentCards.keys()) }, 404);
       return json(card);
     }
 
