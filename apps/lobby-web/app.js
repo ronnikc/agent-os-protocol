@@ -3,7 +3,10 @@
 // ── Concordium Network Configuration ──
 const CCD_NETWORK = 'mainnet'; // 'mainnet' or 'testnet'
 const CCD_EXPLORER_BASE = `https://ccdexplorer.io/${CCD_NETWORK}`;
-const CCD_AGENT_REGISTRY_CONTRACT = '9458,0'; // Agent Registry contract <index,subindex>
+// Concordium Agent Registry contract instance <index,subindex> — used for explorer links only.
+// Set this to the live registry instance for your network before relying on the links
+// (see https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html).
+const CCD_AGENT_REGISTRY_CONTRACT = '9458,0';
 // Concordium-hosted public REST/GraphQL endpoints for balance lookup (per network).
 const CCD_WALLET_PROXY_BASE = {
   mainnet: 'https://wallet-proxy.mainnet.concordium.software',
@@ -977,10 +980,11 @@ function init() {
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
             <strong>Metadata:</strong> <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a> ${storedBadge}<br>
-            <strong>Registry:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
+            <strong>On-Chain:</strong> <span style="color:var(--color-yellow);">not yet anchored</span> — <a href="https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">register the card hash in the Concordium Agent Registry ↗</a><br>
+            <strong>Owner Account:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
-            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Cryptographically signed by wallet</span>
+            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span> · card hosted off-chain by this lobby
           </div>`;
       }
 
@@ -991,7 +995,7 @@ function init() {
       btnIssueAgentAction.disabled = false;
       btnIssueAgentAction.textContent = "Issue Agent ID";
 
-      alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}`);
+      alert(`Agent DID issued & cryptographically signed!\nDID: ${agentDid}\nMetadata: ${metadataUrl}\nNote: the card is hosted by this lobby and is not yet anchored on-chain — use the Concordium Agent Registry to register the card hash from your wallet.`);
     });
   }
 
