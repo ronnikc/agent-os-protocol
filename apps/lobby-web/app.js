@@ -115,10 +115,12 @@ function getExplorerLink(did) {
   const network = parts[2]; // 'mainnet' or 'testnet'
   const id = parts.slice(3).join(':'); // token ID, address, or agent sub-ID
   const [registryIndex, registrySubindex] = CCD_AGENT_REGISTRY_CONTRACT.split(',');
-  const registryInstanceUrl = `https://ccdexplorer.io/${network}/instance/${registryIndex}/${registrySubindex}`;
-  // If the ID is a wallet address (long base58), link to the account page
+  const registryInstanceUrl = `https://ccdexplorer.io/${encodeURIComponent(network)}/instance/${registryIndex}/${registrySubindex}`;
+  // If the ID is a wallet address (long base58), link to the account page.
+  // Every interpolated segment is user-controlled (agents register arbitrary DIDs), so
+  // encode them — unencoded values enabled stored XSS via crafted DIDs in href attributes.
   if (id.length >= 40 && !id.startsWith('agent-')) {
-    return `https://ccdexplorer.io/${network}/account/${id}`;
+    return `https://ccdexplorer.io/${encodeURIComponent(network)}/account/${encodeURIComponent(id)}`;
   }
   // If it is a numeric token index, link to the Agent Registry contract instance holding it
   if (/^\d+$/.test(id)) {
@@ -127,7 +129,7 @@ function getExplorerLink(did) {
   // For agent sub-IDs (agent-XXXX), link to the owner's wallet account page
   // where they can see all their registered agent tokens
   if (id.startsWith('agent-') && state.wallet.address) {
-    return `https://ccdexplorer.io/${network}/account/${state.wallet.address}`;
+    return `https://ccdexplorer.io/${encodeURIComponent(network)}/account/${encodeURIComponent(state.wallet.address)}`;
   }
   // Fallback: link to the agent registry contract instance on the right network
   return registryInstanceUrl;
@@ -260,7 +262,7 @@ function renderLobbies() {
       <div class="lobby-item ${isActive ? 'active' : ''}" onclick="selectLobby('${lobby.lobby_id}')">
         <div class="lobby-item-header">
           <span class="lobby-name">${escapeHtml(lobby.name || 'Swarm Lobby')}</span>
-          <span class="lobby-visibility ${lobby.visibility}">${escapeHtml(lobby.visibility)}</span>
+          <span class="lobby-visibility ${lobby.visibility === 'private' ? 'private' : 'public'}">${escapeHtml(lobby.visibility || 'public')}</span>
         </div>
         <div class="lobby-id">ID: ${escapeHtml(lobby.lobby_id)}</div>
       </div>
@@ -286,7 +288,7 @@ function renderRoster() {
     const isVerified = ['verified', 'registry_verified', 'human_linked', 'org_linked'].includes(agent.identity_status);
     const explorerLink = getExplorerLink(agent.agent_id);
     const idHtml = explorerLink
-      ? `<a href="${explorerLink}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
+      ? `<a href="${escapeHtml(explorerLink)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
       : `${escapeHtml(agent.agent_id.slice(0, 8))}...`;
 
     return `
@@ -1075,7 +1077,7 @@ function init() {
       state.identity.registeredAgentDid = agentDid;
 
       // Build explorer link to owner's account (where their agent tokens are visible)
-      const explorerUrl = getExplorerLink(agentDid) || `${CCD_EXPLORER_BASE}/accounts/${state.wallet.address}`;
+      const explorerUrl = getExplorerLink(agentDid) || `${CCD_EXPLORER_BASE}/account/${encodeURIComponent(state.wallet.address)}`;
 
       // Sync UI
       const agentIssueView = document.getElementById('agent-issue-view');
@@ -1101,9 +1103,9 @@ function init() {
         successAgentDid.innerHTML = `
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
-            <strong>Metadata:</strong> <a href="${metadataUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${metadataUrl}</a> ${storedBadge}<br>
+            <strong>Metadata:</strong> <a href="${escapeHtml(metadataUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(metadataUrl)}</a> ${storedBadge}<br>
             <strong>On-Chain:</strong> ${onChainLine}<br>
-            <strong>Owner Account:</strong> <a href="${explorerUrl}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
+            <strong>Owner Account:</strong> <a href="${escapeHtml(explorerUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
             <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? ' · on-chain mint submitted' : ' · card hosted off-chain by this lobby'}

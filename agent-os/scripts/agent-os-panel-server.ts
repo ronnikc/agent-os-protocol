@@ -282,6 +282,9 @@ async function connectLobbyWs(): Promise<void> {
         type: 'lobby-register',
         display_name: `Panel-${PANEL_ID}`,
         agent_role: 'panel',
+        // The panel is the human's control plane — registering as a human participant
+        // exempts it from floor control and allows Boss (re)appointment (coordinator rules).
+        participant_type: 'human',
         cwd: REPO_ROOT,
         branch: 'main',
         pid: process.pid,
@@ -642,6 +645,11 @@ function getAgentStatus(slug: string): string {
 }
 
 function startAgent(slug: string, lobbyUrl: string): { ok: boolean; error?: string } {
+  // The slug flows into file paths (log file, role definition) and spawn args — only
+  // accept slugs that resolve to a discovered agent definition.
+  if (!discoverAgents().some(a => a.slug === slug)) {
+    return { ok: false, error: `Unknown agent: ${slug}` };
+  }
   if (runningProcesses.has(slug)) {
     return { ok: false, error: `Agent ${slug} is already running` };
   }
