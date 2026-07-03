@@ -623,20 +623,27 @@ async function anchorAgentOnChain(provider, fields) {
   const call = await postJson('/api/v1/agent-lobby/registry/call', { tool: 'build_register', arguments: args });
   if (!call || !call.ok) throw new Error(call?.error || 'build_register call failed');
   const payload = call.result || {};
-  if (typeof payload.hex !== 'string' || payload.hex.length === 0) {
-    throw new Error(`build_register did not return a sign-ready hex payload: ${JSON.stringify(payload).slice(0, 200)}`);
-  }
+  console.log('[Registry] build_register payload:', payload);
+
+  // The docs describe { hex, schema_json }; the live service returns
+  // { network, contract_address: {index, subindex}, receive_name, parameter_json, ... }.
+  // Accept both shapes.
+  const hex = [payload.hex, payload.parameter_hex, payload.payload_hex, payload.message_hex]
+    .find((v) => typeof v === 'string' && v.length > 0) || null;
+  const parameterJson = payload.parameter_json ?? payload.parameters_json ?? null;
+  const schema = [payload.schema_b64, payload.schema_base64, payload.schema, payload.schema_json]
+    .find((v) => typeof v === 'string' && v.length > 0) || null;
 
   // Resolve the target contract + entrypoint from the payload metadata, else contract_info.
-  let index = payload.contract_index ?? payload.contract?.index;
-  let subindex = payload.contract_subindex ?? payload.contract?.subindex;
+  let index = payload.contract_index ?? payload.contract?.index ?? payload.contract_address?.index;
+  let subindex = payload.contract_subindex ?? payload.contract?.subindex ?? payload.contract_address?.subindex;
   let receiveName = payload.receive_name ?? payload.receiveName;
   if (index === undefined || !receiveName) {
     const infoCall = await postJson('/api/v1/agent-lobby/registry/call', { tool: 'contract_info', arguments: { network: CCD_NETWORK } });
     const info = infoCall?.result || {};
     const cis = info.cis8004 || info['cis-8004'] || info;
-    index = index ?? cis.index ?? cis.contract_index;
-    subindex = subindex ?? cis.subindex ?? cis.contract_subindex;
+    index = index ?? cis.index ?? cis.contract_index ?? cis.contract_address?.index;
+    subindex = subindex ?? cis.subindex ?? cis.contract_subindex ?? cis.contract_address?.subindex;
     receiveName = receiveName || cis.receive_name || (cis.contract_name ? `${cis.contract_name}.register` : undefined);
   }
   if (index === undefined || !receiveName) {
@@ -644,13 +651,25 @@ async function anchorAgentOnChain(provider, fields) {
   }
 
   // AccountTransactionType.Update = 2 — the wallet shows, signs, and submits the mint.
-  const txHash = await provider.sendTransaction(state.wallet.address, 2, {
+  const txBase = {
     amount: { microCcd: BigInt(0) },
     address: { index: BigInt(index), subindex: BigInt(subindex ?? 0) },
     receiveName,
-    maxContractExecutionEnergy: BigInt(30000),
-    message: payload.hex,
-  });
+    maxContractExecutionEnergy: BigInt(payload.max_energy ?? payload.energy ?? 30000),
+  };
+
+  let txHash;
+  if (hex) {
+    // Pre-encoded parameter bytes — pass as the raw update message.
+    txHash = await provider.sendTransaction(state.wallet.address, 2, { ...txBase, message: hex });
+  } else if (parameterJson && schema) {
+    // Schema-JSON parameter — the wallet serializes it with the provided schema.
+    txHash = await provider.sendTransaction(state.wallet.address, 2, txBase, parameterJson, schema);
+  } else if (parameterJson) {
+    throw new Error(`build_register returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+  } else {
+    throw new Error(`build_register did not return a signable payload (keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+  }
   return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName };
 }
 

@@ -11,6 +11,7 @@ let lobbyConnected = false;
 let currentUser = null;
 let events = [];
 let lobbyMode = 'local'; // 'local' or 'swarm'
+let lobbyInfo = { id: null, name: null, url: null, connected: false }; // which lobby the panel is in
 let createLobbyFormOpen = false;
 
 /**
@@ -158,6 +159,12 @@ function renderLobby() {
           <span class="status-dot ${lobbyConnected ? 'status-running' : 'status-stopped'}"></span>
           ${onlineAgents.length} agents${onlineHumans.length ? ` + ${onlineHumans.length} human${onlineHumans.length > 1 ? 's' : ''}` : ''} connected
         </span>
+        ${lobbyInfo.id ? `
+        <span style="margin-left:10px;font-size:11px;color:var(--text-muted);" title="${escapeHtml(lobbyInfo.url || '')}">
+          ${lobbyMode === 'swarm' ? '🌐' : '🏠'} ${escapeHtml(lobbyInfo.name || 'Lobby')}
+          <code style="font-size:10px;opacity:0.8;">${escapeHtml(String(lobbyInfo.id).slice(0, 8))}</code>
+          ${lobbyMode === 'swarm' && !lobbyInfo.connected ? '<span class="badge badge-warning" style="margin-left:4px;font-size:9px;">reconnecting…</span>' : ''}
+        </span>` : ''}
       </div>
       <div style="display:flex;gap:6px;">
         <button class="btn btn-primary btn-sm" data-action="toggle-create-lobby" style="padding:4px 10px;">Create Lobby</button>
@@ -271,7 +278,15 @@ function renderLobby() {
 
 async function refresh() {
   const modeData = await fetchJson('/api/mode');
-  if (modeData) lobbyMode = modeData.mode || 'local';
+  if (modeData) {
+    lobbyMode = modeData.mode || 'local';
+    lobbyInfo = {
+      id: modeData.lobby_id || null,
+      name: modeData.lobby_name || null,
+      url: modeData.lobbyUrl || null,
+      connected: modeData.lobby_connected !== false,
+    };
+  }
 
   const stateData = await fetchJson('/api/lobby/state');
   if (stateData?.lobby) {
