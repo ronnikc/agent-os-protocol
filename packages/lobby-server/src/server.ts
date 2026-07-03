@@ -17,7 +17,7 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { resolve, extname } from 'node:path';
+import { resolve, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType } from '@agent-os/protocol-core';
@@ -213,6 +213,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (!body.did || !body.card) {
         return json({ error: 'missing did or card' }, 400);
       }
+      const MAX_CARDS = 5000;
+      const MAX_CARD_BYTES = 65_536;
+      if (JSON.stringify(body.card).length > MAX_CARD_BYTES) {
+        return json({ error: 'card too large' }, 413);
+      }
+      if (!agentCards.has(body.did) && agentCards.size >= MAX_CARDS) {
+        return json({ error: 'card store full' }, 507);
+      }
       agentCards.set(body.did, body.card);
       persistCards();
       console.log(`[lobby-server] Stored agent card: ${body.did}`);
@@ -283,15 +291,22 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'POST') {
       const body = await readBody(req);
+      // Validate enums — these values flow into stored lobby records and dashboard markup.
+      const visibility = body.visibility === 'private' ? 'private' : 'public';
+      const JOIN_POLICIES = new Set(['none', 'registered', 'allowlisted', 'verified_human_link']);
+      const joinPolicy = JOIN_POLICIES.has(body.join_policy) ? body.join_policy : undefined;
+      const allowlist = Array.isArray(body.allowlist)
+        ? body.allowlist.filter((x: unknown) => typeof x === 'string').slice(0, 200)
+        : undefined;
       const now = new Date().toISOString();
       const lobby: LobbySession = {
         lobby_id: randomUUID(),
-        org_id: body.org_id ?? 'default',
-        name: body.name ?? 'Lobby',
+        org_id: typeof body.org_id === 'string' ? body.org_id : 'default',
+        name: typeof body.name === 'string' ? body.name.slice(0, 120) : 'Lobby',
         status: 'active',
-        visibility: body.visibility ?? 'public',
-        join_policy: body.join_policy,
-        allowlist: body.allowlist,
+        visibility,
+        join_policy: joinPolicy,
+        allowlist,
         connected_agent_ids: [],
         message_seq: 0,
         created_at: now,
@@ -321,11 +336,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const lobby = await store.getLobby(lobbyId);
         if (!lobby) return json({ error: 'Lobby not found' }, 404);
 
+        const fromId = body.from_agent_id || 'WebUser';
+        const roster = await store.roster(lobbyId);
+        if (roster.some((a) => a.agent_id === fromId && a.status !== 'disconnected')) {
+          return json({ error: 'from_agent_id belongs to a connected agent — send via the agent WebSocket instead' }, 403);
+        }
+
         const seq = await store.nextSeq(lobbyId);
         const message: LobbyMessage = {
           message_id: randomUUID(),
           seq,
-          from_agent_id: body.from_agent_id || 'WebUser',
+          from_agent_id: fromId,
           to_agent_id: body.to_agent_id || 'all',
           message_type: body.message_type || 'chat',
           content: body.content || '',
@@ -513,7 +534,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let filePath = path === '/' ? '/index.html' : path;
     const fullPath = resolve(rootDir, filePath.startsWith('/') ? filePath.slice(1) : filePath);
 
-    if (fullPath.startsWith(rootDir) && existsSync(fullPath) && statSync(fullPath).isFile()) {
+    if ((fullPath === rootDir || fullPath.startsWith(rootDir + sep)) && existsSync(fullPath) && statSync(fullPath).isFile()) {
       const ext = extname(fullPath);
       const mime = MIME_TYPES[ext] ?? 'application/octet-stream';
       res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
@@ -576,9 +597,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   };
 }
 
+const MAX_BODY_BYTES = 1_048_576; // 1 MiB — no lobby control-plane payload is legitimately larger
+
 async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
   const chunks: Buffer[] = [];
-  for await (const c of req) chunks.push(c as Buffer);
+  let total = 0;
+  for await (const c of req) {
+    total += (c as Buffer).length;
+    if (total > MAX_BODY_BYTES) {
+      req.destroy();
+      return {};
+    }
+    chunks.push(c as Buffer);
+  }
   if (chunks.length === 0) return {};
   try {
     return JSON.parse(Buffer.concat(chunks).toString());
