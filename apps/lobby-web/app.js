@@ -653,19 +653,28 @@ async function anchorAgentOnChain(provider, fields) {
   }
 
   // AccountTransactionType.Update = 2 — the wallet shows, signs, and submits the mint.
+  //
+  // Use JSON-primitive values, NOT native BigInt. The browser wallet serializes the payload by
+  // running each field through the Concordium SDK constructors (CcdAmount.fromMicroCcd /
+  // ContractAddress.create / Energy.create), which accept string/number. Passing a native
+  // BigInt made the serializer treat it as an already-constructed SDK amount and call `.mod()`
+  // on it — native BigInt has no `.mod()`, hence "A.mod is not a function". The documented
+  // sendTransaction JSON form is: amount microCCD as a string, index/subindex/energy as numbers.
+  const energy = Number(payload.max_energy ?? payload.energy ?? 30000);
   const txBase = {
-    amount: { microCcd: BigInt(0) },
-    address: { index: BigInt(index), subindex: BigInt(subindex ?? 0) },
+    amount: '0', // microCCD as a string
+    address: { index: Number(index), subindex: Number(subindex ?? 0) },
     receiveName,
-    maxContractExecutionEnergy: BigInt(payload.max_energy ?? payload.energy ?? 30000),
+    maxContractExecutionEnergy: energy,
   };
+  console.log('[Registry] submitting Update tx:', { txBase, hasHex: !!hex, hasSchema: !!schema });
 
   let txHash;
   if (hex) {
     // Pre-encoded parameter bytes — pass as the raw update message.
     txHash = await provider.sendTransaction(state.wallet.address, 2, { ...txBase, message: hex });
   } else if (parameterJson && schema) {
-    // Schema-JSON parameter — the wallet serializes it with the provided schema.
+    // Schema-JSON parameter — the wallet serializes it with the provided base64 schema.
     txHash = await provider.sendTransaction(state.wallet.address, 2, txBase, parameterJson, schema);
   } else if (parameterJson) {
     throw new Error(`build_register returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
