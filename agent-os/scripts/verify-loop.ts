@@ -31,12 +31,17 @@ import {
   InvalidLoopSpecError,
   LOOP_PRESETS,
   continuousQualityLoop,
+  createLobbyLoopSeams,
+  taskForCriterion,
   type LoopSeams,
   type CriterionResult,
   type IterationWork,
   type LoopContext,
   type LoopEvent,
   type CheckpointAction,
+  type LobbyLoopHost,
+  type DispatchedTask,
+  type TaskSettlement,
 } from '@agent-os/loop';
 
 // ── Tiny test runner (matches verify-lobby / verify-identity / verify-launch) ──
@@ -267,6 +272,91 @@ async function main(): Promise<void> {
     const p = LOOP_PRESETS['continuous-quality'];
     assert.ok(p, 'continuous-quality preset registered');
     assert.deepEqual([...p.unattendedAllowlist], ['commit'], 'only commit auto-approves unattended; merge/deploy stay human');
+  });
+
+  // ── Section L — Lobby driver (#3): the Boss runs the real orchestrator over a swarm ──
+  // A fake lobby host: each dispatched task "fixes" its target criterion (or not), and evaluate
+  // reads that mutable world. Proves delegate goes to the swarm while every safety rail still holds.
+  function fakeSwarm(opts: { criteria: ExitCriterion[]; roster: string[]; failAssignee?: boolean; noAgent?: boolean }) {
+    const fixed = new Set<number>();
+    const dispatched: DispatchedTask[] = [];
+    const idxOf = (c: ExitCriterion) => opts.criteria.indexOf(c);
+    const host: LobbyLoopHost = {
+      assigneeFor: (c) => (opts.noAgent ? null : opts.roster[idxOf(c) % opts.roster.length] ?? opts.roster[0] ?? null),
+      dispatch: async (task): Promise<TaskSettlement> => {
+        dispatched.push(task);
+        if (opts.failAssignee) return { status: 'failed', result: 'agent could not fix it', tokensUsed: 5, costUSD: 0.01 };
+        fixed.add(idxOf(task.criterion)); // the specialist closed the criterion
+        return { status: 'completed', result: 'done', tokensUsed: 10, costUSD: 0.02 };
+      },
+      evaluateCriterion: (c) => ({ criterion: c, passed: fixed.has(idxOf(c)) }),
+    };
+    return { host, dispatched, fixed };
+  }
+
+  await check('#3 lobby driver: Boss converges by delegating each failing criterion to the swarm', async () => {
+    const criteria: ExitCriterion[] = [
+      { type: 'gate', skill: 'build-validation' },
+      { type: 'tests', mustPass: true },
+      { type: 'assertion', expr: 'true' },
+    ];
+    const { host, dispatched } = fakeSwarm({ criteria, roster: ['agent-be', 'agent-qa', 'agent-fe'] });
+    const spec: LoopSpec = { goal: 'green build', exitCriteria: criteria, maxIterations: 5 };
+    const res = await new LoopOrchestrator(createLobbyLoopSeams(host)).run(spec);
+    assert.equal(res.status, 'converged', 'converges once the swarm closes every criterion');
+    assert.equal(res.passing, 3);
+    assert.ok(dispatched.length >= 3, 'dispatched a task per failing criterion');
+    // Tasks were routed to real roster ids, one per criterion type
+    assert.ok(dispatched.some((t) => t.criterion.type === 'tests' && t.category === 'testing'), 'tests → testing task');
+    assert.ok(dispatched.every((t) => ['agent-be', 'agent-qa', 'agent-fe'].includes(t.assignedTo)), 'assigned to roster agents');
+  });
+
+  await check('#3 lobby driver: budget from swarm settlements accumulates and can exhaust', async () => {
+    const criteria: ExitCriterion[] = [{ type: 'gate', skill: 'a' }, { type: 'gate', skill: 'b' }];
+    // failAssignee → criteria never close → keeps delegating → token budget trips
+    const { host } = fakeSwarm({ criteria, roster: ['x'], failAssignee: true });
+    const spec: LoopSpec = { goal: 'g', exitCriteria: criteria, maxIterations: 100, budget: { tokens: 25 } };
+    const res = await new LoopOrchestrator(createLobbyLoopSeams(host)).run(spec, { stallWindow: 50 });
+    assert.equal(res.status, 'exhausted', 'token budget from settlements halts the loop');
+    assert.ok(res.budgetUsed.tokens > 25);
+  });
+
+  await check('#3 lobby driver: swarm that cannot fix the gap stalls (anti-churn), never loops forever', async () => {
+    const criteria: ExitCriterion[] = [{ type: 'gate', skill: 'a' }];
+    const { host } = fakeSwarm({ criteria, roster: ['x'], failAssignee: true });
+    const spec: LoopSpec = { goal: 'g', exitCriteria: criteria, maxIterations: 100 };
+    const res = await new LoopOrchestrator(createLobbyLoopSeams(host)).run(spec, { stallWindow: 3 });
+    assert.equal(res.status, 'stalled');
+    assert.ok(res.iterations < 100, 'stopped well before the cap');
+  });
+
+  await check('#3 lobby driver: no eligible agent for a criterion is handled, not crashed', async () => {
+    const criteria: ExitCriterion[] = [{ type: 'review', approver: 'nobody' }];
+    const { host, dispatched } = fakeSwarm({ criteria, roster: [], noAgent: true });
+    const spec: LoopSpec = { goal: 'g', exitCriteria: criteria, maxIterations: 3 };
+    const res = await new LoopOrchestrator(createLobbyLoopSeams(host)).run(spec, { stallWindow: 2 });
+    assert.equal(res.status, 'stalled', 'unassignable criterion → safe stall, no throw');
+    assert.equal(dispatched.length, 0, 'nothing dispatched when no agent is eligible');
+  });
+
+  await check('#3 lobby driver: checkpoint gating still holds when a swarm task requests an irreversible action', async () => {
+    const criteria: ExitCriterion[] = [{ type: 'gate', skill: 'a' }];
+    const host: LobbyLoopHost = {
+      assigneeFor: () => 'agent-be',
+      dispatch: async (task): Promise<TaskSettlement> => ({ status: 'completed', requestedActions: ['commit'], tokensUsed: 1 }),
+      evaluateCriterion: (c) => ({ criterion: c, passed: false }), // never converges, so delegate runs
+    };
+    const spec: LoopSpec = { goal: 'g', exitCriteria: criteria, maxIterations: 3, approvalCheckpoints: ['commit'] };
+    // attended (default) + fail-closed approve → the commit checkpoint pauses the loop
+    const res = await new LoopOrchestrator(createLobbyLoopSeams(host)).run(spec);
+    assert.equal(res.status, 'awaiting_checkpoint');
+    assert.equal(res.pendingAction, 'commit', 'the swarm-requested commit is gated by the loop');
+  });
+
+  await check('#3 taskForCriterion maps each criterion type to a sensible specialist task', () => {
+    assert.match(taskForCriterion({ type: 'tests', mustPass: true }, 'a', 'g', 'high').title, /test suite/i);
+    assert.equal(taskForCriterion({ type: 'gate', skill: 'lint' }, 'a', 'g', 'high').title.includes('lint'), true);
+    assert.equal(taskForCriterion({ type: 'review', approver: 'qa' }, 'a', 'g', 'high').category, 'code_review');
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

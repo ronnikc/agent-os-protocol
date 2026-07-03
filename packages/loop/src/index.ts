@@ -5,3 +5,4 @@
 
 export * from './orchestrator.js';
 export * from './presets.js';
+export * from './lobby-driver.js';
