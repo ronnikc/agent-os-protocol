@@ -674,7 +674,10 @@ async function discoverActiveLobby(
   baseUrl: string,
 ): Promise<{ lobbyId: string; orgId: string; name: string } | null> {
   try {
-    const res = await fetch(`${baseUrl}/api/v1/agent-lobby/discover`, {
+    // The Panel hands agents a ws(s):// lobby URL, but fetch only speaks http(s) —
+    // without this normalization discovery threw and the relay silently ran lobby-less.
+    const httpBase = baseUrl.replace(/^ws(s)?:\/\//i, (_, ssl) => (ssl ? 'https://' : 'http://'));
+    const res = await fetch(`${httpBase}/api/v1/agent-lobby/discover`, {
       headers: { 'Content-Type': 'application/json' },
     });
     if (!res.ok) {

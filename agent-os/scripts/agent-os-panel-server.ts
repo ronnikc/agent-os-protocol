@@ -901,6 +901,7 @@ function normalizeLobbyHttpUrl(lobbyUrl: string): string {
 
 let cachedLobbyId: string | null = null;
 let cachedOrgId: string | null = null;
+let cachedLobbyName: string | null = null;
 
 async function discoverLobbyId(lobbyUrl: string): Promise<string | null> {
   if (cachedLobbyId) return cachedLobbyId;
@@ -919,6 +920,7 @@ async function discoverLobbyId(lobbyUrl: string): Promise<string | null> {
             // Response is { lobby: { lobby_id, org_id, name } | null }
             cachedLobbyId = data.lobby?.lobby_id || data.lobby_id || null;
             cachedOrgId = data.lobby?.org_id || data.org_id || null;
+            cachedLobbyName = data.lobby?.name || data.name || null;
             if (cachedLobbyId) console.log(`Lobby discover: found lobby ${cachedLobbyId}`);
             resolve(cachedLobbyId);
           } catch { resolve(null); }
@@ -1386,14 +1388,11 @@ const server = createServer(async (req, res) => {
       let model = '—';
 
       if (isRunning) {
-        // Resolve default runtime dynamically based on agent type
-        if (['test', 'code-review', 'backend'].includes(a.slug)) {
-          runtime = 'Codex CLI';
-        } else if (a.slug === 'api') {
-          runtime = 'API';
-        } else {
-          runtime = 'Claude CLI';
-        }
+        // Show what the panel actually launched the relay with (the agent def's Runtime:/Model:
+        // headers, else the relay's claude-cli default). The lobby roster overrides these below
+        // with the adapter's real label once the agent registers — never invent a runtime.
+        runtime = a.runtime || 'claude-cli';
+        model = a.model || '—';
 
         // Resolve identity_status dynamically from active local session or staging lobby cache
         const isSwarm = DEFAULT_LOBBY_URL && lobbyWsConnected;
@@ -2445,6 +2444,10 @@ const server = createServer(async (req, res) => {
     sendJson(res, {
       mode: isSwarm ? 'swarm' : 'local',
       lobbyUrl: activeLobbyUrl || `http://localhost:${PORT}`,
+      // Which lobby this panel is actually connected to (Swarm Mode) — shown in the Lobby tab.
+      lobby_id: isSwarm ? (activeLobbyId || cachedLobbyId) : `local-${PANEL_ID}`,
+      lobby_name: isSwarm ? cachedLobbyName : 'Local Lobby',
+      lobby_connected: isSwarm ? lobbyWsConnected : true,
       localLobbyAgents: isSwarm ? undefined : localLobbyAgents.size,
       localLobbyBoss: isSwarm ? undefined : localLobbyBossId,
     });
