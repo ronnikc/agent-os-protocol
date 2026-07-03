@@ -53,8 +53,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const verifyIdentity = indexerUrl
     ? makeVerifyIdentityFn(new IdentityVerifier({ transport: new HttpIndexerTransport({ baseUrl: indexerUrl }) }))
     : undefined;
-  const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity });
+  // Auto-failover: opt-in appointment of a successor Boss on Boss loss (unattended swarms).
+  const autoFailover = (process.env.AGENT_OS_LOBBY_AUTO_FAILOVER ?? '').toLowerCase() === 'true';
+  const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity, autoFailover });
   const autoDefault = options.autoDefaultLobby ?? true;
+
+  // Stale-heartbeat reaping: agents that stop heartbeating (freeze, SIGKILL, network partition)
+  // are removed after AGENT_OS_LOBBY_STALE_MS, freeing floor control if the Boss was the one lost.
+  const STALE_MS = Number(process.env.AGENT_OS_LOBBY_STALE_MS) || 90_000;
+  const SWEEP_MS = Number(process.env.AGENT_OS_LOBBY_SWEEP_MS) || 30_000;
 
   // Concordium Agent Registry MCP service (on-chain anchoring). When unset, agents stay
   // off-chain (wallet-signed + lobby-hosted cards) and the dashboard says so honestly.
@@ -582,6 +589,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   if (autoDefault) await ensureDefaultLobby();
 
+  // ── Stale-heartbeat sweeper ──
+  const sweeper = setInterval(() => {
+    void (async () => {
+      try {
+        for (const { lobbyId: reapLobbyId, reapedAgentIds, out } of await coordinator.reapStale(STALE_MS)) {
+          dispatch({ connId: '', lobbyId: reapLobbyId, orgId: 'default' }, out);
+          for (const agentId of reapedAgentIds) {
+            const cid = agentConn.get(agentId);
+            if (cid) {
+              sockets.get(cid)?.terminate();
+              sockets.delete(cid);
+              lobbyConns.get(reapLobbyId)?.delete(cid);
+              agentConn.delete(agentId);
+            }
+            console.log(`[lobby-server] reaped stale agent ${agentId} from lobby ${reapLobbyId}`);
+          }
+        }
+      } catch (e) {
+        console.error('[lobby-server] stale sweep failed:', e);
+      }
+    })();
+  }, SWEEP_MS);
+  if (typeof sweeper.unref === 'function') sweeper.unref();
+
   const port = options.port ?? DEFAULT_PORT;
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
 
@@ -591,6 +622,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     httpServer,
     close: () =>
       new Promise<void>((resolve) => {
+        clearInterval(sweeper);
         for (const s of sockets.values()) s.terminate();
         wss.close(() => httpServer.close(() => resolve()));
       }),

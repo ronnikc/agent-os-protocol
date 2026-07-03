@@ -1127,12 +1127,23 @@ if (lobbyBaseUrl) {
                   let chatPart = fullResponse;
                   const isBoss = bridge.currentAgentId === bridge.currentBossAgentId;
                   if (isBoss) {
-                    const taskBlockRe = /TASK_CREATE:\s*\n((?:\s+\w[\w_]*:\s*[^\n]+\n?)+)/g;
+                    // Capture each TASK_CREATE block as everything up to the next TASK_CREATE, a
+                    // closing ``` fence, or end of text — so a multi-line `description` survives
+                    // (the old per-line regex silently truncated descriptions to their first line).
+                    const KNOWN_FIELDS = ['assigned_to', 'title', 'description', 'priority', 'category', 'files'];
+                    const taskBlockRe = /TASK_CREATE:\s*\n([\s\S]*?)(?=\n\s*TASK_CREATE:|\n\s*```|$)/g;
                     let match;
                     while ((match = taskBlockRe.exec(fullResponse)) !== null) {
                       const block = match[1];
+                      // A field's value runs from its `key:` to the next known key or block end,
+                      // so multi-line descriptions are preserved intact.
                       const field = (name: string): string => {
-                        const m = block.match(new RegExp(`^\\s*${name}:\\s*(.+)`, 'm'));
+                        const others = KNOWN_FIELDS.filter((f) => f !== name).join('|');
+                        // No `m` flag: `$` must mean end-of-block, not end-of-line, or a multi-line
+                        // description would truncate at its first newline. Anchor the key at a line
+                        // start with (?:^|\n); the value runs to the next known key or block end.
+                        const re = new RegExp(`(?:^|\\n)[ \\t]*${name}:[ \\t]*([\\s\\S]*?)(?=\\n[ \\t]*(?:${others}):|$)`);
+                        const m = block.match(re);
                         return m ? m[1].trim() : '';
                       };
                       const assignedTo = field('assigned_to');
@@ -1151,17 +1162,31 @@ if (lobbyBaseUrl) {
                             .map((f) => f.trim())
                             .filter(Boolean)
                         : undefined;
-                      if (assignedTo && title && description) {
-                        bridge.createTask(
-                          assignedTo,
-                          title,
-                          description,
-                          priority,
-                          category,
-                          files,
-                        );
-                        log('info', `[lobby] Boss created task "${title}" → ${assignedTo}`);
+                      if (!assignedTo || !title || !description) {
+                        log('warn', `[lobby] Skipped malformed TASK_CREATE block (missing assigned_to/title/description)`);
+                        continue;
                       }
+                      // Validate the target against the live roster before dispatch. The server
+                      // rejects unknown assignees with a lobby-error the Boss never surfaces, so
+                      // catch it here and tell the Boss (in chat) which ids are actually valid.
+                      if (!bridge.rosterHasAgent(assignedTo)) {
+                        log('warn', `[lobby] TASK_CREATE names unknown assignee "${assignedTo}"`);
+                        bridge.sendMessage(
+                          'all',
+                          'status_update',
+                          `⚠ Could not create task "${title}": no connected agent "${assignedTo}". Valid agent ids: ${bridge.rosterAgentIds().join(', ') || '(none connected)'}`,
+                        );
+                        continue;
+                      }
+                      bridge.createTask(
+                        assignedTo,
+                        title,
+                        description,
+                        priority,
+                        category,
+                        files,
+                      );
+                      log('info', `[lobby] Boss created task "${title}" → ${assignedTo}`);
                     }
                     // Remove TASK_CREATE blocks from the chat message
                     chatPart = fullResponse

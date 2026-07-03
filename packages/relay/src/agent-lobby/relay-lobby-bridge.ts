@@ -111,6 +111,16 @@ export class RelayLobbyBridge {
     this.client.setStatus(state, status);
   }
 
+  /** True if the given id is a currently-known roster agent — used to validate Boss task targets. */
+  rosterHasAgent(agentId: string): boolean {
+    return this.roster.some((a) => a.agent_id === agentId);
+  }
+
+  /** Roster agent ids (for surfacing valid targets when the Boss names an unknown assignee). */
+  rosterAgentIds(): string[] {
+    return this.roster.map((a) => a.agent_id);
+  }
+
   getRosterContext(): string {
     if (this.roster.length === 0) return '';
     return `## ACTIVE LOBBY ROSTER\n` + 

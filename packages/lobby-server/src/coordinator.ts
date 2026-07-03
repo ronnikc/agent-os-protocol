@@ -77,6 +77,14 @@ export interface CoordinatorOptions {
    * closed — the safe default. Inject a real verifier to actually admit verified agents.
    */
   verifyIdentity?: VerifyIdentityFn;
+  /**
+   * Auto-appoint a successor Boss when the Boss is lost (disconnect or stale reap). OFF by default
+   * — Phase 1 keeps a human in the loop. Enable for unattended swarms that must not stall on Boss
+   * loss; the successor is the longest-connected non-human agent (deterministic).
+   */
+  autoFailover?: boolean;
+  /** Minimum ms between accepted hand-raises per agent (dedup/anti-cascade). Default 60s. */
+  handRaiseCooldownMs?: number;
 }
 
 const BROADCAST = new Set(['all', '*', 'broadcast']);
@@ -90,13 +98,19 @@ function effectiveJoinPolicy(lobby: LobbySession): LobbyJoinPolicy {
 export class LobbyCoordinator {
   private rateLimit: number;
   private rateWindowMs: number;
+  private autoFailover: boolean;
+  private handRaiseCooldownMs: number;
   public readonly verifyIdentity: VerifyIdentityFn;
   /** agentId → recent send timestamps (ms), trimmed to the window. */
   private sendTimes = new Map<string, number[]>();
+  /** agentId → last hand-raise timestamp (ms), for server-side hand-raise cooldown. */
+  private lastHandRaise = new Map<string, number>();
 
   constructor(private readonly store: LobbyStore, options: CoordinatorOptions = {}) {
     this.rateLimit = options.rateLimit ?? 30;
     this.rateWindowMs = options.rateWindowMs ?? 10_000;
+    this.autoFailover = options.autoFailover ?? false;
+    this.handRaiseCooldownMs = options.handRaiseCooldownMs ?? 60_000;
     this.verifyIdentity =
       options.verifyIdentity ??
       (async () => ({ status: 'unverified', source: 'none', checkedAt: new Date().toISOString() }));
@@ -133,14 +147,71 @@ export class LobbyCoordinator {
     const wasBoss = lobby?.boss_agent_id === conn.agentId;
     await this.store.updateAgent(conn.lobbyId, conn.agentId, { status: 'disconnected', disconnected_at: new Date().toISOString() });
     await this.store.removeAgent(conn.lobbyId, conn.agentId);
+    this.sendTimes.delete(conn.agentId);
+    this.lastHandRaise.delete(conn.agentId);
     await this.event(conn.lobbyId, 'agent_left', conn.agentId);
     const out: Outbound[] = [{ target: { kind: 'lobby' }, message: { type: 'lobby-agent-left', agent_id: conn.agentId } }];
     if (wasBoss) {
-      await this.store.updateLobby(conn.lobbyId, { boss_agent_id: undefined });
-      const connected = await this.store.roster(conn.lobbyId);
-      out.push({ target: { kind: 'lobby' }, message: { type: 'lobby-boss-lost', lost_agent_id: conn.agentId, connected_agents: connected } });
+      out.push(...(await this.onBossVacated(conn.lobbyId, conn.agentId)));
     }
     return { out };
+  }
+
+  /**
+   * Reap agents whose last heartbeat is older than `thresholdMs`. The lobby server has no other
+   * way to notice a Boss (or any agent) that froze, was SIGKILLed, or dropped off the network
+   * without a clean socket close — without this, a dead Boss holds floor control forever. Returns
+   * per-lobby outbound directives plus the reaped agent ids so the server can close their sockets.
+   */
+  async reapStale(thresholdMs: number, nowMs: number = Date.now()): Promise<Array<{ lobbyId: string; reapedAgentIds: string[]; out: Outbound[] }>> {
+    const results: Array<{ lobbyId: string; reapedAgentIds: string[]; out: Outbound[] }> = [];
+    for (const lobby of await this.store.listLobbies()) {
+      const roster = await this.store.roster(lobby.lobby_id);
+      const out: Outbound[] = [];
+      const reapedAgentIds: string[] = [];
+      for (const agent of roster) {
+        if (agent.status === 'disconnected') continue;
+        const lastSeen = Date.parse(agent.last_seen);
+        if (Number.isFinite(lastSeen) && nowMs - lastSeen <= thresholdMs) continue;
+        reapedAgentIds.push(agent.agent_id);
+        await this.store.updateAgent(lobby.lobby_id, agent.agent_id, { status: 'disconnected', disconnected_at: new Date().toISOString() });
+        await this.store.removeAgent(lobby.lobby_id, agent.agent_id);
+        this.sendTimes.delete(agent.agent_id);
+        this.lastHandRaise.delete(agent.agent_id);
+        await this.event(lobby.lobby_id, 'agent_left', agent.agent_id, { reason: 'stale heartbeat' });
+        out.push({ target: { kind: 'lobby' }, message: { type: 'lobby-agent-left', agent_id: agent.agent_id } });
+        if (lobby.boss_agent_id === agent.agent_id) {
+          out.push(...(await this.onBossVacated(lobby.lobby_id, agent.agent_id)));
+        }
+      }
+      if (reapedAgentIds.length) results.push({ lobbyId: lobby.lobby_id, reapedAgentIds, out });
+    }
+    return results;
+  }
+
+  /**
+   * Shared Boss-loss handling: clear the Boss slot and announce it. When auto-failover is enabled
+   * (opt-in), deterministically appoint the longest-connected eligible agent so an unattended
+   * swarm keeps a floor-holder instead of stalling until a human re-appoints.
+   */
+  private async onBossVacated(lobbyId: string, lostAgentId: string): Promise<Outbound[]> {
+    await this.store.updateLobby(lobbyId, { boss_agent_id: undefined });
+    const connected = await this.store.roster(lobbyId);
+    const out: Outbound[] = [
+      { target: { kind: 'lobby' }, message: { type: 'lobby-boss-lost', lost_agent_id: lostAgentId, connected_agents: connected } },
+    ];
+    if (this.autoFailover) {
+      // Prefer a non-human CLI agent (humans drive, agents work); fall back to any participant.
+      // Deterministic: earliest registered_at wins (roster is already sorted by registered_at).
+      const successor = connected.find((a) => a.participant_type !== 'human' && a.role !== 'human') ?? connected[0];
+      if (successor) {
+        await this.store.updateAgent(lobbyId, successor.agent_id, { is_boss: true });
+        await this.store.updateLobby(lobbyId, { boss_agent_id: successor.agent_id });
+        await this.event(lobbyId, 'boss_appointed', 'system', { boss: successor.agent_id, reason: 'auto-failover' });
+        out.push({ target: { kind: 'lobby' }, message: { type: 'lobby-boss-appointed', agent_id: successor.agent_id } });
+      }
+    }
+    return out;
   }
 
   // ── Register ──
@@ -345,6 +416,15 @@ export class LobbyCoordinator {
   // ── Hand-raise ──
   private async onHandRaise(conn: Connection, msg: Extract<AgentToLobbyMessage, { type: 'lobby-hand-raise' }>): Promise<HandleResult> {
     if (!conn.agentId) return { out: [] };
+    // Server-side cooldown: a raised hand stays "up" until addressed, so re-raising within the
+    // window is a no-op broadcast that only adds noise. This is the server-side guard the removed
+    // client-side awareness-check (which caused a hand→hand cascade) always needed.
+    const now = Date.now();
+    const last = this.lastHandRaise.get(conn.agentId) ?? 0;
+    if (now - last < this.handRaiseCooldownMs) {
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'hand already raised recently — wait for it to be addressed before raising again' } }] };
+    }
+    this.lastHandRaise.set(conn.agentId, now);
     const agent = await this.store.getAgent(conn.lobbyId, conn.agentId);
     await this.event(conn.lobbyId, 'hand_raised', conn.agentId, { category: msg.category });
     return {
@@ -402,6 +482,16 @@ export class LobbyCoordinator {
     const existing = await this.store.getTask(conn.lobbyId, msg.task_id);
     if (!existing) {
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: `unknown task: ${msg.task_id}` } }] };
+    }
+    // AUTHORITY: only the assignee (reporting its own progress/result), the current Boss, or a
+    // human may update a task. Without this any connected agent could forge another agent's task
+    // completion/failure by id — an accountability hole in a swarm of untrusted participants.
+    const lobbyForAuth = await this.store.getLobby(conn.lobbyId);
+    const isAssignee = existing.assigned_to === conn.agentId;
+    const isBoss = lobbyForAuth?.boss_agent_id === conn.agentId;
+    if (!isAssignee && !isBoss && !conn.isHuman) {
+      await this.event(conn.lobbyId, 'message_rejected', conn.agentId, { reason: 'unauthorized task update', task_id: msg.task_id });
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'only the assignee, the Boss, or a human may update this task' } }] };
     }
     const updated: LobbyTask = {
       ...existing,
