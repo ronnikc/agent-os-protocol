@@ -335,6 +335,15 @@ async function connectLobbyWs(): Promise<void> {
         }
         if (msg.type === 'lobby-error') {
           console.log(`Lobby WS: server error: ${msg.error}`);
+          if (String(msg.error || '').startsWith('unknown lobby')) {
+            // The lobby server restarted and re-minted its default lobby — our cached ids are
+            // stale. Clear them so REST helpers and the next LobbyClient reconnect (it drops its
+            // own pinned id on this error) discover the fresh lobby instead of looping.
+            console.log('Lobby WS: stale lobby id — clearing caches, rediscovering on reconnect');
+            cachedLobbyId = null;
+            activeLobbyId = null;
+            lobbyWsConnected = false;
+          }
         }
         if (msg.type === 'lobby-message-received') {
           const lobbyMsg = msg.message || msg;
@@ -560,6 +569,12 @@ interface AgentDef {
   name: string;
   scope: string;
   file: string;
+  /** Runtime adapter id from the def header (`Runtime: codex-cli`) — defaults to claude-cli. */
+  runtime?: string;
+  /** Model override from the def header (`Model: claude-sonnet-5`). */
+  model?: string;
+  /** Concordium agent DID from the def header (`Identity: did:ccd:...`) — presented as the lobby join token. */
+  identity?: string;
 }
 
 interface RunningAgent {
@@ -598,11 +613,17 @@ function discoverAgents(): AgentDef[] {
       const titleMatch = content.match(/^Title:\s*(.+)$/m);
       const scopeMatch = content.match(/^Scope:\s*(.+)$/m);
       const slugMatch = content.match(/^Slug:\s*(.+)$/m);
+      const runtimeMatch = content.match(/^Runtime:\s*(.+)$/m);
+      const modelMatch = content.match(/^Model:\s*(.+)$/m);
+      const identityMatch = content.match(/^Identity:\s*(.+)$/m);
       return {
         slug: slugMatch?.[1]?.trim() ?? f.replace('.md', ''),
         name: titleMatch?.[1]?.trim() ?? f.replace('.md', ''),
         scope: scopeMatch?.[1]?.trim() ?? '',
         file: f,
+        runtime: runtimeMatch?.[1]?.trim(),
+        model: modelMatch?.[1]?.trim(),
+        identity: identityMatch?.[1]?.trim(),
       };
     })
     .sort((a, b) => a.name.localeCompare(b.name));
@@ -630,9 +651,14 @@ function startAgent(slug: string, lobbyUrl: string): { ok: boolean; error?: stri
     return { ok: false, error: 'relay-server.ts not found' };
   }
 
-  // Assign a unique port per agent (4730 + offset based on agent index)
-  const agentIndex = discoverAgents().findIndex(a => a.slug === slug);
-  const agentPort = 4730 + (agentIndex >= 0 ? agentIndex : runningProcesses.size);
+  // Assign a unique relay port per agent. The base must stay clear of the platform's fixed
+  // ports — 4722 (main relay), 4730 (lobby server), 4800 (panel), 4802 (website) — the old
+  // 4730 base collided with a local lobby server and killed the first agent's relay on boot.
+  const AGENT_RELAY_PORT_BASE = Number(process.env.AGENT_OS_AGENT_RELAY_PORT_BASE) || 4860;
+  const agents = discoverAgents();
+  const agentIndex = agents.findIndex(a => a.slug === slug);
+  const agentDef = agentIndex >= 0 ? agents[agentIndex] : undefined;
+  const agentPort = AGENT_RELAY_PORT_BASE + (agentIndex >= 0 ? agentIndex : runningProcesses.size);
 
   // Determine effective lobby URL: use provided, or fall back to local lobby
   const effectiveLobbyUrl = lobbyUrl || `http://localhost:${PORT}`;
@@ -640,6 +666,11 @@ function startAgent(slug: string, lobbyUrl: string): { ok: boolean; error?: stri
   const displayName = isLocalLobby ? slug : `${hostname()}-${slug}-${PORT}`;
   const agentArgs = [relayPath, '--port', String(agentPort), '--agent-name', displayName, '--agent-role', slug];
   agentArgs.push('--lobby', effectiveLobbyUrl);
+  // Per-agent config from the def header (agent-os/sub-agents/agents/<slug>.md):
+  //   Runtime: codex-cli · Model: <model-id> · Identity: did:ccd:... (lobby join token)
+  if (agentDef?.runtime) agentArgs.push('--runtime', agentDef.runtime);
+  if (agentDef?.model) agentArgs.push('--model', agentDef.model);
+  if (agentDef?.identity) agentArgs.push('--join-token', agentDef.identity);
 
   const logFile = join(LOGS_DIR, `${slug}.log`);
 

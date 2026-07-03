@@ -89,10 +89,52 @@ function renderJoinScreen() {
   });
 }
 
+// The roster polls + WS events re-render the whole tab via innerHTML, which used to wipe the
+// Create Custom Lobby form while the user was typing. Capture its state (values, checked
+// invitees, focus + caret) before a re-render and restore it after.
+function captureCreateLobbyForm() {
+  if (!createLobbyFormOpen) return null;
+  const nameEl = document.getElementById('new-lobby-name');
+  if (!nameEl) return null;
+  const active = document.activeElement;
+  return {
+    name: nameEl.value,
+    visibility: document.getElementById('new-lobby-visibility')?.value,
+    policy: document.getElementById('new-lobby-policy')?.value,
+    checked: [...document.querySelectorAll('input[name="invite-agent"]:checked')].map(cb => cb.value),
+    focusId: active && active.id ? active.id : null,
+    selStart: active && typeof active.selectionStart === 'number' ? active.selectionStart : null,
+    selEnd: active && typeof active.selectionEnd === 'number' ? active.selectionEnd : null,
+  };
+}
+
+function restoreCreateLobbyForm(saved) {
+  if (!saved) return;
+  const nameEl = document.getElementById('new-lobby-name');
+  if (nameEl) nameEl.value = saved.name;
+  const visEl = document.getElementById('new-lobby-visibility');
+  if (visEl && saved.visibility) visEl.value = saved.visibility;
+  const polEl = document.getElementById('new-lobby-policy');
+  if (polEl && saved.policy) polEl.value = saved.policy;
+  document.querySelectorAll('input[name="invite-agent"]').forEach(cb => {
+    cb.checked = saved.checked.includes(cb.value);
+  });
+  if (saved.focusId) {
+    const el = document.getElementById(saved.focusId);
+    if (el) {
+      el.focus();
+      if (saved.selStart !== null && typeof el.setSelectionRange === 'function') {
+        try { el.setSelectionRange(saved.selStart, saved.selEnd ?? saved.selStart); } catch {}
+      }
+    }
+  }
+}
+
 function renderLobby() {
   const el = document.getElementById('lobby-content');
   if (!el) return;
   if (!currentUser) { renderJoinScreen(); return; }
+  const savedForm = captureCreateLobbyForm();
 
   const isHuman = a => a.agent_role === 'observer' || a.agent_role === 'human' || a.is_human;
   const onlineAgents = remoteAgents.filter(a => a.status !== 'disconnected' && !isHuman(a));
@@ -224,6 +266,7 @@ function renderLobby() {
       ` : ''}
     </div>
   `;
+  restoreCreateLobbyForm(savedForm);
 }
 
 async function refresh() {

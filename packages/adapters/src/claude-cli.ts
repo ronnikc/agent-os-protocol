@@ -33,6 +33,7 @@ interface Session {
   cwd: string;
   systemPrompt?: string;
   resumeSessionId?: string;
+  model?: string;
   queue: string[];
   aborted: boolean;
 }
@@ -69,6 +70,7 @@ export class ClaudeCliAdapter implements AgentRuntimeAdapter {
       cwd: config.cwd,
       systemPrompt: config.systemPrompt,
       resumeSessionId: config.resumeSessionId,
+      model: config.model,
       queue: [],
       aborted: false,
     });
@@ -105,6 +107,7 @@ export class ClaudeCliAdapter implements AgentRuntimeAdapter {
         pathToClaudeCodeExecutable: resolveClaudePath(),
         permissionMode: 'bypassPermissions',
         cwd: s.cwd,
+        ...(s.model ? { model: s.model } : {}),
         ...(s.resumeSessionId ? { resume: s.resumeSessionId } : {}),
       } as Options,
     });

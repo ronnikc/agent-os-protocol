@@ -35,6 +35,8 @@ export interface StartAgentConfig {
   headless?: boolean;
   /** Resume a prior session, when the runtime supports it. */
   resumeSessionId?: string;
+  /** Model override for this agent, when the runtime supports one (e.g. `--model`). */
+  model?: string;
   env?: Record<string, string>;
 }
 

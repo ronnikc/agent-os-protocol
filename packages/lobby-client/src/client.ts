@@ -103,6 +103,12 @@ export class LobbyClient {
       this.agentId = msg.agent_id;
       this.lobbyId = msg.lobby_id;
     }
+    if (msg.type === 'lobby-error' && typeof msg.error === 'string' && msg.error.startsWith('unknown lobby')) {
+      // The lobby we were pinned to no longer exists — typically the server restarted and its
+      // in-memory store minted a fresh default lobby. Drop the stale id so the reconnect path
+      // re-discovers instead of looping on the dead one forever.
+      this.lobbyId = undefined;
+    }
     for (const l of this.listeners) l(msg);
   }
 

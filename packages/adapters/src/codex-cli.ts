@@ -180,6 +180,8 @@ interface Session {
   cwd: string;
   systemPrompt?: string;
   env?: Record<string, string>;
+  /** Per-session model override (StartAgentConfig.model) — wins over the adapter-level option. */
+  model?: string;
   queue: string[];
   /** Captured from `thread.started`; subsequent turns `resume` it for multi-turn continuity. */
   threadId?: string;
@@ -220,6 +222,7 @@ export class CodexCliAdapter implements AgentRuntimeAdapter {
       cwd: config.cwd,
       systemPrompt: config.systemPrompt,
       env: config.env,
+      model: config.model,
       queue: [],
       threadId: config.resumeSessionId,
       aborted: false,
@@ -240,9 +243,10 @@ export class CodexCliAdapter implements AgentRuntimeAdapter {
   }
 
   /** Build the `codex exec` argv for one turn (visible for verification). */
-  buildExecArgs(session: { cwd: string; threadId?: string }): string[] {
+  buildExecArgs(session: { cwd: string; threadId?: string; model?: string }): string[] {
     const args = ['exec', this.options.jsonFlag ?? '--experimental-json'];
-    if (this.options.model) args.push('--model', this.options.model);
+    const model = session.model ?? this.options.model;
+    if (model) args.push('--model', model);
     args.push('--sandbox', this.options.sandbox ?? 'workspace-write');
     args.push('--cd', session.cwd);
     // Codex `exec` refuses to run outside a git repo by default; the adapter operates in

@@ -138,6 +138,10 @@ interface AgentMessage {
   messageIndex?: number;
 }
 
+// Runtime + model this relay drives — set from CLI/env at startup (see parseArgs precedence).
+let activeRuntimeId: RuntimeId = 'claude-cli';
+let activeModel: string | undefined;
+
 async function* runClaudeAgent(
   prompt: string,
   options?: { sessionId?: string; signal?: AbortSignal; cwd?: string },
@@ -159,9 +163,8 @@ async function* runClaudeAgent(
   try {
     yield { type: 'status', content: 'Thinking…' };
 
-    const runtimeId = (process.env.AGENT_OS_RUNTIME as RuntimeId) || 'claude-cli';
-    const adapter = runtimeRegistry.get(runtimeId) || runtimeRegistry.get('claude-cli')!;
-    log('info', `Spawning agent using adapter: ${adapter.label} (${adapter.id})`);
+    const adapter = runtimeRegistry.get(activeRuntimeId) || runtimeRegistry.get('claude-cli')!;
+    log('info', `Spawning agent using adapter: ${adapter.label} (${adapter.id})${activeModel ? ` — model: ${activeModel}` : ''}`);
 
     const claudeSessionId = sessionId ? claudeSessionMap.get(sessionId) : undefined;
 
@@ -169,6 +172,7 @@ async function* runClaudeAgent(
       cwd: options?.cwd ?? process.cwd(),
       systemPrompt: prompt,
       resumeSessionId: claudeSessionId,
+      model: activeModel,
     });
 
     if (options?.signal) {
@@ -614,6 +618,12 @@ interface ParsedArgs {
   lobbyBaseUrl?: string;
   agentName?: string;
   agentRole?: string;
+  /** Runtime adapter id to drive (`--runtime codex-cli`); defaults to claude-cli. */
+  runtimeId?: string;
+  /** Model override passed to the runtime adapter (`--model <id>`). */
+  model?: string;
+  /** Identity reference (e.g. Concordium agent DID) presented as the lobby join token. */
+  joinToken?: string;
 }
 
 function parseArgs(): ParsedArgs {
@@ -624,6 +634,9 @@ function parseArgs(): ParsedArgs {
   let lobbyBaseUrl: string | undefined = process.env.AGENT_OS_LOBBY_URL?.replace(/\/+$/, '') || undefined;
   let agentName: string | undefined;
   let agentRole: string | undefined;
+  let runtimeId: string | undefined = process.env.AGENT_OS_RUNTIME || undefined;
+  let model: string | undefined = process.env.AGENT_OS_MODEL || undefined;
+  let joinToken: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
     if ((args[i] === '--port' || args[i] === '-p') && args[i + 1]) {
@@ -641,10 +654,19 @@ function parseArgs(): ParsedArgs {
     } else if (args[i] === '--agent-role' && args[i + 1]) {
       agentRole = args[i + 1];
       i++;
+    } else if (args[i] === '--runtime' && args[i + 1]) {
+      runtimeId = args[i + 1];
+      i++;
+    } else if (args[i] === '--model' && args[i + 1]) {
+      model = args[i + 1];
+      i++;
+    } else if (args[i] === '--join-token' && args[i + 1]) {
+      joinToken = args[i + 1];
+      i++;
     }
   }
 
-  return { port, cwd, lobbyBaseUrl, agentName, agentRole };
+  return { port, cwd, lobbyBaseUrl, agentName, agentRole, runtimeId, model, joinToken };
 }
 
 /** Auto-discover the active lobby via the public /discover endpoint (no auth required). */
@@ -674,8 +696,11 @@ async function discoverActiveLobby(
   }
 }
 
-const { port, cwd, lobbyBaseUrl, agentName, agentRole } = parseArgs();
+const { port, cwd, lobbyBaseUrl, agentName, agentRole, runtimeId: cliRuntimeId, model: agentModel, joinToken } = parseArgs();
 relayCwd = cwd;
+// The runtime this relay actually drives — precedence: --runtime flag → AGENT_OS_RUNTIME → claude-cli.
+activeRuntimeId = (cliRuntimeId as RuntimeId) || activeRuntimeId;
+activeModel = agentModel;
 
 // ── Agent Role Context (loaded once on startup) ──
 let agentRoleContext: string | null = null;
@@ -694,14 +719,18 @@ if (agentRole) {
   }
 }
 
-log('info', 'Checking Claude CLI availability…');
-const claudeDetect = await runtimeRegistry.get('claude-cli')!.detect();
-if (!claudeDetect.installed) {
-  log('error', claudeDetect.message ?? 'Claude CLI not found.');
-  log('error', 'Then authenticate with: claude login');
+const activeAdapter = runtimeRegistry.get(activeRuntimeId);
+if (!activeAdapter) {
+  log('error', `Unknown runtime: ${activeRuntimeId}. Available: ${runtimeRegistry.list().map((a) => a.id).join(', ')}`);
   process.exit(1);
 }
-log('info', `Claude CLI found${claudeDetect.version ? ` (${claudeDetect.version})` : ''}`);
+log('info', `Checking ${activeAdapter.label} availability…`);
+const runtimeDetect = await activeAdapter.detect();
+if (!runtimeDetect.installed) {
+  log('error', runtimeDetect.message ?? `${activeAdapter.label} not found.`);
+  process.exit(1);
+}
+log('info', `${activeAdapter.label} found${runtimeDetect.version ? ` (${runtimeDetect.version})` : ''}`);
 
 startRelayServer(port);
 
@@ -717,10 +746,6 @@ if (lobbyBaseUrl) {
         return;
       }
 
-      const wsProtocol = lobbyBaseUrl.startsWith('https') ? 'wss' : 'ws';
-      const host = new URL(lobbyBaseUrl).host;
-      const lobbyWsUrl = `${wsProtocol}://${host}/api/v1/agent-lobby/ws/agent?lobby_id=${lobby.lobbyId}&org_id=${lobby.orgId}`;
-
       // Auto-generate agent name from hostname + branch if not provided
       const branch = (() => {
         try {
@@ -735,14 +760,22 @@ if (lobbyBaseUrl) {
         (agentRole ? `${hostname}-${agentRole}-${port}` : `${hostname}-${branch}-${port}`);
 
       const { RelayLobbyBridge } = await import('./agent-lobby/relay-lobby-bridge.js');
+      // Pass the clean BASE URL + ids — LobbyClient builds the WS URL itself. (The old code
+      // handed it a fully-composed ws URL with ?lobby_id= baked in, so the client's own path
+      // + query got appended on top and the server kept reading the stale pre-discovered id.)
       const bridge = (lobbyBridge = new RelayLobbyBridge({
-        lobbyUrl: lobbyWsUrl,
+        lobbyUrl: lobbyBaseUrl,
+        lobbyId: lobby.lobbyId,
+        orgId: lobby.orgId,
         agentName: name,
         cwd,
         branch,
         pid: process.pid,
         relayPort: port,
         agentRole,
+        runtime: activeAdapter.label,
+        model: activeModel,
+        joinToken,
         onLobbyMessage: (() => {
           // Persistent lobby session ID for conversation continuity (--resume)
           const lobbySessionId = `lobby-${name}-${Date.now().toString(36)}`;
