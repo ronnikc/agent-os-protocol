@@ -592,9 +592,10 @@ function mapRegisterArgs(inputSchema, fields) {
   for (const key of Object.keys(props)) {
     if (/uri|url/i.test(key)) args[key] = fields.metadataUrl;
     else if (/hash/i.test(key)) args[key] = fields.cardHash;
-    else if (/owner|account|address/i.test(key)) args[key] = fields.owner;
+    // "sender" is what the live Agent Registry MCP service calls the minting account
+    else if (/sender|owner|account|address/i.test(key)) args[key] = fields.owner;
     else if (/network/i.test(key)) args[key] = fields.network;
-    else if (/name/i.test(key)) args[key] = fields.agentName;
+    else if (/name$/i.test(key)) args[key] = fields.agentName;
   }
   const unmapped = required.filter((k) => args[k] === undefined);
   if (unmapped.length > 0) {

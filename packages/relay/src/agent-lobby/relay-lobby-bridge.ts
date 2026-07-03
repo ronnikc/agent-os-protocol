@@ -2,17 +2,26 @@
 // Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
 
 import { LobbyClient } from '@agent-os/lobby-client';
-import { loadProviderConfigsFromEnv, defaultProviderId } from '@agent-os/providers';
 import type { LobbyAgent, LobbyMessage, LobbyTask } from '@agent-os/protocol-core';
 
 export interface BridgeOptions {
+  /** BASE lobby server URL (http/https/ws/wss, no path) — LobbyClient appends the WS path itself. */
   lobbyUrl: string;
+  /** Lobby to join; omit to auto-discover (and re-discover after a lobby-server restart). */
+  lobbyId?: string;
+  orgId?: string;
   agentName: string;
   cwd: string;
   branch: string;
   pid: number;
   relayPort: number;
   agentRole?: string;
+  /** The runtime this relay ACTUALLY drives (adapter label) — reported truthfully to the lobby. */
+  runtime?: string;
+  /** Model override in effect, if any. */
+  model?: string;
+  /** Identity reference (e.g. Concordium agent DID) presented as the lobby join token. */
+  joinToken?: string;
   onLobbyMessage: (msg: any) => Promise<void>;
   log?: (level: string, message: string) => void;
 }
@@ -21,21 +30,15 @@ export class RelayLobbyBridge {
   private client: LobbyClient;
   private messageBuffer: Array<{ from: string; content: string }> = [];
   private roster: LobbyAgent[] = [];
-  
+
   currentTask: LobbyTask | null = null;
   currentBossAgentId: string | null = null;
 
   constructor(options: BridgeOptions) {
-    const providers = loadProviderConfigsFromEnv();
-    const defId = defaultProviderId();
-    const activeProvider = providers[defId];
-    const model = activeProvider?.model || '—';
-    const runtime = activeProvider 
-      ? `API (${activeProvider.id})` 
-      : (options.agentRole && ['test', 'code-review', 'backend'].includes(options.agentRole) ? 'Codex CLI' : 'Claude CLI');
-
     this.client = new LobbyClient({
       lobbyUrl: options.lobbyUrl,
+      lobbyId: options.lobbyId,
+      orgId: options.orgId,
       register: {
         type: 'lobby-register',
         display_name: options.agentName,
@@ -44,8 +47,9 @@ export class RelayLobbyBridge {
         pid: options.pid,
         relay_port: options.relayPort,
         agent_role: options.agentRole,
-        model,
-        runtime,
+        model: options.model || '—',
+        runtime: options.runtime || '—',
+        join_token: options.joinToken,
       },
       reconnect: true,
     });
