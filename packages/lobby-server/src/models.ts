@@ -24,6 +24,35 @@ export interface LobbyMember {
   expires_at?: string;
 }
 
+/**
+ * A model-provider API key held server-side for Hosted Mode, so a no-local-setup user can run
+ * agents from the online lobby. Scoped per-lobby (`agent_ref: null` = the lobby default that all
+ * its agents share) with an optional per-agent override (`agent_ref` set to the agent's DID/id).
+ * The key itself is stored only as `encrypted_key` (a secret-box seal) and is NEVER returned in
+ * plaintext over the API — only `key_hint` is shown. Local Mode is unaffected: it keeps local BYOK.
+ */
+export interface ProviderKeyConfig {
+  id: string;
+  lobby_id: string;
+  /** null = lobby-wide default; a value = per-agent override for that agent ref. */
+  agent_ref: string | null;
+  /** Provider id, matching the providers registry (e.g. 'anthropic', 'openai'). */
+  provider: string;
+  /** secret-box sealed key material (`keyId.ciphertext.iv.tag`). Never logged or returned. */
+  encrypted_key: string;
+  /** Key id the value was sealed with (rotation detection). */
+  encryption_key_id: string;
+  /** Non-secret display hint (masked, last 4 chars). */
+  key_hint: string;
+  /** Optional custom endpoint + default model for this provider. */
+  base_url?: string;
+  model?: string;
+  created_by_identity_ref: string;
+  created_at: string;
+  updated_at: string;
+  revoked_at?: string;
+}
+
 export interface LobbyIntegration {
   id: string;
   lobby_id: string;

@@ -9,7 +9,7 @@
  */
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
-import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid } from './models.js';
+import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig } from './models.js';
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
@@ -49,6 +49,14 @@ export interface LobbyStore {
   addSecret(secret: IntegrationSecret): Promise<IntegrationSecret>;
   getSecret(integrationId: string, secretType: string): Promise<IntegrationSecret | undefined>;
   updateSecret(secretId: string, patch: Partial<IntegrationSecret>): Promise<IntegrationSecret | undefined>;
+
+  // Hosted-Mode provider-key custody — encrypted at rest; plaintext is never returned by the store.
+  // One active config per (lobby, agent_ref, provider) scope; agent_ref null = the lobby default.
+  putProviderKey(config: ProviderKeyConfig): Promise<ProviderKeyConfig>;
+  /** Resolve the effective config: a per-agent override wins over the lobby default. */
+  getProviderKey(lobbyId: string, provider: string, agentRef?: string | null): Promise<ProviderKeyConfig | undefined>;
+  listProviderKeys(lobbyId: string): Promise<ProviderKeyConfig[]>;
+  revokeProviderKey(id: string): Promise<ProviderKeyConfig | undefined>;
 
   linkExternalIdentity(link: ExternalIdentityLink): Promise<ExternalIdentityLink>;
   getExternalIdentityLink(provider: string, externalUserId: string): Promise<ExternalIdentityLink | undefined>;
@@ -95,6 +103,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private members = new Map<string, LobbyMember>(); // memberId -> LobbyMember
   private integrations = new Map<string, LobbyIntegration>(); // integrationId -> LobbyIntegration
   private secrets = new Map<string, IntegrationSecret>(); // secretId -> IntegrationSecret
+  private providerKeys = new Map<string, ProviderKeyConfig>(); // id -> ProviderKeyConfig
   private externalLinks = new Map<string, ExternalIdentityLink>(); // linkId -> ExternalIdentityLink
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
@@ -251,6 +260,39 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!s) return undefined;
     const updated = { ...s, ...patch };
     this.secrets.set(secretId, updated);
+    return updated;
+  }
+
+  async putProviderKey(config: ProviderKeyConfig): Promise<ProviderKeyConfig> {
+    // Upsert: one active config per (lobby, agent_ref, provider). Revoke any existing match first.
+    const scope = config.agent_ref ?? null;
+    for (const [id, k] of this.providerKeys) {
+      if (k.lobby_id === config.lobby_id && (k.agent_ref ?? null) === scope && k.provider === config.provider && !k.revoked_at) {
+        this.providerKeys.delete(id);
+      }
+    }
+    this.providerKeys.set(config.id, config);
+    return config;
+  }
+
+  async getProviderKey(lobbyId: string, provider: string, agentRef?: string | null): Promise<ProviderKeyConfig | undefined> {
+    const active = (k: ProviderKeyConfig) => k.lobby_id === lobbyId && k.provider === provider && !k.revoked_at;
+    if (agentRef) {
+      const override = [...this.providerKeys.values()].find((k) => active(k) && k.agent_ref === agentRef);
+      if (override) return override;
+    }
+    return [...this.providerKeys.values()].find((k) => active(k) && (k.agent_ref === null || k.agent_ref === undefined));
+  }
+
+  async listProviderKeys(lobbyId: string): Promise<ProviderKeyConfig[]> {
+    return [...this.providerKeys.values()].filter((k) => k.lobby_id === lobbyId && !k.revoked_at);
+  }
+
+  async revokeProviderKey(id: string): Promise<ProviderKeyConfig | undefined> {
+    const k = this.providerKeys.get(id);
+    if (!k) return undefined;
+    const updated = { ...k, revoked_at: new Date().toISOString() };
+    this.providerKeys.set(id, updated);
     return updated;
   }
 
