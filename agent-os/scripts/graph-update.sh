@@ -71,10 +71,11 @@ fi
 # Get changed TypeScript files (including deleted ones). Do NOT suppress stderr
 # here — a real git error must surface; the `|| true` on the empty-result path
 # is safe because we've already validated BASE above.
-CHANGED=$(git diff --name-only "$BASE" -- '*.ts' '*.tsx' | { grep -v node_modules || true; } | { grep -v __tests__ || true; })
+CHANGED=$(git diff --name-only "$BASE" -- '*.ts' '*.tsx' '*.js' '*.mjs' \
+  | { grep -vE 'node_modules|/dist/|/__tests__/|\.test\.[cm]?tsx?$|\.min\.js$' || true; })
 
 if [ -z "$CHANGED" ]; then
-  echo "NO_CHANGES: no TypeScript files changed since $BASE — graph is current"
+  echo "NO_CHANGES: no source files changed since $BASE — graph is current"
   exit 0
 fi
 
@@ -91,8 +92,10 @@ REMOVED=0
 
 for file in $CHANGED; do
   if [ -f "$file" ]; then
-    # File exists — re-scan its imports and update the entry
-    IMPORTS=$(grep -oP "from ['\"]([^'\"]+)['\"]" "$file" 2>/dev/null | sed "s/from ['\"]//;s/['\"]$//" | sort -u || true)
+    # File exists — re-scan its imports (ESM + require/dynamic-import) and update the entry
+    IMPORTS=$( { grep -oP "from ['\"]([^'\"]+)['\"]" "$file" 2>/dev/null | sed "s/from ['\"]//;s/['\"]$//"; \
+                 grep -oP "(?:require|import)\(\s*['\"]([^'\"]+)['\"]" "$file" 2>/dev/null | sed -E "s/.*['\"]//"; } \
+               | sort -u || true)
 
     if [ -n "$IMPORTS" ]; then
       IMPORTS_JSON=$(echo "$IMPORTS" | jq -R -s 'split("\n") | map(select(length > 0))')

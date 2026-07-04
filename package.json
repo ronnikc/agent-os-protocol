@@ -35,6 +35,9 @@
     "lobby": "tsx packages/lobby-server/src/server.ts",
     "lobby-web": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
+    "self-learning-review": "node agent-os/scripts/self-learning-review.mjs",
+    "setup-hooks": "node scripts/setup-hooks.mjs",
+    "prepare": "node scripts/setup-hooks.mjs",
     "work-items": "tsx agent-os/scripts/work-items.ts",
     "loop": "tsx agent-os/scripts/loop.ts",
     "ui-assist-integrate": "tsx agent-os/scripts/ui-assist-integrate.ts",
@@ -48,7 +51,8 @@
     "verify-loop": "tsx agent-os/scripts/verify-loop.ts",
     "verify-ui": "tsx agent-os/scripts/verify-ui.ts",
     "verify-launch": "tsx agent-os/scripts/verify-launch.ts",
-    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch",
+    "verify-memory": "tsx agent-os/scripts/verify-memory.ts",
+    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch && npm run verify-memory",
     "smoke": "bash scripts/smoke.sh"
   },
   "dependencies": {

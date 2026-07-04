@@ -112,6 +112,21 @@ export interface LoopSeams {
   approveCheckpoint?: (ctx: LoopContext, action: CheckpointAction) => Promise<boolean> | boolean;
   /** Kill-switch poll, checked at the top of every iteration. Defaults to never killed. */
   isKilled?: () => boolean;
+  /**
+   * Self-learning hook, invoked once per iteration at the Reflect phase. This is where the loop
+   * feeds what just happened back into the memory system + dependency graph + skills review
+   * (see agent-os/scripts/self-learning-review.mjs). Best-effort and non-blocking by contract:
+   * the orchestrator awaits it but swallows any error so reflection can never stall or fail a loop.
+   */
+  reflect?: (ctx: LoopContext, info: ReflectInfo) => Promise<void> | void;
+}
+
+export interface ReflectInfo {
+  iteration: number;
+  /** True when this iteration increased the number of passing criteria. */
+  progressed: boolean;
+  /** Consecutive no-progress iterations (0 right after progress). */
+  noProgress: number;
 }
 
 export interface RunOptions {
@@ -276,6 +291,7 @@ export class LoopOrchestrator {
       record({ type: 'verified', iteration, passing: countPassing(verified), total });
 
       // ── Regression guard: never adopt a result that flips a passing criterion to failing ──
+      let progressed = false;
       if (hasRegression(results, verified)) {
         record({ type: 'regression_blocked', iteration, message: 'a previously-passing criterion would regress; result rejected' });
         noProgress += 1; // rejected work makes no accepted progress
@@ -283,10 +299,19 @@ export class LoopOrchestrator {
         const before = countPassing(results);
         results = verified;
         const after = countPassing(results);
-        noProgress = after > before ? 0 : noProgress + 1;
+        progressed = after > before;
+        noProgress = progressed ? 0 : noProgress + 1;
       }
 
-      // ── Reflect ──
+      // ── Reflect: feed the iteration back into the self-learning system (memories, graph,
+      //    skills review). Best-effort — a failure here never stalls or breaks the loop. ──
+      if (this.seams.reflect) {
+        try {
+          await this.seams.reflect(ctx(), { iteration, progressed, noProgress });
+        } catch (err) {
+          record({ type: 'reflected', iteration, passing: countPassing(results), total, message: `reflect hook failed: ${err instanceof Error ? err.message : String(err)}`, data: { noProgress, reflectError: true } });
+        }
+      }
       record({ type: 'reflected', iteration, passing: countPassing(results), total, data: { noProgress } });
 
       // ── Decide ──
@@ -303,4 +328,35 @@ export class LoopOrchestrator {
     record({ type: 'exhausted', iteration, message: 'maxIterations' });
     return finish('exhausted');
   }
+}
+
+export interface SelfLearningReflectOptions {
+  /**
+   * Runs the actual self-learning pass (in the driver this spawns
+   * agent-os/scripts/self-learning-review.mjs, which updates diaries + facts, refreshes the
+   * dependency graph, and writes a skills-review report). Injected so this package stays
+   * runtime-free and unit-testable.
+   */
+  run: (info: ReflectInfo & { goal: string }) => Promise<void> | void;
+  /** Only reflect on iterations that made progress (default true — skip no-op iterations). */
+  onlyOnProgress?: boolean;
+}
+
+/**
+ * Build a Reflect seam that feeds each loop iteration into the self-learning system. Pure: the
+ * side-effecting runner is injected. Wire it into LoopSeams.reflect (see agent-os/scripts/loop.ts
+ * and the lobby driver). Never throws to the loop — the orchestrator already guards the call, and
+ * this factory additionally swallows runner errors so reflection is strictly best-effort.
+ */
+export function createSelfLearningReflect(
+  opts: SelfLearningReflectOptions,
+): NonNullable<LoopSeams['reflect']> {
+  return async (ctx: LoopContext, info: ReflectInfo) => {
+    if (opts.onlyOnProgress !== false && !info.progressed) return;
+    try {
+      await opts.run({ ...info, goal: ctx.spec.goal });
+    } catch {
+      /* best-effort — reflection must never affect loop outcome */
+    }
+  };
 }

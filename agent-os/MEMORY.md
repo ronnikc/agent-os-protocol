@@ -238,6 +238,46 @@ Both paths share the same processor logic and are deterministic — no per-sprin
 
 ---
 
+## Self-Learning Review (post-merge)
+
+Every finished PR/merge runs a **self-learning review** that closes the "did we learn
+anything?" loop for arbitrary PRs — not just sprint close-outs. It is deterministic
+(no LLM), read-mostly, and never blocks.
+
+```bash
+npm run self-learning-review            # defaults to ORIG_HEAD..HEAD (the just-merged range)
+node agent-os/scripts/self-learning-review.mjs --base <ref> --head <ref> --title "<pr>" [--dry-run]
+```
+
+For the range it:
+
+1. **Updates memories** — writes per-agent diary entries + a completion fact via
+   `process-spawn-requests.mjs` over the exact range (`req.base` is honored). Diaries are
+   **bootstrapped on first write** for any real agent (they are gitignored runtime state), so a
+   fresh clone records from day one instead of silently skipping.
+2. **Refreshes the dependency graph** for the changed files (`graph-update.sh`).
+3. **Runs a skills review** — maps changed files → owning agents (`fileToAgents`, routed for this
+   repo's `packages/` · `apps/` · `agent-os-panel/` layout), cross-references the committed skills
+   index, and writes a reviewable report under `agent-os/self-learning/reviews/<date>-<sha>.md`
+   proposing which skills to **add** or **update**. It recommends; it never auto-creates skills
+   (reviewable + reversible, matching `/train`). Act on it by authoring the skill under
+   `agent-os/sub-agents/skills/<slug>/SKILL.md` (v1.1.0) or teaching an agent with `/train`.
+4. **Emits a `self_learning_reviewed` fact** for the range.
+
+### Wiring
+
+- **Git hooks** (dependency-free, via `core.hooksPath=.husky` — run `npm run setup-hooks`, also
+  wired from `prepare` on install): `.husky/post-merge` drains queued sprint requests then runs the
+  self-learning review; `.husky/pre-commit` runs the memory-index staleness guard.
+- **Loop Mode**: the `LoopOrchestrator` calls an optional `reflect` seam at the Reflect phase of
+  every iteration. `createSelfLearningReflect({ run })` builds that seam (pure — the runner is
+  injected); the lobby driver wires it via `LobbyDriverOptions.selfLearn`, so a Boss loop feeds
+  each iteration's work back into memories + graph + skills review. Best-effort: a reflect failure
+  never stalls or fails a loop.
+- **Verification**: `npm run verify-memory` asserts the whole system is wired (scripts present,
+  routing to real agents, hooks executable + correct, graph scans the monorepo roots, and the
+  review runs dry to produce agents + a report). Part of `npm run verify-all`.
+
 ## Diary Routing & Rollover Summarisation (Sprint 46.6.7)
 
 Two diary lifecycle improvements that share the same rollover plumbing.

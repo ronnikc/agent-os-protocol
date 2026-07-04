@@ -88,11 +88,16 @@ npm run verify-providers
 npm run verify-lobby
 npm run verify-identity
 npm run verify-ui-assist
-npm run verify-loop       # Loop Mode engine: caps, convergence/stall, regression, checkpoints
+npm run verify-loop       # Loop Mode engine: caps, convergence/stall, regression, checkpoints, reflect
 npm run verify-ui         # UI layout, token systems, and website static validation
 npm run verify-launch     # launch-readiness invariants (docs, scripts, gates, references, license)
-npm run verify-all        # all eight suites in one chain
+npm run verify-memory     # self-learning system wiring: memory write path, graph, hooks, PR review
+npm run verify-all        # all nine suites in one chain
 npm run smoke             # fresh-clone boot smoke: install → verify-all → boot Panel/Lobby/Relay → probe
+
+# Self-learning — runs automatically on every merge (post-merge hook); also invokable directly
+npm run setup-hooks                               # install git hooks (core.hooksPath=.husky)
+npm run self-learning-review -- --dry-run         # memories + graph + skills review over the merged range
 ```
 
 Configuration is via `.env` (copy from `.env.example`): `AGENT_OS_LOBBY_URL` (empty = Local Mode),

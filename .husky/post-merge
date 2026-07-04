@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# post-merge — Agent OS self-learning + memory/graph refresh after every merge
+# (including `git pull` fast-forwards). Deterministic, never blocks; git ignores
+# a post-merge exit code anyway.
+#
+# Wired via core.hooksPath=.husky (see `npm run setup-hooks` / the prepare script) —
+# no husky dependency required.
+
+set -uo pipefail
+
+# Locate repo root (hook runs with CWD = repo root, but be explicit).
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+# Skip when the merge brought in zero new commits (ORIG_HEAD == HEAD).
+if [ -n "${ORIG_HEAD:-}" ] || git rev-parse --verify --quiet ORIG_HEAD >/dev/null; then
+  if [ "$(git rev-parse ORIG_HEAD 2>/dev/null)" = "$(git rev-parse HEAD 2>/dev/null)" ]; then
+    exit 0
+  fi
+fi
+
+echo "[post-merge] Agent OS self-learning review…"
+
+# 1) Drain any queued sprint close-out memory requests.
+node agent-os/scripts/process-spawn-requests.mjs >/dev/null 2>&1 || true
+
+# 2) Self-learning pass over the just-merged range (ORIG_HEAD..HEAD by default):
+#    updates diaries + facts, refreshes the dependency graph, and writes a
+#    skills-review report under agent-os/self-learning/reviews/.
+node agent-os/scripts/self-learning-review.mjs || true
+
+exit 0

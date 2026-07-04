@@ -64,9 +64,9 @@ cat > .claude/spawn-requests/post-sprint-memory-test-46.6.8-smoke.json <<JSON
 }
 JSON
 
-# Capture pre-state
-PRE_FACTS=$(wc -l < agent-os/facts.jsonl | tr -d ' ')
-PRE_TEST_DIARY=$(wc -l < agent-os/sub-agents/test/diary.md 2>/dev/null | tr -d ' ' || echo 0)
+# Capture pre-state (facts.jsonl / diaries are gitignored runtime state — may not exist yet in a fresh clone)
+PRE_FACTS=0; [ -f agent-os/facts.jsonl ] && PRE_FACTS=$(wc -l < agent-os/facts.jsonl | tr -d ' ')
+PRE_TEST_DIARY=0; [ -f agent-os/sub-agents/test/diary.md ] && PRE_TEST_DIARY=$(wc -l < agent-os/sub-agents/test/diary.md | tr -d ' ')
 
 # Run the processor
 node agent-os/scripts/process-spawn-requests.mjs --once > /tmp/process-out.log 2>&1

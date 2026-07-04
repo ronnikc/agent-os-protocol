@@ -19,6 +19,7 @@ import {
   existsSync, statSync, renameSync, unlinkSync,
 } from 'node:fs';
 import { join, basename } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { execSync } from 'node:child_process';
 
 const REPO_ROOT = process.cwd();
@@ -30,10 +31,51 @@ const KEEP_MOST_RECENT_ENTRIES = 5;
 
 // ── File → agent mapping ────────────────────────────────────────────
 //
+// Owning specialist(s) for a path under this repo's real source roots.
+// Returns [] for anything outside those roots so fileToAgents can fall back
+// to the legacy/docs handling. All slugs here exist in sub-agents/agents/.
+export function protoOwners(path) {
+  const pkg = path.match(/^packages\/([^/]+)\//);
+  if (pkg) {
+    const byPackage = {
+      'relay': ['backend', 'ui-assist-integration'],
+      'lobby-server': ['backend', 'lobby-architect'],
+      'lobby-client': ['backend', 'lobby-architect'],
+      'protocol-core': ['backend', 'frontend'],
+      'adapters': ['runtime-adapter', 'backend'],
+      'providers': ['backend'],
+      'identity-concordium': ['identity', 'security'],
+      'ui-assist-core': ['ui-assist', 'frontend'],
+      'ui-assist-embed': ['ui-assist', 'frontend'],
+      'loop': ['backend', 'planning'],
+    };
+    return byPackage[pkg[1]] || ['backend'];
+  }
+  if (path.startsWith('apps/lobby-web/')) return ['frontend', 'lobby-architect'];
+  if (path.startsWith('apps/website/')) return ['frontend', 'seo'];
+  if (path.startsWith('apps/')) return ['frontend'];
+  if (path.startsWith('agent-os-panel/')) return ['frontend', 'ui-assist'];
+  return [];
+}
+
 // Pure function. Returns an array of agent slugs (may be empty for files
 // that don't belong to any agent — e.g. node_modules diffs, lockfiles).
 export function fileToAgents(path) {
   if (!path) return [];
+
+  // ── Agent OS Protocol monorepo layout (this fork) ───────────────────
+  // Resolve the owning specialist(s) from the repo's real source roots
+  // (packages/*, apps/*, agent-os-panel/, agent-os/). Tests route to the
+  // test agent alongside the owning area. Returns [] for non-owned paths so
+  // the legacy src/ + docs/ handling below still runs as a fallback.
+  {
+    const isTest = /\.test\.[cm]?tsx?$/.test(path) || path.includes('/__tests__/');
+    const owners = protoOwners(path);
+    if (owners.length) {
+      return isTest ? ['test', ...owners.filter((a) => a !== 'test')] : owners;
+    }
+  }
+
   // Tests trump src/ ownership — failing tests are the test agent's problem
   if (path.match(/\.test\.tsx?$/) || path.includes('/__tests__/')) {
     if (path.startsWith('src/frontend/')) return ['test', 'frontend'];
@@ -248,9 +290,22 @@ function buildDiaryEntry(sprint, commitSubjects, agentFiles, options = {}) {
 
 function appendDiaryEntry(agent, sprint, commitSubjects, agentFiles, log, options = {}) {
   const diaryPath = join(REPO_ROOT, `agent-os/sub-agents/${agent}/diary.md`);
+  // Diaries are gitignored runtime state — bootstrap one on first write instead of
+  // skipping. Without this, a fresh clone (no seeded diaries) would silently record
+  // nothing, which is exactly the "memory not wired in" failure. Only bootstrap for
+  // real, known agents (a matching agent definition must exist).
   if (!existsSync(diaryPath)) {
-    logTo(log, `appendDiaryEntry skip: ${diaryPath} not found`);
-    return false;
+    const defPath = join(REPO_ROOT, `agent-os/sub-agents/agents/${agent}.md`);
+    if (!existsSync(defPath)) {
+      logTo(log, `appendDiaryEntry skip: no agent definition for '${agent}' — not bootstrapping a diary`);
+      return false;
+    }
+    mkdirSync(join(REPO_ROOT, `agent-os/sub-agents/${agent}`), { recursive: true });
+    writeFileSync(
+      diaryPath,
+      `# Diary — ${agent}\n\n> Persistent recall corpus for the ${agent} agent. Newest entries on top.\n\n<!-- diary will be appended by post-sprint-memory.sh -->\n`,
+    );
+    logTo(log, `appendDiaryEntry bootstrap: created ${diaryPath}`);
   }
   let content = readFileSync(diaryPath, 'utf8');
 
@@ -426,7 +481,11 @@ export function processOne(reqPath) {
   const sprint = req.sprint || 'unknown';
   const head = req.head || 'HEAD';
   const branch = req.branch || '';
-  const base = resolveBase(branch || head);
+  // Honor an explicit base when the requester knows the exact range (e.g. the
+  // self-learning review passing ORIG_HEAD..HEAD for a just-merged PR); otherwise
+  // fall back to the merge-base-with-main heuristic. Backward-compatible — older
+  // requests carry no `base` field and behave exactly as before.
+  const base = req.base || resolveBase(branch || head);
 
   const commitSubjects = base ? gitLog(base, head).split('\n').filter(Boolean) : [];
   const changedFiles = base ? gitDiffNames(base, head) : [];
@@ -479,6 +538,12 @@ export function processOne(reqPath) {
 }
 
 // ── Entrypoint ───────────────────────────────────────────────────────
+// Guard so importing this module (e.g. from the self-learning review or a test)
+// exposes the pure helpers without running the queue processor / exiting.
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) main();
+
+function main() {
 const args = process.argv.slice(2);
 const ONCE = args.includes('--once');
 
@@ -512,3 +577,5 @@ for (const reqPath of requests) {
 }
 
 console.log(`process-spawn-requests: processed=${processed} diary-writes=${totalWrites} rollovers=${totalRollovers}`);
+
+}

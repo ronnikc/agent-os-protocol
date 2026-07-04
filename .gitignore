@@ -31,6 +31,11 @@ agent-os/.graph-stale
 agent-os/facts.jsonl
 agent-os/scheduled/state/*
 !agent-os/scheduled/state/.gitkeep
+agent-os/self-learning/reviews/*
+!agent-os/self-learning/reviews/.gitkeep
+agent-os/sub-agents/*/diary.md
+agent-os/sub-agents/*/lessons/
+.claude/spawn-requests/
 packages/lobby-server/agent-cards.json
 
 # ── Trained agent packs (user-local by default; opt-in to commit) ──
