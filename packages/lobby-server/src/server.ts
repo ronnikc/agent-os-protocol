@@ -27,7 +27,10 @@ import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@a
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken } from './auth/identityProof.js';
 import { isLobbyManager } from './auth/lobbyAuthz.js';
-import { setProviderKey, listProviderKeys, revokeProviderKey } from './providers/key-custody.js';
+import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
+import { createApiRuntimeAdapter } from '@agent-os/adapters';
+import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
+import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
@@ -38,6 +41,8 @@ export interface LobbyServerOptions {
   coordinator?: LobbyCoordinator;
   /** Auto-create a default public lobby so `discover` always returns one (Local/Swarm convenience). */
   autoDefaultLobby?: boolean;
+  /** Injected fetch for hosted API-runtime agents (tests mock the provider HTTP). Defaults to global fetch. */
+  apiRuntimeFetch?: typeof fetch;
 }
 
 export interface RunningLobbyServer {
@@ -133,6 +138,96 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       else if (o.target.kind === 'agent') send(agentConn.get(o.target.agentId), o.message);
       else for (const cid of lobbyConns.get(conn.lobbyId) ?? []) send(cid, o.message); // lobby-scoped
     }
+  }
+
+  // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection }>();
+
+  const providerIdFor = (name: string): ProviderId => {
+    const n = (name || '').toLowerCase();
+    return n.includes('openai') || n === 'gpt' ? 'openai-compatible' : 'anthropic-compatible';
+  };
+
+  // The coordinator delivers a lobby message to a hosted agent through its virtual socket; here we
+  // run one API-runtime turn and post the reply back through the coordinator (broadcast if Boss,
+  // else a direct reply). Self-echoes and unrelated messages are ignored to prevent cascades.
+  async function onHostedInbound(conn: Connection, data: string): Promise<void> {
+    let msg: { type?: string; message?: Record<string, unknown> };
+    try { msg = JSON.parse(data); } catch { return; }
+    if (msg?.type !== 'lobby-message-received' || !msg.message) return;
+    const m = msg.message as { from_agent_id?: string; to_agent_id?: string; content?: string };
+    const myId = conn.agentId;
+    if (!myId || m.from_agent_id === myId) return;
+    const entry = hostedAgents.get(myId);
+    if (!entry) return;
+    const lobby = await store.getLobby(conn.lobbyId);
+    const isBoss = lobby?.boss_agent_id === myId;
+    const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
+    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return; // respond only to us, or broadcasts as Boss
+    let reply = '';
+    try { reply = await entry.runner.respondTo(String(m.content ?? '')); } catch { return; }
+    if (!reply) return;
+    const res = await coordinator.handle(conn, {
+      type: 'lobby-message',
+      to_agent_id: isBoss ? 'all' : (m.from_agent_id ?? 'all'),
+      message_type: 'chat',
+      content: reply.length > 4000 ? reply.slice(0, 4000) + '\n\n_(truncated)_' : reply,
+    } as AgentToLobbyMessage);
+    dispatch(conn, res.out);
+  }
+
+  // Launch a hosted agent: open an API-runtime session with the resolved key and register it into
+  // the lobby via a virtual socket so it shows in the roster and receives messages like any agent.
+  async function spawnHostedAgent(params: {
+    lobbyId: string; name: string; role?: string; apiKey: string; providerId: ProviderId;
+    model: string; baseUrl?: string; systemPrompt?: string; joinToken?: string;
+  }): Promise<string> {
+    const adapter = createApiRuntimeAdapter({
+      provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
+      apiKey: params.apiKey,
+      fetchFn: options.apiRuntimeFetch,
+    });
+    const runner = new HostedAgentRunner(adapter, { systemPrompt: params.systemPrompt });
+    await runner.start();
+
+    const connId = `hosted-${randomUUID()}`;
+    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default' };
+    const virtualSocket = {
+      readyState: WebSocket.OPEN,
+      send: (data: string) => { void onHostedInbound(conn, data); },
+      close: () => {},
+      terminate: () => {},
+    } as unknown as WebSocket;
+    sockets.set(connId, virtualSocket);
+    if (!lobbyConns.has(params.lobbyId)) lobbyConns.set(params.lobbyId, new Set());
+    lobbyConns.get(params.lobbyId)!.add(connId);
+
+    const reg = await coordinator.handle(conn, {
+      type: 'lobby-register',
+      display_name: params.name,
+      agent_role: params.role,
+      runtime: 'api',
+      model: params.model,
+      join_token: params.joinToken,
+    } as AgentToLobbyMessage);
+    if (conn.agentId) agentConn.set(conn.agentId, connId);
+    dispatch(conn, reg.out);
+    const agentId = conn.agentId ?? connId;
+    hostedAgents.set(agentId, { runner, connId, conn });
+    return agentId;
+  }
+
+  async function stopHostedAgent(agentId: string): Promise<boolean> {
+    const entry = hostedAgents.get(agentId);
+    if (!entry) return false;
+    await entry.runner.stop();
+    const res = await coordinator.onDisconnect(entry.conn).catch(() => ({ out: [] as Outbound[] }));
+    dispatch(entry.conn, res.out);
+    sockets.delete(entry.connId);
+    lobbyConns.get(entry.conn.lobbyId)?.delete(entry.connId);
+    agentConn.delete(agentId);
+    hostedAgents.delete(agentId);
+    return true;
   }
 
   // ── HTTP control plane ──
@@ -260,6 +355,55 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!view || view.lobby_id !== lobbyId) return json({ error: 'provider key not found' }, 404);
         await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
         return json({ revoked: view });
+      }
+    }
+
+    // ── Hosted agents (wallet-gated) — launch/stop server-side agents that run via the API runtime ──
+    const hostedMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/hosted-agents(?:\/([^/]+))?$/);
+    if (hostedMatch) {
+      const lobbyId = hostedMatch[1];
+      const agentId = hostedMatch[2];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      // GET .../hosted-agents — list the running hosted agents in this lobby.
+      if (req.method === 'GET' && !agentId) {
+        const list = [...hostedAgents.entries()].filter(([, v]) => v.conn.lobbyId === lobbyId).map(([id]) => ({ agent_id: id }));
+        return json({ hosted_agents: list });
+      }
+      // POST .../hosted-agents — launch { name, agent_role?, provider?, model?, base_url?, system_prompt?, agent_ref? }
+      if (req.method === 'POST' && !agentId) {
+        const body = await readBody(req);
+        const providerName = typeof body.provider === 'string' && body.provider.trim() ? body.provider.trim() : 'anthropic';
+        const agentRef = typeof body.agent_ref === 'string' && body.agent_ref.trim() ? body.agent_ref.trim() : null;
+        const resolved = await resolveProviderKey(store, lobbyId, providerName, agentRef);
+        if (!resolved) return json({ error: `no provider key configured for "${providerName}" — set one first (POST .../provider-keys)` }, 400);
+        const model = (typeof body.model === 'string' && body.model.trim()) || resolved.model || 'claude-opus-4-8';
+        try {
+          const newId = await spawnHostedAgent({
+            lobbyId,
+            name: typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent',
+            role: typeof body.agent_role === 'string' ? body.agent_role : undefined,
+            apiKey: resolved.apiKey,
+            providerId: providerIdFor(providerName),
+            model,
+            baseUrl: resolved.baseUrl,
+            systemPrompt: typeof body.system_prompt === 'string' ? body.system_prompt : undefined,
+            joinToken: agentRef ?? undefined,
+          });
+          await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
+          return json({ agent_id: newId, name: body.name ?? 'Hosted Agent', model, provider: providerName }, 201);
+        } catch (e) {
+          return json({ error: `failed to launch hosted agent: ${String((e as Error).message ?? e)}` }, 500);
+        }
+      }
+      // DELETE .../hosted-agents/:agentId — stop a hosted agent.
+      if (req.method === 'DELETE' && agentId) {
+        const stopped = await stopHostedAgent(agentId);
+        if (!stopped) return json({ error: 'hosted agent not found' }, 404);
+        await recordEvent(lobbyId, 'hosted_agent_stopped', identityRef, { agent_id: agentId });
+        return json({ stopped: agentId });
       }
     }
 
