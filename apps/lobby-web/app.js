@@ -454,6 +454,9 @@ async function pollLobbyDetails() {
   if (rosterData && id === state.activeLobbyId) {
     state.agents = rosterData.agents || [];
     renderRoster();
+    // Keep the Manage view's agent list live while it's the active view.
+    const manageView = document.getElementById('view-manage');
+    if (manageView && manageView.style.display !== 'none') renderManageAgents();
   }
 
   const msgData = await fetchJson(`/api/v1/agent-lobby/lobbies/${id}/messages`);
@@ -1277,6 +1280,57 @@ function init() {
       }
     });
   }
+
+  // ── Manage view wiring ──
+  const btnManageInvite = document.getElementById('btn-manage-invite');
+  if (btnManageInvite) {
+    btnManageInvite.addEventListener('click', async () => {
+      if (!state.activeLobbyId) { alert('Select a lobby to manage first.'); return; }
+      const refEl = document.getElementById('manage-invite-ref');
+      const roleEl = document.getElementById('manage-invite-role');
+      const identity_ref = refEl?.value?.trim();
+      if (!identity_ref) { alert('Enter a DID or user ID to invite.'); return; }
+      const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members`, {
+        identity_ref, role: roleEl?.value || 'contributor', invited_by_identity_ref: state.identity.ownerDid || 'web-user'
+      });
+      if (res && res.member) { if (refEl) refEl.value = ''; renderManageView(); }
+      else alert('Failed to invite member: ' + (res?.error || 'unknown error'));
+    });
+  }
+
+  const btnManageSave = document.getElementById('btn-manage-save-settings');
+  if (btnManageSave) {
+    btnManageSave.addEventListener('click', async () => {
+      if (!state.activeLobbyId) return;
+      const visibility = document.getElementById('manage-visibility')?.value;
+      const join_policy = document.getElementById('manage-policy')?.value;
+      const res = await fetch(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ visibility, join_policy, actor: 'web-user' })
+      }).then(r => r.ok ? r.json() : null).catch(() => null);
+      if (res && res.lobby) {
+        // Reflect the change locally so the manage header + lobby list update immediately.
+        const idx = state.lobbies.findIndex(l => l.lobby_id === state.activeLobbyId);
+        if (idx >= 0) state.lobbies[idx] = res.lobby;
+        const saved = document.getElementById('manage-settings-saved');
+        if (saved) { saved.style.display = 'block'; setTimeout(() => { saved.style.display = 'none'; }, 2000); }
+        renderLobbies();
+        renderManageView();
+      } else {
+        alert('Failed to save settings.');
+      }
+    });
+  }
+
+  const btnManageIssue = document.getElementById('btn-manage-issue-agent');
+  if (btnManageIssue) {
+    btnManageIssue.addEventListener('click', () => {
+      // The Issue-Agent-ID flow lives in the Lobby tab's onboarding; jump straight to it.
+      switchView('lobby');
+      switchOnboardTab('agent');
+      document.getElementById('onboard-tab-agent')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
 }
 
 // ── Task Marketplace Callbacks ──
@@ -1455,8 +1509,8 @@ window.switchOnboardTab = function(tabName) {
   });
 };
 
-// ── Top-nav view switcher (Lobby / Marketplace) ──
-const VIEWS = ['lobby', 'marketplace'];
+// ── Top-nav view switcher (Lobby / Manage / Marketplace) ──
+const VIEWS = ['lobby', 'manage', 'marketplace'];
 window.switchView = function(view) {
   if (!VIEWS.includes(view)) return;
   VIEWS.forEach(v => {
@@ -1466,8 +1520,103 @@ window.switchView = function(view) {
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
-  // Refresh the marketplace feed when entering it.
   if (view === 'marketplace') pollLobbyDetails();
+  if (view === 'manage') renderManageView();
+};
+
+// ── Manage view (settings + members + agents, contextual to the active lobby) ──
+async function renderManageView() {
+  const hint = document.getElementById('manage-no-lobby-hint');
+  const settings = document.getElementById('manage-settings');
+  const membersCard = document.getElementById('manage-members-card');
+  const agentsCard = document.getElementById('manage-agents-card');
+  const registerCard = document.getElementById('manage-register-card');
+  const nameEl = document.getElementById('manage-lobby-name');
+  if (!hint) return;
+
+  const lobby = state.lobbies.find(l => l.lobby_id === state.activeLobbyId);
+  const hasLobby = !!lobby;
+  if (hint) hint.style.display = hasLobby ? 'none' : 'block';
+  for (const el of [settings, membersCard, agentsCard, registerCard]) {
+    if (el) el.style.display = hasLobby ? (el === settings ? 'block' : 'flex') : 'none';
+  }
+  if (registerCard && hasLobby) registerCard.style.display = 'block';
+  if (!hasLobby) { if (nameEl) nameEl.textContent = '—'; return; }
+
+  if (nameEl) nameEl.textContent = lobby.name || 'Swarm Lobby';
+  const visEl = document.getElementById('manage-lobby-visibility');
+  if (visEl) { visEl.textContent = lobby.visibility || 'public'; visEl.className = `lobby-visibility ${lobby.visibility || 'public'}`; visEl.style.display = 'inline'; }
+  const visSel = document.getElementById('manage-visibility');
+  const polSel = document.getElementById('manage-policy');
+  if (visSel) visSel.value = lobby.visibility || 'public';
+  if (polSel) polSel.value = lobby.join_policy || 'none';
+
+  // Agents render immediately from cached roster state; members are fetched on demand.
+  renderManageAgents();
+  const data = await fetchJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members`);
+  renderManageMembers(data?.members || []);
+}
+
+function renderManageMembers(members) {
+  const list = document.getElementById('manage-members-list');
+  const count = document.getElementById('manage-member-count');
+  if (!list) return;
+  const active = members.filter(m => m.status !== 'revoked');
+  if (count) count.textContent = String(active.length);
+  if (members.length === 0) {
+    list.innerHTML = '<div class="empty-state">No members invited yet. Invite by DID or user ID above.</div>';
+    return;
+  }
+  const statusColor = { invited: 'var(--color-yellow)', active: 'var(--color-green)', revoked: 'var(--color-text-muted)' };
+  list.innerHTML = members.map(m => `
+    <div class="member-item" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border); ${m.status === 'revoked' ? 'opacity:0.5;' : ''}">
+      <div style="text-align:left; min-width:0;">
+        <div style="font-family:var(--font-mono); font-size:11px; color:var(--color-text); overflow:hidden; text-overflow:ellipsis;" title="${escapeHtml(m.identity_ref)}">${escapeHtml(m.identity_ref)}</div>
+        <div style="font-size:10px; color:var(--color-text-muted);">${escapeHtml(m.role)} · <span style="color:${statusColor[m.status] || 'var(--color-text-muted)'};">${escapeHtml(m.status)}</span></div>
+      </div>
+      ${m.status === 'revoked'
+        ? `<button class="btn btn-secondary btn-sm" onclick="reinviteMember('${escapeHtml(m.identity_ref)}','${escapeHtml(m.role)}')">Re-invite</button>`
+        : `<button class="btn btn-danger btn-sm" onclick="revokeMember('${m.id}')">Kick</button>`}
+    </div>
+  `).join('');
+}
+
+function renderManageAgents() {
+  const list = document.getElementById('manage-agents-list');
+  const count = document.getElementById('manage-agent-count');
+  if (!list) return;
+  if (count) count.textContent = String(state.agents.length);
+  if (state.agents.length === 0) {
+    list.innerHTML = '<div class="empty-state">No agents connected. Connect a panel/relay in Swarm Mode.</div>';
+    return;
+  }
+  const verified = ['verified', 'registry_verified', 'human_linked', 'org_linked'];
+  list.innerHTML = state.agents.map(a => {
+    const isV = verified.includes(a.identity_status);
+    return `
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border);">
+        <div style="text-align:left; min-width:0;">
+          <div style="font-size:12px; color:var(--color-text);">${escapeHtml(a.display_name || a.agent_id)}</div>
+          <div style="font-size:10px; color:var(--color-text-muted);">${escapeHtml(a.agent_role || 'agent')} · ${escapeHtml(a.runtime || '—')}</div>
+        </div>
+        <span class="badge" style="background:${isV ? 'rgba(0,229,117,0.12)' : 'rgba(255,255,255,0.05)'}; color:${isV ? 'var(--color-green)' : 'var(--color-text-muted)'};">
+          ${isV ? '✓ ' + escapeHtml(a.identity_status) : escapeHtml(a.identity_status || 'unverified')}
+        </span>
+      </div>`;
+  }).join('');
+}
+
+window.revokeMember = async function(memberId) {
+  if (!state.activeLobbyId) return;
+  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members/${memberId}/status`, { status: 'revoked', actor: 'web-user' });
+  if (res && res.member) renderManageView();
+  else alert('Failed to revoke member.');
+};
+
+window.reinviteMember = async function(identityRef, role) {
+  if (!state.activeLobbyId) return;
+  const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members`, { identity_ref: identityRef, role });
+  if (res && res.member) renderManageView();
 };
 
 document.addEventListener('DOMContentLoaded', init);
