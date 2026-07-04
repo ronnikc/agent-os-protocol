@@ -632,6 +632,62 @@ function discoverAgents(): AgentDef[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
+/**
+ * Persist (or clear) an agent's identity DID in its def file's `Identity:` header so the
+ * next boot passes it as `--join-token` automatically — the identity survives restarts
+ * instead of living only in the ephemeral relay process. `identity === null` revokes it.
+ *
+ * The slug is validated against discovered agents by the caller (it flows into a file path),
+ * and the DID is sanitised here (single line, capped length) since it's written verbatim.
+ */
+function setAgentIdentity(slug: string, identity: string | null): { ok: boolean; error?: string } {
+  const def = discoverAgents().find(a => a.slug === slug);
+  if (!def) return { ok: false, error: `Unknown agent: ${slug}` };
+
+  const filePath = join(AGENTS_DIR, def.file);
+  if (!existsSync(filePath)) return { ok: false, error: 'Agent definition file not found' };
+
+  let did: string | null = null;
+  if (identity !== null) {
+    did = identity.trim();
+    // The DID is written into a single header line and later handed to the relay as a CLI
+    // arg — reject anything with newlines/control chars or that doesn't look like a DID.
+    if (!/^did:[a-z0-9]+:[\x21-\x7e]+$/i.test(did) || did.length > 256) {
+      return { ok: false, error: 'Invalid identity — expected a single-line DID (e.g. did:ccd:testnet:<id>)' };
+    }
+  }
+
+  const content = readFileSync(filePath, 'utf-8');
+  // The header is the leading `Key: value` block before the first blank line / `---`.
+  const hasIdentityLine = /^Identity:\s*.*$/m.test(content);
+  let next: string;
+  if (did === null) {
+    // Revoke: drop the Identity line (and any trailing newline it owned).
+    next = content.replace(/^Identity:\s*.*\r?\n?/m, '');
+  } else if (hasIdentityLine) {
+    next = content.replace(/^Identity:\s*.*$/m, `Identity: ${did}`);
+  } else {
+    // Insert after the most specific existing header line (Model → Runtime → Scope → Slug),
+    // keeping the DID inside the header block where discoverAgents() looks for it.
+    const anchor = [/^Model:\s*.*$/m, /^Runtime:\s*.*$/m, /^Scope:\s*.*$/m, /^Slug:\s*.*$/m]
+      .map(re => ({ re, m: content.match(re) }))
+      .find(x => x.m);
+    if (anchor?.m) {
+      next = content.replace(anchor.re, `${anchor.m[0]}\nIdentity: ${did}`);
+    } else {
+      // No recognisable header anchor — prepend the line.
+      next = `Identity: ${did}\n${content}`;
+    }
+  }
+
+  try {
+    writeFileSync(filePath, next);
+    return { ok: true };
+  } catch (err) {
+    return { ok: false, error: `Failed to write agent definition: ${String(err)}` };
+  }
+}
+
 function getAgentStatus(slug: string): string {
   if (runningProcesses.has(slug)) {
     const proc = runningProcesses.get(slug)!;
@@ -1660,6 +1716,28 @@ const server = createServer(async (req, res) => {
     if (!slug) { sendJson(res, { error: 'slug required' }, 400); return; }
     const result = stopAgent(slug);
     sendJson(res, result, result.ok ? 200 : 400);
+    return;
+  }
+
+  // Persist a minted DID onto an agent so it auto-connects with that identity on every boot
+  // (written to the def's `Identity:` header → passed as `--join-token`). Pass identity: null
+  // (or hit /revoke) to clear it. A running agent must be restarted to pick up the change.
+  if (path === '/api/agents/identity' && method === 'POST') {
+    const body = await parseBody(req);
+    const slug = body.slug as string;
+    if (!slug) { sendJson(res, { error: 'slug required' }, 400); return; }
+    const identity = body.identity == null ? null : String(body.identity);
+    const result = setAgentIdentity(slug, identity);
+    sendJson(res, { ...result, restartRequired: getAgentStatus(slug) === 'running' }, result.ok ? 200 : 400);
+    return;
+  }
+
+  if (path === '/api/agents/identity/revoke' && method === 'POST') {
+    const body = await parseBody(req);
+    const slug = body.slug as string;
+    if (!slug) { sendJson(res, { error: 'slug required' }, 400); return; }
+    const result = setAgentIdentity(slug, null);
+    sendJson(res, { ...result, restartRequired: getAgentStatus(slug) === 'running' }, result.ok ? 200 : 400);
     return;
   }
 

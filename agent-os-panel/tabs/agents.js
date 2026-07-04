@@ -31,6 +31,12 @@ function getActivityIndicator(status) {
   return `<span style="color:var(--color-text-soft)">—</span>`;
 }
 
+function shortDid(did) {
+  if (!did) return '';
+  // did:ccd:testnet:abcd…wxyz — keep the network + head/tail of the id.
+  return did.length > 28 ? `${did.slice(0, 20)}…${did.slice(-6)}` : did;
+}
+
 function renderAgents() {
   const el = document.getElementById('agentList');
   if (!el) return;
@@ -38,19 +44,27 @@ function renderAgents() {
     const checked = selected.has(a.slug) ? 'checked' : '';
     const statusClass = `status-${a.status}`;
     const isRunning = a.status === 'running';
+    const hasDid = !!a.identity;
+    const didCell = hasDid
+      ? `<div style="font-family:var(--mono);font-size:10px;color:var(--color-text-soft);margin-top:3px;" title="${escapeHtml(a.identity)}">${escapeHtml(shortDid(a.identity))}</div>`
+      : '';
+    const idBtn = hasDid
+      ? `<button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Change the Agent ID (DID) this agent connects with">Change ID</button>
+         <button class="btn btn-sm" data-action="revoke-id" data-slug="${a.slug}" title="Remove the persisted Agent ID">Revoke</button>`
+      : `<button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Persist an Agent ID (DID) so this agent auto-connects with it on every boot">Set ID</button>`;
     return `<tr>
       <td><input type="checkbox" ${checked} data-slug="${a.slug}" /></td>
       <td><strong>${escapeHtml(a.name)}</strong></td>
       <td class="scope" title="${escapeHtml(a.scope)}">${escapeHtml(a.scope)}</td>
-      <td>${getIdentityBadge(a.identity_status)}</td>
+      <td>${getIdentityBadge(a.identity_status)}${didCell}</td>
       <td><span class="status-dot ${statusClass}"></span>${a.status}</td>
       <td>${getActivityIndicator(a.status)}</td>
       <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.runtime || '—')}</span></td>
       <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.model || '—')}</span></td>
-      <td>${isRunning
+      <td><div style="display:flex;gap:4px;flex-wrap:wrap;">${isRunning
         ? `<button class="btn btn-danger btn-sm" data-action="stop" data-slug="${a.slug}">Stop</button>`
         : `<button class="btn btn-primary btn-sm" data-action="start" data-slug="${a.slug}">Start</button>`
-      }</td>
+      }${idBtn}</div></td>
     </tr>`;
   }).join('');
 }
@@ -80,6 +94,35 @@ async function startOne(slug) {
 async function stopOne(slug) {
   await postJson('/api/agents/stop', { slug });
   setTimeout(refresh, 500);
+}
+
+async function setId(slug) {
+  const current = state.agents.find(a => a.slug === slug)?.identity || '';
+  const did = window.prompt(
+    `Agent ID (DID) for "${slug}".\n\nThis is persisted to the agent definition and passed as the lobby join token on every boot, so the agent always connects with this identity.\n\nFormat: did:ccd:<network>:<id>`,
+    current,
+  );
+  if (did === null) return; // cancelled
+  const trimmed = did.trim();
+  if (!trimmed) return;
+  const result = await postJson('/api/agents/identity', { slug, identity: trimmed });
+  if (result && result.ok === false) {
+    window.alert(`Could not set Agent ID: ${result.error || 'unknown error'}`);
+  } else if (result && result.restartRequired) {
+    window.alert('Agent ID saved. Restart the agent (Stop then Start) for it to reconnect with the new identity.');
+  }
+  setTimeout(refresh, 300);
+}
+
+async function revokeId(slug) {
+  if (!window.confirm(`Remove the persisted Agent ID from "${slug}"? It will connect unverified on the next boot.`)) return;
+  const result = await postJson('/api/agents/identity/revoke', { slug });
+  if (result && result.ok === false) {
+    window.alert(`Could not revoke Agent ID: ${result.error || 'unknown error'}`);
+  } else if (result && result.restartRequired) {
+    window.alert('Agent ID revoked. Restart the agent (Stop then Start) to drop the identity.');
+  }
+  setTimeout(refresh, 300);
 }
 
 async function updateOverviewStats() {
@@ -131,6 +174,8 @@ function init() {
     const slug = btn.dataset.slug;
     if (btn.dataset.action === 'start') startOne(slug);
     if (btn.dataset.action === 'stop') stopOne(slug);
+    if (btn.dataset.action === 'set-id') setId(slug);
+    if (btn.dataset.action === 'revoke-id') revokeId(slug);
   });
 
   document.getElementById('presets')?.addEventListener('click', (e) => {
