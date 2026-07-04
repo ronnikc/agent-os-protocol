@@ -606,6 +606,24 @@ function mapRegisterArgs(inputSchema, fields) {
   return args;
 }
 
+// Concordium web-sdk, loaded on demand from a CDN as an ES module (the dashboard is a
+// no-bundler static app). The wallet's sendTransaction expects the payload fields to be real
+// SDK instances — CcdAmount / ContractAddress / Energy / ReceiveName — because it calls methods
+// like `.mod()` on them during serialization. Primitives (BigInt/string/number) have no such
+// methods, which is the "A.mod is not a function" failure. Pinned to the major version whose API
+// (CcdAmount.fromMicroCcd / ContractAddress.create / Energy.create) this code targets.
+const CCD_SDK_URL = 'https://esm.sh/@concordium/web-sdk@12';
+let _ccdSdkPromise = null;
+function loadConcordiumSdk() {
+  if (!_ccdSdkPromise) {
+    _ccdSdkPromise = import(/* @vite-ignore */ CCD_SDK_URL).catch((err) => {
+      _ccdSdkPromise = null; // allow a retry on the next attempt
+      throw new Error(`could not load the Concordium SDK from ${CCD_SDK_URL}: ${err.message || err}`);
+    });
+  }
+  return _ccdSdkPromise;
+}
+
 /**
  * Anchor a freshly issued Agent Card on-chain through the Concordium Agent Registry:
  * the lobby relays build_register (sign-ready { hex, schema_json } — the service holds no keys),
@@ -652,30 +670,31 @@ async function anchorAgentOnChain(provider, fields) {
     throw new Error('could not resolve the registry contract address/entrypoint from build_register or contract_info');
   }
 
-  // AccountTransactionType.Update = 2 — the wallet shows, signs, and submits the mint.
-  //
-  // Use JSON-primitive values, NOT native BigInt. The browser wallet serializes the payload by
-  // running each field through the Concordium SDK constructors (CcdAmount.fromMicroCcd /
-  // ContractAddress.create / Energy.create), which accept string/number. Passing a native
-  // BigInt made the serializer treat it as an already-constructed SDK amount and call `.mod()`
-  // on it — native BigInt has no `.mod()`, hence "A.mod is not a function". The documented
-  // sendTransaction JSON form is: amount microCCD as a string, index/subindex/energy as numbers.
-  const energy = Number(payload.max_energy ?? payload.energy ?? 30000);
-  const txBase = {
-    amount: '0', // microCCD as a string
-    address: { index: Number(index), subindex: Number(subindex ?? 0) },
-    receiveName,
-    maxContractExecutionEnergy: energy,
-  };
-  console.log('[Registry] submitting Update tx:', { txBase, hasHex: !!hex, hasSchema: !!schema });
+  // Build the Update payload from REAL Concordium SDK instances. The wallet serializes the
+  // payload by calling methods (e.g. `.mod()` for byte encoding) directly on each field, so
+  // primitives fail with "A.mod is not a function" — confirmed from the live wallet stack. Only
+  // CcdAmount / ContractAddress / Energy / ReceiveName / Parameter instances work.
+  const sdk = await loadConcordiumSdk();
+  const { CcdAmount, ContractAddress, Energy, ReceiveName, Parameter, AccountTransactionType } = sdk;
+  const energyVal = Number(payload.max_energy ?? payload.energy ?? 30000);
+  const amount = CcdAmount.fromMicroCcd(0); // registration is a 0-CCD contract update
+  const address = ContractAddress.create(Number(index), Number(subindex ?? 0));
+  const receiveNameObj = ReceiveName.fromString(receiveName);
+  const energyObj = Energy.create(energyVal);
+  console.log('[Registry] submitting Update tx:', { index, subindex, receiveName, energy: energyVal, hasHex: !!hex, hasSchema: !!schema });
 
   let txHash;
   if (hex) {
-    // Pre-encoded parameter bytes — pass as the raw update message.
-    txHash = await provider.sendTransaction(state.wallet.address, 2, { ...txBase, message: hex });
+    // Pre-encoded parameter bytes (parameter_hex) — pass as the update message.
+    const message = Parameter.fromHexString(hex);
+    txHash = await provider.sendTransaction(state.wallet.address, AccountTransactionType.Update, {
+      amount, address, receiveName: receiveNameObj, message, maxContractExecutionEnergy: energyObj,
+    });
   } else if (parameterJson && schema) {
-    // Schema-JSON parameter — the wallet serializes it with the provided base64 schema.
-    txHash = await provider.sendTransaction(state.wallet.address, 2, txBase, parameterJson, schema);
+    // No pre-encoded hex: hand the wallet the JSON params + base64 schema to serialize & display.
+    txHash = await provider.sendTransaction(state.wallet.address, AccountTransactionType.Update, {
+      amount, address, receiveName: receiveNameObj, maxContractExecutionEnergy: energyObj,
+    }, parameterJson, schema);
   } else if (parameterJson) {
     throw new Error(`build_register returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
   } else {
@@ -1434,6 +1453,21 @@ window.switchOnboardTab = function(tabName) {
       }
     }
   });
+};
+
+// ── Top-nav view switcher (Lobby / Marketplace) ──
+const VIEWS = ['lobby', 'marketplace'];
+window.switchView = function(view) {
+  if (!VIEWS.includes(view)) return;
+  VIEWS.forEach(v => {
+    const el = document.getElementById('view-' + v);
+    if (el) el.style.display = v === view ? '' : 'none';
+  });
+  document.querySelectorAll('.nav-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.view === view);
+  });
+  // Refresh the marketplace feed when entering it.
+  if (view === 'marketplace') pollLobbyDetails();
 };
 
 document.addEventListener('DOMContentLoaded', init);
