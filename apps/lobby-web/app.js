@@ -553,19 +553,26 @@ function toMicroCcd(value) {
  * Concordium wallet-proxy REST API, then the CCDScan GraphQL API. Returns a number (CCD) or
  * null when no source could resolve it — never NaN.
  */
+// Balance is polled on a timer, so a failing strategy must not spam the console every tick.
+// Per-strategy failures are debug-level; a single warning per address is emitted only when
+// ALL strategies fail (and not repeated for that address until it next succeeds).
+const _balanceWarned = new Set();
+
 async function fetchWalletBalance(provider, addrStr) {
-  // Strategy 1: wallet extension's built-in RPC client (gRPC or legacy JSON-RPC)
+  // Strategy 1: wallet extension's built-in RPC client (gRPC or legacy JSON-RPC).
+  // Only attempt when the provider actually exposes a client — most browser wallets don't,
+  // and calling a missing method (or one that throws every tick) is pure console noise.
   try {
     let accountInfo = null;
-    if (provider?.getGrpcClient) {
+    if (typeof provider?.getGrpcClient === 'function') {
       accountInfo = await (await provider.getGrpcClient()).getAccountInfo(addrStr);
-    } else if (provider?.getJsonRpcClient) {
+    } else if (typeof provider?.getJsonRpcClient === 'function') {
       accountInfo = await (await provider.getJsonRpcClient()).getAccountInfo(addrStr);
     }
     const micro = toMicroCcd(accountInfo?.accountAmount);
-    if (micro !== null) return Number(micro) / 1_000_000;
+    if (micro !== null) { _balanceWarned.delete(addrStr); return Number(micro) / 1_000_000; }
   } catch (rpcErr) {
-    console.warn('[Wallet] RPC balance fetch failed:', rpcErr);
+    console.debug('[Wallet] RPC balance strategy unavailable:', rpcErr?.message || rpcErr);
   }
 
   // Strategy 2: Concordium public wallet-proxy REST API.
@@ -575,12 +582,12 @@ async function fetchWalletBalance(provider, addrStr) {
     if (proxyRes.ok) {
       const balInfo = await proxyRes.json();
       const micro = toMicroCcd(balInfo?.finalizedBalance ?? balInfo?.currentBalance);
-      if (micro !== null) return Number(micro) / 1_000_000;
+      if (micro !== null) { _balanceWarned.delete(addrStr); return Number(micro) / 1_000_000; }
     } else {
-      console.warn('[Wallet] wallet-proxy returned:', proxyRes.status);
+      console.debug('[Wallet] wallet-proxy returned:', proxyRes.status);
     }
   } catch (proxyErr) {
-    console.warn('[Wallet] wallet-proxy request failed:', proxyErr);
+    console.debug('[Wallet] wallet-proxy request failed:', proxyErr?.message || proxyErr);
   }
 
   // Strategy 3: CCDScan public GraphQL API
@@ -595,39 +602,49 @@ async function fetchWalletBalance(provider, addrStr) {
     if (scanRes.ok) {
       const scanData = await scanRes.json();
       const micro = toMicroCcd(scanData?.data?.accountByAddress?.amount);
-      if (micro !== null) return Number(micro) / 1_000_000;
+      if (micro !== null) { _balanceWarned.delete(addrStr); return Number(micro) / 1_000_000; }
     }
   } catch (scanErr) {
-    console.warn('[Wallet] CCDScan query failed:', scanErr);
+    console.debug('[Wallet] CCDScan query failed:', scanErr?.message || scanErr);
   }
 
-  console.warn('[Wallet] Could not fetch balance from any source. Check browser console for details.');
+  // All strategies failed — warn once per address, not on every poll tick.
+  if (!_balanceWarned.has(addrStr)) {
+    _balanceWarned.add(addrStr);
+    console.warn('[Wallet] Could not fetch balance from any source for', addrStr, '(will retry silently).');
+  }
   return null;
 }
 
 // ── Concordium Agent Registry (on-chain anchoring) ──
 
 /**
- * Map our card fields onto build_register's advertised input schema by property name, so the
+ * Map our card fields onto a builder tool's advertised input schema by property name, so the
  * dashboard adapts to the MCP service's exact parameter names instead of hardcoding them.
- * Throws with the schema attached when a required property cannot be mapped — surfacing the
- * mismatch beats submitting a payload the registry will reject.
+ * Precedence matters: the agent's own identifier (did / external reference / token / agent key)
+ * must be distinguished from the OWNER's account, or a param like `agent_address` would wrongly
+ * receive the owner's account and the contract would reject the malformed parameter. Throws with
+ * the schema attached when a required property cannot be mapped — surfacing the mismatch beats
+ * submitting a payload the registry will reject.
  */
-function mapRegisterArgs(inputSchema, fields) {
+function mapBuilderArgs(inputSchema, fields) {
   const props = inputSchema?.properties || {};
   const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
   const args = {};
   for (const key of Object.keys(props)) {
-    if (/uri|url/i.test(key)) args[key] = fields.metadataUrl;
-    else if (/hash/i.test(key)) args[key] = fields.cardHash;
-    // "sender" is what the live Agent Registry MCP service calls the minting account
-    else if (/sender|owner|account|address/i.test(key)) args[key] = fields.owner;
+    // Order is deliberate — most specific first.
+    if (/hash/i.test(key)) args[key] = fields.cardHash;
+    else if (/uri|url|metadata/i.test(key)) args[key] = fields.metadataUrl;
+    // The agent's identity: DID, external reference, token id, or the agent's own key/address.
+    else if (/agent.*(id|key|ref|reference|token|address|did)|external.*ref|^reference$|^token(_?id)?$|^did$/i.test(key)) args[key] = fields.agentDid;
     else if (/network/i.test(key)) args[key] = fields.network;
+    // The minting account — "sender" is what the live service calls it; plain owner/account too.
+    else if (/sender|owner|account/i.test(key) || /^address$/i.test(key)) args[key] = fields.owner;
     else if (/name$/i.test(key)) args[key] = fields.agentName;
   }
   const unmapped = required.filter((k) => args[k] === undefined);
   if (unmapped.length > 0) {
-    throw new Error(`build_register requires parameters this dashboard cannot map yet: ${unmapped.join(', ')} — schema: ${JSON.stringify(props)}`);
+    throw new Error(`the registry builder requires parameters this dashboard cannot map yet: ${unmapped.join(', ')} — schema: ${JSON.stringify(props)}`);
   }
   return args;
 }
@@ -651,10 +668,45 @@ function loadConcordiumSdk() {
 }
 
 /**
+ * Decide which registry builder to use, guided by whether this agent DID is already registered
+ * on-chain and whether the service offers a sponsored (gasless) builder:
+ *  - already registered  → `build_set_agent_uri` (the `setAgentURI` entrypoint every successful
+ *    on-chain event uses to (re)point metadata) instead of `build_register`, which rejects when
+ *    its create-preconditions aren't met.
+ *  - a sponsored/permit builder is exposed → prefer it so Concordium pays the energy, not the owner.
+ * Falls back to `build_register` for a genuinely new mint. Any lookup failure defaults to register.
+ */
+async function chooseRegistryBuilder(tools, fields) {
+  const names = new Set((tools || []).map((t) => t.name));
+  // Sponsored path takes precedence when the service advertises one (none in the current
+  // allowlist, but this wires it automatically the moment the registry MCP exposes it).
+  const sponsored = (tools || []).find((t) => /sponsor|permit|gasless/i.test(t.name) && /register|set.*uri|metadata/i.test(t.name));
+  if (sponsored) return { tool: sponsored, sponsored: true, mode: 'sponsored' };
+
+  // Is this agent DID already on-chain? If so, update its URI rather than re-registering.
+  let exists = false;
+  try {
+    const lookup = await postJson('/api/v1/agent-lobby/registry/call', {
+      tool: 'agent_by_external_reference',
+      arguments: { network: fields.network, external_reference: fields.agentDid, reference: fields.agentDid },
+    });
+    const r = lookup?.result;
+    exists = !!(lookup?.ok && r && (r.token_id || r.agent || r.owner || r.exists === true));
+  } catch { /* lookup unsupported/unreachable — treat as new */ }
+
+  if (exists && names.has('build_set_agent_uri')) {
+    return { tool: (tools || []).find((t) => t.name === 'build_set_agent_uri'), sponsored: false, mode: 'update' };
+  }
+  const register = (tools || []).find((t) => t.name === 'build_register');
+  if (!register) throw new Error('the registry MCP service does not expose build_register');
+  return { tool: register, sponsored: false, mode: 'register' };
+}
+
+/**
  * Anchor a freshly issued Agent Card on-chain through the Concordium Agent Registry:
- * the lobby relays build_register (sign-ready { hex, schema_json } — the service holds no keys),
- * and the owner's wallet signs and submits the mint as a contract update.
- * Returns { txHash, contract, receiveName }, or null when no registry MCP service is configured.
+ * the lobby relays a builder tool (sign-ready payload — the service holds no keys), and the
+ * owner's wallet signs and submits the update. Returns { txHash, contract, receiveName, mode,
+ * sponsored }, or null when no registry MCP service is configured.
  */
 async function anchorAgentOnChain(provider, fields) {
   const status = await fetchJson(`/api/v1/agent-lobby/registry/status?network=${CCD_NETWORK}`);
@@ -662,14 +714,15 @@ async function anchorAgentOnChain(provider, fields) {
   if (status.error) throw new Error(`registry MCP service unreachable: ${status.error}`);
 
   const toolsRes = await fetchJson('/api/v1/agent-lobby/registry/tools');
-  const registerTool = toolsRes?.tools?.find((t) => t.name === 'build_register');
-  if (!registerTool) throw new Error('the registry MCP service does not expose build_register');
+  const tools = toolsRes?.tools || [];
+  const { tool: builder, sponsored, mode } = await chooseRegistryBuilder(tools, fields);
+  console.log(`[Registry] using builder "${builder.name}" (mode: ${mode}, sponsored: ${sponsored})`);
 
-  const args = mapRegisterArgs(registerTool.inputSchema, fields);
-  const call = await postJson('/api/v1/agent-lobby/registry/call', { tool: 'build_register', arguments: args });
-  if (!call || !call.ok) throw new Error(call?.error || 'build_register call failed');
+  const args = mapBuilderArgs(builder.inputSchema, fields);
+  const call = await postJson('/api/v1/agent-lobby/registry/call', { tool: builder.name, arguments: args });
+  if (!call || !call.ok) throw new Error(call?.error || `${builder.name} call failed`);
   const payload = call.result || {};
-  console.log('[Registry] build_register payload:', payload);
+  console.log(`[Registry] ${builder.name} payload:`, payload);
 
   // The docs describe { hex, schema_json }; the live service returns
   // { network, contract_address: {index, subindex}, receive_name, parameter_json, ... }.
@@ -690,10 +743,14 @@ async function anchorAgentOnChain(provider, fields) {
     const cis = info.cis8004 || info['cis-8004'] || info;
     index = index ?? cis.index ?? cis.contract_index ?? cis.contract_address?.index;
     subindex = subindex ?? cis.subindex ?? cis.contract_subindex ?? cis.contract_address?.subindex;
-    receiveName = receiveName || cis.receive_name || (cis.contract_name ? `${cis.contract_name}.register` : undefined);
+    // Derive the entrypoint from the chosen builder (register → register, set-agent-uri →
+    // setAgentURI) rather than hardcoding `.register` — the old fallback forced every mint down
+    // the register entrypoint even for updates, which is exactly what the contract rejected.
+    const entrypoint = builder.name === 'build_set_agent_uri' ? 'setAgentURI' : 'register';
+    receiveName = receiveName || cis.receive_name || (cis.contract_name ? `${cis.contract_name}.${entrypoint}` : undefined);
   }
   if (index === undefined || !receiveName) {
-    throw new Error('could not resolve the registry contract address/entrypoint from build_register or contract_info');
+    throw new Error('could not resolve the registry contract address/entrypoint from the builder payload or contract_info');
   }
 
   // Build the Update payload from REAL Concordium SDK instances. The wallet serializes the
@@ -722,11 +779,11 @@ async function anchorAgentOnChain(provider, fields) {
       amount, address, receiveName: receiveNameObj, maxContractExecutionEnergy: energyObj,
     }, parameterJson, schema);
   } else if (parameterJson) {
-    throw new Error(`build_register returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+    throw new Error(`${builder.name} returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
   } else {
-    throw new Error(`build_register did not return a signable payload (keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+    throw new Error(`${builder.name} did not return a signable payload (keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
   }
-  return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName };
+  return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName, mode, sponsored };
 }
 
 /** Extract a hex signature string from the Concordium wallet's { 0: { 0: hex } } response shape. */
@@ -1068,7 +1125,6 @@ function init() {
       const sortedKeys = Object.keys(card).sort();
       const sortedCard = {};
       for (const k of sortedKeys) sortedCard[k] = card[k];
-      const cardHash = await sha256(JSON.stringify(sortedCard));
 
       // Sign with the connected wallet — issuing a credential requires a real signature
       const provider = window.concordium;
@@ -1082,7 +1138,10 @@ function init() {
       let signatureHex = null;
       try {
         btnIssueAgentAction.textContent = "Sign in Wallet...";
-        const signPayload = `Agent OS Agent Card\nDID: ${agentDid}\nName: ${agentName}\nRole: ${agentRole}\nOwner: ${state.identity.ownerDid}\nCard Hash: ${cardHash}`;
+        // Sign over the STABLE identity fields, not the metadata hash: the on-chain hash must
+        // cover the final hosted card (which includes this signature), so it can't be known at
+        // signing time. The signature attests to who/what; the on-chain hash attests to the bytes.
+        const signPayload = `Agent OS Agent Card\nDID: ${agentDid}\nName: ${agentName}\nRole: ${agentRole}\nOwner: ${state.identity.ownerDid}`;
         signatureHex = normalizeSignature(await provider.signMessage(state.wallet.address, signPayload));
         console.log('[Agent Issue] Wallet signature:', signatureHex?.slice(0, 40) + '...');
       } catch (err) {
@@ -1098,6 +1157,13 @@ function init() {
       // Add signature to card metadata
       sortedCard.signature = signatureHex;
       sortedCard.signedBy = state.wallet.address;
+
+      // Hash the EXACT bytes we host (signature included), so the metadata hash anchored on-chain
+      // matches what a resolver recomputes from the hosted card. The lobby server serves the stored
+      // card via compact JSON.stringify preserving this key order, so these are the served bytes.
+      // (Previously the hash was taken BEFORE the signature was added, then the signed card was
+      // hosted — a permanent mismatch that reads as a tampered card.)
+      const cardHash = await sha256(JSON.stringify(sortedCard));
 
       // Post the metadata to the Lobby server for hosting (also records the lobby event)
       const registerRes = await postJson('/api/v1/agent-lobby/agent-cards', {
@@ -1120,7 +1186,8 @@ function init() {
           cardHash,
           owner: state.wallet.address,
           network: CCD_NETWORK,
-          agentName
+          agentName,
+          agentDid
         });
       } catch (err) {
         console.error('[Agent Issue] On-chain anchoring failed:', err);
@@ -1148,7 +1215,11 @@ function init() {
           : `<span style="color:var(--color-yellow);">⚠ Server unreachable — card not hosted</span>`;
         let onChainLine;
         if (anchor) {
-          onChainLine = `<span style="color:var(--color-green); font-weight:600;">✓ Mint submitted</span> — Tx <a href="https://ccdexplorer.io/${CCD_NETWORK}/transaction/${escapeHtml(String(anchor.txHash))}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(String(anchor.txHash).slice(0, 16))}… ↗</a> (registry ${anchor.contract.index},${anchor.contract.subindex})`;
+          const verb = anchor.mode === 'update' ? 'setAgentURI submitted' : 'Mint submitted';
+          const gas = anchor.sponsored
+            ? ` <span style="color:var(--color-green); font-size:10px;">· sponsored (no CCD spent)</span>`
+            : ` <span style="color:var(--text-muted); font-size:10px;">· energy paid by your wallet</span>`;
+          onChainLine = `<span style="color:var(--color-green); font-weight:600;">✓ ${verb}</span> — Tx <a href="https://ccdexplorer.io/${CCD_NETWORK}/transaction/${escapeHtml(String(anchor.txHash))}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(String(anchor.txHash).slice(0, 16))}… ↗</a> (registry ${anchor.contract.index},${anchor.contract.subindex})${gas}`;
         } else if (anchorError) {
           onChainLine = `<span style="color:#ff5c5c;">✗ anchoring failed</span> — <span style="font-size:10px;">${escapeHtml(anchorError)}</span>`;
         } else {
