@@ -23,12 +23,14 @@
 import {
   LoopOrchestrator,
   LOOP_PRESETS,
+  createSelfLearningReflect,
   type CriterionResult,
   type IterationWork,
   type LoopEvent,
   type LoopContext,
   type CheckpointAction,
 } from '@agent-os/loop';
+import { spawnSync } from 'node:child_process';
 import type { LoopSpec } from '@agent-os/protocol-core';
 
 const argv = process.argv.slice(2);
@@ -94,8 +96,21 @@ const onEvent = (e: LoopEvent) => {
   }
 };
 
+// ── Reflect: feed each progressing iteration into the self-learning system. In this simulation
+//    the runner logs the pass; with --self-learning it spawns the real review in --dry-run (safe,
+//    no writes) to exercise the full path. Real Boss loops wire host.selfLearn in the lobby driver. ──
+const runSelfLearning = has('--self-learning');
+const reflect = createSelfLearningReflect({
+  run: (info) => {
+    console.log(`  [it ${info.iteration}] reflect → self-learning (progressed=${info.progressed})`);
+    if (runSelfLearning) {
+      spawnSync('node', ['agent-os/scripts/self-learning-review.mjs', '--dry-run'], { stdio: 'inherit' });
+    }
+  },
+});
+
 (async () => {
-  const orchestrator = new LoopOrchestrator({ evaluate, delegate, approveCheckpoint, emit: onEvent });
+  const orchestrator = new LoopOrchestrator({ evaluate, delegate, approveCheckpoint, emit: onEvent, reflect });
   const result = await orchestrator.run(spec, {
     allowUnattended: unattended,
     unattendedAllowlist: [...preset.unattendedAllowlist],

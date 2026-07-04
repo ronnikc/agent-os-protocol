@@ -18,7 +18,8 @@
  */
 
 import type { ExitCriterion } from '@agent-os/protocol-core';
-import type { LoopContext, LoopSeams, IterationWork, CriterionResult, CheckpointAction } from './orchestrator.js';
+import type { LoopContext, LoopSeams, IterationWork, CriterionResult, CheckpointAction, ReflectInfo } from './orchestrator.js';
+import { createSelfLearningReflect } from './orchestrator.js';
 
 /** A task the Boss dispatches to a lobby specialist to close one failing exit criterion. */
 export interface DispatchedTask {
@@ -57,6 +58,15 @@ export interface LobbyLoopHost {
 export interface LobbyDriverOptions {
   /** Priority assigned to dispatched tasks. Default 'high'. */
   priority?: DispatchedTask['priority'];
+  /**
+   * Self-learning runner invoked at the Reflect phase of each iteration — wire it to spawn
+   * agent-os/scripts/self-learning-review.mjs so the Boss loop feeds its work back into memories,
+   * the dependency graph, and the skills review. Injected (not imported) to keep this package
+   * runtime-free. When omitted, no reflect seam is produced and the loop behaves as before.
+   */
+  selfLearn?: (info: ReflectInfo & { goal: string }) => Promise<void> | void;
+  /** Reflect on every iteration, not just progressing ones (default: only on progress). */
+  reflectEveryIteration?: boolean;
 }
 
 /** Human-readable title/description/category for the task that closes a given criterion. */
@@ -102,10 +112,15 @@ export function taskForCriterion(
 export function createLobbyLoopSeams(
   host: LobbyLoopHost,
   options: LobbyDriverOptions = {},
-): Pick<LoopSeams, 'evaluate' | 'delegate'> {
+): Pick<LoopSeams, 'evaluate' | 'delegate' | 'reflect'> {
   const priority = options.priority ?? 'high';
 
+  const reflect = options.selfLearn
+    ? createSelfLearningReflect({ run: options.selfLearn, onlyOnProgress: !options.reflectEveryIteration })
+    : undefined;
+
   return {
+    ...(reflect ? { reflect } : {}),
     evaluate: async (ctx: LoopContext): Promise<CriterionResult[]> => {
       // Verify every criterion against the real work-item state — the swarm's tasks are the
       // MECHANISM of change; the gates are the source of truth for convergence.

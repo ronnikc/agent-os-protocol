@@ -1,0 +1,17 @@
+#!/usr/bin/env bash
+# pre-commit — Agent OS memory-index integrity guard.
+#
+# Refuses a commit that stages a memory file without the regenerated
+# INDEX.aaak.jsonl, protecting the layered-load contract (agent-os/MEMORY.md).
+# Wired via core.hooksPath=.husky — no husky dependency required.
+
+set -uo pipefail
+
+ROOT="$(git rev-parse --show-toplevel 2>/dev/null)" || exit 0
+cd "$ROOT" || exit 0
+
+if [ -x agent-os/scripts/hooks/memory-index-staleness.sh ]; then
+  bash agent-os/scripts/hooks/memory-index-staleness.sh || exit 1
+fi
+
+exit 0

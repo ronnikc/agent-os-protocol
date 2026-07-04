@@ -32,6 +32,7 @@ import {
   LOOP_PRESETS,
   continuousQualityLoop,
   createLobbyLoopSeams,
+  createSelfLearningReflect,
   taskForCriterion,
   type LoopSeams,
   type CriterionResult,
@@ -248,6 +249,48 @@ async function main(): Promise<void> {
     assert.equal(seen[seen.length - 1].type, 'finished');
     assert.ok(seen.some((e) => e.type === 'converged'));
     for (const e of seen) assert.ok(typeof e.at === 'number', 'each event is timestamped');
+  });
+
+  // ── K2. Reflect seam / self-learning wiring ──
+  await check('reflect seam is invoked once per iteration', async () => {
+    const w = makeWorld(3, 1);
+    const infos: number[] = [];
+    const res = await new LoopOrchestrator({
+      evaluate: w.evaluate,
+      delegate: w.delegate,
+      reflect: (_ctx, info) => { infos.push(info.iteration); },
+    }).run(specFor(w.criteria));
+    assert.equal(res.status, 'converged');
+    assert.equal(infos.length, res.iterations, 'one reflect call per iteration');
+    assert.deepEqual(infos, infos.slice().sort((a, b) => a - b), 'reflect sees ascending iterations');
+  });
+
+  await check('a throwing reflect seam never breaks the loop (best-effort)', async () => {
+    const w = makeWorld(2, 1);
+    const seen: LoopEvent[] = [];
+    const res = await new LoopOrchestrator({
+      evaluate: w.evaluate,
+      delegate: w.delegate,
+      emit: (e) => seen.push(e),
+      reflect: () => { throw new Error('boom'); },
+    }).run(specFor(w.criteria));
+    assert.equal(res.status, 'converged', 'loop still converges despite reflect throwing');
+    assert.ok(seen.some((e) => e.type === 'reflected' && e.data?.reflectError === true), 'a reflect failure is recorded, not swallowed silently');
+  });
+
+  await check('createSelfLearningReflect skips no-progress iterations by default', async () => {
+    const calls: boolean[] = [];
+    const reflect = createSelfLearningReflect({ run: (info) => { calls.push(info.progressed); } });
+    const ctx = { spec: { goal: 'g' }, iteration: 1, results: [], budgetUsed: {} } as unknown as LoopContext;
+    await reflect(ctx, { iteration: 1, progressed: false, noProgress: 1 });
+    await reflect(ctx, { iteration: 2, progressed: true, noProgress: 0 });
+    assert.deepEqual(calls, [true], 'runs only on the progressing iteration');
+  });
+
+  await check('createSelfLearningReflect swallows runner errors (loop-safe)', async () => {
+    const reflect = createSelfLearningReflect({ run: () => { throw new Error('nope'); } });
+    const ctx = { spec: { goal: 'g' }, iteration: 1, results: [], budgetUsed: {} } as unknown as LoopContext;
+    await reflect(ctx, { iteration: 1, progressed: true, noProgress: 0 }); // must not throw
   });
 
   // ── L. Shipped presets ──
