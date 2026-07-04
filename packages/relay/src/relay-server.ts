@@ -170,7 +170,6 @@ async function* runClaudeAgent(
 
     const handle = await adapter.startAgent({
       cwd: options?.cwd ?? process.cwd(),
-      systemPrompt: prompt,
       resumeSessionId: claudeSessionId,
       model: activeModel,
     });
@@ -180,6 +179,13 @@ async function* runClaudeAgent(
         adapter.stopAgent(handle).catch(() => {});
       });
     }
+
+    // Queue the prompt as this turn's input. The adapter contract is
+    // startAgent → sendInput (queue a turn) → readOutput (stream that turn);
+    // readOutput shifts one queued turn and returns an empty `done` when the
+    // queue is empty. Passing the prompt only as `systemPrompt` (with no
+    // sendInput) therefore produced NO output at all — the boss/agent silence.
+    await adapter.sendInput(handle, { type: 'user', content: prompt });
 
     let capturedClaudeSessionId: string | undefined;
 
