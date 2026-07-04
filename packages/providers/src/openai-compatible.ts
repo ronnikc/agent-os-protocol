@@ -25,6 +25,12 @@ const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 export interface OpenAICompatibleOptions {
   /** Injected fetch for verification; defaults to the global fetch. */
   fetchFn?: typeof fetch;
+  /**
+   * Directly-injected API key for HOSTED (server-side) execution, where the key comes from
+   * wallet-scoped custody in-process. When set, it overrides the BYOK env lookup. Local Mode
+   * leaves this unset (keys stay env-local). Must stay in-process: never logged or serialized.
+   */
+  apiKey?: string;
 }
 
 export class OpenAICompatibleProvider implements ModelProviderAdapter {
@@ -33,9 +39,11 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
 
   private config?: ProviderConfig;
   private readonly fetchFn: typeof fetch;
+  private readonly injectedKey?: string;
 
   constructor(options: OpenAICompatibleOptions = {}) {
     this.fetchFn = options.fetchFn ?? globalThis.fetch;
+    this.injectedKey = options.apiKey;
   }
 
   async configure(config: ProviderConfig): Promise<void> {
@@ -52,7 +60,7 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
     } catch {
       return { ok: false, message: `invalid baseUrl: ${base}` };
     }
-    if (!hasApiKey(config)) {
+    if (!this.injectedKey && !hasApiKey(config)) {
       return { ok: false, message: `BYOK key env ${config.apiKeyEnv ?? '(unset)'} not present locally` };
     }
     return { ok: true, capabilities: this.capabilities() };
@@ -64,7 +72,8 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
 
   private endpoint(): { url: string; headers: Record<string, string> } {
     const config = this.requireConfig();
-    const key = resolveApiKey(config); // throws MissingApiKeyError when absent
+    // Hosted: use the directly-injected key; Local BYOK: resolve from the env var by name.
+    const key = this.injectedKey ?? resolveApiKey(config); // resolveApiKey throws when absent
     const base = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     return {
       url: `${base}/chat/completions`,

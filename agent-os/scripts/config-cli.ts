@@ -43,6 +43,9 @@ Commands:
   list-keys    --lobby <id>                          list configured provider keys (masked)
   set-key      --lobby <id> --provider <p> --key <k> [--agent <ref>] [--base-url <u>] [--model <m>]
   revoke-key   --lobby <id> --id <keyId>
+  launch-agent --lobby <id> --name <n> [--role <r>] [--provider <p>] [--model <m>] [--agent <ref>] [--system <prompt>]
+  list-agents  --lobby <id>                          list running hosted agents
+  stop-agent   --lobby <id> --id <agentId>
   nonce        --lobby <id> --identity <ref>         get a challenge to sign (login flow)
 
 Global: --lobby-url <url> (or AGENT_OS_LOBBY_URL), --token <t> (or AGENT_OS_SESSION_TOKEN)`);
@@ -114,6 +117,34 @@ async function main(): Promise<void> {
     if (!lobbyId || !id) usage('--lobby and --id are required');
     await api('DELETE', `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/provider-keys/${encodeURIComponent(id)}`);
     console.log(`✓ revoked ${id}`);
+    return;
+  }
+
+  if (cmd === 'launch-agent') {
+    const name = flag('name');
+    if (!lobbyId || !name) usage('--lobby and --name are required');
+    const r = await api('POST', `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/hosted-agents`, {
+      name, agent_role: flag('role'), provider: flag('provider'), model: flag('model'),
+      agent_ref: flag('agent'), system_prompt: flag('system'),
+    });
+    console.log(`✓ launched "${r.name}" (${r.provider}/${r.model}) — agent_id=${r.agent_id}`);
+    return;
+  }
+
+  if (cmd === 'list-agents') {
+    if (!lobbyId) usage('--lobby is required');
+    const r = await api('GET', `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/hosted-agents`);
+    const agents = r.hosted_agents || [];
+    if (agents.length === 0) { console.log('(no hosted agents running)'); return; }
+    for (const a of agents) console.log(`- ${a.agent_id}`);
+    return;
+  }
+
+  if (cmd === 'stop-agent') {
+    const id = flag('id');
+    if (!lobbyId || !id) usage('--lobby and --id are required');
+    await api('DELETE', `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/hosted-agents/${encodeURIComponent(id)}`);
+    console.log(`✓ stopped ${id}`);
     return;
   }
 

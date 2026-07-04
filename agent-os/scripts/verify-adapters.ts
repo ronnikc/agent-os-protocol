@@ -26,6 +26,7 @@ import {
   runtimeRegistry,
   CodexCliAdapter,
   mapCodexEvent,
+  createApiRuntimeAdapter,
   type ChildLike,
   type SpawnFn,
 } from '@agent-os/adapters';
@@ -219,6 +220,59 @@ async function main(): Promise<void> {
     const events = await drain(adapter.readOutput(handle));
     assert.deepEqual(events.map((e) => e.type), ['error', 'done']);
     assert.match(events[0].content ?? '', /codex: boom|exited with code 1/);
+  });
+
+  // ── API runtime adapter (server-side, no CLI) ──
+  // Mock the provider HTTP: an Anthropic-compatible SSE stream. This exercises the full path
+  // startAgent → sendInput → readOutput without any network, CLI, or key on disk.
+  const sse = (chunks: string[]) =>
+    chunks.map((t) => `data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: t } })}`).join('\n') +
+    '\ndata: ' + JSON.stringify({ type: 'message_stop' }) + '\n';
+  const mockFetch = (reply: string[], status = 200): typeof fetch =>
+    (async () => new Response(status === 200 ? sse(reply) : 'nope', { status })) as unknown as typeof fetch;
+
+  await check('api runtime: detect() ok when a key is injected and config validates', async () => {
+    const a = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'claude-opus-4-8' }, apiKey: 'sk-ant-x', fetchFn: mockFetch(['hi']) });
+    const d = await a.detect();
+    assert.equal(d.installed, true);
+    const noKey = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'm' }, apiKey: '', fetchFn: mockFetch(['x']) });
+    assert.equal((await noKey.detect()).installed, false);
+  });
+
+  await check('api runtime: startAgent → sendInput → readOutput streams the model reply', async () => {
+    const a = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'claude-opus-4-8' }, apiKey: 'sk-ant-x', fetchFn: mockFetch(['Hello', ', world']) });
+    const h = await a.startAgent({ cwd: '/hosted', systemPrompt: 'You are a hosted agent.' });
+    await a.sendInput(h, { type: 'user', content: 'hi' });
+    const events = await drain(a.readOutput(h));
+    const text = events.filter((e) => e.type === 'output').map((e) => e.content).join('');
+    assert.equal(text, 'Hello, world');
+    assert.equal(events[events.length - 1].type, 'done');
+    assert.equal(events[events.length - 1].content, 'Hello, world', 'done carries the full reply');
+  });
+
+  await check('api runtime: readOutput with an empty queue yields done (no turn to run)', async () => {
+    const a = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'm' }, apiKey: 'k', fetchFn: mockFetch(['x']) });
+    const h = await a.startAgent({ cwd: '/x' });
+    assert.deepEqual((await drain(a.readOutput(h))).map((e) => e.type), ['done']);
+  });
+
+  await check('api runtime: keeps conversation continuity across turns', async () => {
+    const a = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'm' }, apiKey: 'k', fetchFn: mockFetch(['ok']) });
+    const h = await a.startAgent({ cwd: '/x', systemPrompt: 'sys' });
+    await a.sendInput(h, { type: 'user', content: 'turn one' });
+    await drain(a.readOutput(h));
+    await a.sendInput(h, { type: 'user', content: 'turn two' });
+    const events = await drain(a.readOutput(h));
+    assert.equal(events.filter((e) => e.type === 'output').map((e) => e.content).join(''), 'ok');
+  });
+
+  await check('api runtime: a provider HTTP error surfaces as an error event, then done', async () => {
+    const a = createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'm' }, apiKey: 'k', fetchFn: mockFetch([], 500) });
+    const h = await a.startAgent({ cwd: '/x' });
+    await a.sendInput(h, { type: 'user', content: 'go' });
+    const events = await drain(a.readOutput(h));
+    assert.ok(events.some((e) => e.type === 'error'));
+    assert.equal(events[events.length - 1].type, 'done');
   });
 
   // ── Summary ──

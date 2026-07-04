@@ -55,10 +55,19 @@ The platform never meters or caps model usage.
    config`) over the API; and the [hosted onboarding guide](hosted-onboarding.md) (create a
    Concordium wallet/ID → sign in → configure a key → issue Agent IDs).
 
-### Phase 2 — Server-side execution runtime
-An `api-runtime` adapter that drives the Anthropic/OpenAI-compatible APIs directly (no local CLI),
-run in a managed worker pool, plus a **launch-agent-from-lobby** API that resolves the per-agent (or
-per-lobby) key from custody and streams output back over the lobby WS.
+### Phase 2 — Server-side execution runtime ✅
+- **`api` runtime adapter** (`packages/adapters/src/api-runtime.ts`) drives the Anthropic/OpenAI-
+  compatible APIs directly (no local CLI), reusing the `providers` clients with the wallet-scoped
+  key injected in-process (never from env). Same `startAgent → sendInput → readOutput` contract as
+  the CLI adapters, so the existing driver works unchanged.
+- **`HostedAgentRunner`** runs a server-side agent on the lobby host and turns an inbound lobby
+  message into a reply via one API-runtime turn (persistent session for continuity).
+- **Launch-from-lobby API** (wallet-gated): `POST/GET/DELETE /lobbies/:id/hosted-agents`. Launch
+  resolves the per-agent (or per-lobby) key from custody, opens an API-runtime session, and registers
+  the agent into the lobby via a virtual socket so it appears in the roster and exchanges messages
+  like any agent — replies stream back over the lobby WS. `npm run config -- launch-agent …`.
+- Verified end-to-end: a wallet-authed owner configures a key → launches a hosted agent (no local
+  machine) → a WS client messages it → the agent runs via the API runtime and replies.
 
 ### Phase 3 — Hosted panel UX
 The online panel non-developers actually use: sign-up + wallet connect, provider-key config screens,

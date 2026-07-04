@@ -32,6 +32,13 @@ export interface AnthropicCompatibleOptions {
   anthropicVersion?: string;
   /** Default max output tokens when the request does not constrain it. */
   maxTokens?: number;
+  /**
+   * Directly-injected API key for HOSTED (server-side) execution, where the key comes from
+   * wallet-scoped custody in-process — not from a local env var. When set, it overrides the BYOK
+   * env lookup. Local Mode leaves this unset and keeps keys env-local (charter §13). The value
+   * must stay in-process: never logged or serialized.
+   */
+  apiKey?: string;
 }
 
 export class AnthropicCompatibleProvider implements ModelProviderAdapter {
@@ -42,11 +49,13 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
   private readonly fetchFn: typeof fetch;
   private readonly version: string;
   private readonly maxTokens: number;
+  private readonly injectedKey?: string;
 
   constructor(options: AnthropicCompatibleOptions = {}) {
     this.fetchFn = options.fetchFn ?? globalThis.fetch;
     this.version = options.anthropicVersion ?? DEFAULT_VERSION;
     this.maxTokens = options.maxTokens ?? DEFAULT_MAX_TOKENS;
+    this.injectedKey = options.apiKey;
   }
 
   async configure(config: ProviderConfig): Promise<void> {
@@ -62,7 +71,7 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
     } catch {
       return { ok: false, message: `invalid baseUrl: ${base}` };
     }
-    if (!hasApiKey(config)) {
+    if (!this.injectedKey && !hasApiKey(config)) {
       return { ok: false, message: `BYOK key env ${config.apiKeyEnv ?? '(unset)'} not present locally` };
     }
     return { ok: true, capabilities: this.capabilities() };
@@ -74,7 +83,8 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
 
   private endpoint(): { url: string; headers: Record<string, string> } {
     const config = this.requireConfig();
-    const key = resolveApiKey(config); // throws MissingApiKeyError when absent
+    // Hosted: use the directly-injected key; Local BYOK: resolve from the env var by name.
+    const key = this.injectedKey ?? resolveApiKey(config); // resolveApiKey throws when absent
     const base = (config.baseUrl ?? DEFAULT_BASE_URL).replace(/\/$/, '');
     return {
       url: `${base}/v1/messages`,

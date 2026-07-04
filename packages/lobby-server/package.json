@@ -11,8 +11,10 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@agent-os/adapters": "*",
     "@agent-os/identity-concordium": "*",
     "@agent-os/protocol-core": "*",
+    "@agent-os/providers": "*",
     "ws": "^8.21.0"
   }
 }

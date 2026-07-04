@@ -28,6 +28,8 @@ import {
   generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
+import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
+import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
 
@@ -240,6 +242,41 @@ async function main(): Promise<void> {
     assert.equal(await isLobbyManager(store, 'L4', 'did:ccd:testnet:anyone'), false);
     assert.equal(await isLobbyManager(store, 'does-not-exist', 'did:ccd:testnet:anyone'), false);
     assert.equal(await isLobbyManager(store, 'L4', ''), false);
+  });
+
+  // ── I. Hosted agent runner (server-side execution via the API runtime) ──
+  const sseFetch = (chunks: string[], status = 200): typeof fetch =>
+    (async () => new Response(
+      status === 200
+        ? chunks.map((t) => `data: ${JSON.stringify({ type: 'content_block_delta', delta: { type: 'text_delta', text: t } })}`).join('\n') + '\ndata: ' + JSON.stringify({ type: 'message_stop' }) + '\n'
+        : 'err',
+      { status },
+    )) as unknown as typeof fetch;
+  const mkRunner = (fetchFn: typeof fetch, systemPrompt?: string) =>
+    new HostedAgentRunner(
+      createApiRuntimeAdapter({ provider: { id: 'anthropic-compatible', model: 'claude-opus-4-8' }, apiKey: 'k', fetchFn }),
+      { systemPrompt },
+    );
+
+  await check('hosted runner turns an inbound message into the model reply', async () => {
+    const r = mkRunner(sseFetch(['Ready', ' to work']), 'You are a hosted boss.');
+    await r.start();
+    assert.equal(await r.respondTo('who is ready?'), 'Ready to work');
+    await r.stop();
+  });
+
+  await check('hosted runner keeps continuity across turns', async () => {
+    const r = mkRunner(sseFetch(['ok']));
+    assert.equal(await r.respondTo('one'), 'ok');
+    assert.equal(await r.respondTo('two'), 'ok');
+    await r.stop();
+  });
+
+  await check('hosted runner surfaces a provider error as a ⚠ reply, not a throw', async () => {
+    const r = mkRunner(sseFetch([], 500));
+    const reply = await r.respondTo('go');
+    assert.match(reply, /^⚠/);
+    await r.stop();
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
