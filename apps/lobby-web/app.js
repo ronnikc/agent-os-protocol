@@ -270,10 +270,28 @@ function renderLobbies() {
   }).join('');
 }
 
+// Resolve an agent_id (or 'all'/'*') to a human display name, using the live roster.
+function resolveAgentName(id) {
+  if (!id) return '?';
+  if (id === 'all' || id === '*' || id === 'broadcast') return 'everyone';
+  const a = state.agents.find(x => x.agent_id === id);
+  if (a && a.display_name) return a.display_name;
+  // Not in roster (disconnected, or a web user name) — show a short id, not a full UUID.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) + '…' : id;
+}
+
+// The boss agent id for the active lobby (roster is_boss flag, else the lobby's boss_agent_id).
+function activeBossId() {
+  const lobby = state.lobbies.find(l => l.lobby_id === state.activeLobbyId);
+  const flagged = state.agents.find(a => a.is_boss);
+  return (flagged && flagged.agent_id) || lobby?.boss_agent_id || null;
+}
+
 function renderRoster() {
   const container = document.getElementById('agent-roster-list');
   const countEl = document.getElementById('roster-count');
   if (!container) return;
+  const bossId = activeBossId();
 
   if (state.agents.length === 0) {
     container.innerHTML = '<div class="empty-state">No agents currently connected to this lobby. Connect an agent panel or relay in Swarm Mode to register.</div>';
@@ -291,10 +309,11 @@ function renderRoster() {
       ? `<a href="${escapeHtml(explorerLink)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
       : `${escapeHtml(agent.agent_id.slice(0, 8))}...`;
 
+    const isBoss = agent.is_boss || agent.agent_id === bossId;
     return `
-      <div class="agent-card-item">
+      <div class="agent-card-item${isBoss ? ' is-boss' : ''}">
         <div class="agent-card-header">
-          <span class="agent-name">${escapeHtml(agent.display_name)}</span>
+          <span class="agent-name">${escapeHtml(agent.display_name)}${isBoss ? ' <span class="boss-badge">★ BOSS</span>' : ''}</span>
           <span class="agent-status-indicator ${isWorking ? 'working' : 'idle'}">${escapeHtml(agent.status)}</span>
         </div>
         <div class="agent-role-badge">${escapeHtml(agent.agent_role || 'Generalist')}</div>
@@ -338,13 +357,17 @@ function renderMessages() {
   }
 
   container.innerHTML = state.messages.map(msg => {
+    // Show human display names, not raw agent UUIDs. from_display_name (if the server sent it)
+    // wins; otherwise resolve against the live roster.
+    const from = msg.from_display_name || resolveAgentName(msg.from_agent_id);
+    const to = msg.to_display_name || resolveAgentName(msg.to_agent_id);
     return `
       <div class="message-item">
         <div class="message-item-header">
           <span>
-            <span class="message-sender">${escapeHtml(msg.from_agent_id)}</span>
+            <span class="message-sender" title="${escapeHtml(msg.from_agent_id)}">${escapeHtml(from)}</span>
             &rarr;
-            <span class="message-receiver">${escapeHtml(msg.to_agent_id)}</span>
+            <span class="message-receiver" title="${escapeHtml(msg.to_agent_id)}">${escapeHtml(to)}</span>
           </span>
           <span class="message-type">${escapeHtml(msg.message_type)}</span>
         </div>
@@ -1131,6 +1154,22 @@ function init() {
         } else {
           onChainLine = `<span style="color:var(--color-yellow);">not anchored</span> — no Agent Registry MCP endpoint configured on this lobby (<a href="https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">docs ↗</a>)`;
         }
+        // When issued for a specific connected agent, show how to bind the DID permanently so
+        // that agent reuses it on every boot (the panel passes it as the lobby join token).
+        let bindNote = '';
+        const boundAgent = state.identity.bindingAgentId
+          ? state.agents.find(a => a.agent_id === state.identity.bindingAgentId)
+          : null;
+        if (boundAgent) {
+          const slug = boundAgent.agent_role || 'your-agent';
+          bindNote = `
+            <div style="margin-top:8px; padding:8px; background:rgba(49,140,255,0.06); border-left:3px solid var(--color-blue); border-radius:4px;">
+              <strong style="color:var(--color-blue);">Bind to ${escapeHtml(boundAgent.display_name || 'this agent')}:</strong>
+              add this line to <code style="font-size:10px;">agent-os/sub-agents/agents/${escapeHtml(slug)}.md</code> and reboot the agent —
+              it will then present this DID as its lobby identity on every connect:<br>
+              <code style="display:block; margin-top:4px; font-size:11px; color:var(--color-green); word-break:break-all;">Identity: ${escapeHtml(agentDid)}</code>
+            </div>`;
+        }
         successAgentDid.innerHTML = `
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
@@ -1140,7 +1179,8 @@ function init() {
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
             <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? ' · on-chain mint submitted' : ' · card hosted off-chain by this lobby'}
-          </div>`;
+          </div>${bindNote}`;
+        state.identity.bindingAgentId = null;
       }
 
       // The roster shows genuinely connected agents (registered over the lobby WS protocol);
@@ -1322,15 +1362,6 @@ function init() {
     });
   }
 
-  const btnManageIssue = document.getElementById('btn-manage-issue-agent');
-  if (btnManageIssue) {
-    btnManageIssue.addEventListener('click', () => {
-      // The Issue-Agent-ID flow lives in the Lobby tab's onboarding; jump straight to it.
-      switchView('lobby');
-      switchOnboardTab('agent');
-      document.getElementById('onboard-tab-agent')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    });
-  }
 }
 
 // ── Task Marketplace Callbacks ──
@@ -1530,17 +1561,18 @@ async function renderManageView() {
   const settings = document.getElementById('manage-settings');
   const membersCard = document.getElementById('manage-members-card');
   const agentsCard = document.getElementById('manage-agents-card');
-  const registerCard = document.getElementById('manage-register-card');
+  const onboardingCard = document.getElementById('manage-onboarding-card');
   const nameEl = document.getElementById('manage-lobby-name');
   if (!hint) return;
 
   const lobby = state.lobbies.find(l => l.lobby_id === state.activeLobbyId);
   const hasLobby = !!lobby;
   if (hint) hint.style.display = hasLobby ? 'none' : 'block';
-  for (const el of [settings, membersCard, agentsCard, registerCard]) {
-    if (el) el.style.display = hasLobby ? (el === settings ? 'block' : 'flex') : 'none';
-  }
-  if (registerCard && hasLobby) registerCard.style.display = 'block';
+  if (settings) settings.style.display = hasLobby ? 'block' : 'none';
+  if (membersCard) membersCard.style.display = hasLobby ? 'flex' : 'none';
+  if (agentsCard) agentsCard.style.display = hasLobby ? 'flex' : 'none';
+  // The Onboarding / Trust Chain setup is always available in Manage (wallet + owner + issue).
+  if (onboardingCard) onboardingCard.style.display = 'flex';
   if (!hasLobby) { if (nameEl) nameEl.textContent = '—'; return; }
 
   if (nameEl) nameEl.textContent = lobby.name || 'Swarm Lobby';
@@ -1591,20 +1623,81 @@ function renderManageAgents() {
     return;
   }
   const verified = ['verified', 'registry_verified', 'human_linked', 'org_linked'];
-  list.innerHTML = state.agents.map(a => {
+  const bossId = activeBossId();
+  // Compact fixed-width cards in a grid, each with per-agent Issue / Revoke ID actions.
+  list.innerHTML = `<div class="agent-mgmt-grid">` + state.agents.map(a => {
     const isV = verified.includes(a.identity_status);
+    const isBoss = a.is_boss || a.agent_id === bossId;
+    const isPanel = a.agent_role === 'panel' || (a.display_name || '').toLowerCase().startsWith('panel-');
+    const hasId = isV || (typeof a.identity_ref === 'string' && a.identity_ref.startsWith('did:'));
     return `
-      <div style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-bottom:1px solid var(--border);">
-        <div style="text-align:left; min-width:0;">
-          <div style="font-size:12px; color:var(--color-text);">${escapeHtml(a.display_name || a.agent_id)}</div>
-          <div style="font-size:10px; color:var(--color-text-muted);">${escapeHtml(a.agent_role || 'agent')} · ${escapeHtml(a.runtime || '—')}</div>
+      <div class="agent-mgmt-card${isBoss ? ' is-boss' : ''}">
+        <div class="amc-head">
+          <span class="amc-name" title="${escapeHtml(a.agent_id)}">${escapeHtml(a.display_name || a.agent_id)}</span>
+          ${isBoss ? '<span class="boss-badge">★ BOSS</span>' : ''}
         </div>
-        <span class="badge" style="background:${isV ? 'rgba(0,229,117,0.12)' : 'rgba(255,255,255,0.05)'}; color:${isV ? 'var(--color-green)' : 'var(--color-text-muted)'};">
-          ${isV ? '✓ ' + escapeHtml(a.identity_status) : escapeHtml(a.identity_status || 'unverified')}
-        </span>
+        <div class="amc-meta">${escapeHtml(a.agent_role || 'agent')} · ${escapeHtml(a.runtime || '—')}</div>
+        <div class="amc-id" title="${escapeHtml(a.identity_ref || a.agent_id)}">
+          ${hasId ? escapeHtml((a.identity_ref || '').slice(0, 22) + '…') : '<span style="color:var(--color-text-muted);">no Agent ID</span>'}
+        </div>
+        <div class="amc-foot">
+          <span class="amc-status ${isV ? 'v' : ''}">${isV ? '✓ ' + escapeHtml(a.identity_status) : escapeHtml(a.identity_status || 'unverified')}</span>
+          ${isPanel
+            ? '<span class="amc-panel-tag" title="Panel is a UI connection, not an agent identity">panel</span>'
+            : (hasId
+                ? `<button class="btn btn-danger btn-sm" onclick="revokeIdForAgent('${a.agent_id}')">Revoke ID</button>`
+                : `<button class="btn btn-primary btn-sm" onclick="issueIdForAgent('${a.agent_id}')">Issue ID</button>`)}
+        </div>
       </div>`;
-  }).join('');
+  }).join('') + `</div>`;
 }
+
+// Issue an Agent ID scoped to a specific connected agent: pre-fill the trust-chain issue form
+// (now in the Manage view) with the agent's name + role, so the minted DID is bound to it.
+window.issueIdForAgent = function(agentId) {
+  const agent = state.agents.find(a => a.agent_id === agentId);
+  if (!agent) return;
+  if (!state.identity.ownerRegistered) {
+    alert('Complete the Trust Chain setup first: connect your wallet and Register Owner ID (in the Onboarding & Setup panel below), then issue the agent ID.');
+    switchOnboardTab('register');
+    document.getElementById('onboard-tab-register')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    return;
+  }
+  switchOnboardTab('agent');
+  const nameEl = document.getElementById('issue-agent-name');
+  const roleEl = document.getElementById('issue-agent-role');
+  if (nameEl) nameEl.value = agent.display_name || '';
+  if (roleEl && agent.agent_role) {
+    // Select the closest matching role option if present.
+    const opt = [...roleEl.options].find(o => o.value === agent.agent_role);
+    if (opt) roleEl.value = agent.agent_role;
+  }
+  // Remember which connected agent we're binding, so the success panel can show the bind line.
+  state.identity.bindingAgentId = agentId;
+  document.getElementById('onboard-tab-agent')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  document.getElementById('issue-agent-name')?.focus();
+};
+
+window.revokeIdForAgent = async function(agentId) {
+  const agent = state.agents.find(a => a.agent_id === agentId);
+  if (!agent || !state.activeLobbyId) return;
+  showStyledConfirm(
+    'Revoke Agent ID',
+    `Revoke the identity of "${agent.display_name || agentId}"? It will be marked unverified in this lobby. On-chain revocation (if minted) is a separate wallet-signed step.`,
+    async () => {
+      // Record the revocation against the lobby member (identity_ref keyed).
+      if (agent.identity_ref) {
+        const members = await fetchJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members`);
+        const member = (members?.members || []).find(m => m.identity_ref === agent.identity_ref);
+        if (member) {
+          await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/members/${member.id}/status`, { status: 'revoked', actor: 'web-user' });
+        }
+      }
+      alert('Agent ID revoked in this lobby. To revoke on-chain, use build_revoke via your wallet.');
+      renderManageView();
+    }
+  );
+};
 
 window.revokeMember = async function(memberId) {
   if (!state.activeLobbyId) return;
