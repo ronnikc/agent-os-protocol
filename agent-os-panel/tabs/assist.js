@@ -5,7 +5,7 @@
  * Tasks support selection, Plan Sprint, and Execute Tasks workflows.
  * Sprint Planner: name input, backlog from selected tasks, Create All Tasks.
  */
-import { fetchJson, postJson, patchJson, registerTab, escapeHtml, formatTime, formatDate, onWsMessage, showModal, closeModal } from '../app.js';
+import { fetchJson, postJson, patchJson, registerTab, escapeHtml, formatTime, formatDate, onWsMessage, showModal, closeModal, getRelayWsUrl } from '../app.js';
 
 let activeSubTab = 'chat';
 let chatMessages = [];
@@ -68,9 +68,9 @@ let suggestedTasks = []; // { id, title, description, priority, selected }
 let selectedTaskIds = new Set();
 
 // ── Chat ──
-function connectRelay() {
+async function connectRelay() {
   try {
-    relayWs = new WebSocket('ws://localhost:4722');
+    relayWs = new WebSocket(await getRelayWsUrl());
     relayWs.onopen = () => { relayConnected = true; renderRelayStatus(); };
     relayWs.onclose = () => {
       relayConnected = false;
