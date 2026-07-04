@@ -56,9 +56,24 @@ export function formatDate(ts) {
 }
 
 export function escapeHtml(s) {
+  if (s == null) return ''; // undefined/null → '' (else textContent renders the literal "undefined")
   const div = document.createElement('div');
   div.textContent = s;
   return div.innerHTML;
+}
+
+/**
+ * Resolve the relay WebSocket URL from the panel server's actual relay config, instead of a
+ * hardcoded port. The relay port is configurable (--relay-port / AGENT_OS_RELAY_PORT); the old
+ * hardcoded ws://localhost:4722 silently broke chat + sprint execution on any non-default port.
+ * Uses location.hostname so it also works when the panel is reached by name/IP rather than literal
+ * "localhost" (which, from a remote browser, would point at the viewer's own machine).
+ */
+export async function getRelayWsUrl() {
+  const data = await fetchJson('/api/relay');
+  const port = Number(data?.port) || 4722;
+  const host = location.hostname || 'localhost';
+  return `ws://${host}:${port}`;
 }
 
 export function truncate(s, n = 120) {

@@ -2,7 +2,7 @@
  * Sprint Tab — Sprint Planner with phase selection, task management, and execution.
  * Replaces the UI Assist tab. Connects to relay for sprint execution.
  */
-import { fetchJson, postJson, patchJson, registerTab, escapeHtml, formatTime, onWsMessage, showModal, closeModal } from '../app.js';
+import { fetchJson, postJson, patchJson, registerTab, escapeHtml, formatTime, onWsMessage, showModal, closeModal, getRelayWsUrl } from '../app.js';
 
 let sprintName = '';
 let sprintPhase = '';
@@ -16,9 +16,9 @@ let relayConnected = false;
 let executionLog = [];
 
 // ── Relay Connection ──
-function connectRelay() {
+async function connectRelay() {
   try {
-    relayWs = new WebSocket('ws://localhost:4722');
+    relayWs = new WebSocket(await getRelayWsUrl());
     relayWs.onopen = () => { relayConnected = true; renderRelayStatus(); };
     relayWs.onclose = () => {
       relayConnected = false;
