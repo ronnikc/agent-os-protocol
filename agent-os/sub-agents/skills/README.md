@@ -10,7 +10,7 @@ Scan this index to find the right skill for a task. Each skill has a summary lin
 
 ## Skill Format (v1.1.0)
 
-All 79 skills follow the unified v1.1.0 layered format with these mandatory sections:
+All 71 skills follow the unified v1.1.0 layered format with these mandatory sections:
 
 | Section | Purpose |
 |---------|---------|
@@ -79,6 +79,8 @@ agent-os/sub-agents/skills/<slug>/
 | Asset Prototyping | [asset-prototyping/SKILL.md](asset-prototyping/SKILL.md) | Generate static wireframe sandboxes, wire design layouts, and stub image boundaries | design, frontend, demo-architect |
 | MCP Server Configuration | [mcp-server-config/SKILL.md](mcp-server-config/SKILL.md) | Audit and configure Model Context Protocol (MCP) tool registrations, schemas, and connector settings | wordpress-specialist, drupal-specialist, joomla-specialist, umbraco-specialist, infrastructure |
 | Mock API Specification | [mock-api-specification/SKILL.md](mock-api-specification/SKILL.md) | Design mock API handlers, MSW route stubs, and network interceptors for testing | api, e2e-architect, test, crm-integration-engineer |
+| Concordium Wallet Integration | [concordium-wallet-integration/SKILL.md](concordium-wallet-integration/SKILL.md) | Detect a Concordium browser wallet, read balances without NaN, and build real SDK-typed Update/sponsored transactions for wallet-side signing | frontend, backend, api, infrastructure |
+| Agent Registry Minting | [agent-registry-minting/SKILL.md](agent-registry-minting/SKILL.md) | Anchor an Agent Card on the CIS-8004 registry: build the register/setAgentURI payload, hash-match the hosted card, and diagnose on-chain rejections | backend, api, infrastructure, frontend |
 
 ### Process & Orchestration Skills
 
@@ -170,4 +172,6 @@ See [`skill-maintenance/SKILL.md`](skill-maintenance/SKILL.md) → Skill Authori
 
 ---
 
-*Last updated: 2026-04-27 — added 8 skills adapted from addyosmani/agent-skills: source-driven-development, incremental-implementation, code-simplification, code-review-and-quality, security-and-hardening, performance-optimization, documentation-and-adrs, deprecation-and-migration.*
+*Last updated: 2026-07-04 — added 2 Concordium engineering skills: concordium-wallet-integration, agent-registry-minting.*
+
+*2026-04-27 — added 8 skills adapted from addyosmani/agent-skills: source-driven-development, incremental-implementation, code-simplification, code-review-and-quality, security-and-hardening, performance-optimization, documentation-and-adrs, deprecation-and-migration.*
