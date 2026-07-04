@@ -324,15 +324,94 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ lobby }, 201);
     }
 
-    const lobbyMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)(\/(roster|events|messages))?$/);
+    const lobbyMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)(\/(roster|events|messages|members))?$/);
     if (lobbyMatch && req.method === 'GET') {
       const lobbyId = lobbyMatch[1];
       const sub = lobbyMatch[3];
       if (sub === 'roster') return json({ agents: await store.roster(lobbyId) });
       if (sub === 'events') return json({ events: await store.listEvents(lobbyId) });
       if (sub === 'messages') return json({ messages: await store.listMessages(lobbyId) });
+      if (sub === 'members') return json({ members: await store.listMembers(lobbyId) });
       const lobby = await store.getLobby(lobbyId);
       return lobby ? json({ lobby }) : json({ error: 'not found' }, 404);
+    }
+
+    // ── Lobby management (Manage view): settings + membership ──
+
+    // PATCH /api/v1/agent-lobby/lobbies/:id — update name / visibility / join policy / allowlist
+    const lobbySettingsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)$/);
+    if (lobbySettingsMatch && req.method === 'PATCH') {
+      const lobbyId = lobbySettingsMatch[1];
+      const lobby = await store.getLobby(lobbyId);
+      if (!lobby) return json({ error: 'lobby not found' }, 404);
+      const body = await readBody(req);
+      const patch: Record<string, unknown> = {};
+      if (typeof body.name === 'string') patch.name = body.name.slice(0, 120);
+      if (body.visibility === 'public' || body.visibility === 'private') patch.visibility = body.visibility;
+      const JOIN_POLICIES = new Set(['none', 'registered', 'allowlisted', 'verified_human_link']);
+      if (JOIN_POLICIES.has(body.join_policy)) patch.join_policy = body.join_policy;
+      if (Array.isArray(body.allowlist)) {
+        patch.allowlist = body.allowlist.filter((x: unknown) => typeof x === 'string').slice(0, 200);
+      }
+      const updated = await store.updateLobby(lobbyId, patch);
+      await recordEvent(lobbyId, 'lobby_settings_updated', String(body.actor ?? 'web-user'), { changed: Object.keys(patch) });
+      return json({ lobby: updated });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/members — invite a member
+    const membersMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/members$/);
+    if (membersMatch && req.method === 'POST') {
+      const lobbyId = membersMatch[1];
+      const lobby = await store.getLobby(lobbyId);
+      if (!lobby) return json({ error: 'lobby not found' }, 404);
+      const body = await readBody(req);
+      const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
+      if (!identityRef) return json({ error: 'identity_ref is required' }, 400);
+      const ROLES = new Set(['owner', 'admin', 'boss', 'contributor', 'observer', 'agent']);
+      const role = ROLES.has(body.role) ? body.role : 'contributor';
+      const existing = await store.getMember(lobbyId, identityRef);
+      if (existing) {
+        // Re-inviting a revoked member re-activates the invite.
+        const reinvited = await store.updateMember(lobbyId, existing.id, { status: 'invited', role });
+        return json({ member: reinvited });
+      }
+      const member = await store.addMember({
+        id: randomUUID(),
+        lobby_id: lobbyId,
+        identity_ref: identityRef,
+        role,
+        status: 'invited',
+        invited_by_identity_ref: typeof body.invited_by_identity_ref === 'string' ? body.invited_by_identity_ref : undefined,
+      });
+      // Keep the lobby allowlist in sync so the join policy actually admits the invitee.
+      const allowlist = new Set(lobby.allowlist ?? []);
+      allowlist.add(identityRef);
+      await store.updateLobby(lobbyId, { allowlist: [...allowlist] });
+      await recordEvent(lobbyId, 'member_invited', String(body.invited_by_identity_ref ?? 'web-user'), { identity_ref: identityRef, role });
+      return json({ member }, 201);
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/members/:memberId/status — activate / revoke (kick)
+    const memberStatusMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/members\/([^/]+)\/status$/);
+    if (memberStatusMatch && req.method === 'POST') {
+      const lobbyId = memberStatusMatch[1];
+      const memberId = memberStatusMatch[2];
+      const body = await readBody(req);
+      const status = body.status;
+      if (status !== 'active' && status !== 'revoked' && status !== 'invited') {
+        return json({ error: 'status must be active, invited, or revoked' }, 400);
+      }
+      const updated = await store.updateMember(lobbyId, memberId, { status });
+      if (!updated) return json({ error: 'member not found' }, 404);
+      if (status === 'revoked') {
+        // Kicking: drop the member from the allowlist so they can no longer (re)join.
+        const lobby = await store.getLobby(lobbyId);
+        if (lobby?.allowlist?.length) {
+          await store.updateLobby(lobbyId, { allowlist: lobby.allowlist.filter((r) => r !== updated.identity_ref) });
+        }
+        await recordEvent(lobbyId, 'member_revoked', String(body.actor ?? 'web-user'), { identity_ref: updated.identity_ref });
+      }
+      return json({ member: updated });
     }
 
     if (lobbyMatch && req.method === 'POST') {

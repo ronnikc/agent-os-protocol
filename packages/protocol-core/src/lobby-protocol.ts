@@ -443,7 +443,10 @@ export type LobbyEventType =
   | 'task_updated'
   | 'join_denied' // private-lobby access denial
   | 'owner_registered' // Concordium owner identity registered as a credential issuer
-  | 'agent_card_published'; // agent card metadata published for hosting
+  | 'agent_card_published' // agent card metadata published for hosting
+  | 'member_invited' // a member was invited to the lobby (management view)
+  | 'member_revoked' // a member's access was revoked / kicked
+  | 'lobby_settings_updated'; // visibility / join policy / allowlist changed
 
 /** One append-only entry in a lobby's event log. */
 export interface LobbyEvent {

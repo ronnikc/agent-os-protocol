@@ -47,6 +47,7 @@
 
   <nav class="header-nav">
     <button class="nav-tab active" data-view="lobby" onclick="switchView('lobby')">Lobby</button>
+    <button class="nav-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
     <button class="nav-tab" data-view="marketplace" onclick="switchView('marketplace')">Marketplace</button>
   </nav>
 
@@ -291,6 +292,94 @@
         <div class="scroll-list event-log" id="event-log-list">
           <div class="empty-state">No events logged.</div>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- MANAGE VIEW -->
+<div class="dashboard-grid view" id="view-manage" style="display:none; grid-template-columns: 1fr 1fr;">
+  <!-- Left: settings + members -->
+  <div class="grid-col flex-col scroll-col">
+    <div class="card">
+      <div class="card-header flex-row">
+        <h2 class="card-title">Managing Lobby: <span id="manage-lobby-name" style="color:var(--color-cyan);">—</span></h2>
+        <span class="lobby-visibility" id="manage-lobby-visibility" style="display:none;"></span>
+      </div>
+      <div style="padding:16px;" id="manage-no-lobby-hint">
+        <div class="empty-state">Select a lobby in the <strong>Lobby</strong> tab to manage its settings, members, and agents.</div>
+      </div>
+      <div style="padding:16px; display:none;" id="manage-settings">
+        <div style="display:flex; gap:12px; margin-bottom:12px;">
+          <div style="flex:1;">
+            <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Visibility</label>
+            <select id="manage-visibility">
+              <option value="public">Public</option>
+              <option value="private">Private</option>
+            </select>
+          </div>
+          <div style="flex:1;">
+            <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Join Policy</label>
+            <select id="manage-policy">
+              <option value="none">None (Open)</option>
+              <option value="registered">Registered ID</option>
+              <option value="verified_human_link">Verified Human</option>
+              <option value="allowlisted">Invite list</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-manage-save-settings" style="width:100%;">Save Lobby Settings</button>
+        <div id="manage-settings-saved" style="display:none; font-size:11px; color:var(--color-green); margin-top:8px; text-align:center;">✓ Settings saved</div>
+      </div>
+    </div>
+
+    <div class="card flex-grow" id="manage-members-card" style="display:none;">
+      <div class="card-header flex-row">
+        <h2 class="card-title">Members</h2>
+        <span class="badge" id="manage-member-count">0</span>
+      </div>
+      <div style="padding:12px; border-bottom:1px solid var(--border);">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Invite by DID or User ID</label>
+        <div style="display:flex; gap:8px;">
+          <input type="text" id="manage-invite-ref" placeholder="did:ccd:mainnet:… or slack-bob" style="flex-grow:1; font-family:var(--font-mono); font-size:11px;" />
+          <select id="manage-invite-role" style="width:120px; font-size:11px;">
+            <option value="contributor">Contributor</option>
+            <option value="admin">Admin</option>
+            <option value="boss">Boss</option>
+            <option value="observer">Observer</option>
+            <option value="agent">Agent</option>
+          </select>
+          <button class="btn btn-primary btn-sm" id="btn-manage-invite">Invite</button>
+        </div>
+      </div>
+      <div class="scroll-list" id="manage-members-list">
+        <div class="empty-state">No members invited yet.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right: connected agents + register agent ID -->
+  <div class="grid-col flex-col scroll-col">
+    <div class="card flex-grow" id="manage-agents-card" style="display:none;">
+      <div class="card-header flex-row">
+        <h2 class="card-title">Connected Agents & Verification</h2>
+        <span class="badge" id="manage-agent-count">0</span>
+      </div>
+      <div class="scroll-list" id="manage-agents-list">
+        <div class="empty-state">No agents connected to this lobby.</div>
+      </div>
+    </div>
+
+    <div class="card" id="manage-register-card" style="display:none;">
+      <div class="card-header">
+        <h2 class="card-title">Register Agent ID (this lobby)</h2>
+      </div>
+      <div style="padding:16px;">
+        <p style="font-size:12px; color:var(--text-muted); margin-bottom:12px;">
+          Issue a wallet-signed Agent Card for a sub-agent under your Concordium identity. The card is
+          hosted by this lobby and, when a registry MCP endpoint is configured, minted on-chain.
+        </p>
+        <button class="btn btn-primary" id="btn-manage-issue-agent" style="width:100%;">Issue Agent ID →</button>
       </div>
     </div>
   </div>
