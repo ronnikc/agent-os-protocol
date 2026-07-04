@@ -26,6 +26,8 @@ import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken } from './auth/identityProof.js';
+import { isLobbyManager } from './auth/lobbyAuthz.js';
+import { setProviderKey, listProviderKeys, revokeProviderKey } from './providers/key-custody.js';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
@@ -218,6 +220,49 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ authenticated: true, identity_ref: identityRef, lobby_id: sessionMatch[1] });
     }
 
+    // ── Hosted-Mode provider keys (wallet-gated) — configure model API keys for a lobby or agent ──
+    // All require a Bearer session token whose wallet manages the lobby (owner/admin). The key is
+    // sealed at rest and never returned; responses carry only masked hints.
+    const pkMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/provider-keys(?:\/([^/]+))?$/);
+    if (pkMatch) {
+      const lobbyId = pkMatch[1];
+      const keyId = pkMatch[2];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      // GET .../provider-keys — list configured keys (masked)
+      if (req.method === 'GET' && !keyId) {
+        return json({ provider_keys: await listProviderKeys(store, lobbyId) });
+      }
+      // POST .../provider-keys — set/replace a key { provider, api_key, agent_ref?, base_url?, model? }
+      if (req.method === 'POST' && !keyId) {
+        const body = await readBody(req);
+        try {
+          const view = await setProviderKey(store, {
+            lobbyId,
+            provider: String(body.provider ?? ''),
+            apiKey: String(body.api_key ?? ''),
+            agentRef: typeof body.agent_ref === 'string' && body.agent_ref.trim() ? body.agent_ref.trim() : null,
+            baseUrl: typeof body.base_url === 'string' ? body.base_url : undefined,
+            model: typeof body.model === 'string' ? body.model : undefined,
+            identityRef,
+          });
+          await recordEvent(lobbyId, 'provider_key_configured', identityRef, { provider: view.provider, scope: view.scope, agent_ref: view.agent_ref });
+          return json({ provider_key: view }, 201);
+        } catch (e) {
+          return json({ error: String((e as Error).message ?? e) }, 400);
+        }
+      }
+      // DELETE .../provider-keys/:id — revoke a key
+      if (req.method === 'DELETE' && keyId) {
+        const view = await revokeProviderKey(store, keyId);
+        if (!view || view.lobby_id !== lobbyId) return json({ error: 'provider key not found' }, 404);
+        await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
+        return json({ revoked: view });
+      }
+    }
+
     // ── Concordium Agent Registry proxy (on-chain anchoring via the official MCP service) ──
     // The lobby only relays reads and sign-ready payload builders; signing and submission
     // happen in the owner's wallet, client-side. No keys pass through here.
@@ -354,8 +399,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         ? body.allowlist.filter((x: unknown) => typeof x === 'string').slice(0, 200)
         : undefined;
       const now = new Date().toISOString();
+      // Hosted Mode: bind the lobby to the creating wallet so it (and only it) can manage config
+      // later. `owner_identity_ref` is trusted at creation as first-writer — claiming a wallet you
+      // don't control only locks YOU out, since managing the lobby later requires proving that
+      // wallet (auth/verify). Legacy/local callers omit it and get the unowned 'system' default.
+      const ownerRef = typeof body.owner_identity_ref === 'string' && body.owner_identity_ref.trim()
+        ? body.owner_identity_ref.trim()
+        : (typeof body.created_by === 'string' ? body.created_by : 'system');
+      const lobbyId = randomUUID();
       const lobby: LobbySession = {
-        lobby_id: randomUUID(),
+        lobby_id: lobbyId,
         org_id: typeof body.org_id === 'string' ? body.org_id : 'default',
         name: typeof body.name === 'string' ? body.name.slice(0, 120) : 'Lobby',
         status: 'active',
@@ -366,9 +419,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         message_seq: 0,
         created_at: now,
         updated_at: now,
-        created_by: body.created_by ?? 'system',
+        created_by: ownerRef,
       };
       await store.createLobby(lobby);
+      // Record the owner as a member so isLobbyManager resolves via membership too.
+      if (ownerRef !== 'system') {
+        await store.addMember({
+          id: `mem_${randomUUID()}`,
+          lobby_id: lobbyId,
+          identity_ref: ownerRef,
+          role: 'owner',
+          status: 'active',
+        });
+      }
       return json({ lobby }, 201);
     }
 
