@@ -24,6 +24,9 @@ import { seal, open, keyHint, sealedKeyId, currentKeyId } from '../../packages/l
 import {
   setProviderKey, resolveProviderKey, listProviderKeys, revokeProviderKey, toPublicView,
 } from '../../packages/lobby-server/src/providers/key-custody.js';
+import {
+  generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken,
+} from '../../packages/lobby-server/src/auth/identityProof.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
 
@@ -134,6 +137,65 @@ async function main(): Promise<void> {
     await assert.rejects(setProviderKey(store, { lobbyId: 'L1', provider: 'bad id!', apiKey: 'k', identityRef: 'o', env: ENV }));
     await assert.rejects(setProviderKey(store, { lobbyId: 'L1', provider: 'anthropic', apiKey: '', identityRef: 'o', env: ENV }));
     await assert.rejects(setProviderKey(store, { lobbyId: 'L1', provider: 'anthropic', apiKey: 'k', baseUrl: 'ftp://x', identityRef: 'o', env: ENV }));
+  });
+
+  // ── G. Wallet session auth (Phase 1b: token hardening + proof flow) ──
+  // MOCK signer contract (identityProof.verifySignature): publicKey 'MOCK_*' accepts signature
+  // exactly `valid_sig_for_<nonce>`. This exercises the nonce→verify→token→validate flow offline.
+  const LOBBY = 'lobby-abc';
+  const WALLET = 'did:ccd:testnet:wallet-1';
+
+  async function issueToken(store: InMemoryLobbyStore, identity = WALLET, lobby = LOBBY): Promise<string> {
+    const challenge = await generateNonceChallenge(identity, lobby, store);
+    const token = await verifyProofAndIssueToken(identity, `valid_sig_for_${challenge.nonce}`, 'MOCK_pubkey', lobby, store);
+    if (!token) throw new Error('expected a token from a valid proof');
+    return token;
+  }
+
+  await check('valid wallet proof issues a token that validates to the wallet', async () => {
+    const store = new InMemoryLobbyStore();
+    const token = await issueToken(store);
+    const payload = validateSessionToken(token, LOBBY);
+    assert.equal(payload?.identityRef, WALLET);
+    assert.equal(payload?.lobbyId, LOBBY);
+  });
+
+  await check('a forged token (payload without a valid HMAC) is rejected', () => {
+    // This is the exact attack the hardening closes: mint your own payload, base64 it, no real MAC.
+    const forgedPayload = Buffer.from(JSON.stringify({ identityRef: 'did:ccd:testnet:attacker', lobbyId: LOBBY, expiresAt: Date.now() + 1e6 })).toString('base64url');
+    assert.equal(validateSessionToken(`${forgedPayload}.deadbeef`, LOBBY), null);
+    assert.equal(validateSessionToken(forgedPayload, LOBBY), null, 'a bare base64 payload (old format) must not validate');
+  });
+
+  await check('a tampered payload invalidates the token', async () => {
+    const store = new InMemoryLobbyStore();
+    const token = await issueToken(store);
+    const [, mac] = token.split('.');
+    const swapped = Buffer.from(JSON.stringify({ identityRef: 'did:ccd:testnet:attacker', lobbyId: LOBBY, expiresAt: Date.now() + 1e6 })).toString('base64url');
+    assert.equal(validateSessionToken(`${swapped}.${mac}`, LOBBY), null, 'reusing a real MAC over a swapped payload must fail');
+  });
+
+  await check('a token is bound to its lobby and cannot be used for another', async () => {
+    const store = new InMemoryLobbyStore();
+    const token = await issueToken(store);
+    assert.equal(validateSessionToken(token, 'a-different-lobby'), null);
+  });
+
+  await check('an expired nonce yields no token; a nonce cannot be replayed', async () => {
+    const store = new InMemoryLobbyStore();
+    const challenge = await generateNonceChallenge(WALLET, LOBBY, store);
+    const sig = `valid_sig_for_${challenge.nonce}`;
+    const first = await verifyProofAndIssueToken(WALLET, sig, 'MOCK_pubkey', LOBBY, store);
+    assert.ok(first, 'first proof succeeds');
+    const replay = await verifyProofAndIssueToken(WALLET, sig, 'MOCK_pubkey', LOBBY, store);
+    assert.equal(replay, null, 'the nonce is single-use (replay rejected)');
+  });
+
+  await check('a wrong signature is rejected', async () => {
+    const store = new InMemoryLobbyStore();
+    await generateNonceChallenge(WALLET, LOBBY, store);
+    const token = await verifyProofAndIssueToken(WALLET, 'valid_sig_for_WRONG', 'MOCK_pubkey', LOBBY, store);
+    assert.equal(token, null);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

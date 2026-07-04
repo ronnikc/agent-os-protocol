@@ -39,13 +39,20 @@ The platform never meters or caps model usage.
 ## Phases
 
 ### Phase 1 — Foundation (in progress)
-1. **Provider-config custody** *(PR1)* — shared AES-256-GCM secret box; a `ProviderKeyConfig` model +
-   store, scoped **per-lobby with per-agent override**; write-only (plaintext never returned);
-   rotate/revoke. No spend metering.
-2. **Wallet session auth + gated config API + CLI** *(PR2)* — `POST /auth/nonce` + `POST /auth/verify`
-   (reuse `identityProof`) issuing a session token; an authz guard binding every config/lobby
-   mutation to the session's wallet; REST provider-config endpoints + a small `agent-os config` CLI;
-   onboarding docs (create a Concordium wallet/ID → sign in → configure a key → issue Agent IDs).
+1. **Provider-config custody** *(PR1 ✅)* — shared AES-256-GCM secret box; a `ProviderKeyConfig`
+   model + store, scoped **per-lobby with per-agent override**; write-only (plaintext never
+   returned); rotate/revoke. No spend metering.
+2. **Wallet session auth core** *(PR2 ✅)* — **hardened session token** (HMAC-signed; the previous
+   token was plain base64 and forgeable — anyone could mint a session for any wallet) + the
+   `POST /auth/nonce` and `POST /auth/verify` endpoints (reuse `identityProof`) + a `GET .../session`
+   whoami used by the panel/CLI and as the authz base for gated endpoints.
+   *Caveat:* signature verification currently supports a PEM/MOCK verifier; the real Concordium
+   ed25519 verifier (fetch the account's credential keys from the indexer/gRPC and verify the
+   wallet's `signMessage` output) is a scoped follow-up before production sign-in.
+3. **Lobby ownership + gated config API + CLI** *(PR3)* — bind a lobby to the creating wallet
+   (owner member), an `isLobbyManager` authz guard, the REST provider-config endpoints gated by it,
+   a small `agent-os config` CLI over the API, and onboarding docs (create a Concordium wallet/ID →
+   sign in → configure a key → issue Agent IDs).
 
 ### Phase 2 — Server-side execution runtime
 An `api-runtime` adapter that drives the Anthropic/OpenAI-compatible APIs directly (no local CLI),

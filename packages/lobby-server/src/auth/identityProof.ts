@@ -1,11 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
 
-import { randomBytes, verify } from 'node:crypto';
+import { randomBytes, verify, createHmac, timingSafeEqual, createHash } from 'node:crypto';
 import type { LobbyStore } from '../store.js';
 
 const NONCE_EXPIRY_MS = 5 * 60 * 1000; // Nonces expire in 5 minutes
 const SESSION_EXPIRY_MS = 15 * 60 * 1000; // Session tokens expire in 15 minutes
+
+// Session tokens are HMAC-signed with a server secret so they cannot be forged. Before this,
+// the token was plain base64 of the payload — anyone could mint a session for ANY wallet, which
+// defeats the entire "lock data to the wallet" model. The key is derived from the same server
+// secret used for at-rest encryption (see crypto/secret-box.ts); Hosted Mode MUST set it.
+function sessionSigningKey(env: NodeJS.ProcessEnv = process.env): Buffer {
+  const material =
+    env.AGENT_OS_SECRET_ENCRYPTION_KEY ||
+    env.INTEGRATION_SECRET_KEY ||
+    'default-secret-key-do-not-use-in-production';
+  return createHash('sha256').update(`session:${material}`).digest();
+}
+
+function signPayload(payloadB64: string, env: NodeJS.ProcessEnv = process.env): string {
+  return createHmac('sha256', sessionSigningKey(env)).update(payloadB64).digest('base64url');
+}
 
 export interface NonceChallenge {
   identityRef: string;
@@ -72,23 +88,32 @@ export async function verifyProofAndIssueToken(
     expiresAt: Date.now() + SESSION_EXPIRY_MS,
   };
 
-  // Convert payload to a simple authenticated string structure (base64 payload + simple signature for verification)
-  const rawPayload = JSON.stringify(payload);
-  const tokenBytes = Buffer.from(rawPayload, 'utf-8').toString('base64');
-  return tokenBytes;
+  // Authenticated token: `<base64url(payload)>.<hmac>`. The HMAC over the payload with the server
+  // secret makes the token unforgeable — a client cannot mint a session for a wallet it doesn't own.
+  const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
+  return `${payloadB64}.${signPayload(payloadB64)}`;
 }
 
-/** Validate a short-lived lobby session token for WebSocket join. */
-export function validateSessionToken(token: string, lobbyId: string): SessionTokenPayload | null {
+/** Validate a short-lived, HMAC-signed lobby session token. Returns the payload, or null if the
+ *  token is forged, tampered, expired, or bound to a different lobby. */
+export function validateSessionToken(token: string, lobbyId: string, env: NodeJS.ProcessEnv = process.env): SessionTokenPayload | null {
   try {
-    const rawPayload = Buffer.from(token, 'base64').toString('utf-8');
-    const payload = JSON.parse(rawPayload) as SessionTokenPayload;
+    const dot = token.lastIndexOf('.');
+    if (dot <= 0) return null;
+    const payloadB64 = token.slice(0, dot);
+    const mac = token.slice(dot + 1);
 
+    // Constant-time HMAC check before trusting any payload bytes.
+    const expected = signPayload(payloadB64, env);
+    const a = Buffer.from(mac);
+    const b = Buffer.from(expected);
+    if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
+
+    const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8')) as SessionTokenPayload;
     if (!payload.identityRef || payload.lobbyId !== lobbyId) return null;
     if (Date.now() > payload.expiresAt) return null;
-
     return payload;
-  } catch (err) {
+  } catch {
     return null;
   }
 }
