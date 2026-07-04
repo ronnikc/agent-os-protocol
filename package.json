@@ -35,6 +35,7 @@
     "lobby": "tsx packages/lobby-server/src/server.ts",
     "lobby-web": "tsx packages/lobby-server/src/server.ts",
     "train": "node agent-os/scripts/train.mjs",
+    "config": "tsx agent-os/scripts/config-cli.ts",
     "self-learning-review": "node agent-os/scripts/self-learning-review.mjs",
     "setup-hooks": "node scripts/setup-hooks.mjs",
     "prepare": "node scripts/setup-hooks.mjs",

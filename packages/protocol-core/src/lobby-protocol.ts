@@ -446,7 +446,9 @@ export type LobbyEventType =
   | 'agent_card_published' // agent card metadata published for hosting
   | 'member_invited' // a member was invited to the lobby (management view)
   | 'member_revoked' // a member's access was revoked / kicked
-  | 'lobby_settings_updated'; // visibility / join policy / allowlist changed
+  | 'lobby_settings_updated' // visibility / join policy / allowlist changed
+  | 'provider_key_configured' // Hosted Mode: a model-provider API key was set (lobby or agent scope)
+  | 'provider_key_revoked'; // Hosted Mode: a stored provider key was revoked
 
 /** One append-only entry in a lobby's event log. */
 export interface LobbyEvent {

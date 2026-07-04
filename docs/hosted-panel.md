@@ -49,10 +49,11 @@ The platform never meters or caps model usage.
    *Caveat:* signature verification currently supports a PEM/MOCK verifier; the real Concordium
    ed25519 verifier (fetch the account's credential keys from the indexer/gRPC and verify the
    wallet's `signMessage` output) is a scoped follow-up before production sign-in.
-3. **Lobby ownership + gated config API + CLI** *(PR3)* — bind a lobby to the creating wallet
-   (owner member), an `isLobbyManager` authz guard, the REST provider-config endpoints gated by it,
-   a small `agent-os config` CLI over the API, and onboarding docs (create a Concordium wallet/ID →
-   sign in → configure a key → issue Agent IDs).
+3. **Lobby ownership + gated config API + CLI** *(PR3 ✅)* — a lobby is bound to the creating wallet
+   (owner member); an `isLobbyManager` authz guard; the REST provider-config endpoints
+   (`/lobbies/:id/provider-keys` GET/POST/DELETE) gated by it; a `agent-os config` CLI (`npm run
+   config`) over the API; and the [hosted onboarding guide](hosted-onboarding.md) (create a
+   Concordium wallet/ID → sign in → configure a key → issue Agent IDs).
 
 ### Phase 2 — Server-side execution runtime
 An `api-runtime` adapter that drives the Anthropic/OpenAI-compatible APIs directly (no local CLI),

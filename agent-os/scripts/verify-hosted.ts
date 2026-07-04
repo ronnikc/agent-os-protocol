@@ -27,6 +27,7 @@ import {
 import {
   generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
+import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
 
@@ -196,6 +197,49 @@ async function main(): Promise<void> {
     await generateNonceChallenge(WALLET, LOBBY, store);
     const token = await verifyProofAndIssueToken(WALLET, 'valid_sig_for_WRONG', 'MOCK_pubkey', LOBBY, store);
     assert.equal(token, null);
+  });
+
+  // ── H. Lobby management authorization (Phase 1c) ──
+  const mkLobby = (id: string, createdBy: string) =>
+    ({ lobby_id: id, org_id: 'default', name: 'L', status: 'active', connected_agent_ids: [], message_seq: 0, created_at: '', updated_at: '', created_by: createdBy }) as unknown as Parameters<InMemoryLobbyStore['createLobby']>[0];
+  const mkMember = (lobbyId: string, ref: string, role: string, status = 'active') =>
+    ({ id: `m_${ref}`, lobby_id: lobbyId, identity_ref: ref, role, status }) as unknown as Parameters<InMemoryLobbyStore['addMember']>[0];
+
+  await check('lobbyOwnerRef ignores the legacy unowned defaults', () => {
+    assert.equal(lobbyOwnerRef({ created_by: 'system' }), null);
+    assert.equal(lobbyOwnerRef({ created_by: '' }), null);
+    assert.equal(lobbyOwnerRef({ created_by: 'did:ccd:testnet:o' }), 'did:ccd:testnet:o');
+  });
+
+  await check('the bound owner (created_by) may manage the lobby', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L1', 'did:ccd:testnet:owner'));
+    assert.equal(await isLobbyManager(store, 'L1', 'did:ccd:testnet:owner'), true);
+    assert.equal(await isLobbyManager(store, 'L1', 'did:ccd:testnet:someone-else'), false);
+  });
+
+  await check('an owner/admin member may manage; contributor/observer may not', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L2', 'system')); // unowned by created_by
+    await store.addMember(mkMember('L2', 'did:ccd:testnet:admin', 'admin'));
+    await store.addMember(mkMember('L2', 'did:ccd:testnet:contrib', 'contributor'));
+    assert.equal(await isLobbyManager(store, 'L2', 'did:ccd:testnet:admin'), true);
+    assert.equal(await isLobbyManager(store, 'L2', 'did:ccd:testnet:contrib'), false);
+  });
+
+  await check('a revoked owner/admin member may not manage', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L3', 'system'));
+    await store.addMember(mkMember('L3', 'did:ccd:testnet:ex', 'admin', 'revoked'));
+    assert.equal(await isLobbyManager(store, 'L3', 'did:ccd:testnet:ex'), false);
+  });
+
+  await check('unowned (legacy) and unknown lobbies deny management', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L4', 'system'));
+    assert.equal(await isLobbyManager(store, 'L4', 'did:ccd:testnet:anyone'), false);
+    assert.equal(await isLobbyManager(store, 'does-not-exist', 'did:ccd:testnet:anyone'), false);
+    assert.equal(await isLobbyManager(store, 'L4', ''), false);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
