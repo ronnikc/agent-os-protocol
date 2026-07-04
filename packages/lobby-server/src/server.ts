@@ -25,6 +25,7 @@ import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken } from './auth/identityProof.js';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
@@ -168,7 +169,54 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       res.end(JSON.stringify(body));
     };
 
+    // Extract + validate a Bearer session token (HMAC-signed by /auth/verify) for a given lobby.
+    // Returns the wallet identity_ref the token is bound to, or null. This is the wallet-lock: a
+    // request may only act as the wallet it proved control of. (Exposed to gated endpoints below.)
+    const sessionIdentity = (lobbyId: string): string | null => {
+      const h = req.headers['authorization'];
+      const token = typeof h === 'string' && h.startsWith('Bearer ') ? h.slice(7).trim() : '';
+      if (!token) return null;
+      const payload = validateSessionToken(token, lobbyId);
+      return payload ? payload.identityRef : null;
+    };
+
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
+
+    // ── Wallet session auth (Hosted Mode) — nonce challenge → wallet signature → session token ──
+    // POST /api/v1/agent-lobby/auth/nonce  { identity_ref, lobby_id } → { nonce, expires_at }
+    if (path === '/api/v1/agent-lobby/auth/nonce' && req.method === 'POST') {
+      const body = await readBody(req);
+      const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
+      const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id.trim() : '';
+      if (!identityRef || !lobbyId) return json({ error: 'identity_ref and lobby_id are required' }, 400);
+      const challenge = await generateNonceChallenge(identityRef, lobbyId, store);
+      return json({ nonce: challenge.nonce, expires_at: challenge.expiresAt });
+    }
+
+    // POST /api/v1/agent-lobby/auth/verify  { identity_ref, lobby_id, signature, public_key }
+    //   → { token, expires_at }  (401 on bad proof). The wallet signs the nonce from /auth/nonce.
+    if (path === '/api/v1/agent-lobby/auth/verify' && req.method === 'POST') {
+      const body = await readBody(req);
+      const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
+      const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id.trim() : '';
+      const signature = typeof body.signature === 'string' ? body.signature : '';
+      const publicKey = typeof body.public_key === 'string' ? body.public_key : '';
+      if (!identityRef || !lobbyId || !signature || !publicKey) {
+        return json({ error: 'identity_ref, lobby_id, signature, public_key are required' }, 400);
+      }
+      const token = await verifyProofAndIssueToken(identityRef, signature, publicKey, lobbyId, store);
+      if (!token) return json({ error: 'invalid or expired proof' }, 401);
+      return json({ token, expires_at: Date.now() + 15 * 60 * 1000 });
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/session — whoami: the wallet the Bearer token proves.
+    // Used by the panel/CLI to confirm a live session and by gated endpoints (PR3) as the authz base.
+    const sessionMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/session$/);
+    if (sessionMatch && req.method === 'GET') {
+      const identityRef = sessionIdentity(sessionMatch[1]);
+      if (!identityRef) return json({ authenticated: false }, 401);
+      return json({ authenticated: true, identity_ref: identityRef, lobby_id: sessionMatch[1] });
+    }
 
     // ── Concordium Agent Registry proxy (on-chain anchoring via the official MCP service) ──
     // The lobby only relays reads and sign-ready payload builders; signing and submission
