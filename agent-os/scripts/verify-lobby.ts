@@ -18,7 +18,7 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import type { AgentToLobbyMessage, LobbyToAgentMessage, LobbySession } from '@agent-os/protocol-core';
-import { InMemoryLobbyStore, LobbyCoordinator, startLobbyServer, type Connection } from '@agent-os/lobby-server';
+import { InMemoryLobbyStore, LobbyCoordinator, startLobbyServer, RegistrySponsorClient, type Connection } from '@agent-os/lobby-server';
 import { LobbyClient } from '@agent-os/lobby-client';
 
 let passed = 0;
@@ -92,6 +92,45 @@ async function main(): Promise<void> {
 
   // ════════ Part A — unit (coordinator rules) ════════
   console.log('Part A — coordinator (server-side rules)');
+
+  await check('SPONSOR CLIENT: validates inputs, relays the unsigned tx, and surfaces upstream errors', async () => {
+    const realFetch = globalThis.fetch;
+    try {
+      // Input validation — never hits the network with a malformed request.
+      const c = new RegistrySponsorClient('https://sponsor.example/sponsor');
+      assert.equal(c.url, 'https://sponsor.example/sponsor');
+      const base = { genesisHash: 'abc', payload: { foo: 1 }, sender: '4DCywKkv', nonce: 5 };
+      for (const bad of [
+        { ...base, genesisHash: '' },
+        { ...base, payload: null as unknown as Record<string, unknown> },
+        { ...base, sender: '' },
+        { ...base, nonce: 0 },
+        { ...base, nonce: -1 },
+        { ...base, nonce: 1.5 },
+      ]) {
+        await assert.rejects(() => c.sponsor(bad as never), /sponsor:/);
+      }
+
+      // Happy path — forwards exactly { genesisHash, payload, sender, nonce } and returns the JSON.
+      let seen: unknown;
+      globalThis.fetch = (async (_url: unknown, init: { body?: string }) => {
+        seen = JSON.parse(init.body ?? '{}');
+        return new Response(JSON.stringify({ signatures: { 0: { 0: 'deadbeef' } }, sponsored: true }), {
+          status: 200, headers: { 'content-type': 'application/json' },
+        });
+      }) as typeof fetch;
+      const out = await c.sponsor(base);
+      assert.deepEqual(seen, base);
+      assert.equal((out as { sponsored: boolean }).sponsored, true);
+
+      // Upstream failure — surfaces status + body so the caller can fall back to self-pay.
+      globalThis.fetch = (async () =>
+        new Response('nonce too low', { status: 409 })) as typeof fetch;
+      await assert.rejects(() => c.sponsor(base), /HTTP 409: nonce too low/);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
 
   await check('register returns registered + roster + agent-joined and assigns an id', async () => {
     const { coord, lobbyId } = await unitSetup();
