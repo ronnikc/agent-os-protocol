@@ -64,9 +64,11 @@ function renderAgents() {
       ? `<div style="font-family:var(--mono);font-size:10px;color:var(--color-text-soft);margin-top:3px;" title="${escapeHtml(a.identity)}">${escapeHtml(shortDid(a.identity))}</div>`
       : '';
     const idBtn = hasDid
-      ? `<button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Change the Agent ID (DID) this agent connects with">Change ID</button>
+      ? `<button class="btn btn-sm" data-action="create-id" data-slug="${a.slug}" title="Mint a NEW on-chain Agent ID (sponsored) and bind it to this agent">Re-mint ID</button>
+         <button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Change the Agent ID (DID) this agent connects with (enter an existing DID)">Change ID</button>
          <button class="btn btn-sm" data-action="revoke-id" data-slug="${a.slug}" title="Remove the persisted Agent ID">Revoke</button>`
-      : `<button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Persist an Agent ID (DID) so this agent auto-connects with it on every boot">Set ID</button>`;
+      : `<button class="btn btn-primary btn-sm" data-action="create-id" data-slug="${a.slug}" title="Mint a new on-chain Agent ID (sponsored, gasless) and bind it to this agent">Create ID</button>
+         <button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Enter an existing Agent ID (DID) manually">Set ID</button>`;
     return `<tr>
       <td><input type="checkbox" ${checked} data-slug="${a.slug}" /></td>
       <td><strong>${escapeHtml(a.name)}</strong></td>
@@ -127,6 +129,49 @@ async function setId(slug) {
     window.alert('Agent ID saved. Restart the agent (Stop then Start) for it to reconnect with the new identity.');
   }
   setTimeout(refresh, 300);
+}
+
+/**
+ * Mint a NEW on-chain Agent ID for this agent — the SAME sponsored, gasless flow the hosted lobby
+ * uses (build a wallet-signed card → host it on the connected lobby → sponsor co-signs the CIS-8004
+ * register → the wallet submits) — then persist the resulting DID to the agent def so it reconnects
+ * with that identity on every boot. Registry/sponsor calls go through the panel server's proxy.
+ */
+async function createId(slug) {
+  const agent = state.agents.find(a => a.slug === slug);
+  if (!agent) return;
+  const provider = window.concordium;
+  if (!provider) { window.alert('Concordium Browser Wallet not found. Install the extension and reload to mint an Agent ID.'); return; }
+  const lobbyUrl = document.getElementById('lobbyUrl')?.value?.trim();
+  if (!lobbyUrl) { window.alert('Set the Lobby URL first — the Agent ID is minted via the connected lobby.'); return; }
+  if (agent.identity && !window.confirm(`"${slug}" already has an Agent ID.\n\nMint a NEW one and replace it? The old DID will no longer be used.`)) return;
+
+  const btn = document.querySelector(`[data-action="create-id"][data-slug="${slug}"]`);
+  const setBtnText = (t) => { if (btn) btn.textContent = t; };
+  const orig = btn?.textContent;
+  if (btn) btn.disabled = true;
+  try {
+    const owner = await provider.connect();
+    if (!owner) throw new Error('wallet connection was rejected');
+    const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
+    const { mintAgentId } = await import('/mint-agent-id.js');
+    const { did, txHash, outcome } = await mintAgentId({
+      base: '', lobbyUrl, network, provider, owner,
+      agentName: agent.name, agentRole: slug,
+      onStatus: (s) => setBtnText(s.length > 22 ? s.slice(0, 20) + '…' : s),
+    });
+    setBtnText('Saving…');
+    const saved = await postJson('/api/agents/identity', { slug, identity: did });
+    if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
+    const confirmedMsg = outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).';
+    window.alert(`Agent ID minted and bound to "${slug}".\n\nDID: ${did}\nTransaction: ${txHash}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`);
+  } catch (err) {
+    console.error('[Agents] Create ID failed:', err);
+    window.alert(`Could not mint the Agent ID: ${err.message || err}`);
+  } finally {
+    if (btn) { btn.disabled = false; setBtnText(orig || 'Create ID'); }
+    setTimeout(refresh, 300);
+  }
 }
 
 async function revokeId(slug) {
@@ -190,6 +235,7 @@ function init() {
     if (btn.dataset.action === 'start') startOne(slug);
     if (btn.dataset.action === 'stop') stopOne(slug);
     if (btn.dataset.action === 'set-id') setId(slug);
+    if (btn.dataset.action === 'create-id') createId(slug);
     if (btn.dataset.action === 'revoke-id') revokeId(slug);
   });
 
