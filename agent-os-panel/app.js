@@ -185,6 +185,23 @@ export function closeModal() {
 export async function init() {
   connectWs();
 
+  // ── Hosted mode (Phase 1) ── When the panel is served by the lobby (/panel), it runs against the
+  // hosted backend. Views whose data comes from the local filesystem/process host don't apply yet
+  // and are hidden until their hosted backends land (see docs/hosted-panel.md); a banner marks the
+  // context. Wallet-scoped views (Agents identity/mint, Lobby, Messages, Tasks) work via the lobby.
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    document.body.classList.add('hosted-mode');
+    const LOCAL_ONLY = ['scheduled', 'files', 'gantt', 'memory', 'loop'];
+    for (const t of LOCAL_ONLY) {
+      const b = document.querySelector(`.tab-bar button[data-tab="${t}"]`);
+      if (b) b.style.display = 'none';
+    }
+    const banner = document.createElement('div');
+    banner.textContent = 'Hosted Agent OS Panel (preview) — agents run server-side and identity/keys are wallet-scoped. Local-only views are hidden.';
+    banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
+    document.body.prepend(banner);
+  }
+
   // Wire up tab buttons
   const tablist = document.querySelector('.tab-bar');
   const buttons = tablist ? tablist.querySelectorAll('button[data-tab]') : [];

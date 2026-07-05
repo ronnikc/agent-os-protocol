@@ -154,7 +154,7 @@ async function createId(slug) {
     const owner = await provider.connect();
     if (!owner) throw new Error('wallet connection was rejected');
     const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
-    const { mintAgentId } = await import('/mint-agent-id.js');
+    const { mintAgentId } = await import('../mint-agent-id.js'); // relative → works at root and under /panel/
     const { did, txHash, outcome } = await mintAgentId({
       base: '', lobbyUrl, network, provider, owner,
       agentName: agent.name, agentRole: slug,
