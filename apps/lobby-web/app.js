@@ -838,6 +838,20 @@ async function chooseRegistryBuilder(tools, fields) {
 }
 
 /**
+ * Recursively search an object for the first string value whose (key, value) satisfies `pred`.
+ * Lets us find a pre-encoded parameter `hex` even when a service version nests it under a wrapper
+ * (e.g. `{ result: { hex } }` / `{ payload: { parameter_hex } }`) instead of the flat top level.
+ */
+function deepFindString(obj, pred, depth = 0) {
+  if (!obj || typeof obj !== 'object' || depth > 5) return null;
+  for (const [k, v] of Object.entries(obj)) {
+    if (typeof v === 'string') { if (pred(k, v)) return v; }
+    else if (v && typeof v === 'object') { const found = deepFindString(v, pred, depth + 1); if (found) return found; }
+  }
+  return null;
+}
+
+/**
  * Anchor a freshly issued Agent Card on-chain through the Concordium Agent Registry:
  * the lobby relays a builder tool (sign-ready payload — the service holds no keys), and the
  * owner's wallet signs and submits the update. Returns { txHash, contract, receiveName, mode,
@@ -863,14 +877,25 @@ async function anchorAgentOnChain(provider, fields) {
   const payload = call.result || {};
   console.log(`[Registry] ${builder.name} payload:`, payload);
 
-  // The docs describe { hex, schema_json }; the live service returns
-  // { network, contract_address: {index, subindex}, receive_name, parameter_json, ... }.
-  // Accept both shapes.
+  // The docs describe `{ hex, schema_json }` where **hex is the wire-encoded parameter, ready for
+  // signing** — the authoritative, schema-free path. Some service versions instead return
+  // `parameter_json` + a schema. We must distinguish a real **base64 module schema** (which the
+  // wallet can serialize against) from `schema_json` (a JSON schema type, NOT base64). Feeding
+  // `schema_json` to the wallet as if it were a base64 schema makes the wallet serialize an EMPTY
+  // parameter — the exact cause of the on-chain `CIS-8004.register` parse-error reject (empty
+  // message, ~4 CCD burned). So `schema_json` is captured separately and never used as base64.
+  const looksHex = (v) => typeof v === 'string' && v.length > 0 && v.length % 2 === 0 && /^[0-9a-fA-F]+$/.test(v);
+  const looksBase64Schema = (v) =>
+    typeof v === 'string' && v.length > 0 && /^[A-Za-z0-9+/]+={0,2}$/.test(v) && !/^[\s[{]/.test(v);
   const hex = [payload.hex, payload.parameter_hex, payload.payload_hex, payload.message_hex]
-    .find((v) => typeof v === 'string' && v.length > 0) || null;
+    .find((v) => looksHex(v)) || deepFindString(payload, (k, v) => /hex|param/i.test(k) && looksHex(v)) || null;
   const parameterJson = payload.parameter_json ?? payload.parameters_json ?? null;
-  const schema = [payload.schema_b64, payload.schema_base64, payload.schema, payload.schema_json]
-    .find((v) => typeof v === 'string' && v.length > 0) || null;
+  // Only genuine base64 schemas — explicitly NOT `schema_json`.
+  const schemaB64 = [payload.schema_b64, payload.schema_base64, payload.schemaBase64, payload.module_schema]
+    .find((v) => looksBase64Schema(v))
+    || (looksBase64Schema(payload.schema) ? payload.schema : null);
+  // The JSON schema type (object or JSON string), used only for client-side serialization below.
+  const schemaJsonType = payload.schema_json ?? (typeof payload.schema === 'object' ? payload.schema : null);
 
   // Resolve the target contract + entrypoint from the payload metadata, else contract_info.
   let index = payload.contract_index ?? payload.contract?.index ?? payload.contract_address?.index;
@@ -903,26 +928,50 @@ async function anchorAgentOnChain(provider, fields) {
   const address = ContractAddress.create(Number(index), Number(subindex ?? 0));
   const receiveNameObj = ReceiveName.fromString(receiveName);
   const energyObj = Energy.create(energyVal);
-  console.log('[Registry] submitting Update tx:', { index, subindex, receiveName, energy: energyVal, hasHex: !!hex, hasSchema: !!schema });
+  console.log('[Registry] submitting Update tx:', {
+    index, subindex, receiveName, energy: energyVal,
+    hasHex: !!hex, hasBase64Schema: !!schemaB64, hasSchemaJson: !!schemaJsonType, hasParamJson: !!parameterJson,
+    payloadKeys: Object.keys(payload),
+  });
+
+  // Resolve the parameter to a concrete, NON-EMPTY message before touching the wallet. Submitting
+  // an empty parameter is a guaranteed on-chain parse-error reject that still costs energy — we
+  // refuse to burn CCD on it and instead throw a precise diagnostic.
+  let message = null;
+  let submitMode = null;
+  if (hex) {
+    message = Parameter.fromHexString(hex);           // authoritative sign-ready bytes
+    submitMode = 'hex';
+  } else if (parameterJson && schemaJsonType) {
+    // Serialize client-side with our own SDK against the JSON schema type — avoids handing the
+    // wallet a non-base64 "schema" (the empty-parameter bug). Tolerate a JSON-string schema.
+    const schemaType = typeof schemaJsonType === 'string' ? JSON.parse(schemaJsonType) : schemaJsonType;
+    message = Parameter.fromSchemaType(schemaType, parameterJson);
+    submitMode = 'schema_json';
+  }
 
   let txHash;
-  if (hex) {
-    // Pre-encoded parameter bytes (parameter_hex) — pass as the update message.
-    const message = Parameter.fromHexString(hex);
+  if (message) {
+    const paramBytes = Parameter.toBuffer(message);
+    if (!paramBytes || paramBytes.length === 0) {
+      throw new Error(`refusing to submit: the resolved ${builder.name} parameter is empty (mode: ${submitMode}) — this would parse-error on-chain and waste energy. Payload keys: ${Object.keys(payload).join(', ')}. Full payload logged to the console.`);
+    }
+    console.log(`[Registry] parameter resolved via "${submitMode}" (${paramBytes.length} bytes): ${Parameter.toHexString(message)}`);
     txHash = await provider.sendTransaction(state.wallet.address, AccountTransactionType.Update, {
       amount, address, receiveName: receiveNameObj, message, maxContractExecutionEnergy: energyObj,
     });
-  } else if (parameterJson && schema) {
-    // No pre-encoded hex: hand the wallet the JSON params + base64 schema to serialize & display.
+  } else if (parameterJson && schemaB64) {
+    // Fallback: hand the wallet the JSON params + a genuine base64 schema to serialize.
+    submitMode = 'wallet_base64';
     txHash = await provider.sendTransaction(state.wallet.address, AccountTransactionType.Update, {
       amount, address, receiveName: receiveNameObj, maxContractExecutionEnergy: energyObj,
-    }, parameterJson, schema);
+    }, parameterJson, schemaB64);
   } else if (parameterJson) {
-    throw new Error(`${builder.name} returned parameter_json but no schema to serialize it (payload keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+    throw new Error(`${builder.name} returned parameter_json but no usable schema (no hex, no base64 schema, no JSON schema type) to serialize it. Payload keys: ${Object.keys(payload).join(', ')} — full payload logged to the browser console`);
   } else {
-    throw new Error(`${builder.name} did not return a signable payload (keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
+    throw new Error(`${builder.name} did not return a signable parameter (no hex / parameter_json). Payload keys: ${Object.keys(payload).join(', ')} — full payload logged to the browser console`);
   }
-  return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName, mode, sponsored };
+  return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName, mode, sponsored, submitMode };
 }
 
 /**
@@ -943,6 +992,43 @@ async function requestSponsoredTransaction(unsignedTx, sender, genesisHash, nonc
     console.warn('[Registry] sponsor relay unavailable:', err?.message || err);
   }
   return null;
+}
+
+/**
+ * After a mint is submitted, confirm it actually finalized as a success — a submitted tx can still
+ * be rejected on-chain (e.g. a parameter parse error), which previously showed as a false "success".
+ * Polls CCDScan's public GraphQL for the finalized outcome and alerts the user on rejection. Purely
+ * informational and best-effort: if the query is unreachable/CORS-blocked it stays quiet.
+ */
+async function verifyMintOutcome(txHash, agentDid) {
+  const endpoint = CCD_NETWORK === 'mainnet'
+    ? 'https://api-ccdscan.mainnet.concordium.software/api/graphql'
+    : 'https://api-ccdscan.testnet.concordium.com/api/graphql';
+  const query = `{ transactionByTransactionHash(transactionHash:"${txHash}"){ result{ __typename ... on Rejected{ reason{ __typename ... on RejectedReceive{ rejectReason receiveName } } } } } }`;
+  for (let attempt = 0; attempt < 10; attempt++) {
+    await new Promise((r) => setTimeout(r, 6000)); // ~finalization cadence; poll up to ~60s
+    try {
+      const res = await fetch(endpoint, {
+        method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ query }),
+      });
+      if (!res.ok) continue;
+      const data = await res.json();
+      const result = data?.data?.transactionByTransactionHash?.result;
+      if (!result) continue; // not yet finalized/indexed — keep polling
+      if (result.__typename === 'Rejected') {
+        const reason = result.reason?.rejectReason ?? result.reason?.__typename ?? 'unknown';
+        const where = result.reason?.receiveName ? ` at ${result.reason.receiveName}` : '';
+        console.error('[Registry] mint REJECTED on-chain:', result);
+        alert(`⚠ On-chain mint for ${agentDid} was REJECTED${where} (reason ${reason}).\nThe agent card remains hosted off-chain by this lobby. Tx: ${txHash}\n\nThe DID is NOT anchored on-chain. Check the browser console for the built parameter and retry once the payload is corrected.`);
+      } else {
+        console.log('[Registry] mint finalized successfully:', result.__typename);
+      }
+      return;
+    } catch (err) {
+      console.debug('[Registry] outcome poll failed (will retry):', err?.message || err);
+    }
+  }
+  console.warn('[Registry] could not confirm mint outcome within the polling window — verify on the explorer.');
 }
 
 /** Extract a hex signature string from the Concordium wallet's { 0: { 0: hex } } response shape. */
@@ -1376,7 +1462,7 @@ function init() {
           : `<span style="color:var(--color-yellow);">⚠ Server unreachable — card not hosted</span>`;
         let onChainLine;
         if (anchor) {
-          const verb = anchor.mode === 'update' ? 'setAgentURI submitted' : 'Mint submitted';
+          const verb = anchor.mode === 'update' ? 'setAgentURI submitted (pending)' : 'Mint submitted (pending)';
           const gas = anchor.sponsored
             ? ` <span style="color:var(--color-green); font-size:10px;">· sponsored (no CCD spent)</span>`
             : ` <span style="color:var(--text-muted); font-size:10px;">· energy paid by your wallet</span>`;
@@ -1423,7 +1509,10 @@ function init() {
       btnIssueAgentAction.textContent = "Issue Agent ID";
 
       if (anchor) {
-        alert(`Agent DID issued, signed, and mint submitted on-chain!\nDID: ${agentDid}\nTransaction: ${anchor.txHash}\nMetadata: ${metadataUrl}`);
+        alert(`Agent DID issued & signed. On-chain mint SUBMITTED (pending finalization) — this is not yet confirmed.\nDID: ${agentDid}\nTransaction: ${anchor.txHash}\nMetadata: ${metadataUrl}\n\nVerifying the outcome on-chain… you'll get a second alert if the transaction is rejected.`);
+        // Non-blocking: confirm the tx actually finalized as a success and warn if it rejected,
+        // instead of leaving a misleading "submitted" as if it were a confirmed mint.
+        verifyMintOutcome(anchor.txHash, agentDid);
       } else if (anchorError) {
         alert(`Agent DID issued and signed, but on-chain anchoring failed: ${anchorError}\nThe card remains hosted by this lobby at ${metadataUrl}.`);
       } else {
