@@ -25,6 +25,7 @@ import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
+import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
@@ -84,6 +85,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // Point at a hosted instance or a local `concordium/agent-registry-mcp` container's /mcp URL.
   const registryMcpUrl = process.env.AGENT_OS_AGENT_REGISTRY_MCP_URL;
   const registryMcp = registryMcpUrl ? new RegistryMcpClient(registryMcpUrl) : undefined;
+
+  // Concordium sponsor service — makes Agent-ID minting gasless (Concordium pays the energy).
+  // Defaults to the Concordium-hosted endpoint; only enabled alongside the registry MCP service
+  // (there is nothing to sponsor without on-chain anchoring). Relays unsigned payloads only — no
+  // keys pass through here. Set AGENT_OS_REGISTRY_SPONSOR_URL='' to force the self-paid path.
+  const sponsorUrlRaw = process.env.AGENT_OS_REGISTRY_SPONSOR_URL;
+  const sponsorUrl = sponsorUrlRaw === undefined ? DEFAULT_SPONSOR_URL : sponsorUrlRaw.trim();
+  const registrySponsor = registryMcp && sponsorUrl ? new RegistrySponsorClient(sponsorUrl) : undefined;
 
   // Persistent agent card storage — cards survive server restarts
   const CARDS_FILE = resolve(fileURLToPath(import.meta.url), '..', '..', 'agent-cards.json');
@@ -467,9 +476,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const network = url.searchParams.get('network') ?? 'mainnet';
       try {
         const capabilities = await registryMcp.callTool('agent_registry_capabilities', { network });
-        return json({ configured: true, network, capabilities });
+        return json({ configured: true, network, capabilities, sponsored: Boolean(registrySponsor) });
       } catch (e) {
-        return json({ configured: true, network, error: String((e as Error).message ?? e) }, 502);
+        return json({ configured: true, network, sponsored: Boolean(registrySponsor), error: String((e as Error).message ?? e) }, 502);
       }
     }
 
@@ -498,6 +507,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ ok: true, tool, result });
       } catch (e) {
         return json({ ok: false, tool, error: String((e as Error).message ?? e) }, 502);
+      }
+    }
+
+    // POST /api/v1/agent-lobby/registry/sponsor — gasless mint relay to the Concordium sponsor
+    // service. Forwards the wallet-built unsigned Transaction.JSON and returns the partially-signed
+    // transaction (sponsor co-signature attached) for the owner's wallet to complete and submit.
+    // No keys pass through the lobby; the request/response are opaque transaction JSON.
+    if (path === '/api/v1/agent-lobby/registry/sponsor' && req.method === 'POST') {
+      if (!registrySponsor) {
+        return json({ ok: false, error: 'sponsored minting not available (no registry MCP service, or AGENT_OS_REGISTRY_SPONSOR_URL is empty)' }, 503);
+      }
+      const body = await readBody(req);
+      const genesisHash = typeof body.genesisHash === 'string' ? body.genesisHash : '';
+      const sender = typeof body.sender === 'string' ? body.sender : '';
+      const nonce = typeof body.nonce === 'number' ? body.nonce : Number(body.nonce);
+      const payload = body.payload && typeof body.payload === 'object' ? (body.payload as Record<string, unknown>) : null;
+      if (!genesisHash || !sender || !payload || !Number.isInteger(nonce) || nonce <= 0) {
+        return json({ ok: false, error: 'sponsor request requires genesisHash, sender, positive integer nonce, and an unsigned payload object' }, 400);
+      }
+      try {
+        const transaction = await registrySponsor.sponsor({ genesisHash, payload, sender, nonce });
+        return json({ ok: true, transaction });
+      } catch (e) {
+        return json({ ok: false, error: String((e as Error).message ?? e) }, 502);
       }
     }
 

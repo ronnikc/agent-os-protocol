@@ -747,16 +747,35 @@ function mapBuilderArgs(inputSchema, fields) {
   const props = inputSchema?.properties || {};
   const required = Array.isArray(inputSchema?.required) ? inputSchema.required : [];
   const args = {};
+
+  // The CIS-8004 `register` schema is type-strict: `agent_uri`/`metadata_hash_hex`/`network` are
+  // strings, but `external_reference` is an OBJECT (or null) and `initial_metadata` is an ARRAY of
+  // {key, value_hex}. The previous name-only heuristic stuffed a URL into `initial_metadata` (name
+  // matched /metadata/) and a DID into `external_reference` (matched /external.*ref/), producing a
+  // malformed parameter the contract rejected with "build_register call failed". So we now honour
+  // the declared JSON type and only ever put a string value into a string-typed parameter; the
+  // optional structured params are left unset for the service to default (None / empty), exactly as
+  // every successful on-chain register event does.
+  const typeOf = (p) => {
+    const t = p?.type;
+    if (Array.isArray(t)) return t.filter((x) => x !== 'null');
+    return t ? [t] : [];
+  };
+  const isStringy = (p) => { const t = typeOf(p); return t.length === 0 || t.includes('string'); };
+
   for (const key of Object.keys(props)) {
+    const prop = props[key];
     // Order is deliberate — most specific first.
-    if (/hash/i.test(key)) args[key] = fields.cardHash;
-    else if (/uri|url|metadata/i.test(key)) args[key] = fields.metadataUrl;
-    // The agent's identity: DID, external reference, token id, or the agent's own key/address.
-    else if (/agent.*(id|key|ref|reference|token|address|did)|external.*ref|^reference$|^token(_?id)?$|^did$/i.test(key)) args[key] = fields.agentDid;
-    else if (/network/i.test(key)) args[key] = fields.network;
+    if (/hash/i.test(key)) args[key] = fields.cardHash;                              // metadata_hash_hex (64 hex)
+    else if (/network/i.test(key)) args[key] = fields.network;                       // devnet|testnet|mainnet
+    else if (isStringy(prop) && /(uri|url)/i.test(key)) args[key] = fields.metadataUrl; // agent_uri
     // The minting account — "sender" is what the live service calls it; plain owner/account too.
     else if (/sender|owner|account/i.test(key) || /^address$/i.test(key)) args[key] = fields.owner;
-    else if (/name$/i.test(key)) args[key] = fields.agentName;
+    // The agent's identity (DID / external reference / token id / key) — only when the parameter is
+    // a plain string. `external_reference` on `register` is a structured object|null and is left to
+    // the service default rather than being stuffed with a DID string.
+    else if (isStringy(prop) && /agent.*(id|key|ref|reference|token|address|did)|external.*ref|^reference$|^token(_?id)?$|^did$/i.test(key)) args[key] = fields.agentDid;
+    else if (isStringy(prop) && /name$/i.test(key)) args[key] = fields.agentName;
   }
   const unmapped = required.filter((k) => args[k] === undefined);
   if (unmapped.length > 0) {
@@ -829,10 +848,14 @@ async function anchorAgentOnChain(provider, fields) {
   if (!status || !status.configured) return null; // off-chain mode — card stays lobby-hosted
   if (status.error) throw new Error(`registry MCP service unreachable: ${status.error}`);
 
+  // The lobby advertises whether Concordium's sponsor service is wired (gasless mint). The builder
+  // choice below picks register vs set-agent-uri; sponsorship is an orthogonal submit-time concern.
+  const sponsorAvailable = Boolean(status.sponsored);
+
   const toolsRes = await fetchJson('/api/v1/agent-lobby/registry/tools');
   const tools = toolsRes?.tools || [];
   const { tool: builder, sponsored, mode } = await chooseRegistryBuilder(tools, fields);
-  console.log(`[Registry] using builder "${builder.name}" (mode: ${mode}, sponsored: ${sponsored})`);
+  console.log(`[Registry] using builder "${builder.name}" (mode: ${mode}, sponsored-tool: ${sponsored}, sponsor-service: ${sponsorAvailable})`);
 
   const args = mapBuilderArgs(builder.inputSchema, fields);
   const call = await postJson('/api/v1/agent-lobby/registry/call', { tool: builder.name, arguments: args });
@@ -900,6 +923,26 @@ async function anchorAgentOnChain(provider, fields) {
     throw new Error(`${builder.name} did not return a signable payload (keys: ${Object.keys(payload).join(', ')}) — full payload logged to the browser console`);
   }
   return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName, mode, sponsored };
+}
+
+/**
+ * Ask the lobby (which relays to Concordium's sponsor service) to co-sign an unsigned account
+ * transaction so the Agent-ID mint is gasless — Concordium pays the energy instead of the owner.
+ * Returns the partially-signed Transaction.JSON for the wallet to complete and submit, or null when
+ * sponsorship is unavailable/declined so the caller falls back to a self-paid submission. No keys
+ * leave the wallet: only the unsigned payload is relayed.
+ */
+async function requestSponsoredTransaction(unsignedTx, sender, genesisHash, nonce) {
+  try {
+    const res = await postJson('/api/v1/agent-lobby/registry/sponsor', {
+      genesisHash, sender, nonce, payload: unsignedTx,
+    });
+    if (res && res.ok && res.transaction) return res.transaction;
+    console.warn('[Registry] sponsor relay declined:', res?.error || 'unknown reason');
+  } catch (err) {
+    console.warn('[Registry] sponsor relay unavailable:', err?.message || err);
+  }
+  return null;
 }
 
 /** Extract a hex signature string from the Concordium wallet's { 0: { 0: hex } } response shape. */

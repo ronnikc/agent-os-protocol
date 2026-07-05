@@ -2,8 +2,8 @@ Title: Agent Registry Minting
 Keywords: concordium, agent-registry, cis-8004, agent-card, minting, build-register, metadata-hash, did-ccd, set-agent-uri, mcp-service
 Agents: backend, api, infrastructure, frontend
 When to use: When anchoring an Agent Card on the Concordium CIS-8004 Agent Registry — building the register/update payload (via the Agent Registry MCP service), hosting the card, and diagnosing on-chain contract rejections.
-Version: 1.0.0
-Last updated: 2026-07-04
+Version: 1.1.0
+Last updated: 2026-07-05
 
 Mint or update an agent identity on the CIS-8004 Agent Registry so a `did:ccd:<network>:<id>` resolves to a hosted, hash-matched Agent Card. The service (or SDK) builds a sign-ready payload; the owner's wallet signs and submits — the app never holds keys. Encodes the two failure modes seen in the Agent OS lobby: the **metadata-hash mismatch** (card hashed before the signature was added, then hosted with it) and the **wrong-entrypoint rejection** (`register` vs `setAgentURI`).
 
@@ -16,6 +16,8 @@ Draft the card (`@agent-os/identity-concordium` `draftAgentCard`), run `validate
 
 ### Step 2 — Build the sign-ready payload via the registry MCP service
 POST the card + owner account to the Agent Registry MCP service (`AGENT_OS_AGENT_REGISTRY_MCP_URL`, e.g. `build_register`). It returns `{ parameter_hex, parameter_json, contract_address, receive_name, schema_b64 }`. Map the minting account field defensively — the live service names it `sender` (also accept `owner`/`account`/`address`). The service builds the payload; it never signs.
+
+**`build_register` is type-strict — map by declared JSON type, never by name alone.** Its input schema is `{ sender (string, required), agent_uri (string|null), metadata_hash_hex (string|null, pattern ^[0-9a-fA-F]{64}$), external_reference (OBJECT|null), initial_metadata (ARRAY|null of {key, value_hex}), network (enum devnet|testnet|mainnet, default devnet) }`. The bug that produces `build_register call failed`: a name-only mapper stuffs the metadata **URL** into `initial_metadata` (its name matches `/metadata/`) and the agent **DID** into `external_reference` (matches `/external.*ref/`) — but those are an array and an object, so the contract rejects the malformed parameter. Correct mapping for a new mint: `{ sender: owner, agent_uri: hostUrl, metadata_hash_hex: sha256hex, network: 'mainnet' }` and **omit** `external_reference`/`initial_metadata` (the service defaults them to None/empty, exactly as every successful on-chain register event does). Always send `network` explicitly — the schema default is `devnet`, not your live network.
 
 ### Step 3 — Freeze the metadata hash against the hosted bytes (critical)
 `parameter` carries a `metadata_hash` (sha256 of the hosted card). The hash MUST be computed over the **exact document you will host**. The classic bug: hash the sorted card, then append `signature`/`signedBy` to the object, then host the now-larger object — the on-chain hash no longer matches the hosted content, so resolvers reject the card as tampered.
@@ -31,7 +33,7 @@ The registry distinguishes creation from update:
 Pick `register` only for a genuinely new mint with a parameter that matches the module schema exactly; use `setAgentURI` to re-point or re-hash an existing agent. A `register` call on the wrong precondition is the common source of the `-2147483648` reject.
 
 ### Step 5 — Submit via wallet (or sponsor) and record the DID
-Hand the built payload to `concordium-wallet-integration` (Step 4/5) to submit as an `AccountTransactionType.Update`, or — preferred — via the registry's **sponsored/permit** path so Concordium pays the energy instead of the owner's wallet. On finalization, derive `did:ccd:<network>:<agent-id>` and persist it as the agent's identity/join token. Verify read-only with `identity-verification`.
+Hand the built payload to `concordium-wallet-integration` (Step 4/5) to submit as an `AccountTransactionType.Update`, or — preferred — via the **sponsor service** so Concordium pays the energy instead of the owner's wallet. The sponsor service (`AGENT_OS_REGISTRY_SPONSOR_URL`, default `https://registry-sponsor-service.concordium.com/sponsor`) is a plain HTTP relay, separate from the MCP builder: `POST /sponsor { genesisHash, payload: <unsigned Transaction.JSON>, sender: <base58>, nonce: <int > 0> }` → **partially-signed** Transaction.JSON with the sponsor's co-signature attached, which the owner's wallet completes and submits. In Agent OS the lobby proxies this at `POST /api/v1/agent-lobby/registry/sponsor` (no keys pass through; the unsigned payload is relayed verbatim) and advertises availability via `registry/status.sponsored`. On finalization, derive `did:ccd:<network>:<agent-id>` and persist it as the agent's identity/join token. Verify read-only with `identity-verification`.
 
 ---
 
@@ -116,7 +118,7 @@ chain_metadata:
 
 ## Error Handling
 
-- Contract rejects with `-2147483648` (concordium-std default `Reject`) → a parameter parse error or a failed `ensure!` precondition. Re-check: entrypoint (`register` vs `setAgentURI`), parameter matches `schema_b64`, and the account is permitted to register. Log the built `parameter_hex`/`parameter_json` and diff against the schema.
+- `build_register call failed` / contract rejects with `-2147483648` (concordium-std default `Reject`) → a parameter parse error or a failed `ensure!` precondition. **First suspect a type-mismatched register arg** (Step 2): confirm `external_reference`/`initial_metadata` are omitted (not fed a DID/URL string) and `network` is your live network, not the `devnet` default. Then re-check: entrypoint (`register` vs `setAgentURI`), parameter matches `schema_b64`, and the account is permitted to register. Log the built `parameter_hex`/`parameter_json` and diff against the schema.
 - Resolver reports the card as tampered / hash mismatch → Step 3 was violated; re-hash the exact hosted bytes.
 - MCP service field for the minting account is absent → map `sender`/`owner`/`account`/`address` defensively.
 - Owner's wallet is charged energy for what should be free → use the sponsored/permit path (see `concordium-wallet-integration` Step 5).

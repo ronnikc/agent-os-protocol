@@ -107,6 +107,9 @@ registry indexer for the private-lobby identity policy ladder — no private key
 `AGENT_OS_AGENT_REGISTRY_MCP_URL` (empty = off-chain mode) points the lobby at the Concordium Agent
 Registry **MCP service** so issued Agent Cards can be minted on-chain: the service builds sign-ready
 payloads and the owner's wallet signs and submits — the lobby never holds keys.
+`AGENT_OS_REGISTRY_SPONSOR_URL` (defaults to the Concordium sponsor service) makes that mint
+**gasless** — the lobby relays the wallet's unsigned transaction to the sponsor, which co-signs so
+Concordium pays the energy; set it empty to force the self-paid path.
 
 ## Governance map
 

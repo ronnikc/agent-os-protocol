@@ -6,3 +6,4 @@
 export * from './store.js';
 export * from './coordinator.js';
 export * from './server.js';
+export * from './registry-sponsor.js';
