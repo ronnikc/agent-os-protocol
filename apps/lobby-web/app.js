@@ -1617,7 +1617,7 @@ function init() {
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
             <strong>Metadata:</strong> <a href="${escapeHtml(metadataUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(metadataUrl)}</a> ${storedBadge}<br>
             <strong>On-Chain:</strong> <span id="onchain-status-line">${onChainLine}</span><br>
-            <strong>Owner Account:</strong> <a href="${escapeHtml(explorerUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
+            <strong>Owner Account:</strong> <a href="${escapeHtml(explorerUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDExplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
             <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}
