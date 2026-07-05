@@ -604,13 +604,58 @@ async function renderHostedCard() {
   const badge = document.getElementById('hosted-session-badge');
   const keysSection = document.getElementById('hosted-keys-section');
   const agentsSection = document.getElementById('hosted-agents-section');
+  const githubSection = document.getElementById('hosted-github-section');
   const signedIn = isSignedIn();
   if (badge) { badge.textContent = signedIn ? 'signed in' : 'signed out'; badge.style.color = signedIn ? 'var(--color-green)' : 'var(--text-muted)'; }
   if (keysSection) keysSection.style.display = signedIn ? '' : 'none';
   if (agentsSection) agentsSection.style.display = signedIn ? '' : 'none';
+  if (githubSection) githubSection.style.display = signedIn ? '' : 'none';
   const signinBtn = document.getElementById('btn-hosted-signin');
   if (signinBtn) signinBtn.style.display = signedIn ? 'none' : '';
-  if (signedIn) { await renderHostedKeys(); await renderHostedAgents(); }
+  if (signedIn) { await renderHostedKeys(); await renderHostedGitHub(); await renderHostedAgents(); }
+}
+
+/** Render the GitHub connection state: connect button, or connected account + repo/branch picker. */
+async function renderHostedGitHub() {
+  const el = document.getElementById('hosted-github-status');
+  if (!el) return;
+  const r = await authRequest('GET', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/integrations/github`);
+  const d = r.data || {};
+  if (!d.connected) {
+    el.innerHTML = d.configured === false
+      ? `<span style="color:var(--color-yellow);">GitHub App not configured on this lobby.</span>`
+      : `<button class="btn btn-primary btn-sm" id="btn-github-connect">Connect GitHub</button>`;
+    document.getElementById('btn-github-connect')?.addEventListener('click', async () => {
+      const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/integrations/github/connect`);
+      if (res.ok && res.data?.install_url) window.open(res.data.install_url, '_blank', 'noopener');
+      else alert('Could not start GitHub connect: ' + (res.data?.error || res.status));
+    });
+    return;
+  }
+  const repos = Array.isArray(d.repos) ? d.repos : [];
+  const opts = repos.map(rp => `<option value="${escapeHtml(rp.full_name)}" ${rp.full_name === d.repo ? 'selected' : ''}>${escapeHtml(rp.full_name)}${rp.private ? ' 🔒' : ''}</option>`).join('');
+  el.innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+      <span style="color:var(--color-green);">✓ Connected</span> <span style="color:var(--text-muted);">${escapeHtml(d.account || '')}</span>
+      <select id="github-repo" style="font-size:11px; min-width:180px;">${opts || '<option value="">(no repos — adjust the App install)</option>'}</select>
+      <input type="text" id="github-branch" placeholder="branch (default)" value="${escapeHtml(d.branch || '')}" style="width:120px; font-size:11px;" />
+      <button class="btn btn-primary btn-sm" id="btn-github-save-repo">Use repo</button>
+      <button class="btn btn-danger btn-sm" id="btn-github-disconnect">Disconnect</button>
+    </div>
+    <div style="font-size:10px; color:var(--text-muted); margin-top:4px;">Hosted agents read this repo and land changes as commits/PRs via the GitHub API.</div>`;
+  document.getElementById('btn-github-save-repo')?.addEventListener('click', async () => {
+    const repo = document.getElementById('github-repo')?.value;
+    const branch = document.getElementById('github-branch')?.value?.trim() || undefined;
+    if (!repo) { alert('Select a repo.'); return; }
+    const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/integrations/github`, { repo, branch });
+    if (!res.ok) alert('Could not set repo: ' + (res.data?.error || res.status));
+    renderHostedGitHub();
+  });
+  document.getElementById('btn-github-disconnect')?.addEventListener('click', async () => {
+    if (!confirm('Disconnect the GitHub repo from this lobby?')) return;
+    await authRequest('DELETE', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/integrations/github`);
+    renderHostedGitHub();
+  });
 }
 
 /** Populate the key-scope dropdown with "All agents" + one entry per agent currently in the roster. */

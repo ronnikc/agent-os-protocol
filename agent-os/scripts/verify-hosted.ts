@@ -35,6 +35,9 @@ import {
 import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
+import { createVerify } from 'node:crypto';
+import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
+import { listInstallationRepos, listTree, getFile, putFile, parseRepoRef } from '../../packages/lobby-server/src/integrations/github/repoClient.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
 
@@ -401,6 +404,57 @@ async function main(): Promise<void> {
     const sig = await signMessage(acct.address, 'msg', acct.signer);
     assert.equal(await verifyAccountSignatureFresh('msg', ACCOUNT, sig, 'mainnet', emptySource), false);
     assert.equal(await verifyAccountSignatureFresh('msg', 'bad-address', sig, 'mainnet', emptySource), false);
+  });
+
+  await check('GITHUB APP: RS256 JWT verifies with the app key; installation token is fetched then cached', async () => {
+    const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+    const pem = privateKey.export({ type: 'pkcs1', format: 'pem' }).toString();
+    const cfg = { appId: '12345', privateKey: pem, slug: 'agent-os' };
+    const jwt = createAppJwt(cfg, 1_700_000_000_000);
+    const [h, p, s] = jwt.split('.');
+    assert.equal(JSON.parse(Buffer.from(h, 'base64url').toString()).alg, 'RS256');
+    const payload = JSON.parse(Buffer.from(p, 'base64url').toString());
+    assert.equal(payload.iss, '12345');
+    assert.ok(payload.exp > payload.iat);
+    const v = createVerify('RSA-SHA256'); v.update(`${h}.${p}`);
+    assert.ok(v.verify(publicKey, Buffer.from(s, 'base64url')), 'JWT signature verifies against the app public key');
+
+    let calls = 0;
+    const fetchFn = (async (u: unknown, init: { method?: string; headers?: Record<string, string> }) => {
+      calls++;
+      assert.ok(String(u).includes('/app/installations/999/access_tokens'));
+      assert.equal(init.method, 'POST');
+      assert.ok(String(init.headers?.authorization).startsWith('Bearer '));
+      return new Response(JSON.stringify({ token: 'ghs_test', expires_at: new Date(Date.now() + 3600e3).toISOString() }), { status: 200 });
+    }) as unknown as typeof fetch;
+    _clearInstallationTokenCache();
+    assert.equal(await getInstallationToken('999', { config: cfg, fetchFn }), 'ghs_test');
+    assert.equal(await getInstallationToken('999', { config: cfg, fetchFn }), 'ghs_test');
+    assert.equal(calls, 1, 'second call is served from cache');
+
+    const parsed = githubAppConfig({ GITHUB_APP_ID: '7', GITHUB_APP_PRIVATE_KEY: '-----BEGIN-----\\nAAA\\n-----END-----', GITHUB_APP_SLUG: 'x' } as NodeJS.ProcessEnv);
+    assert.ok(parsed && parsed.privateKey.includes('\n') && !parsed.privateKey.includes('\\n'), 'escaped-newline PEM is normalized');
+    assert.ok(installUrl(cfg, 'st.ate').includes('/apps/agent-os/installations/new?state=st.ate'));
+    assert.equal(githubAppConfig({} as NodeJS.ProcessEnv), null, 'no config → null (GitHub connect off)');
+  });
+
+  await check('GITHUB REPO CLIENT: lists repos/tree, decodes a file, base64-encodes a commit', async () => {
+    const fetchFn = (async (u: unknown, init?: { method?: string; body?: string }) => {
+      const url = String(u);
+      if (url.includes('/installation/repositories')) return new Response(JSON.stringify({ repositories: [{ full_name: 'me/repo', private: true, default_branch: 'main', html_url: 'u' }] }), { status: 200 });
+      if (url.includes('/contents/README.md')) return new Response(JSON.stringify({ type: 'file', encoding: 'base64', content: Buffer.from('hello').toString('base64'), sha: 'abc' }), { status: 200 });
+      if (init?.method === 'PUT') { const b = JSON.parse(init.body ?? '{}'); assert.equal(Buffer.from(b.content, 'base64').toString(), 'new'); return new Response(JSON.stringify({ commit: { sha: 'c1' } }), { status: 201 }); }
+      if (url.includes('/contents')) return new Response(JSON.stringify([{ path: 'src', type: 'dir', sha: 'd' }, { path: 'README.md', type: 'file', size: 5, sha: 'abc' }]), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const opts = { fetchFn };
+    assert.equal((await listInstallationRepos('tok', opts))[0].full_name, 'me/repo');
+    const ref = parseRepoRef('me/repo');
+    assert.equal((await listTree('tok', ref, '', 'main', opts)).length, 2);
+    const f = await getFile('tok', ref, 'README.md', 'main', opts);
+    assert.equal(f.content, 'hello'); assert.equal(f.sha, 'abc');
+    assert.equal((await putFile('tok', ref, { path: 'x.txt', content: 'new', message: 'm', branch: 'main' }, opts)).commitSha, 'c1');
+    assert.throws(() => parseRepoRef('bad'));
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);

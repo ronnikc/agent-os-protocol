@@ -26,7 +26,10 @@ import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.js';
-import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
+import { githubAppConfig, getInstallationToken, installUrl } from './integrations/github/appAuth.js';
+import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
+import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { isLobbyManager } from './auth/lobbyAuthz.js';
@@ -463,6 +466,130 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!stopped) return json({ error: 'hosted agent not found' }, 404);
         await recordEvent(lobbyId, 'hosted_agent_stopped', identityRef, { agent_id: agentId });
         return json({ stopped: agentId });
+      }
+    }
+
+    // ── GitHub App integration (wallet-gated) — connect the user's OWN repo so hosted agents can
+    // read it and land changes as commits/PRs. We host no repo; the lobby holds only a revocable,
+    // short-lived installation token. Flow: connect → install URL → GitHub redirects to the callback
+    // (state carries the wallet-authed lobby binding) → store installation → pick repo + branch.
+    const ghToken = async (lobbyId: string): Promise<string | null> => {
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
+      try { return await getInstallationToken(integ.installation_id); } catch { return null; }
+    };
+
+    // POST /lobbies/:id/integrations/github/connect → { install_url }
+    const ghConnect = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/github\/connect$/);
+    if (ghConnect && req.method === 'POST') {
+      const lobbyId = ghConnect[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const cfg = githubAppConfig();
+      if (!cfg || !cfg.slug) return json({ error: 'GitHub App not configured on this lobby (set GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_SLUG)' }, 503);
+      const state = `${lobbyId}.${issueSessionToken(identityRef, lobbyId)}`;
+      return json({ install_url: installUrl(cfg, state) });
+    }
+
+    // GET /integrations/github/callback?installation_id=&state= → store + redirect back to /panel
+    if (path === '/api/v1/agent-lobby/integrations/github/callback' && req.method === 'GET') {
+      const state = url.searchParams.get('state') ?? '';
+      const installationId = url.searchParams.get('installation_id') ?? '';
+      const dot = state.indexOf('.');
+      const lobbyId = dot > 0 ? state.slice(0, dot) : '';
+      const token = dot > 0 ? state.slice(dot + 1) : '';
+      const payload = lobbyId && token ? validateSessionToken(token, lobbyId) : null;
+      if (!payload || !installationId) {
+        res.writeHead(400, { 'content-type': 'text/html; charset=utf-8' });
+        res.end('<p>GitHub connection failed: invalid or expired state. Close this window and try again from the panel.</p>');
+        return;
+      }
+      try {
+        // Validate the installation by minting a token + reading its repos (also captures the account).
+        const instToken = await getInstallationToken(installationId);
+        const repos = await listInstallationRepos(instToken);
+        const account = repos[0]?.full_name?.split('/')[0];
+        const existing = await store.getIntegration(lobbyId, 'github');
+        const now = new Date().toISOString();
+        let integration = existing;
+        if (existing) {
+          integration = await store.updateIntegration(lobbyId, existing.id, {
+            status: 'active', installation_id: installationId, external_account_name: account, updated_at: now,
+          }) ?? existing;
+        } else {
+          integration = await store.addIntegration({
+            id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
+            external_account_name: account, installation_id: installationId,
+            scopes: ['contents', 'pull_requests'], installed_by_identity_ref: payload.identityRef,
+            created_at: now, updated_at: now,
+          });
+        }
+        await saveIntegrationSecret(integration!.id, 'installation_token', instToken, store, 3300);
+        await recordEvent(lobbyId, 'github_connected', payload.identityRef, { account, repos: repos.length });
+      } catch (e) {
+        res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(`<p>GitHub connection failed: ${String((e as Error).message ?? e)}</p>`);
+        return;
+      }
+      res.writeHead(302, { location: '/panel/?github=connected' });
+      res.end();
+      return;
+    }
+
+    // /lobbies/:id/integrations/github (GET status · POST repo select · DELETE revoke)
+    const ghMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/github$/);
+    if (ghMatch) {
+      const lobbyId = ghMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+
+      if (req.method === 'GET') {
+        if (!integ || integ.status !== 'active') return json({ connected: false, configured: Boolean(githubAppConfig()) });
+        let repos: unknown[] = [];
+        const token = await ghToken(lobbyId);
+        if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
+        return json({ connected: true, account: integ.external_account_name, repo: integ.repo_full_name, branch: integ.branch, repos });
+      }
+      if (req.method === 'POST') {
+        if (!integ) return json({ error: 'GitHub is not connected' }, 400);
+        const body = await readBody(req);
+        const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
+        if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return json({ error: 'repo must be "owner/repo"' }, 400);
+        const branch = typeof body.branch === 'string' && body.branch.trim() ? body.branch.trim() : undefined;
+        const updated = await store.updateIntegration(lobbyId, integ.id, { repo_full_name: repo, branch, updated_at: new Date().toISOString() });
+        await recordEvent(lobbyId, 'github_repo_selected', identityRef, { repo, branch });
+        return json({ connected: true, repo: updated?.repo_full_name, branch: updated?.branch });
+      }
+      if (req.method === 'DELETE') {
+        if (integ) await store.updateIntegration(lobbyId, integ.id, { status: 'revoked', updated_at: new Date().toISOString() });
+        await recordEvent(lobbyId, 'github_disconnected', identityRef, {});
+        return json({ connected: false });
+      }
+    }
+
+    // GET /lobbies/:id/repo/(tree|file)?path=&ref= — browse the connected repo (Files tab).
+    const repoMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/(tree|file)$/);
+    if (repoMatch && req.method === 'GET') {
+      const lobbyId = repoMatch[1];
+      const kind = repoMatch[2];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) return json({ error: 'no connected repo — connect GitHub and select a repo first' }, 400);
+      const token = await ghToken(lobbyId);
+      if (!token) return json({ error: 'could not obtain a GitHub installation token (reconnect GitHub)' }, 502);
+      const ref = url.searchParams.get('ref') || integ.branch || 'HEAD';
+      const p = url.searchParams.get('path') || '';
+      try {
+        const repoRef = parseRepoRef(integ.repo_full_name);
+        if (kind === 'tree') return json({ path: p, ref, entries: await listTree(token, repoRef, p, ref) });
+        return json({ path: p, ref, ...(await getFile(token, repoRef, p, ref)) });
+      } catch (e) {
+        return json({ error: String((e as Error).message ?? e) }, 502);
       }
     }
 
