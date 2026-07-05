@@ -9,7 +9,7 @@
  */
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
-import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig } from './models.js';
+import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig, WalletChallenge } from './models.js';
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
@@ -67,6 +67,11 @@ export interface LobbyStore {
   upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob>;
   getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined>;
   listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]>;
+
+  // Wallet sign-in challenges (production Concordium proof) — single-use, short-lived.
+  saveWalletChallenge(challenge: WalletChallenge): Promise<void>;
+  /** Atomically fetch AND remove a challenge (single-use: consumed regardless of verify outcome). */
+  consumeWalletChallenge(id: string): Promise<WalletChallenge | undefined>;
 
   // Nonces storage for proof-of-possession verification
   saveNonce(identityRef: string, lobbyId: string, nonce: string, expiresAt: number): Promise<void>;
@@ -325,6 +330,18 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]> {
     return [...this.syncJobs.values()].filter((j) => j.lobby_id === lobbyId);
+  }
+
+  private walletChallenges = new Map<string, WalletChallenge>(); // challengeId -> challenge
+
+  async saveWalletChallenge(challenge: WalletChallenge): Promise<void> {
+    this.walletChallenges.set(challenge.id, challenge);
+  }
+
+  async consumeWalletChallenge(id: string): Promise<WalletChallenge | undefined> {
+    const c = this.walletChallenges.get(id);
+    this.walletChallenges.delete(id); // single-use: gone whether or not it verifies
+    return c;
   }
 
   async saveNonce(identityRef: string, lobbyId: string, nonce: string, expiresAt: number): Promise<void> {

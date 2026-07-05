@@ -53,6 +53,24 @@ export interface ProviderKeyConfig {
   revoked_at?: string;
 }
 
+/**
+ * A single-use, short-lived wallet sign-in challenge (production Concordium account-ownership
+ * proof). Bound to the account, the request origin, the network, the session, and the lobby so a
+ * signature captured in one context cannot be replayed in another. Consumed on first verify attempt.
+ */
+export interface WalletChallenge {
+  id: string;
+  account: string;
+  origin: string;
+  network: 'mainnet' | 'testnet';
+  session_id: string;
+  lobby_id: string;
+  /** The exact string the wallet signs. Whitespace must match verbatim between sign and verify. */
+  challenge: string;
+  /** Epoch ms. */
+  expires_at: number;
+}
+
 export interface LobbyIntegration {
   id: string;
   lobby_id: string;

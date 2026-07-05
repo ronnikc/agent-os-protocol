@@ -562,23 +562,27 @@ async function signInToLobby() {
   const provider = window.concordium;
   if (!provider) { setStatus('wallet extension not found'); return; }
 
-  const identityRef = `did:ccd:${CCD_NETWORK}:${state.wallet.address}`;
   const lobbyId = state.activeLobbyId;
   try {
+    // Production Concordium flow: bound challenge → wallet signMessage → server verifies against
+    // the account's fresh on-chain credentials. The wallet returns a signature MAP, which the
+    // server passes straight to verifyMessageSignature — do NOT flatten it.
     setStatus('requesting challenge…');
-    const challenge = await postJson('/api/v1/agent-lobby/auth/nonce', { identity_ref: identityRef, lobby_id: lobbyId });
-    if (!challenge?.nonce) { setStatus('could not get a challenge'); return; }
+    const ch = await postJson('/api/v1/agent-lobby/auth/challenge', {
+      account: state.wallet.address, lobby_id: lobbyId, network: CCD_NETWORK,
+    });
+    if (!ch?.challenge_id) { setStatus('could not get a challenge'); return; }
 
     setStatus('sign in your wallet…');
-    const signature = normalizeSignature(await provider.signMessage(state.wallet.address, challenge.nonce));
+    const signature = await provider.signMessage(state.wallet.address, ch.challenge);
 
     setStatus('verifying…');
-    const verified = await postJson('/api/v1/agent-lobby/auth/verify', {
-      identity_ref: identityRef, lobby_id: lobbyId, signature, public_key: state.wallet.address,
+    const verified = await postJson('/api/v1/agent-lobby/auth/verify-wallet', {
+      challenge_id: ch.challenge_id, account: state.wallet.address, signature, session_id: ch.session_id,
     });
-    if (!verified?.token) { setStatus('sign-in rejected (a wallet-verifier may not be configured yet)'); return; }
+    if (!verified?.token) { setStatus('sign-in rejected — wallet signature could not be verified on-chain'); return; }
 
-    state.session = { token: verified.token, identityRef, lobbyId };
+    state.session = { token: verified.token, identityRef: verified.identity_ref, lobbyId };
     setStatus('');
     renderHostedCard();
   } catch (err) {

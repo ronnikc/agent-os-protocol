@@ -25,7 +25,9 @@ import { InMemoryLobbyStore, type LobbyStore } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
-import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken } from './auth/identityProof.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
+import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
+import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
@@ -43,6 +45,8 @@ export interface LobbyServerOptions {
   autoDefaultLobby?: boolean;
   /** Injected fetch for hosted API-runtime agents (tests mock the provider HTTP). Defaults to global fetch. */
   apiRuntimeFetch?: typeof fetch;
+  /** On-chain account-info source for wallet sign-in (tests inject a mock; prod uses gRPC). */
+  accountInfoSource?: AccountInfoSource;
 }
 
 export interface RunningLobbyServer {
@@ -53,7 +57,11 @@ export interface RunningLobbyServer {
 }
 
 export async function startLobbyServer(options: LobbyServerOptions = {}): Promise<RunningLobbyServer> {
+  // Fail-closed: refuse to boot if the dev wallet-signature bridge is enabled in production.
+  assertDevBridgeNotInProduction();
   const store = options.store ?? new InMemoryLobbyStore();
+  // On-chain account-info source for production wallet sign-in (gRPC unless a mock is injected).
+  const accountInfoSource: AccountInfoSource = options.accountInfoSource ?? new GrpcAccountInfoSource();
   // Phase 8: wire a read-only identity verifier only when an indexer URL is configured. Without it
   // the coordinator's fail-closed default applies (a verified-identity policy denies everyone),
   // and the server still boots with no network dependency.
@@ -304,6 +312,48 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await verifyProofAndIssueToken(identityRef, signature, publicKey, lobbyId, store);
       if (!token) return json({ error: 'invalid or expired proof' }, 401);
       return json({ token, expires_at: Date.now() + 15 * 60 * 1000 });
+    }
+
+    // ── Production wallet sign-in — bound single-use challenge → Concordium ed25519 verify ──
+    // Derive origin from the request so the challenge is bound to where it was issued.
+    const requestOrigin = (): string => {
+      const o = req.headers['origin'];
+      if (typeof o === 'string' && o) return o;
+      const host = req.headers['host'];
+      return host ? `http://${host}` : 'unknown';
+    };
+
+    // POST /api/v1/agent-lobby/auth/challenge { account, lobby_id, network?, session_id? }
+    //   → { challenge_id, challenge, session_id, expires_at }  (client signs `challenge`)
+    if (path === '/api/v1/agent-lobby/auth/challenge' && req.method === 'POST') {
+      const body = await readBody(req);
+      const account = typeof body.account === 'string' ? body.account.trim() : '';
+      const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id.trim() : '';
+      if (!account || !lobbyId) return json({ error: 'account and lobby_id are required' }, 400);
+      try {
+        const ch = await createWalletChallenge(store, {
+          account, lobbyId, origin: requestOrigin(),
+          network: body.network, sessionId: typeof body.session_id === 'string' ? body.session_id : undefined,
+        });
+        return json({ challenge_id: ch.challengeId, challenge: ch.challenge, session_id: ch.sessionId, expires_at: ch.expiresAt });
+      } catch {
+        return json({ error: 'invalid account address' }, 400);
+      }
+    }
+
+    // POST /api/v1/agent-lobby/auth/verify-wallet { challenge_id, account, signature, session_id }
+    //   → { token, identity_ref } (401 on any failure — generic, never reveals which check failed)
+    if (path === '/api/v1/agent-lobby/auth/verify-wallet' && req.method === 'POST') {
+      const body = await readBody(req);
+      const challengeId = typeof body.challenge_id === 'string' ? body.challenge_id : '';
+      const account = typeof body.account === 'string' ? body.account.trim() : '';
+      const sessionId = typeof body.session_id === 'string' ? body.session_id : '';
+      if (!challengeId || !account || !body.signature || !sessionId) return json({ error: 'invalid or expired challenge' }, 401);
+      const result = await verifyWalletChallenge(store, accountInfoSource, {
+        challengeId, account, signature: body.signature, origin: requestOrigin(), sessionId,
+      });
+      if (!result) return json({ error: 'invalid or expired challenge' }, 401);
+      return json({ token: result.token, identity_ref: result.identityRef, expires_at: Date.now() + 15 * 60 * 1000 });
     }
 
     // GET /api/v1/agent-lobby/lobbies/:id/session — whoami: the wallet the Bearer token proves.

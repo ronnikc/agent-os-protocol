@@ -19,7 +19,12 @@
  */
 
 import assert from 'node:assert/strict';
+import { generateKeyPairSync } from 'node:crypto';
+import { AccountAddress, signMessage, buildBasicAccountSigner } from '@concordium/web-sdk';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
+import { createWalletChallenge, verifyWalletChallenge } from '../../packages/lobby-server/src/auth/wallet-signin.js';
+import { assertDevBridgeNotInProduction } from '../../packages/lobby-server/src/auth/identityProof.js';
+import { verifyAccountSignatureFresh, type AccountInfoSource, type CcdNetwork } from '../../packages/lobby-server/src/auth/concordium-verifier.js';
 import { seal, open, keyHint, sealedKeyId, currentKeyId } from '../../packages/lobby-server/src/crypto/secret-box.js';
 import {
   setProviderKey, resolveProviderKey, listProviderKeys, revokeProviderKey, toPublicView,
@@ -286,6 +291,116 @@ async function main(): Promise<void> {
     assert.equal(verifySignature('nonce', '', 'ccd-addr', on), false, 'even the dev bridge rejects an empty signature');
     assert.equal(verifySignature('nonce', 'garbage', 'ccd-addr', off), false, 'off: an unverifiable signature is rejected');
     assert.equal(verifySignature('n', 'valid_sig_for_n', 'MOCK_x', off), true, 'MOCK path is independent of the flag');
+  });
+
+  // ── J. Production Concordium wallet verifier ──
+  const ACCOUNT = '4DCywKkv7jegSt2oJoYuhwm7nJHJYN4zh4vzRdfcFKHSpFxq3H';
+  // Build a real ed25519 account: keypair → accountInfo carrying the public key → a signer.
+  function makeAccount(base58: string) {
+    const { privateKey, publicKey } = generateKeyPairSync('ed25519');
+    const seedHex = (privateKey.export({ type: 'pkcs8', format: 'der' }) as Buffer).subarray(-32).toString('hex');
+    const pubHex = (publicKey.export({ type: 'spki', format: 'der' }) as Buffer).subarray(-32).toString('hex');
+    const address = AccountAddress.fromBase58(base58);
+    const accountInfo = {
+      accountAddress: address, accountThreshold: 1,
+      accountCredentials: { 0: { value: { contents: { credentialPublicKeys: { keys: { 0: { schemeId: 'Ed25519', verifyKey: pubHex } }, threshold: 1 } } } } },
+    };
+    return { address, signer: buildBasicAccountSigner(seedHex), accountInfo };
+  }
+  class MockSource implements AccountInfoSource {
+    public calls = 0;
+    constructor(private readonly infos: Map<string, unknown>) {}
+    async getAccountInfo(account: string, _network: CcdNetwork) { this.calls++; return this.infos.get(account) ?? null; }
+  }
+  const ORIGIN = 'https://lobby.example';
+  async function challengeAndSign(store: InMemoryLobbyStore, acct: ReturnType<typeof makeAccount>, over: Partial<{ origin: string; lobbyId: string; network: string }> = {}) {
+    const ch = await createWalletChallenge(store, { account: ACCOUNT, lobbyId: over.lobbyId ?? 'L1', origin: over.origin ?? ORIGIN, network: over.network });
+    const signature = await signMessage(acct.address, ch.challenge, acct.signer);
+    return { ch, signature };
+  }
+
+  await check('dev bridge cannot be enabled in production (fail-closed startup)', () => {
+    assert.doesNotThrow(() => assertDevBridgeNotInProduction({} as NodeJS.ProcessEnv), 'off → no throw');
+    assert.doesNotThrow(() => assertDevBridgeNotInProduction({ AGENT_OS_DEV_TRUST_WALLET_SIGNATURES: '1', NODE_ENV: 'development' } as NodeJS.ProcessEnv), 'dev → allowed');
+    assert.throws(() => assertDevBridgeNotInProduction({ AGENT_OS_DEV_TRUST_WALLET_SIGNATURES: '1', NODE_ENV: 'production' } as NodeJS.ProcessEnv), /refusing to start/);
+    assert.throws(() => assertDevBridgeNotInProduction({ AGENT_OS_DEV_TRUST_WALLET_SIGNATURES: 'on', AGENT_OS_ENV: 'production' } as NodeJS.ProcessEnv));
+  });
+
+  await check('challenge creation rejects an invalid account address', async () => {
+    const store = new InMemoryLobbyStore();
+    await assert.rejects(createWalletChallenge(store, { account: 'not-a-ccd-address', lobbyId: 'L1', origin: ORIGIN }));
+  });
+
+  await check('valid wallet signature verifies against fresh on-chain keys and mints a token', async () => {
+    const store = new InMemoryLobbyStore();
+    const acct = makeAccount(ACCOUNT);
+    const source = new MockSource(new Map([[ACCOUNT, acct.accountInfo]]));
+    const { ch, signature } = await challengeAndSign(store, acct);
+    const res = await verifyWalletChallenge(store, source, { challengeId: ch.challengeId, account: ACCOUNT, signature, origin: ORIGIN, sessionId: ch.sessionId });
+    assert.ok(res, 'verification succeeds');
+    assert.equal(res!.identityRef, `did:ccd:mainnet:${ACCOUNT}`);
+    assert.ok(source.calls >= 1, 'fresh getAccountInfo was called at verify time');
+  });
+
+  await check('challenge is single-use — a replay of the same challenge fails', async () => {
+    const store = new InMemoryLobbyStore();
+    const acct = makeAccount(ACCOUNT);
+    const source = new MockSource(new Map([[ACCOUNT, acct.accountInfo]]));
+    const { ch, signature } = await challengeAndSign(store, acct);
+    const first = await verifyWalletChallenge(store, source, { challengeId: ch.challengeId, account: ACCOUNT, signature, origin: ORIGIN, sessionId: ch.sessionId });
+    const replay = await verifyWalletChallenge(store, source, { challengeId: ch.challengeId, account: ACCOUNT, signature, origin: ORIGIN, sessionId: ch.sessionId });
+    assert.ok(first);
+    assert.equal(replay, null, 'the consumed challenge cannot be reused');
+  });
+
+  await check('expired challenge is rejected', async () => {
+    const store = new InMemoryLobbyStore();
+    const acct = makeAccount(ACCOUNT);
+    const source = new MockSource(new Map([[ACCOUNT, acct.accountInfo]]));
+    const { ch, signature } = await challengeAndSign(store, acct);
+    // Force-expire by rewriting the stored record's expiry in the past.
+    const stored = await store.consumeWalletChallenge(ch.challengeId);
+    await store.saveWalletChallenge({ ...stored!, expires_at: Date.now() - 1 });
+    const res = await verifyWalletChallenge(store, source, { challengeId: ch.challengeId, account: ACCOUNT, signature, origin: ORIGIN, sessionId: ch.sessionId });
+    assert.equal(res, null);
+  });
+
+  await check('binding: origin / session / account mismatch all fail', async () => {
+    const store = new InMemoryLobbyStore();
+    const acct = makeAccount(ACCOUNT);
+    const source = new MockSource(new Map([[ACCOUNT, acct.accountInfo]]));
+    for (const bad of [
+      { origin: 'https://evil.example', sessionId: undefined as string | undefined, account: undefined as string | undefined },
+      { origin: undefined, sessionId: 'someone-elses-session', account: undefined },
+      { origin: undefined, sessionId: undefined, account: 'different-account' },
+    ]) {
+      const { ch, signature } = await challengeAndSign(store, acct);
+      const res = await verifyWalletChallenge(store, source, {
+        challengeId: ch.challengeId, account: bad.account ?? ACCOUNT, signature,
+        origin: bad.origin ?? ORIGIN, sessionId: bad.sessionId ?? ch.sessionId,
+      });
+      assert.equal(res, null);
+    }
+  });
+
+  await check('a wrong signature is rejected; client-supplied keys are never trusted', async () => {
+    const store = new InMemoryLobbyStore();
+    const acct = makeAccount(ACCOUNT);
+    const attacker = makeAccount(ACCOUNT); // different keypair, same address
+    // On-chain source returns the REAL account keys; the attacker signs with their own key.
+    const source = new MockSource(new Map([[ACCOUNT, acct.accountInfo]]));
+    const ch = await createWalletChallenge(store, { account: ACCOUNT, lobbyId: 'L1', origin: ORIGIN });
+    const forgedSig = await signMessage(attacker.address, ch.challenge, attacker.signer);
+    const res = await verifyWalletChallenge(store, source, { challengeId: ch.challengeId, account: ACCOUNT, signature: forgedSig, origin: ORIGIN, sessionId: ch.sessionId });
+    assert.equal(res, null, 'a signature not matching the on-chain keys fails — client keys are irrelevant');
+  });
+
+  await check('an account that cannot be fetched fresh fails closed', async () => {
+    const acct = makeAccount(ACCOUNT);
+    const emptySource = new MockSource(new Map()); // getAccountInfo → null
+    const sig = await signMessage(acct.address, 'msg', acct.signer);
+    assert.equal(await verifyAccountSignatureFresh('msg', ACCOUNT, sig, 'mainnet', emptySource), false);
+    assert.equal(await verifyAccountSignatureFresh('msg', 'bad-address', sig, 'mainnet', emptySource), false);
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
