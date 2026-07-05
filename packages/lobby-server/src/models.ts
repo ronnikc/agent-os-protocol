@@ -82,6 +82,12 @@ export interface LobbyIntegration {
   installed_by_identity_ref: string;
   created_at: string;
   updated_at: string;
+  /** GitHub App installation id — used to mint short-lived installation tokens. */
+  installation_id?: string;
+  /** The repo the lobby's agents work on, as "owner/repo" (chosen from the installed repos). */
+  repo_full_name?: string;
+  /** The working branch (defaults to the repo's default branch). */
+  branch?: string;
 }
 
 export interface IntegrationSecret {

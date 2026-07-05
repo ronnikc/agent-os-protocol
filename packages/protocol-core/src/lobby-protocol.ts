@@ -450,7 +450,10 @@ export type LobbyEventType =
   | 'provider_key_configured' // Hosted Mode: a model-provider API key was set (lobby or agent scope)
   | 'provider_key_revoked' // Hosted Mode: a stored provider key was revoked
   | 'hosted_agent_launched' // Hosted Mode: a server-side agent was launched into the lobby
-  | 'hosted_agent_stopped'; // Hosted Mode: a server-side agent was stopped
+  | 'hosted_agent_stopped' // Hosted Mode: a server-side agent was stopped
+  | 'github_connected' // Hosted Mode: a GitHub App installation was connected to the lobby
+  | 'github_repo_selected' // Hosted Mode: the working repo/branch was chosen
+  | 'github_disconnected'; // Hosted Mode: the GitHub integration was revoked
 
 /** One append-only entry in a lobby's event log. */
 export interface LobbyEvent {
