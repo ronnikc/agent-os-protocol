@@ -69,9 +69,17 @@ The platform never meters or caps model usage.
 - Verified end-to-end: a wallet-authed owner configures a key → launches a hosted agent (no local
   machine) → a WS client messages it → the agent runs via the API runtime and replies.
 
-### Phase 3 — Hosted panel UX
-The online panel non-developers actually use: sign-up + wallet connect, provider-key config screens,
-Agent-ID issuance, and launch/observe — reusing the `apps/lobby-web` dashboard.
+### Phase 3 — Hosted panel UX ✅ (first cut)
+The `apps/lobby-web` dashboard's **Manage → Hosted Mode** card: **Sign in with wallet**
+(nonce → `signMessage` → verify → session token), a **Provider Keys** panel (set/list/revoke,
+per-lobby or per-agent, masked), and **Launch / Stop** server-side agents — all gated by the wallet
+session. Creating a lobby with a connected wallet binds it to that wallet as owner.
+
+**Production sign-in caveat:** the wallet signature is verified by a PEM/MOCK verifier today. A
+`AGENT_OS_DEV_TRUST_WALLET_SIGNATURES=1` dev bridge (OFF by default, loud warning) accepts
+signatures without cryptographic verification so the panel can be demoed on testnet. The **real
+Concordium ed25519 verifier** (account credential keys via the indexer/gRPC over `signMessage`
+output) is the remaining production gate before public sign-in.
 
 ## Verification
 

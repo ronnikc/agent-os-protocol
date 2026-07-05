@@ -279,6 +279,57 @@
       </div>
     </div>
 
+    <!-- Hosted Mode: sign in, provider keys, launch server-side agents -->
+    <div class="card flex-grow" id="manage-hosted-card" style="display:none;">
+      <div class="card-header flex-row">
+        <h2 class="card-title">Hosted Mode</h2>
+        <span class="badge" id="hosted-session-badge">signed out</span>
+      </div>
+
+      <!-- Sign in -->
+      <div style="padding:12px; border-bottom:1px solid var(--border);">
+        <div style="font-size:11px; color:var(--text-muted); margin-bottom:6px;">
+          Sign in with your wallet to configure provider keys and launch server-side agents for this lobby.
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-hosted-signin">Sign in with wallet</button>
+        <span id="hosted-signin-status" style="font-size:11px; margin-left:8px; color:var(--text-muted);"></span>
+      </div>
+
+      <!-- Provider keys -->
+      <div id="hosted-keys-section" style="padding:12px; border-bottom:1px solid var(--border); display:none;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider API keys (encrypted; masked after save)</label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+          <select id="hosted-key-provider" style="width:110px; font-size:11px;">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <input type="password" id="hosted-key-value" placeholder="sk-…" style="flex-grow:1; min-width:140px; font-family:var(--font-mono); font-size:11px;" />
+          <input type="text" id="hosted-key-agent" placeholder="agent ref (optional)" style="width:150px; font-size:11px;" />
+          <button class="btn btn-primary btn-sm" id="btn-hosted-add-key">Save key</button>
+        </div>
+        <div class="scroll-list" id="hosted-keys-list" style="max-height:120px;">
+          <div class="empty-state">No provider keys configured.</div>
+        </div>
+      </div>
+
+      <!-- Launch hosted agents -->
+      <div id="hosted-agents-section" style="padding:12px; display:none;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Launch a server-side agent (runs on the host — no local setup)</label>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+          <input type="text" id="hosted-agent-name" placeholder="Agent name" style="flex-grow:1; min-width:120px; font-size:11px;" />
+          <input type="text" id="hosted-agent-role" placeholder="role (e.g. boss-agent)" style="width:150px; font-size:11px;" />
+          <select id="hosted-agent-provider" style="width:110px; font-size:11px;">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+          </select>
+          <button class="btn btn-primary btn-sm" id="btn-hosted-launch">Launch</button>
+        </div>
+        <div class="scroll-list" id="hosted-agents-list" style="max-height:120px;">
+          <div class="empty-state">No hosted agents running.</div>
+        </div>
+      </div>
+    </div>
+
     <!-- Get Started & Onboarding Guide -->
     <div class="card get-started-card" id="manage-onboarding-card" style="display:none;" style="display: flex; flex-direction: column;">
       <div class="card-header" style="border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">

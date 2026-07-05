@@ -35,6 +35,8 @@ const state = {
     ownerDid: null,
     registeredAgentDid: null
   },
+  // Hosted-Mode wallet session: a Bearer token proving this wallet, scoped to one lobby.
+  session: { token: null, identityRef: null, lobbyId: null },
   stats: {
     connected_users: 0,
     connected_agents: 0,
@@ -526,6 +528,116 @@ async function postJson(url, data) {
   }
 }
 
+// ── Hosted-Mode wallet session ──
+
+/** True when we hold a live session token for the active lobby. */
+function isSignedIn() {
+  return !!(state.session.token && state.session.lobbyId && state.session.lobbyId === state.activeLobbyId);
+}
+
+/** Authenticated fetch — adds the Bearer session token. Returns { ok, status, data }. */
+async function authRequest(method, url, data) {
+  if (!state.session.token) return { ok: false, status: 401, data: { error: 'not signed in' } };
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${state.session.token}` },
+      body: data ? JSON.stringify(data) : undefined,
+    });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) { state.session = { token: null, identityRef: null, lobbyId: null }; renderHostedCard(); }
+    return { ok: res.ok, status: res.status, data: body };
+  } catch (err) {
+    console.error(`auth ${method} ${url} failed:`, err);
+    return { ok: false, status: 0, data: { error: String(err) } };
+  }
+}
+
+/** Sign in to the active lobby: nonce → wallet signMessage → verify → store the session token. */
+async function signInToLobby() {
+  const statusEl = document.getElementById('hosted-signin-status');
+  const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
+  if (!state.activeLobbyId) { setStatus('select a lobby first'); return; }
+  if (!state.wallet.connected || !state.wallet.address) { setStatus('connect your wallet first'); return; }
+  const provider = window.concordium;
+  if (!provider) { setStatus('wallet extension not found'); return; }
+
+  const identityRef = `did:ccd:${CCD_NETWORK}:${state.wallet.address}`;
+  const lobbyId = state.activeLobbyId;
+  try {
+    setStatus('requesting challenge…');
+    const challenge = await postJson('/api/v1/agent-lobby/auth/nonce', { identity_ref: identityRef, lobby_id: lobbyId });
+    if (!challenge?.nonce) { setStatus('could not get a challenge'); return; }
+
+    setStatus('sign in your wallet…');
+    const signature = normalizeSignature(await provider.signMessage(state.wallet.address, challenge.nonce));
+
+    setStatus('verifying…');
+    const verified = await postJson('/api/v1/agent-lobby/auth/verify', {
+      identity_ref: identityRef, lobby_id: lobbyId, signature, public_key: state.wallet.address,
+    });
+    if (!verified?.token) { setStatus('sign-in rejected (a wallet-verifier may not be configured yet)'); return; }
+
+    state.session = { token: verified.token, identityRef, lobbyId };
+    setStatus('');
+    renderHostedCard();
+  } catch (err) {
+    console.error('[Hosted] sign-in failed:', err);
+    setStatus(`sign-in failed: ${err.message || err}`);
+  }
+}
+
+/** Render the Hosted-Mode card: session badge, and (when signed in) provider keys + hosted agents. */
+async function renderHostedCard() {
+  const card = document.getElementById('manage-hosted-card');
+  if (!card) return;
+  card.style.display = state.activeLobbyId ? '' : 'none';
+  const badge = document.getElementById('hosted-session-badge');
+  const keysSection = document.getElementById('hosted-keys-section');
+  const agentsSection = document.getElementById('hosted-agents-section');
+  const signedIn = isSignedIn();
+  if (badge) { badge.textContent = signedIn ? 'signed in' : 'signed out'; badge.style.color = signedIn ? 'var(--color-green)' : 'var(--text-muted)'; }
+  if (keysSection) keysSection.style.display = signedIn ? '' : 'none';
+  if (agentsSection) agentsSection.style.display = signedIn ? '' : 'none';
+  const signinBtn = document.getElementById('btn-hosted-signin');
+  if (signinBtn) signinBtn.style.display = signedIn ? 'none' : '';
+  if (signedIn) { await renderHostedKeys(); await renderHostedAgents(); }
+}
+
+async function renderHostedKeys() {
+  const list = document.getElementById('hosted-keys-list');
+  if (!list) return;
+  const r = await authRequest('GET', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys`);
+  const keys = r.data?.provider_keys || [];
+  list.innerHTML = keys.length === 0
+    ? '<div class="empty-state">No provider keys configured.</div>'
+    : keys.map(k => `<div class="list-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px;">
+        <span style="font-size:11px;">${escapeHtml(k.provider)} <span style="font-family:var(--font-mono); color:var(--text-muted);">${escapeHtml(k.key_hint)}</span> · ${escapeHtml(k.scope)}${k.agent_ref ? ' · ' + escapeHtml(k.agent_ref) : ''}</span>
+        <button class="btn btn-danger btn-sm" data-revoke-key="${escapeHtml(k.id)}">Revoke</button>
+      </div>`).join('');
+  list.querySelectorAll('[data-revoke-key]').forEach(btn => btn.addEventListener('click', async () => {
+    await authRequest('DELETE', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys/${encodeURIComponent(btn.dataset.revokeKey)}`);
+    renderHostedKeys();
+  }));
+}
+
+async function renderHostedAgents() {
+  const list = document.getElementById('hosted-agents-list');
+  if (!list) return;
+  const r = await authRequest('GET', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/hosted-agents`);
+  const agents = r.data?.hosted_agents || [];
+  list.innerHTML = agents.length === 0
+    ? '<div class="empty-state">No hosted agents running.</div>'
+    : agents.map(a => `<div class="list-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px;">
+        <span style="font-size:11px; font-family:var(--font-mono);">${escapeHtml(a.agent_id)}</span>
+        <button class="btn btn-danger btn-sm" data-stop-agent="${escapeHtml(a.agent_id)}">Stop</button>
+      </div>`).join('');
+  list.querySelectorAll('[data-stop-agent]').forEach(btn => btn.addEventListener('click', async () => {
+    await authRequest('DELETE', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/hosted-agents/${encodeURIComponent(btn.dataset.stopAgent)}`);
+    renderHostedAgents();
+  }));
+}
+
 // ── Wallet Helpers ──
 
 /**
@@ -929,6 +1041,8 @@ function init() {
         visibility,
         join_policy: policy,
         allowlist,
+        // Bind the lobby to the connected wallet so it (and only it) can manage Hosted-Mode config.
+        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:${CCD_NETWORK}:${state.wallet.address}` : undefined,
         created_by: 'web-user'
       });
 
@@ -1392,6 +1506,32 @@ function init() {
     });
   }
 
+  // ── Hosted Mode wiring ──
+  document.getElementById('btn-hosted-signin')?.addEventListener('click', signInToLobby);
+  document.getElementById('btn-hosted-add-key')?.addEventListener('click', async () => {
+    const provider = document.getElementById('hosted-key-provider')?.value;
+    const keyEl = document.getElementById('hosted-key-value');
+    const agentEl = document.getElementById('hosted-key-agent');
+    const apiKey = keyEl?.value?.trim();
+    if (!apiKey) { alert('Enter an API key.'); return; }
+    const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys`, {
+      provider, api_key: apiKey, agent_ref: agentEl?.value?.trim() || undefined,
+    });
+    if (res.ok) { if (keyEl) keyEl.value = ''; if (agentEl) agentEl.value = ''; renderHostedKeys(); }
+    else alert('Failed to save key: ' + (res.data?.error || res.status));
+  });
+  document.getElementById('btn-hosted-launch')?.addEventListener('click', async () => {
+    const name = document.getElementById('hosted-agent-name')?.value?.trim();
+    if (!name) { alert('Enter an agent name.'); return; }
+    const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/hosted-agents`, {
+      name,
+      agent_role: document.getElementById('hosted-agent-role')?.value?.trim() || undefined,
+      provider: document.getElementById('hosted-agent-provider')?.value,
+    });
+    if (res.ok) { document.getElementById('hosted-agent-name').value = ''; renderHostedAgents(); }
+    else alert('Failed to launch agent: ' + (res.data?.error || res.status));
+  });
+
   // ── Manage view wiring ──
   const btnManageInvite = document.getElementById('btn-manage-invite');
   if (btnManageInvite) {
@@ -1642,6 +1782,8 @@ async function renderManageView() {
   if (settings) settings.style.display = hasLobby ? 'block' : 'none';
   if (membersCard) membersCard.style.display = hasLobby ? 'flex' : 'none';
   if (agentsCard) agentsCard.style.display = hasLobby ? 'flex' : 'none';
+  // Hosted Mode: sign in, provider keys, launch server-side agents.
+  renderHostedCard();
   // The Onboarding / Trust Chain setup is always available in Manage (wallet + owner + issue).
   if (onboardingCard) onboardingCard.style.display = 'flex';
   if (!hasLobby) { if (nameEl) nameEl.textContent = '—'; return; }

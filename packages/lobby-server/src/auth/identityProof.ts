@@ -43,11 +43,32 @@ export async function generateNonceChallenge(identityRef: string, lobbyId: strin
   return { identityRef, nonce, expiresAt };
 }
 
-/** Verify signature proof of possession of the private key corresponding to the public key. */
-export function verifySignature(nonce: string, signature: string, publicKeyPem: string): boolean {
+let devTrustWarned = false;
+
+/** True when the dev wallet-signature bridge is enabled (demo/testnet only). */
+export function devTrustWalletSignatures(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^(1|on|true)$/i.test(env.AGENT_OS_DEV_TRUST_WALLET_SIGNATURES ?? '');
+}
+
+/**
+ * Verify a wallet signature over the login nonce. Supports:
+ *  - MOCK_ keys (tests), and standard ed25519/EC PEM keys (`crypto.verify`).
+ *  - A DEV BRIDGE (`AGENT_OS_DEV_TRUST_WALLET_SIGNATURES=1`) that accepts any non-empty signature
+ *    so the hosted panel can be demoed on testnet before the production Concordium ed25519 verifier
+ *    lands. It is OFF by default, logs a loud one-time warning, and MUST NOT be set in production —
+ *    it disables proof-of-possession entirely.
+ */
+export function verifySignature(nonce: string, signature: string, publicKeyPem: string, env: NodeJS.ProcessEnv = process.env): boolean {
   try {
     if (publicKeyPem.startsWith('MOCK_')) {
       return signature === `valid_sig_for_${nonce}`;
+    }
+    if (devTrustWalletSignatures(env)) {
+      if (!devTrustWarned) {
+        devTrustWarned = true;
+        console.warn('[auth] ⚠ AGENT_OS_DEV_TRUST_WALLET_SIGNATURES is ON — wallet signatures are NOT verified. Demo/testnet only; NEVER enable in production.');
+      }
+      return signature.length > 0;
     }
     const data = Buffer.from(nonce, 'utf-8');
     const signatureBuffer = Buffer.from(signature, 'hex');
