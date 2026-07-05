@@ -102,17 +102,34 @@ export async function verifyProofAndIssueToken(
   const isValid = verifySignature(challenge.nonce, signature, publicKeyPem);
   if (!isValid) return null;
 
-  // Issue a short-lived, encrypted or signed token string (represented as a secure JSON token payload here)
-  const payload: SessionTokenPayload = {
-    identityRef,
-    lobbyId,
-    expiresAt: Date.now() + SESSION_EXPIRY_MS,
-  };
+  return issueSessionToken(identityRef, lobbyId);
+}
 
-  // Authenticated token: `<base64url(payload)>.<hmac>`. The HMAC over the payload with the server
-  // secret makes the token unforgeable — a client cannot mint a session for a wallet it doesn't own.
+/**
+ * Mint an unforgeable, short-lived session token binding a proven wallet (`identityRef`) to a
+ * lobby. HMAC over the payload with the server secret prevents forgery. Call ONLY after ownership
+ * is proven (nonce/challenge signature verified) — this function does no verification itself.
+ */
+export function issueSessionToken(identityRef: string, lobbyId: string): string {
+  const payload: SessionTokenPayload = { identityRef, lobbyId, expiresAt: Date.now() + SESSION_EXPIRY_MS };
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
   return `${payloadB64}.${signPayload(payloadB64)}`;
+}
+
+/**
+ * Fail-closed guard for the dev signature bridge. The bridge disables proof-of-possession, so it
+ * must never run in production: throw if it is enabled while the runtime looks like production.
+ * Call at server startup. Returns silently when the bridge is off or the env is non-production.
+ */
+export function assertDevBridgeNotInProduction(env: NodeJS.ProcessEnv = process.env): void {
+  if (!devTrustWalletSignatures(env)) return;
+  const isProd = /^prod(uction)?$/i.test(env.NODE_ENV ?? '') || /^prod(uction)?$/i.test(env.AGENT_OS_ENV ?? '');
+  if (isProd) {
+    throw new Error(
+      'AGENT_OS_DEV_TRUST_WALLET_SIGNATURES is enabled in a production environment — refusing to start. ' +
+      'This bridge disables wallet-signature verification and is for local/testnet only. Unset it in production.',
+    );
+  }
 }
 
 /** Validate a short-lived, HMAC-signed lobby session token. Returns the payload, or null if the

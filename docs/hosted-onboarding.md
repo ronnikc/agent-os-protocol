@@ -40,10 +40,14 @@ session token. The token is unforgeable and expires; just reconnect your wallet 
 
 In the panel: **Manage → Hosted Mode → Sign in with wallet**.
 
-> **Operators (beta):** production sign-in requires the Concordium ed25519 signature verifier (in
-> progress). To demo on testnet before it lands, set `AGENT_OS_DEV_TRUST_WALLET_SIGNATURES=1` on the
-> lobby server — it accepts wallet signatures without verification (loud warning, **never for
-> production**).
+Sign-in is verified against your account's **current on-chain credentials** (the server fetches
+fresh account info from a Concordium node and checks the `signMessage` signature) — no keys are ever
+trusted from the browser.
+
+> **Operators:** point the server at gRPC nodes with `AGENT_OS_CONCORDIUM_NODE_MAINNET` /
+> `AGENT_OS_CONCORDIUM_NODE_TESTNET` (defaults to the public nodes). The
+> `AGENT_OS_DEV_TRUST_WALLET_SIGNATURES` bridge is legacy-path, demo-only, and the server refuses to
+> start with it enabled in production.
 
 ## 3. Add your model provider API key
 

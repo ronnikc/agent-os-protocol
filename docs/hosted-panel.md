@@ -75,11 +75,13 @@ The `apps/lobby-web` dashboard's **Manage → Hosted Mode** card: **Sign in with
 per-lobby or per-agent, masked), and **Launch / Stop** server-side agents — all gated by the wallet
 session. Creating a lobby with a connected wallet binds it to that wallet as owner.
 
-**Production sign-in caveat:** the wallet signature is verified by a PEM/MOCK verifier today. A
-`AGENT_OS_DEV_TRUST_WALLET_SIGNATURES=1` dev bridge (OFF by default, loud warning) accepts
-signatures without cryptographic verification so the panel can be demoed on testnet. The **real
-Concordium ed25519 verifier** (account credential keys via the indexer/gRPC over `signMessage`
-output) is the remaining production gate before public sign-in.
+**Production sign-in ✅:** a bound, single-use challenge (`POST /auth/challenge`, TTL 90s, bound to
+account + origin + network + session + lobby) is signed by the wallet and verified server-side via
+`POST /auth/verify-wallet` against the account's **fresh on-chain credentials** — the Concordium SDK
+`verifyMessageSignature` over a `getAccountInfo` fetched at verify time (`auth/concordium-verifier.ts`,
+gRPC node injectable for tests). Client-supplied keys are never trusted; failures are generic. The
+`AGENT_OS_DEV_TRUST_WALLET_SIGNATURES` bridge remains only for the legacy `/auth/verify` path (demo/
+testnet) and the server **refuses to start** if it is set in production.
 
 ## Verification
 
