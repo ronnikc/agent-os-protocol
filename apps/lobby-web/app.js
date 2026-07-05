@@ -950,6 +950,18 @@ async function anchorAgentOnChain(provider, fields) {
     submitMode = 'schema_json';
   }
 
+  // GUARDRAIL — this registry's write entrypoints (register / setAgentURI / …) are **sponsor-gated**:
+  // on-chain evidence shows every successful register goes through the authorized sponsor account,
+  // while every SELF-PAID call is rejected by contract policy (reject -2147483648, ~4 CCD burned).
+  // The injected browser wallet (`window.concordium`) can only self-sign+submit its own transaction
+  // — it cannot complete the sponsor-co-signed transaction the sponsor service returns — so a
+  // self-paid submit here is guaranteed to fail. Refuse it instead of wasting the user's CCD.
+  // (Sponsored submission requires the WalletConnect + grpc-web flow the official registry UI uses;
+  // tracked as a follow-up. Until then we fail loudly rather than burn energy on a certain reject.)
+  if (sponsorAvailable) {
+    throw new Error(`this Agent Registry requires SPONSORED transactions — a self-paid ${receiveName} is rejected on-chain by contract policy and would waste ~4 CCD. Sponsored submission (WalletConnect + grpc-web via ${'registry-sponsor-service'}) is not yet wired in this dashboard. Mint via the official registry UI for now, or use the sponsored flow once available. No transaction was submitted.`);
+  }
+
   let txHash;
   if (message) {
     const paramBytes = Parameter.toBuffer(message);
