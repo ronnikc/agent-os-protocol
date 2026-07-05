@@ -613,17 +613,36 @@ async function renderHostedCard() {
   if (signedIn) { await renderHostedKeys(); await renderHostedAgents(); }
 }
 
+/** Populate the key-scope dropdown with "All agents" + one entry per agent currently in the roster. */
+function populateHostedAgentScope() {
+  const sel = document.getElementById('hosted-key-agent');
+  if (!sel) return;
+  const prev = sel.value;
+  const agents = (state.agents || []).filter(a => a.agent_id);
+  sel.innerHTML = `<option value="">All agents (lobby default)</option>` +
+    agents.map(a => {
+      const label = a.display_name || a.agent_role || a.agent_id;
+      return `<option value="${escapeHtml(a.agent_id)}">${escapeHtml(label)}</option>`;
+    }).join('');
+  if (prev) sel.value = prev; // preserve selection across re-renders
+}
+
 async function renderHostedKeys() {
   const list = document.getElementById('hosted-keys-list');
   if (!list) return;
+  populateHostedAgentScope();
   const r = await authRequest('GET', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys`);
   const keys = r.data?.provider_keys || [];
   list.innerHTML = keys.length === 0
     ? '<div class="empty-state">No provider keys configured.</div>'
-    : keys.map(k => `<div class="list-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px;">
-        <span style="font-size:11px;">${escapeHtml(k.provider)} <span style="font-family:var(--font-mono); color:var(--text-muted);">${escapeHtml(k.key_hint)}</span> · ${escapeHtml(k.scope)}${k.agent_ref ? ' · ' + escapeHtml(k.agent_ref) : ''}</span>
+    : keys.map(k => {
+        const endpoint = [k.base_url && `<span style="color:var(--text-muted);">${escapeHtml(k.base_url)}</span>`, k.model && `<span style="color:var(--color-cyan);">${escapeHtml(k.model)}</span>`].filter(Boolean).join(' · ');
+        const scope = k.agent_ref ? `agent ${escapeHtml(k.agent_ref)}` : 'all agents';
+        return `<div class="list-row" style="display:flex; align-items:center; justify-content:space-between; gap:8px; padding:6px 8px;">
+        <span style="font-size:11px;">${escapeHtml(k.provider)} <span style="font-family:var(--font-mono); color:var(--text-muted);">${escapeHtml(k.key_hint)}</span> · ${scope}${endpoint ? ' · ' + endpoint : ''}</span>
         <button class="btn btn-danger btn-sm" data-revoke-key="${escapeHtml(k.id)}">Revoke</button>
-      </div>`).join('');
+      </div>`;
+      }).join('');
   list.querySelectorAll('[data-revoke-key]').forEach(btn => btn.addEventListener('click', async () => {
     await authRequest('DELETE', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys/${encodeURIComponent(btn.dataset.revokeKey)}`);
     renderHostedKeys();
@@ -1753,13 +1772,23 @@ function init() {
     const provider = document.getElementById('hosted-key-provider')?.value;
     const keyEl = document.getElementById('hosted-key-value');
     const agentEl = document.getElementById('hosted-key-agent');
+    const baseUrlEl = document.getElementById('hosted-key-baseurl');
+    const modelEl = document.getElementById('hosted-key-model');
     const apiKey = keyEl?.value?.trim();
     if (!apiKey) { alert('Enter an API key.'); return; }
     const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/provider-keys`, {
-      provider, api_key: apiKey, agent_ref: agentEl?.value?.trim() || undefined,
+      provider, api_key: apiKey,
+      agent_ref: agentEl?.value?.trim() || undefined,
+      base_url: baseUrlEl?.value?.trim() || undefined,
+      model: modelEl?.value?.trim() || undefined,
     });
-    if (res.ok) { if (keyEl) keyEl.value = ''; if (agentEl) agentEl.value = ''; renderHostedKeys(); }
-    else alert('Failed to save key: ' + (res.data?.error || res.status));
+    if (res.ok) {
+      if (keyEl) keyEl.value = '';
+      if (baseUrlEl) baseUrlEl.value = '';
+      if (modelEl) modelEl.value = '';
+      if (agentEl) agentEl.value = '';
+      renderHostedKeys();
+    } else alert('Failed to save key: ' + (res.data?.error || res.status));
   });
   document.getElementById('btn-hosted-launch')?.addEventListener('click', async () => {
     const name = document.getElementById('hosted-agent-name')?.value?.trim();
