@@ -958,6 +958,47 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       '.png': 'image/png',
       '.ico': 'image/x-icon',
     };
+
+    // ── Hosted full Agent OS Panel (Phase 1) ──
+    // Serve the Agent OS Panel SPA under /panel so the hosted lobby offers the full panel experience
+    // (all sub-menus), not just the Hosted-Mode widget. A hosted-mode flag is injected into the
+    // panel's index.html so the SPA adapts (routes its data at the lobby, hides local-only views).
+    // The panel's hosted backend (roster/agents/tasks/identity → lobby + hosted-agents) is wired
+    // view-by-view in subsequent phases; see docs/hosted-panel.md.
+    if (path === '/panel' || path === '/panel/' || path.startsWith('/panel/')) {
+      const panelDir = resolve(fileURLToPath(import.meta.url), '../../../../agent-os-panel');
+      const rel = path === '/panel' || path === '/panel/' ? 'index.html' : path.slice('/panel/'.length);
+      const panelPath = resolve(panelDir, rel);
+      if ((panelPath === panelDir || panelPath.startsWith(panelDir + sep)) && existsSync(panelPath) && statSync(panelPath).isFile()) {
+        const ext = extname(panelPath);
+        const mime = MIME_TYPES[ext] ?? 'application/octet-stream';
+        if (ext === '.html') {
+          // Inject the hosted-mode flag (+ lobby origin) so the panel SPA runs in hosted mode.
+          const html = readFileSync(panelPath, 'utf-8').replace(
+            /<head>/i,
+            `<head>\n<script>window.AGENT_OS_HOSTED=true;window.AGENT_OS_LOBBY_ORIGIN=location.origin;</script>`,
+          );
+          res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
+          res.end(html);
+        } else {
+          res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
+          res.end(readFileSync(panelPath));
+        }
+        return;
+      }
+      // SPA fallback for /panel/<tab> routes → serve the panel index.
+      const indexPath = resolve(panelDir, 'index.html');
+      if (existsSync(indexPath)) {
+        const html = readFileSync(indexPath, 'utf-8').replace(
+          /<head>/i,
+          `<head>\n<script>window.AGENT_OS_HOSTED=true;window.AGENT_OS_LOBBY_ORIGIN=location.origin;</script>`,
+        );
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'access-control-allow-origin': '*' });
+        res.end(html);
+        return;
+      }
+    }
+
     const rootDir = resolve(fileURLToPath(import.meta.url), '../../../../apps/lobby-web');
     let filePath = path === '/' ? '/index.html' : path;
     const fullPath = resolve(rootDir, filePath.startsWith('/') ? filePath.slice(1) : filePath);

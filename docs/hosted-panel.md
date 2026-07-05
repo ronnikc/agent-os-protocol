@@ -83,6 +83,29 @@ gRPC node injectable for tests). Client-supplied keys are never trusted; failure
 `AGENT_OS_DEV_TRUST_WALLET_SIGNATURES` bridge remains only for the legacy `/auth/verify` path (demo/
 testnet) and the server **refuses to start** if it is set in production.
 
+### Phase 4 — Full hosted panel (in progress)
+The hosted experience should be the **whole Agent OS Panel** (every sub-menu), not a single
+Hosted-Mode widget. Approach: serve the existing `agent-os-panel` SPA from the lobby server under
+`/panel`, made **hosted-aware**, and implement its API surface against the lobby's server-side model
+so the same UI runs hosted. Built in slices, each testable on its own:
+
+- **Phase 4.1 — shell (done):** the lobby serves the panel SPA at `/panel` and injects
+  `window.AGENT_OS_HOSTED` (+ lobby origin). lobby-web gets a **Panel** nav entry. In hosted mode the
+  panel shows a context banner and hides the local-only views (Files, Gantt, Scheduled, Memory, Loop)
+  whose data comes from a local filesystem/process host. `fetchJson` degrades unmapped endpoints to
+  empty states, so nothing crashes while backends are wired.
+- **Phase 4.2 — Agents:** `/api/agents` (+ overview stats) → the lobby roster joined with hosted
+  agents; start/stop → the hosted-agents launch/stop API; "Create ID" already works via the registry
+  proxy. Gated by the wallet session.
+- **Phase 4.3 — Lobby / Messages / Tasks / Requests:** map to the lobby's existing
+  `/api/v1/agent-lobby/*` data (roster, coordination messages, tasks, hand-raises).
+- **Phase 4.4 — Identity:** the Identity tab's card authoring + registration wired to the sponsored
+  mint + registry proxy (same logic as the per-agent "Create ID").
+- **Phase 4.5 — Provider keys under Agents:** fold the per-lobby / per-agent provider-key config
+  (already in the Hosted-Mode card) into the panel's Agents view.
+- **Local-only views (Files, Gantt, Scheduled, Memory, Loop):** either given hosted data sources
+  (wallet-scoped server-side state) or kept hidden in hosted mode.
+
 ## Verification
 
 Each phase ships an offline, seam-injected verify suite (`npm run verify-hosted`) — no live wallet,
