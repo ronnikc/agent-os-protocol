@@ -506,7 +506,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const result = await registryMcp.callTool(tool, args);
         return json({ ok: true, tool, result });
       } catch (e) {
-        return json({ ok: false, tool, error: String((e as Error).message ?? e) }, 502);
+        // Return 200 with ok:false for a handled upstream MCP error. Clients inspect `ok` (e.g. the
+        // optional agent_by_external_reference existence probe, which many MCP deployments 502 on
+        // because they run without an Indexer). A 200 keeps the browser from logging a red network
+        // error for an expected, already-handled failure.
+        return json({ ok: false, tool, error: String((e as Error).message ?? e) });
       }
     }
 

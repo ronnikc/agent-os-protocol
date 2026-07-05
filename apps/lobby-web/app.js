@@ -1116,13 +1116,17 @@ async function verifyMintOutcome(txHash, agentDid) {
       const data = await res.json();
       const result = data?.data?.transactionByTransactionHash?.result;
       if (!result) continue; // not yet finalized/indexed — keep polling
+      const statusEl = document.getElementById('onchain-status-line');
+      const explorer = `https://ccdexplorer.io/${CCD_NETWORK}/transaction/${txHash}`;
       if (result.__typename === 'Rejected') {
         const reason = result.reason?.rejectReason ?? result.reason?.__typename ?? 'unknown';
         const where = result.reason?.receiveName ? ` at ${result.reason.receiveName}` : '';
         console.error('[Registry] mint REJECTED on-chain:', result);
+        if (statusEl) statusEl.innerHTML = `<span style="color:#ff5c5c; font-weight:600;">✗ Mint rejected on-chain</span> — <span style="font-size:10px;">reason ${escapeHtml(String(reason))}${escapeHtml(where)}</span> — <a href="${escapeHtml(explorer)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">Tx ↗</a>`;
         alert(`⚠ On-chain mint for ${agentDid} was REJECTED${where} (reason ${reason}).\nThe agent card remains hosted off-chain by this lobby. Tx: ${txHash}\n\nThe DID is NOT anchored on-chain. Check the browser console for the built parameter and retry once the payload is corrected.`);
       } else {
         console.log('[Registry] mint finalized successfully:', result.__typename);
+        if (statusEl) statusEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">✓ Anchored on-chain (finalized)</span> — <a href="${escapeHtml(explorer)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">Tx ${escapeHtml(String(txHash).slice(0,16))}… ↗</a>`;
       }
       return;
     } catch (err) {
@@ -1593,11 +1597,11 @@ function init() {
           <div style="text-align:left; font-size:12px; line-height:1.8;">
             <strong>DID:</strong> <span style="color:var(--color-cyan);">${escapeHtml(agentDid)}</span><br>
             <strong>Metadata:</strong> <a href="${escapeHtml(metadataUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(metadataUrl)}</a> ${storedBadge}<br>
-            <strong>On-Chain:</strong> ${onChainLine}<br>
+            <strong>On-Chain:</strong> <span id="onchain-status-line">${onChainLine}</span><br>
             <strong>Owner Account:</strong> <a href="${escapeHtml(explorerUrl)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">View on CCDexplorer ↗</a><br>
             <strong>Card Hash:</strong> <span style="font-size:9px; color:var(--text-muted);">${cardHash}</span><br>
             <strong>Signature:</strong> <span style="font-size:9px; color:var(--text-muted);">${signatureHex?.slice(0, 32)}...</span><br>
-            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? ' · on-chain mint submitted' : ' · card hosted off-chain by this lobby'}
+            <strong>Status:</strong> <span style="color:var(--color-green); font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}
           </div>${bindNote}`;
         state.identity.bindingAgentId = null;
       }
