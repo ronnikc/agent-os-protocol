@@ -12,12 +12,27 @@ function getIdentityBadge(status) {
     org_linked: ['badge-identity-org', 'Org-verified'],
     registry_verified: ['badge-identity-verified', 'Registered'],
     pending: ['badge-identity-pending', 'Pending'],
+    // An Agent ID is persisted but the agent is offline, so it hasn't been live-verified against the
+    // Concordium registry yet (that happens when it connects). Neutral — not a failure like Unverified.
+    configured: ['badge-identity-pending', 'ID set'],
     failed: ['badge-identity-failed', 'Failed'],
     unverified: ['badge-identity-unverified', 'Unverified']
   };
   const entry = map[status] || ['badge-identity-unverified', 'Unverified'];
   const [cls, label] = entry;
   return `<span class="badge ${cls}">${label}</span>`;
+}
+
+/**
+ * Choose the identity badge: a live verified state (from the connected lobby) wins; otherwise, if the
+ * agent has a persisted DID it reads "ID set" (verifies when it connects), not the misleading
+ * "Unverified" which is reserved for agents with no identity at all.
+ */
+function identityBadgeFor(agent) {
+  const s = agent.identity_status;
+  if (s && s !== 'unverified') return getIdentityBadge(s);
+  if (agent.identity) return `<span title="Agent ID configured; it is verified against the Concordium registry when the agent connects to the lobby.">${getIdentityBadge('configured')}</span>`;
+  return getIdentityBadge('unverified');
 }
 
 function getActivityIndicator(status) {
@@ -56,7 +71,7 @@ function renderAgents() {
       <td><input type="checkbox" ${checked} data-slug="${a.slug}" /></td>
       <td><strong>${escapeHtml(a.name)}</strong></td>
       <td class="scope" title="${escapeHtml(a.scope)}">${escapeHtml(a.scope)}</td>
-      <td>${getIdentityBadge(a.identity_status)}${didCell}</td>
+      <td>${identityBadgeFor(a)}${didCell}</td>
       <td><span class="status-dot ${statusClass}"></span>${a.status}</td>
       <td>${getActivityIndicator(a.status)}</td>
       <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(a.runtime || '—')}</span></td>
