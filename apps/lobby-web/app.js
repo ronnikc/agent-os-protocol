@@ -16,6 +16,11 @@ const CCD_SCAN_API_BASE = {
   mainnet: 'https://api-ccdscan.mainnet.concordium.software',
   testnet: 'https://api-ccdscan.testnet.concordium.com'
 }[CCD_NETWORK];
+// Genesis block hash per network — required by the sponsor service to identify the target chain.
+const CCD_GENESIS_HASH = {
+  mainnet: '9dd9ca4d19e9393877d2c44b70f89acbfc0883c2243e5eeaecc0d1cd0503f478',
+  testnet: '4221332d34e1694168c2a0c0b3fd0f273809612cb13d000d5c2e00e85f50f796'
+}[CCD_NETWORK];
 
 const state = {
   lobbies: [],
@@ -790,7 +795,11 @@ function mapBuilderArgs(inputSchema, fields) {
 // like `.mod()` on them during serialization. Primitives (BigInt/string/number) have no such
 // methods, which is the "A.mod is not a function" failure. Pinned to the major version whose API
 // (CcdAmount.fromMicroCcd / ContractAddress.create / Energy.create) this code targets.
-const CCD_SDK_URL = 'https://esm.sh/@concordium/web-sdk@12';
+// Pinned to an exact patch so the wallet-connectors dep (loaded with ?deps=@concordium/web-sdk@…
+// below) resolves to the SAME module instance — otherwise branded types (AccountAddress, Parameter,
+// the sponsored Transaction.Signable) built here would fail `instanceOf` checks inside the connector.
+const CCD_SDK_VERSION = '12.0.2';
+const CCD_SDK_URL = `https://esm.sh/@concordium/web-sdk@${CCD_SDK_VERSION}`;
 let _ccdSdkPromise = null;
 function loadConcordiumSdk() {
   if (!_ccdSdkPromise) {
@@ -800,6 +809,79 @@ function loadConcordiumSdk() {
     });
   }
   return _ccdSdkPromise;
+}
+
+// Concordium wallet-connectors — the browser-wallet connector exposes signAndSendSponsoredTransaction
+// (the injected `window.concordium` API alone cannot complete a sponsor-co-signed transaction). Pinned
+// to share the web-sdk instance above via ?deps so the SignableV1 we build is recognized.
+const CCD_CONNECTORS_URL = `https://esm.sh/@concordium/wallet-connectors@0.9.0-alpha.0?deps=@concordium/web-sdk@${CCD_SDK_VERSION}`;
+let _ccdConnectorsPromise = null;
+function loadConcordiumConnectors() {
+  if (!_ccdConnectorsPromise) {
+    _ccdConnectorsPromise = import(/* @vite-ignore */ CCD_CONNECTORS_URL).catch((err) => {
+      _ccdConnectorsPromise = null;
+      throw new Error(`could not load Concordium wallet-connectors from ${CCD_CONNECTORS_URL}: ${err.message || err}`);
+    });
+  }
+  return _ccdConnectorsPromise;
+}
+
+/** Fetch the sender account's next sequence number (nonce) from the public wallet proxy. */
+async function fetchAccountNonce(address) {
+  const res = await fetch(`${CCD_WALLET_PROXY_BASE}/v0/accNonce/${encodeURIComponent(address)}`);
+  if (!res.ok) throw new Error(`could not fetch account nonce (HTTP ${res.status})`);
+  const data = await res.json();
+  const nonce = Number(data?.nonce);
+  if (!Number.isInteger(nonce) || nonce <= 0) throw new Error(`wallet proxy returned an invalid nonce: ${data?.nonce}`);
+  return nonce;
+}
+
+/**
+ * Submit an Agent-ID mint through Concordium's SPONSOR service so the registry accepts it (register
+ * on this contract is sponsor-gated — a self-paid call is rejected by policy). Flow, all verified
+ * against the live services:
+ *   1. Build the UNSIGNED transaction in the sponsor's Transaction.JSON shape — an *initial* builder
+ *      header (`executionEnergyAmount` only; integer numeric fields) + the update payload with the
+ *      pre-encoded parameter hex. The sponsor adds sender/nonce/expiry + its own signature.
+ *   2. POST it to the lobby's sponsor relay → a partially-signed SignableV1 (sponsor signature set,
+ *      sender signature empty).
+ *   3. Parse it with the SDK and hand it to the browser wallet's connector, which adds the SENDER
+ *      signature and submits — no keys leave the wallet, Concordium pays the energy.
+ * Returns the submitted transaction hash.
+ */
+async function submitSponsoredMint({ sender, index, subindex, receiveName, parameterHex, maxEnergy }) {
+  const sdk = await loadConcordiumSdk();
+  const { Transaction, AccountAddress } = sdk;
+  const connectors = await loadConcordiumConnectors();
+  const BrowserWalletConnector = connectors.BrowserWalletConnector;
+  if (!BrowserWalletConnector) throw new Error('wallet-connectors did not export BrowserWalletConnector');
+
+  const nonce = await fetchAccountNonce(sender);
+  // The sponsor parses this with the Concordium SDK: numeric fields MUST be integers (not the SDK
+  // toJSON string form), the header carries ONLY executionEnergyAmount (the service adds the rest).
+  const unsignedTx = {
+    header: { executionEnergyAmount: Number(maxEnergy) },
+    payload: {
+      type: 'update',
+      amount: 0,
+      address: { index: Number(index), subindex: Number(subindex ?? 0) },
+      receiveName,
+      message: parameterHex,
+    },
+  };
+  console.log('[Registry] requesting sponsor co-signature for', receiveName, 'nonce', nonce);
+  const partiallySigned = await requestSponsoredTransaction(unsignedTx, sender, CCD_GENESIS_HASH, nonce);
+  if (!partiallySigned) throw new Error('the sponsor service did not return a co-signed transaction (see console for the relay error)');
+
+  const signable = Transaction.signableFromJSON(partiallySigned);
+  console.log('[Registry] sponsor co-signed; requesting the wallet to add the sender signature + submit…');
+
+  const noop = () => {};
+  const connector = await BrowserWalletConnector.create({
+    onChainChanged: noop, onAccountChanged: noop, onConnected: noop, onDisconnected: noop,
+  });
+  const txHash = await connector.signAndSendSponsoredTransaction(AccountAddress.fromBase58(sender), signable);
+  return txHash;
 }
 
 /**
@@ -950,16 +1032,23 @@ async function anchorAgentOnChain(provider, fields) {
     submitMode = 'schema_json';
   }
 
-  // GUARDRAIL — this registry's write entrypoints (register / setAgentURI / …) are **sponsor-gated**:
-  // on-chain evidence shows every successful register goes through the authorized sponsor account,
-  // while every SELF-PAID call is rejected by contract policy (reject -2147483648, ~4 CCD burned).
-  // The injected browser wallet (`window.concordium`) can only self-sign+submit its own transaction
-  // — it cannot complete the sponsor-co-signed transaction the sponsor service returns — so a
-  // self-paid submit here is guaranteed to fail. Refuse it instead of wasting the user's CCD.
-  // (Sponsored submission requires the WalletConnect + grpc-web flow the official registry UI uses;
-  // tracked as a follow-up. Until then we fail loudly rather than burn energy on a certain reject.)
+  // SPONSORED PATH — this registry's write entrypoints (register / setAgentURI / …) are
+  // **sponsor-gated**: on-chain evidence shows every successful register goes through the authorized
+  // sponsor account, while every SELF-PAID call is rejected by contract policy (reject -2147483648,
+  // ~4 CCD burned). So when the lobby advertises a sponsor service, route the mint through it: the
+  // sponsor co-signs and pays the energy, and the browser wallet only adds the sender signature.
   if (sponsorAvailable) {
-    throw new Error(`this Agent Registry requires SPONSORED transactions — a self-paid ${receiveName} is rejected on-chain by contract policy and would waste ~4 CCD. Sponsored submission (WalletConnect + grpc-web via ${'registry-sponsor-service'}) is not yet wired in this dashboard. Mint via the official registry UI for now, or use the sponsored flow once available. No transaction was submitted.`);
+    if (!hex) {
+      throw new Error(`the sponsored mint needs the builder's pre-encoded parameter hex, but ${builder.name} returned none (keys: ${Object.keys(payload).join(', ')}). No transaction was submitted.`);
+    }
+    const paramBytes = Parameter.toBuffer(Parameter.fromHexString(hex));
+    if (!paramBytes || paramBytes.length === 0) {
+      throw new Error(`refusing to submit: the resolved ${builder.name} parameter is empty — this would parse-error on-chain. No transaction was submitted.`);
+    }
+    const txHash = await submitSponsoredMint({
+      sender: state.wallet.address, index, subindex, receiveName, parameterHex: hex, maxEnergy: energyVal,
+    });
+    return { txHash, contract: { index, subindex: subindex ?? 0 }, receiveName, mode, sponsored: true, submitMode: 'sponsored' };
   }
 
   let txHash;
