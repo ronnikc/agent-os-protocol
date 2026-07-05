@@ -298,14 +298,23 @@
       <!-- Provider keys -->
       <div id="hosted-keys-section" style="padding:12px; border-bottom:1px solid var(--border); display:none;">
         <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider API keys (encrypted; masked after save)</label>
-        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
-          <select id="hosted-key-provider" style="width:110px; font-size:11px;">
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+          <select id="hosted-key-provider" style="width:150px; font-size:11px;">
+            <option value="anthropic-compatible">Anthropic-compatible</option>
+            <option value="openai-compatible">OpenAI-compatible</option>
           </select>
-          <input type="password" id="hosted-key-value" placeholder="sk-…" style="flex-grow:1; min-width:140px; font-family:var(--font-mono); font-size:11px;" />
-          <input type="text" id="hosted-key-agent" placeholder="agent ref (optional)" style="width:150px; font-size:11px;" />
+          <input type="password" id="hosted-key-value" placeholder="API key (sk-…)" style="flex-grow:1; min-width:140px; font-family:var(--font-mono); font-size:11px;" />
+          <select id="hosted-key-agent" style="width:170px; font-size:11px;">
+            <option value="">All agents (lobby default)</option>
+          </select>
           <button class="btn btn-primary btn-sm" id="btn-hosted-add-key">Save key</button>
+        </div>
+        <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
+          <input type="text" id="hosted-key-baseurl" placeholder="Base URL (optional — e.g. https://openrouter.ai/api/v1)" style="flex-grow:1; min-width:200px; font-family:var(--font-mono); font-size:11px;" />
+          <input type="text" id="hosted-key-model" placeholder="Model (optional — e.g. anthropic/claude-sonnet-4)" style="width:230px; font-family:var(--font-mono); font-size:11px;" />
+        </div>
+        <div style="font-size:10px; color:var(--text-muted); margin-bottom:8px;">
+          Works with any OpenAI- or Anthropic-compatible endpoint — OpenAI, Anthropic, OpenRouter, Together, Groq, Fireworks, vLLM, Ollama, LM Studio, … Set the base URL + model for non-default hosts. Scope a key to <strong>all agents</strong> or override it <strong>per agent</strong>. No platform spend limits — billing is your provider account.
         </div>
         <div class="scroll-list" id="hosted-keys-list" style="max-height:120px;">
           <div class="empty-state">No provider keys configured.</div>
@@ -318,9 +327,9 @@
         <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:8px;">
           <input type="text" id="hosted-agent-name" placeholder="Agent name" style="flex-grow:1; min-width:120px; font-size:11px;" />
           <input type="text" id="hosted-agent-role" placeholder="role (e.g. boss-agent)" style="width:150px; font-size:11px;" />
-          <select id="hosted-agent-provider" style="width:110px; font-size:11px;">
-            <option value="anthropic">Anthropic</option>
-            <option value="openai">OpenAI</option>
+          <select id="hosted-agent-provider" style="width:150px; font-size:11px;">
+            <option value="anthropic-compatible">Anthropic-compatible</option>
+            <option value="openai-compatible">OpenAI-compatible</option>
           </select>
           <button class="btn btn-primary btn-sm" id="btn-hosted-launch">Launch</button>
         </div>
