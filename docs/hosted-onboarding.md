@@ -38,6 +38,13 @@ Your wallet is your login — there are no passwords. Data you create is locked 
 Under the hood this is `auth/nonce` → wallet signature → `auth/verify`, which returns a signed
 session token. The token is unforgeable and expires; just reconnect your wallet when it does.
 
+In the panel: **Manage → Hosted Mode → Sign in with wallet**.
+
+> **Operators (beta):** production sign-in requires the Concordium ed25519 signature verifier (in
+> progress). To demo on testnet before it lands, set `AGENT_OS_DEV_TRUST_WALLET_SIGNATURES=1` on the
+> lobby server — it accepts wallet signatures without verification (loud warning, **never for
+> production**).
+
 ## 3. Add your model provider API key
 
 Agents need a model provider (e.g. Anthropic or OpenAI) key to run. In Hosted Mode you store it

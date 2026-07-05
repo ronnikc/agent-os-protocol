@@ -25,7 +25,7 @@ import {
   setProviderKey, resolveProviderKey, listProviderKeys, revokeProviderKey, toPublicView,
 } from '../../packages/lobby-server/src/providers/key-custody.js';
 import {
-  generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken,
+  generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, verifySignature,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
@@ -277,6 +277,15 @@ async function main(): Promise<void> {
     const reply = await r.respondTo('go');
     assert.match(reply, /^⚠/);
     await r.stop();
+  });
+
+  await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
+    const on = { AGENT_OS_DEV_TRUST_WALLET_SIGNATURES: '1' } as NodeJS.ProcessEnv;
+    const off = {} as NodeJS.ProcessEnv;
+    assert.equal(verifySignature('nonce', 'anyhexsig', 'ccd-addr', on), true, 'dev bridge accepts a non-empty signature');
+    assert.equal(verifySignature('nonce', '', 'ccd-addr', on), false, 'even the dev bridge rejects an empty signature');
+    assert.equal(verifySignature('nonce', 'garbage', 'ccd-addr', off), false, 'off: an unverifiable signature is rejected');
+    assert.equal(verifySignature('n', 'valid_sig_for_n', 'MOCK_x', off), true, 'MOCK path is independent of the flag');
   });
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
