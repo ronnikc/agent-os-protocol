@@ -2,7 +2,7 @@ Title: Agent Registry Minting
 Keywords: concordium, agent-registry, cis-8004, agent-card, minting, build-register, metadata-hash, did-ccd, set-agent-uri, mcp-service
 Agents: backend, api, infrastructure, frontend
 When to use: When anchoring an Agent Card on the Concordium CIS-8004 Agent Registry — building the register/update payload (via the Agent Registry MCP service), hosting the card, and diagnosing on-chain contract rejections.
-Version: 1.1.0
+Version: 1.2.0
 Last updated: 2026-07-05
 
 Mint or update an agent identity on the CIS-8004 Agent Registry so a `did:ccd:<network>:<id>` resolves to a hosted, hash-matched Agent Card. The service (or SDK) builds a sign-ready payload; the owner's wallet signs and submits — the app never holds keys. Encodes the two failure modes seen in the Agent OS lobby: the **metadata-hash mismatch** (card hashed before the signature was added, then hosted with it) and the **wrong-entrypoint rejection** (`register` vs `setAgentURI`).
@@ -119,6 +119,8 @@ chain_metadata:
 ## Error Handling
 
 - `build_register call failed` / contract rejects with `-2147483648` (concordium-std default `Reject`) → a parameter parse error or a failed `ensure!` precondition. **First suspect a type-mismatched register arg** (Step 2): confirm `external_reference`/`initial_metadata` are omitted (not fed a DID/URL string) and `network` is your live network, not the `devnet` default. Then re-check: entrypoint (`register` vs `setAgentURI`), parameter matches `schema_b64`, and the account is permitted to register. Log the built `parameter_hex`/`parameter_json` and diff against the schema.
+- **On-chain reject `-2147483648` with an EMPTY `messageAsHex` (energy cost only ~800)** → the transaction was submitted with **no parameter bytes**. The classic cause: the builder returns `{ hex, schema_json }` (docs) — hex is the wire-encoded parameter — but the client instead took a "parameters JSON + schema" wallet path and passed **`schema_json` (a JSON schema type) where the wallet expects a base64 module schema**, so the wallet serialized an empty parameter. Fix: prefer the builder's `hex` as the update `message` (`Parameter.fromHexString(hex)`); only use the wallet's JSON+schema path with a **genuine base64** schema; otherwise serialize client-side with the SDK. **Always guard `Parameter.toBuffer(message).length > 0` before submitting** — an empty parameter is a guaranteed reject that still burns energy (~4 CCD).
+- **A submitted tx is not a confirmed mint.** The wallet returns a tx hash at *submission*; the contract can still reject at finalization. Never report success on the hash alone — poll the outcome (CCDScan `transactionByTransactionHash.result`, or gRPC `getBlockItemStatus`) and only claim the DID is anchored once it finalizes as a success. CCDScan mainnet GraphQL: `POST https://api-ccdscan.mainnet.concordium.software/api/graphql`.
 - Resolver reports the card as tampered / hash mismatch → Step 3 was violated; re-hash the exact hosted bytes.
 - MCP service field for the minting account is absent → map `sender`/`owner`/`account`/`address` defensively.
 - Owner's wallet is charged energy for what should be free → use the sponsored/permit path (see `concordium-wallet-integration` Step 5).
