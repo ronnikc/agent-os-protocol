@@ -185,19 +185,14 @@ export function closeModal() {
 export async function init() {
   connectWs();
 
-  // ── Hosted mode (Phase 1) ── When the panel is served by the lobby (/panel), it runs against the
-  // hosted backend. Views whose data comes from the local filesystem/process host don't apply yet
-  // and are hidden until their hosted backends land (see docs/hosted-panel.md); a banner marks the
-  // context. Wallet-scoped views (Agents identity/mint, Lobby, Messages, Tasks) work via the lobby.
+  // ── Hosted mode ── When the panel is served by the lobby (/panel), it runs against the hosted
+  // backend. The FULL menu is present; each view is wired to its hosted data source view-by-view
+  // (Files → the connected GitHub repo, Memory → the wallet-scoped Knowledge Base, Agents/Lobby/
+  // Tasks → the lobby). Views not yet wired show their normal empty state. A banner marks the context.
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
     document.body.classList.add('hosted-mode');
-    const LOCAL_ONLY = ['scheduled', 'files', 'gantt', 'memory', 'loop'];
-    for (const t of LOCAL_ONLY) {
-      const b = document.querySelector(`.tab-bar button[data-tab="${t}"]`);
-      if (b) b.style.display = 'none';
-    }
     const banner = document.createElement('div');
-    banner.textContent = 'Hosted Agent OS Panel (preview) — agents run server-side and identity/keys are wallet-scoped. Local-only views are hidden.';
+    banner.textContent = 'Hosted Agent OS Panel — agents run server-side against your connected GitHub repo; identity, provider keys and the Knowledge Base are wallet-scoped.';
     banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
     document.body.prepend(banner);
   }
