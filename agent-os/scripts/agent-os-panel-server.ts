@@ -1741,6 +1741,43 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // ── Agent Registry proxy — lets the LOCAL panel run the same Agent-ID mint as the hosted lobby.
+  // Forwards to the connected lobby's registry/sponsor endpoints server-side (no browser CORS). The
+  // lobby (and its sponsor relay) hold no keys; the wallet signs client-side. `lobbyUrl` in the body
+  // targets the same lobby the agents connect to; falls back to the panel's configured lobby.
+  if (path === '/api/registry/status' && method === 'POST') {
+    const body = await parseBody(req);
+    const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
+    const network = (body.network as string) || 'mainnet';
+    sendJson(res, await proxyToStaging(lobbyUrl, `/api/v1/agent-lobby/registry/status?network=${encodeURIComponent(network)}`, 'GET'));
+    return;
+  }
+  if (path === '/api/registry/tools' && method === 'POST') {
+    const body = await parseBody(req);
+    const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
+    sendJson(res, await proxyToStaging(lobbyUrl, '/api/v1/agent-lobby/registry/tools', 'GET'));
+    return;
+  }
+  if (path === '/api/registry/call' && method === 'POST') {
+    const body = await parseBody(req);
+    const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
+    sendJson(res, await proxyToStaging(lobbyUrl, '/api/v1/agent-lobby/registry/call', 'POST', JSON.stringify({ tool: body.tool, arguments: body.arguments })));
+    return;
+  }
+  if (path === '/api/registry/sponsor' && method === 'POST') {
+    const body = await parseBody(req);
+    const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
+    sendJson(res, await proxyToStaging(lobbyUrl, '/api/v1/agent-lobby/registry/sponsor', 'POST', JSON.stringify({ genesisHash: body.genesisHash, payload: body.payload, sender: body.sender, nonce: body.nonce })));
+    return;
+  }
+  if (path === '/api/registry/agent-cards' && method === 'POST') {
+    const body = await parseBody(req);
+    const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
+    const lobby_id = (body.lobby_id as string) || (await resolveLobbyId()) || undefined;
+    sendJson(res, await proxyToStaging(lobbyUrl, '/api/v1/agent-lobby/agent-cards', 'POST', JSON.stringify({ did: body.did, card: body.card, lobby_id })));
+    return;
+  }
+
   if (path === '/api/agents/start-all' && method === 'POST') {
     const body = await parseBody(req);
     const slugs = body.slugs as string[];
