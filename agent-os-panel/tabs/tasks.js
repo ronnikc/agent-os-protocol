@@ -157,8 +157,21 @@ function showCreateModal() {
   });
 }
 
+let lobbyMode = 'local';
+
 async function refresh() {
-  const data = await fetchJson('/api/tasks?limit=200');
+  const modeData = await fetchJson('/api/mode');
+  lobbyMode = modeData?.mode || 'local';
+
+  let data;
+  if (lobbyMode === 'swarm') {
+    const token = localStorage.getItem('agent-os-lobby-token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    data = await fetchJson('/api/lobby/remote/tasks', { headers });
+  } else {
+    data = await fetchJson('/api/tasks?limit=200');
+  }
+
   if (data) {
     tasks = (data.tasks || []).filter(t => t && t.task_id);
     renderKanban();
