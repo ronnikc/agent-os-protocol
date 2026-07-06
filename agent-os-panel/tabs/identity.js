@@ -1,4 +1,4 @@
-import { fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
 
 let draftCard = null;
 let validationResult = null;
@@ -174,6 +174,16 @@ function render() {
         <h3 style="margin:0 0 4px 0;font-size:14px;font-weight:600;color:var(--text-primary);">1. Draft Agent Card</h3>
         <span style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">Describe your agent profile. No private keys or secrets are collected here.</span>
         
+        <div>
+          <label class="form-label" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Pre-populate from Connected Swarm Agents</label>
+          <select id="identity-agent-select" style="width:100%;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
+            <option value="">-- Select an Agent --</option>
+            ${(state.agents || []).map(a => `
+              <option value="${escapeHtml(a.slug)}">${escapeHtml(a.name)} (${escapeHtml(a.slug)})</option>
+            `).join('')}
+          </select>
+        </div>
+        
         <div style="display:flex;gap:10px;">
           <div style="flex:1;">
             <label class="form-label" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Agent Name</label>
@@ -311,6 +321,21 @@ function render() {
   `;
 
   // Wire up event listeners
+  document.getElementById('identity-agent-select')?.addEventListener('change', (e) => {
+    const slug = e.target.value;
+    if (slug) {
+      const agent = (state.agents || []).find(a => a.slug === slug);
+      if (agent) {
+        draftCard.name = agent.name;
+        draftCard.description = agent.scope || `${agent.name} specialist`;
+        draftCard.runtime = agent.runtime || 'api';
+        if (agent.model) {
+          draftCard.description += ` (model: ${agent.model})`;
+        }
+        render();
+      }
+    }
+  });
   document.getElementById('btn-save-draft')?.addEventListener('click', handleSave);
   document.getElementById('btn-validate-card')?.addEventListener('click', handleValidate);
   document.getElementById('btn-prepare-reg')?.addEventListener('click', handlePrepareReg);

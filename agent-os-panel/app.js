@@ -49,13 +49,35 @@ export async function fetchJson(url, opts) {
 
     // Intercept /api/agents and /api/agents/status
     if (url === '/api/agents' || url === '/api/agents/status') {
-      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      let data = await fetchJson('/api/lobby/remote/agent-definitions');
+      if (!data || data.error || !data.agents || data.agents.length === 0) {
+        try {
+          const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+          const fallbackRes = await fetch(`${origin}/panel/agents-list.json`);
+          if (fallbackRes.ok) {
+            data = await fallbackRes.json();
+          }
+        } catch (e) {
+          console.warn('[Panel] Failed to fetch static agents-list.json fallback:', e);
+        }
+      }
       return data || { agents: [] };
     }
 
     // Intercept /api/presets
     if (url === '/api/presets') {
-      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      let data = await fetchJson('/api/lobby/remote/agent-definitions');
+      if (!data || data.error || !data.agents || data.agents.length === 0) {
+        try {
+          const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+          const fallbackRes = await fetch(`${origin}/panel/agents-list.json`);
+          if (fallbackRes.ok) {
+            data = await fallbackRes.json();
+          }
+        } catch (e) {
+          console.warn('[Panel] Failed to fetch static agents-list.json fallback:', e);
+        }
+      }
       const presets = {};
       if (data && data.agents) {
         data.agents.forEach(a => {
@@ -66,6 +88,27 @@ export async function fetchJson(url, opts) {
         });
       }
       return presets;
+    }
+
+    // Intercept /api/loops
+    if (url === '/api/loops') {
+      let presets = {};
+      try {
+        const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+        const res = await fetch(`${origin}/panel/presets.json`);
+        if (res.ok) {
+          presets = await res.json();
+        }
+      } catch (e) {
+        console.warn('[Panel] Failed to fetch static presets.json fallback:', e);
+      }
+      const presetsArr = Object.entries(presets).map(([key, val]) => ({
+        name: key,
+        description: val.description,
+        agents: val.agents,
+        unattendedAllowlist: val.agents
+      }));
+      return { presets: presetsArr, runs: [] };
     }
 
     // 3. Map proxy endpoints to direct lobby REST endpoints

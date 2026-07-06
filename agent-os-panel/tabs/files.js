@@ -210,16 +210,17 @@ function renderTreeNode(entry, parentPath) {
 async function renderTree(path, container) {
   const entries = await loadDir(path);
   if (entries && entries.error) {
+    const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
     container.innerHTML = `
       <div style="padding:16px;color:var(--color-text-soft);font-size:12px;line-height:1.5;">
         <span style="font-size:14px;font-weight:600;display:block;margin-bottom:8px;color:var(--color-text);">🐙 GitHub Not Connected</span>
         No GitHub repository is connected to this lobby.
         <div style="margin-top:12px;">
           To connect your repository:
-          <ol style="margin:6px 0 0 16px;padding:0;">
-            <li>Go to the <strong style="color:var(--color-text);cursor:pointer;text-decoration:underline;" onclick="document.querySelector('button[data-tab=\\'lobby\\']').click()">Lobby</strong> tab</li>
-            <li>Scroll down to <strong>Integrations</strong></li>
-            <li>Connect your GitHub App and select your repository</li>
+          <ol style="margin:6px 0 0 16px;padding:0;list-style-type:decimal;">
+            <li style="margin-bottom:8px;">Open the parent <a href="${origin}" target="_parent" style="color:var(--color-text);font-weight:600;text-decoration:underline;">Swarm Lobby Dashboard</a></li>
+            <li style="margin-bottom:8px;">Go to the <strong>Manage</strong> tab</li>
+            <li style="margin-bottom:8px;">Connect your GitHub App and select your repository</li>
           </ol>
         </div>
       </div>
@@ -297,8 +298,8 @@ function renderEditor() {
           <p style="color:var(--color-text-soft); max-width:400px; margin:8px auto 24px; font-size:13px; line-height:1.5;">
             To browse, view, and run agent scripts server-side, you need to connect your GitHub repository to this lobby.
           </p>
-          <button class="btn btn-primary" onclick="document.querySelector('button[data-tab=\\'lobby\\']').click()" style="padding:8px 16px; font-size:12px; height:auto; line-height:1.2; border:none; cursor:pointer;">
-            Go to Lobby Integrations
+          <button class="btn btn-primary" onclick="const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin; window.open(origin, '_parent');" style="padding:8px 16px; font-size:12px; height:auto; line-height:1.2; border:none; cursor:pointer;">
+            Open Swarm Lobby Dashboard
           </button>
         </div>
       `;
