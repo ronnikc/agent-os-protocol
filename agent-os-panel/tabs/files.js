@@ -3,7 +3,11 @@
  * Left panel: directory tree (lazy-loaded). Right panel: file editor + preview.
  * Restricted to agent-os/ directory only (server enforces path security).
  */
-import { fetchJson, putJson, registerTab, escapeHtml } from '../app.js';
+import { fetchJson, putJson, registerTab, escapeHtml, hostedSession, lobbyApi } from '../app.js';
+
+// In hosted mode the Files tab browses the lobby's CONNECTED GitHub repo (read-only) via the
+// wallet-gated /repo endpoints, instead of the local agent-os/ filesystem. Direct edits from here
+// aren't wired yet — hosted agents land changes as commits/PRs (a later slice).
 
 let currentPath = '';
 let currentContent = '';
@@ -159,6 +163,15 @@ function highlightSyntax(code, fileName) {
 // ── Directory Tree ──
 async function loadDir(path) {
   if (dirCache.has(path)) return dirCache.get(path);
+  const s = hostedSession();
+  if (s) {
+    // Connected GitHub repo: /repo/tree returns { entries:[{path,type:'dir'|'file'}] }; adapt to the
+    // tree's { name, type:'directory'|'file' } shape (name = basename of the full repo path).
+    const data = await lobbyApi(`/lobbies/${s.lobbyId}/repo/tree?path=${encodeURIComponent(path)}`);
+    const entries = (data?.entries || []).map((e) => ({ name: String(e.path).split('/').pop(), type: e.type === 'dir' ? 'directory' : 'file' }));
+    dirCache.set(path, entries);
+    return entries;
+  }
   const data = await fetchJson(`/api/files?path=${encodeURIComponent(path)}`);
   if (data?.type === 'directory') {
     dirCache.set(path, data.entries);
@@ -213,7 +226,10 @@ async function renderTree(path, container) {
 
 // ── File Editor ──
 async function openFile(path) {
-  const data = await fetchJson(`/api/files?path=${encodeURIComponent(path)}`);
+  const s = hostedSession();
+  const data = s
+    ? await lobbyApi(`/lobbies/${s.lobbyId}/repo/file?path=${encodeURIComponent(path)}`)
+    : await fetchJson(`/api/files?path=${encodeURIComponent(path)}`);
   if (!data || data.error) return;
   currentPath = path;
   currentContent = data.content || '';
@@ -229,6 +245,10 @@ async function openFile(path) {
 }
 
 async function saveFile() {
+  if (hostedSession()) {
+    alert('Editing the connected repo from the panel isn’t available yet — hosted agents land changes as commits/PRs. This view is read-only.');
+    return;
+  }
   const textarea = document.getElementById('file-editor-textarea');
   if (!textarea) return;
   const content = textarea.value;
