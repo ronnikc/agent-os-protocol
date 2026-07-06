@@ -11,6 +11,17 @@ export const state = {
   wsConnected: false,
   relayConnected: false,
   activeTab: 'agents',
+  wallet: {
+    connected: false,
+    address: null,
+    balance: null
+  },
+  session: {
+    token: null,
+    identityRef: null,
+    lobbyId: null
+  },
+  lobbies: []
 };
 
 // ── Utilities ──
@@ -196,6 +207,9 @@ export function onWsMessage(type, fn) {
 }
 
 function connectWs() {
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    return;
+  }
   try {
     ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = () => {
@@ -297,6 +311,29 @@ export async function init() {
     });
   }
 
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    const session = hostedSession();
+    if (!session) {
+      renderAuthOverlay();
+      return;
+    }
+    state.session = session;
+    updateHeaderUI();
+    loadLobbies();
+
+    if (window.concordium) {
+      window.concordium.connect().then(async (addr) => {
+        if (addr) {
+          const addrStr = (typeof addr === 'string') ? addr : (addr.address || addr.toString?.());
+          state.wallet.connected = true;
+          state.wallet.address = addrStr;
+          state.wallet.balance = await fetchWalletBalance(window.concordium, addrStr);
+          updateHeaderUI();
+        }
+      }).catch(() => {});
+    }
+  }
+
   connectWs();
 
   // ── Hosted mode ── When the panel is served by the lobby (/panel), it runs against the hosted
@@ -385,4 +422,302 @@ export async function init() {
       updateStatusBar();
     }
   }, 5000);
+}
+
+function fetchWalletBalance(provider, addrStr) {
+  return new Promise(async (resolve) => {
+    try {
+      let accountInfo = null;
+      if (typeof provider?.getGrpcClient === 'function') {
+        accountInfo = await (await provider.getGrpcClient()).getAccountInfo(addrStr);
+      } else if (typeof provider?.getJsonRpcClient === 'function') {
+        accountInfo = await (await provider.getJsonRpcClient()).getAccountInfo(addrStr);
+      }
+      const amount = accountInfo?.accountAmount || accountInfo?.amount;
+      const micro = amount?.microCCD !== undefined ? amount.microCCD : (amount?.micro === undefined ? amount : amount.micro);
+      if (micro !== undefined && micro !== null) { resolve(Number(micro) / 1_000_000); return; }
+    } catch (rpcErr) {
+      console.debug('[Wallet] RPC balance check skipped:', rpcErr);
+    }
+    resolve(null);
+  });
+}
+
+export async function connectWallet() {
+  if (state.wallet.connected) {
+    state.wallet.connected = false;
+    state.wallet.address = null;
+    state.wallet.balance = null;
+    updateHeaderUI();
+    return;
+  }
+
+  const provider = window.concordium;
+  if (!provider) {
+    alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+    return;
+  }
+
+  try {
+    const accountAddress = await provider.connect();
+    if (!accountAddress) {
+      throw new Error('Connection rejected by user.');
+    }
+
+    const addrStr = (typeof accountAddress === 'string')
+      ? accountAddress
+      : (accountAddress?.address || accountAddress?.toString?.() || String(accountAddress));
+
+    const balanceCcd = await fetchWalletBalance(provider, addrStr);
+
+    state.wallet.connected = true;
+    state.wallet.address = addrStr;
+    state.wallet.balance = balanceCcd;
+    
+    updateHeaderUI();
+  } catch (err) {
+    console.error('Wallet connection failed:', err);
+    alert(`Wallet Connection Failed: ${err.message || err}`);
+  }
+}
+
+export async function signInToLobby() {
+  const lobbySelect = document.getElementById('header-lobby-select');
+  let lobbyId = lobbySelect ? lobbySelect.value : null;
+  if (!lobbyId) {
+    // Attempt auto-creation of a default lobby session
+    const created = await fetchJson('/api/v1/agent-lobby/lobbies', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: 'Default Swarm Lobby' })
+    });
+    if (created && created.lobby_id) {
+      lobbyId = created.lobby_id;
+      state.session.lobbyId = lobbyId;
+      await loadLobbies();
+    } else {
+      alert('Please create or select a lobby first.');
+      return;
+    }
+  } else {
+    state.session.lobbyId = lobbyId;
+  }
+
+  const activeLobbyId = state.session.lobbyId;
+  const provider = window.concordium;
+  if (!provider || !state.wallet.connected || !state.wallet.address) {
+    alert('Please connect your wallet first.');
+    return;
+  }
+
+  try {
+    const challengeRes = await fetchJson('/api/v1/agent-lobby/auth/challenge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ account: state.wallet.address, lobby_id: activeLobbyId, network: 'testnet' })
+    });
+
+    if (!challengeRes || !challengeRes.challenge_id) {
+      throw new Error('Failed to obtain authentication challenge from server.');
+    }
+
+    const signature = await provider.signMessage(state.wallet.address, challengeRes.challenge);
+    
+    const verifyRes = await fetchJson('/api/v1/agent-lobby/auth/verify-wallet', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        challenge_id: challengeRes.challenge_id,
+        account: state.wallet.address,
+        signature,
+        session_id: challengeRes.session_id
+      })
+    });
+
+    if (!verifyRes || !verifyRes.token) {
+      throw new Error('Verification rejected. Signature could not be verified.');
+    }
+
+    state.session.token = verifyRes.token;
+    state.session.identityRef = verifyRes.identity_ref;
+    
+    localStorage.setItem('agentos.hosted.session', JSON.stringify({
+      token: verifyRes.token,
+      identityRef: verifyRes.identity_ref,
+      lobbyId: activeLobbyId
+    }));
+
+    window.location.reload();
+  } catch (err) {
+    console.error('Sign-in failed:', err);
+    alert(`Authentication Failed: ${err.message || err}`);
+  }
+}
+
+export async function loadLobbies() {
+  const select = document.getElementById('header-lobby-select');
+  if (!select) return;
+
+  try {
+    const data = await fetchJson('/api/v1/agent-lobby/lobbies');
+    if (data && data.lobbies) {
+      state.lobbies = data.lobbies;
+      
+      select.innerHTML = '';
+      if (state.lobbies.length === 0) {
+        select.innerHTML = '<option value="">No Active Lobbies</option>';
+      } else {
+        state.lobbies.forEach(l => {
+          const opt = document.createElement('option');
+          opt.value = l.lobby_id;
+          opt.textContent = l.name;
+          if (state.session.lobbyId === l.lobby_id) {
+            opt.selected = true;
+          }
+          select.appendChild(opt);
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load lobbies:', err);
+  }
+}
+
+export function updateHeaderUI() {
+  if (typeof window === 'undefined' || !window.AGENT_OS_HOSTED) return;
+
+  const controls = document.getElementById('header-swarm-controls');
+  if (controls) controls.style.display = 'flex';
+
+  const walletStatus = document.getElementById('header-wallet-status');
+  const walletBtn = document.getElementById('btn-header-connect-wallet');
+
+  if (walletStatus && walletBtn) {
+    if (state.wallet.connected) {
+      const shortAddr = state.wallet.address.slice(0, 6) + '...' + state.wallet.address.slice(-4);
+      const balanceText = Number.isFinite(state.wallet.balance)
+        ? ` (${state.wallet.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} CCD)`
+        : '';
+      walletStatus.textContent = shortAddr + balanceText;
+      walletStatus.style.color = 'var(--color-green)';
+      walletBtn.textContent = 'Disconnect';
+      walletBtn.onclick = connectWallet;
+    } else {
+      walletStatus.textContent = 'Not Connected';
+      walletStatus.style.color = 'var(--color-text-soft)';
+      walletBtn.textContent = 'Connect';
+      walletBtn.onclick = connectWallet;
+    }
+  }
+
+  const select = document.getElementById('header-lobby-select');
+  if (select) {
+    select.onchange = async () => {
+      const newLobbyId = select.value;
+      if (newLobbyId && state.session.lobbyId !== newLobbyId) {
+        state.session.lobbyId = newLobbyId;
+        const stored = localStorage.getItem('agentos.hosted.session');
+        if (stored) {
+          try {
+            const s = JSON.parse(stored);
+            if (s && s.lobbyId === newLobbyId) {
+              state.session = s;
+              localStorage.setItem('agentos.hosted.session', JSON.stringify(s));
+              window.location.reload();
+              return;
+            }
+          } catch {}
+        }
+        state.session = { token: null, identityRef: null, lobbyId: newLobbyId };
+        localStorage.removeItem('agentos.hosted.session');
+        window.location.reload();
+      }
+    };
+  }
+}
+
+function renderAuthOverlay() {
+  document.body.innerHTML = `
+    <div style="display:flex; align-items:center; justify-content:center; height:100vh; background:radial-gradient(circle at 50% 30%, #0d162a 0%, #050b18 70%); font-family:'Outfit', 'Inter', sans-serif; color:#f5f8ff; padding:20px; box-sizing:border-box;">
+      <div style="background:rgba(11, 19, 38, 0.7); border:1px solid rgba(49, 140, 255, 0.2); backdrop-filter:blur(12px); border-radius:16px; padding:40px; width:480px; max-width:100%; box-shadow:0 12px 40px rgba(0,0,0,0.5), 0 0 80px rgba(0,229,212,0.03); text-align:center; box-sizing:border-box;">
+        <!-- Logo/Icon -->
+        <div style="margin-bottom:24px;">
+          <svg viewBox="0 0 24 24" width="64" height="64" style="margin:0 auto; display:block;">
+            <defs>
+              <linearGradient id="overlay-grad" x1="0%" y1="100%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#00E5D4" />
+                <stop offset="100%" stop-color="#318CFF" />
+              </linearGradient>
+            </defs>
+            <path d="M 12,2 L 22,7 L 22,17 L 12,22 L 2,17 L 2,7 Z" fill="none" stroke="url(#overlay-grad)" stroke-width="1.5" />
+            <path d="M 12,6 L 19,9.5 L 19,14.5 L 12,18 L 5,14.5 L 5,9.5 Z" fill="rgba(0, 229, 212, 0.08)" stroke="url(#overlay-grad)" stroke-width="1" />
+            <circle cx="12" cy="12" r="3" fill="#00E5D4" />
+          </svg>
+        </div>
+        
+        <h2 style="font-size:22px; font-weight:600; margin:0 0 12px 0; background:linear-gradient(90deg, #00E5D4, #318CFF); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Outfit', sans-serif;">Swarm Mode Connection Required</h2>
+        <p style="font-size:13px; color:#8da0bf; line-height:1.6; margin:0 0 28px 0;">To access the hosted Agent OS Panel, you must connect your Concordium Wallet and authenticate with a lobby.</p>
+        
+        <!-- Lobby selector container in Auth overlay -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; background: rgba(16, 27, 49, 0.4); border: 1px solid var(--color-border); padding: 8px 12px; border-radius: 8px; justify-content: space-between;">
+          <span style="font-size: 12px; color: var(--color-text-soft); font-weight: 500;">Select Lobby:</span>
+          <select id="header-lobby-select" style="background:#0B1326; border:1px solid var(--color-border); color:var(--color-text); padding:4px 10px; border-radius:6px; font-size:12px; min-width: 180px;"></select>
+        </div>
+
+        <div id="auth-status-container" style="margin-bottom:24px; text-align:left;">
+          <!-- Dynamic statuses will go here -->
+        </div>
+        
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <button class="btn btn-primary" id="btn-auth-action" style="padding:12px; border-radius:8px; font-size:14px; font-weight:600; width:100%; cursor:pointer; height:auto; line-height:1.2; text-transform:none; border:none; display:block;">Connect Wallet</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  loadLobbies();
+  updateAuthStatus();
+  setInterval(updateAuthStatus, 1000);
+}
+
+function updateAuthStatus() {
+  const container = document.getElementById('auth-status-container');
+  const btn = document.getElementById('btn-auth-action');
+  if (!container || !btn) return;
+
+  const walletConnected = state.wallet.connected;
+  const walletAddress = state.wallet.address;
+
+  if (!walletConnected) {
+    container.innerHTML = `
+      <div style="background:rgba(255, 77, 109, 0.08); border:1px solid rgba(255, 77, 109, 0.25); border-radius:8px; padding:12px; display:flex; align-items:center; gap:10px; box-sizing:border-box;">
+        <span style="color:#ff4d6d; font-size:16px; font-weight:bold;">⚠</span>
+        <span style="font-size:12px; color:#8da0bf;">Wallet Status: <strong style="color:#ff4d6d;">Disconnected</strong></span>
+      </div>
+    `;
+    btn.textContent = 'Connect Concordium Wallet';
+    btn.onclick = connectWallet;
+  } else {
+    const shortAddr = walletAddress ? walletAddress.slice(0, 8) + '...' + walletAddress.slice(-6) : '';
+    container.innerHTML = `
+      <div style="background:rgba(53, 242, 138, 0.08); border:1px solid rgba(53, 242, 138, 0.25); border-radius:8px; padding:12px; display:flex; align-items:center; gap:10px; margin-bottom:10px; box-sizing:border-box;">
+        <span style="color:#35f28a; font-size:16px; font-weight:bold;">✓</span>
+        <span style="font-size:12px; color:#8da0bf;">Wallet Connected: <strong style="color:#f5f8ff; font-family:monospace;">${shortAddr}</strong></span>
+      </div>
+      <div style="background:rgba(255, 179, 0, 0.08); border:1px solid rgba(255, 179, 0, 0.25); border-radius:8px; padding:12px; display:flex; align-items:center; gap:10px; box-sizing:border-box;">
+        <span style="color:#ffb300; font-size:16px; font-weight:bold;">⚠</span>
+        <span style="font-size:12px; color:#8da0bf;">Lobby Status: <strong style="color:#ffb300;">Not Authenticated</strong></span>
+      </div>
+    `;
+    btn.textContent = 'Sign In to Swarm Lobby';
+    btn.disabled = false;
+    btn.onclick = () => {
+      btn.disabled = true;
+      btn.textContent = 'Signing in via wallet...';
+      signInToLobby().catch((err) => {
+        alert('Sign in failed: ' + err.message);
+        updateAuthStatus();
+      });
+    };
+  }
 }
