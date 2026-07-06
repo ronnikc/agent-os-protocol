@@ -90,6 +90,27 @@ export async function fetchJson(url, opts) {
       return presets;
     }
 
+    // Intercept /api/loops
+    if (url === '/api/loops') {
+      let presets = {};
+      try {
+        const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+        const res = await fetch(`${origin}/panel/presets.json`);
+        if (res.ok) {
+          presets = await res.json();
+        }
+      } catch (e) {
+        console.warn('[Panel] Failed to fetch static presets.json fallback:', e);
+      }
+      const presetsArr = Object.entries(presets).map(([key, val]) => ({
+        name: key,
+        description: val.description,
+        agents: val.agents,
+        unattendedAllowlist: val.agents
+      }));
+      return { presets: presetsArr, runs: [] };
+    }
+
     // 3. Map proxy endpoints to direct lobby REST endpoints
     if (url.startsWith('/api/lobby/remote/')) {
       const s = hostedSession();

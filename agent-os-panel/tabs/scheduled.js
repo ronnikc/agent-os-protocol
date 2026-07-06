@@ -188,7 +188,7 @@ async function refresh() {
 
   if (lobbyMode === 'swarm') {
     const data = await fetchJson('/api/lobby/remote/scheduled');
-    if (data) {
+    if (data && !data.error) {
       repoConfigured = data.repoConfigured !== false;
       tasks = data.tasks || [];
       if (!repoConfigured && tasks.length === 0) {
@@ -207,6 +207,22 @@ async function refresh() {
           }
         ];
       }
+    } else {
+      repoConfigured = false;
+      tasks = [
+        {
+          name: "graph-update",
+          config: { enabled: false, description: "Update dependency graph via graph-update.sh to keep codebase intelligence current", time_utc: "03:00" }
+        },
+        {
+          name: "pr-quality-review",
+          config: { enabled: false, description: "Review merged PRs using Agent OS specialist agents, generate fix-sprint specs for issues found.", time_utc: "04:00" }
+        },
+        {
+          name: "fix-sprint-executor",
+          config: { enabled: false, description: "Execute pending fix-sprints, commit to branch, open PR for human review", time_utc: "05:00" }
+        }
+      ];
     }
   } else {
     repoConfigured = true;
