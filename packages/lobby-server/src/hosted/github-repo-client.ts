@@ -33,12 +33,23 @@ export class GitHubRepoClient {
   }
 
   /** Read a file from the repository, decoding the base64 content. */
-  async readFile(path: string): Promise<string> {
-    const data = await this.request(`/contents/${path}`);
+  async readFile(path: string, ref?: string): Promise<string> {
+    const pathWithQuery = ref ? `/contents/${path}?ref=${ref}` : `/contents/${path}`;
+    const data = await this.request(pathWithQuery);
     if (data.type !== 'file') {
       throw new Error(`Path ${path} is not a file`);
     }
     return Buffer.from(data.content, 'base64').toString('utf8');
+  }
+
+  /** Read contents of a directory, returning details for each item. */
+  async readDir(path: string, ref?: string): Promise<any[]> {
+    const pathWithQuery = ref ? `/contents/${path}?ref=${ref}` : `/contents/${path}`;
+    const data = await this.request(pathWithQuery);
+    if (!Array.isArray(data)) {
+      return [];
+    }
+    return data;
   }
 
   /** Create or update a file in the repository, automatically resolving the current file SHA if it exists. */

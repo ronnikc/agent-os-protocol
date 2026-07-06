@@ -47,6 +47,27 @@ export async function fetchJson(url, opts) {
       };
     }
 
+    // Intercept /api/agents and /api/agents/status
+    if (url === '/api/agents' || url === '/api/agents/status') {
+      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      return data || { agents: [] };
+    }
+
+    // Intercept /api/presets
+    if (url === '/api/presets') {
+      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      const presets = {};
+      if (data && data.agents) {
+        data.agents.forEach(a => {
+          presets[a.slug] = {
+            name: a.name,
+            description: a.scope
+          };
+        });
+      }
+      return presets;
+    }
+
     // 3. Map proxy endpoints to direct lobby REST endpoints
     if (url.startsWith('/api/lobby/remote/')) {
       const s = hostedSession();
@@ -94,6 +115,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled${query}`;
         } else if (cleanPath === 'scheduled/setup') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled/setup${query}`;
+        } else if (cleanPath === 'agent-definitions') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions${query}`;
         } else {
           lobbyPath = `/api/v1/agent-lobby/${path}`;
         }
@@ -633,6 +656,14 @@ export function updateHeaderUI() {
         window.location.reload();
       }
     };
+  }
+
+  const lobbyUrlInput = document.getElementById('lobbyUrl');
+  if (lobbyUrlInput) {
+    const toolbar = lobbyUrlInput.closest('.toolbar');
+    if (toolbar) {
+      toolbar.style.display = 'none';
+    }
   }
 }
 

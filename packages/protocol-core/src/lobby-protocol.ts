@@ -454,6 +454,7 @@ export type LobbyEventType =
   | 'github_connected' // Hosted Mode: a GitHub App installation was connected to the lobby
   | 'kb_configured' // Hosted Mode: Knowledge Base configured
   | 'github_repo_selected' // Hosted Mode: the working repo/branch was chosen
+  | 'scheduled_tasks_configured' // Hosted Mode: daily scheduled tasks configured
   | 'github_disconnected'; // Hosted Mode: the GitHub integration was revoked
 
 /** One append-only entry in a lobby's event log. */

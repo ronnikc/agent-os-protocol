@@ -313,8 +313,8 @@ async function refresh() {
   if (localData) localAgents = (localData.agents || []).filter(a => a.status === 'running');
 
   const agentData = await fetchJson('/api/lobby/remote/agents');
-  if (agentData && !agentData.error && (agentData.agents || agentData || []).length) {
-    remoteAgents = agentData.agents || agentData || [];
+  if (agentData && !agentData.error) {
+    remoteAgents = agentData.agents || [];
     lobbyConnected = true;
   } else {
     remoteAgents = localAgents.map(a => ({

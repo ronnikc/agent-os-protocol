@@ -165,9 +165,12 @@ async function loadDir(path) {
   if (dirCache.has(path)) return dirCache.get(path);
   const s = hostedSession();
   if (s) {
-    // Connected GitHub repo: /repo/tree returns { entries:[{path,type:'dir'|'file'}] }; adapt to the
-    // tree's { name, type:'directory'|'file' } shape (name = basename of the full repo path).
     const data = await lobbyApi(`/lobbies/${s.lobbyId}/repo/tree?path=${encodeURIComponent(path)}`);
+    if (data && data.error) {
+      const errObj = { error: data.error };
+      dirCache.set(path, errObj);
+      return errObj;
+    }
     const entries = (data?.entries || []).map((e) => ({ name: String(e.path).split('/').pop(), type: e.type === 'dir' ? 'directory' : 'file' }));
     dirCache.set(path, entries);
     return entries;
@@ -206,6 +209,23 @@ function renderTreeNode(entry, parentPath) {
 
 async function renderTree(path, container) {
   const entries = await loadDir(path);
+  if (entries && entries.error) {
+    container.innerHTML = `
+      <div style="padding:16px;color:var(--color-text-soft);font-size:12px;line-height:1.5;">
+        <span style="font-size:14px;font-weight:600;display:block;margin-bottom:8px;color:var(--color-text);">🐙 GitHub Not Connected</span>
+        No GitHub repository is connected to this lobby.
+        <div style="margin-top:12px;">
+          To connect your repository:
+          <ol style="margin:6px 0 0 16px;padding:0;">
+            <li>Go to the <strong style="color:var(--color-text);cursor:pointer;text-decoration:underline;" onclick="document.querySelector('button[data-tab=\\'lobby\\']').click()">Lobby</strong> tab</li>
+            <li>Scroll down to <strong>Integrations</strong></li>
+            <li>Connect your GitHub App and select your repository</li>
+          </ol>
+        </div>
+      </div>
+    `;
+    return;
+  }
   if (!entries?.length) {
     container.innerHTML = '<div style="padding:4px 20px;color:var(--text-muted);font-size:11px;">(empty)</div>';
     return;
@@ -267,6 +287,23 @@ function renderEditor() {
   if (!el) return;
 
   if (!currentPath) {
+    const s = hostedSession();
+    const isError = s && dirCache.has('') && dirCache.get('').error;
+    if (isError) {
+      el.innerHTML = `
+        <div class="empty-state" style="padding:40px; text-align:center;">
+          <div style="font-size:48px;margin-bottom:16px;">🐙</div>
+          <h3 style="font-size:16px;font-weight:600;margin-bottom:8px;color:var(--color-text);">GitHub Repository Not Connected</h3>
+          <p style="color:var(--color-text-soft); max-width:400px; margin:8px auto 24px; font-size:13px; line-height:1.5;">
+            To browse, view, and run agent scripts server-side, you need to connect your GitHub repository to this lobby.
+          </p>
+          <button class="btn btn-primary" onclick="document.querySelector('button[data-tab=\\'lobby\\']').click()" style="padding:8px 16px; font-size:12px; height:auto; line-height:1.2; border:none; cursor:pointer;">
+            Go to Lobby Integrations
+          </button>
+        </div>
+      `;
+      return;
+    }
     el.innerHTML = '<div class="empty-state" style="padding:40px;">Select a file from the tree to view or edit it.</div>';
     return;
   }
