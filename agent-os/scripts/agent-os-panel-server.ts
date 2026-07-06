@@ -2158,6 +2158,39 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/api/lobby/remote/provider-keys' && method === 'GET') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { provider_keys: [], error: 'No active lobby' }); return; }
+    const authHeader = req.headers['authorization'];
+    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'GET', undefined, headers);
+    sendJson(res, data);
+    return;
+  }
+
+  if (path === '/api/lobby/remote/provider-keys' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
+    const authHeader = req.headers['authorization'];
+    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'POST', JSON.stringify(body), headers);
+    sendJson(res, data);
+    return;
+  }
+
+  const deleteKeyMatch = path.match(/^\/api\/lobby\/remote\/provider-keys\/([^/]+)$/);
+  if (deleteKeyMatch && method === 'POST') {
+    const keyId = deleteKeyMatch[1];
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
+    const authHeader = req.headers['authorization'];
+    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys/${keyId}`, 'DELETE', undefined, headers);
+    sendJson(res, data);
+    return;
+  }
+
   if (path === '/api/lobby/remote/tasks' && method === 'GET') {
     const lobbyId = await resolveLobbyId();
     if (!lobbyId) { sendJson(res, { tasks: [], error: 'No active lobby' }); return; }
