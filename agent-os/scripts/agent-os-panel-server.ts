@@ -1038,7 +1038,7 @@ function postRemoteJson(remoteUrl: string, path: string, body: any): Promise<any
   });
 }
 
-function proxyToStaging(lobbyUrl: string, apiPath: string, method = 'GET', body?: string): Promise<unknown> {
+function proxyToStaging(lobbyUrl: string, apiPath: string, method = 'GET', body?: string, headers?: Record<string, string>): Promise<unknown> {
   return new Promise((resolve) => {
     if (!lobbyUrl) { resolve({ error: 'No lobby URL configured' }); return; }
     try {
@@ -1048,7 +1048,10 @@ function proxyToStaging(lobbyUrl: string, apiPath: string, method = 'GET', body?
       const opts: import('node:http').RequestOptions = {
         method,
         timeout: 10000,
-        headers: body ? { 'Content-Type': 'application/json' } : undefined,
+        headers: {
+          ...(body ? { 'Content-Type': 'application/json' } : {}),
+          ...headers,
+        },
       };
       const req = reqFn(url, opts, (res) => {
         let data = '';
@@ -2049,6 +2052,71 @@ const server = createServer(async (req, res) => {
       sendJson(res, data);
       return;
     }
+  }
+
+  const reqHeaders = (r: import('node:http').IncomingMessage): Record<string, string> => {
+    const auth = r.headers['authorization'];
+    return auth ? { 'Authorization': auth } : {};
+  };
+
+  // Start remote hosted agent
+  if (path === '/api/lobby/remote/agents/start' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/hosted-agents`, 'POST', JSON.stringify(body), reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  // Stop remote hosted agent
+  if (path === '/api/lobby/remote/agents/stop' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const agentId = body.agent_id as string;
+    if (!agentId) { sendJson(res, { error: 'agent_id required' }, 400); return; }
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/hosted-agents/${encodeURIComponent(agentId)}`, 'DELETE', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  // Get KB settings
+  if (path === '/api/lobby/remote/kb' && method === 'GET') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { kb: null, error: 'No active lobby' }); return; }
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb`, 'GET', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  // Configure KB settings
+  if (path === '/api/lobby/remote/kb' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb`, 'POST', JSON.stringify(body), reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  // Get KB jobs
+  if (path === '/api/lobby/remote/kb/jobs' && method === 'GET') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { jobs: [] }); return; }
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb/jobs`, 'GET', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  // Upload KB file
+  if (path === '/api/lobby/remote/kb/upload' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb/upload`, 'POST', JSON.stringify(body), reqHeaders(req));
+    sendJson(res, data);
+    return;
   }
 
   if (path === '/api/lobby/remote/agents' && method === 'GET') {

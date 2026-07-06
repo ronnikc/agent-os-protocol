@@ -5,6 +5,7 @@
 import { state, fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
 
 let selected = new Set();
+let lobbyMode = 'local';
 
 function getIdentityBadge(status) {
   const map = {
@@ -103,13 +104,48 @@ function renderPresets() {
 }
 
 async function startOne(slug) {
-  const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
-  await postJson('/api/agents/start', { slug, lobbyUrl });
+  if (lobbyMode === 'swarm') {
+    const token = localStorage.getItem('agent-os-lobby-token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const res = await fetchJson('/api/lobby/remote/agents/start', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({
+        name: slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent',
+        agent_role: slug,
+        provider: 'anthropic',
+        model: 'claude-3-5-sonnet-20240620'
+      })
+    });
+    if (res && res.error) {
+      alert('Failed to launch hosted agent: ' + res.error);
+    }
+  } else {
+    const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
+    await postJson('/api/agents/start', { slug, lobbyUrl });
+  }
   setTimeout(refresh, 500);
 }
 
 async function stopOne(slug) {
-  await postJson('/api/agents/stop', { slug });
+  if (lobbyMode === 'swarm') {
+    const token = localStorage.getItem('agent-os-lobby-token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const roster = await fetchJson('/api/lobby/remote/agents', { headers });
+    const remoteAgent = (roster?.agents || []).find(a => a.agent_role === slug && a.status !== 'disconnected');
+    const agentId = remoteAgent?.agent_id || slug;
+
+    const res = await fetchJson('/api/lobby/remote/agents/stop', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...headers },
+      body: JSON.stringify({ agent_id: agentId })
+    });
+    if (res && res.error) {
+      alert('Failed to stop hosted agent: ' + res.error);
+    }
+  } else {
+    await postJson('/api/agents/stop', { slug });
+  }
   setTimeout(refresh, 500);
 }
 
@@ -206,9 +242,32 @@ async function updateOverviewStats() {
 }
 
 async function refresh() {
+  const modeData = await fetchJson('/api/mode');
+  lobbyMode = modeData?.mode || 'local';
+
   const data = await fetchJson('/api/agents');
   if (data) {
-    state.agents = data.agents || [];
+    const localAgents = data.agents || [];
+    if (lobbyMode === 'swarm') {
+      const token = localStorage.getItem('agent-os-lobby-token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const remoteData = await fetchJson('/api/lobby/remote/agents', { headers });
+      const remoteRoster = remoteData?.agents || [];
+
+      state.agents = localAgents.map(la => {
+        const activeRemote = remoteRoster.find(ra => ra.agent_role === la.slug && ra.status !== 'disconnected');
+        return {
+          ...la,
+          status: activeRemote ? 'running' : 'stopped',
+          identity_status: activeRemote?.identity_status || la.identity_status,
+          runtime: activeRemote?.runtime || la.runtime,
+          model: activeRemote?.model || la.model,
+          identity: activeRemote?.agent_id || la.identity,
+        };
+      });
+    } else {
+      state.agents = localAgents;
+    }
     renderAgents();
   }
   await updateOverviewStats();

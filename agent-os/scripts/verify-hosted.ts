@@ -457,6 +457,107 @@ async function main(): Promise<void> {
     assert.throws(() => parseRepoRef('bad'));
   });
 
+  // ── K. GitHubRepoClient ──
+  await check('GitHubRepoClient maps methods to correct REST endpoints', async () => {
+    let calledUrl = '';
+    let calledMethod = '';
+    let calledBody = '';
+    const mockFetch = (async (url: string, opts?: any) => {
+      calledUrl = url;
+      calledMethod = opts?.method || 'GET';
+      calledBody = opts?.body || '';
+      if (url.endsWith('/contents/test.txt') && calledMethod === 'GET') {
+        return new Response(JSON.stringify({ type: 'file', content: Buffer.from('hello').toString('base64'), sha: 'sha123' }), { status: 200 });
+      }
+      if (url.endsWith('/contents/test.txt') && calledMethod === 'PUT') {
+        return new Response(JSON.stringify({ commit: { sha: 'commitsha456' } }), { status: 200 });
+      }
+      if (url.endsWith('/pulls') && calledMethod === 'POST') {
+        return new Response(JSON.stringify({ html_url: 'https://github.com/owner/repo/pull/1' }), { status: 201 });
+      }
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as unknown as typeof fetch;
+
+    const { GitHubRepoClient } = await import('../../packages/lobby-server/src/hosted/github-repo-client.js');
+    const client = new GitHubRepoClient('owner', 'repo', 'token', mockFetch);
+
+    const content = await client.readFile('test.txt');
+    assert.equal(content, 'hello');
+    assert.equal(calledUrl, 'https://api.github.com/repos/owner/repo/contents/test.txt');
+
+    const commitSha = await client.writeFile('test.txt', 'new content', 'commit message');
+    assert.equal(commitSha, 'commitsha456');
+    const parsedBody = JSON.parse(calledBody);
+    assert.equal(Buffer.from(parsedBody.content, 'base64').toString('utf8'), 'new content');
+
+    const prUrl = await client.createPullRequest('title', 'head', 'base');
+    assert.equal(prUrl, 'https://github.com/owner/repo/pull/1');
+  });
+
+  // ── L. ApiRuntimeAdapter tool call loop ──
+  await check('ApiRuntimeAdapter executes repository tools inside loop', async () => {
+    const mockRepoClient = {
+      readFile: async (path: string) => {
+        assert.equal(path, 'docs/plan.md');
+        return 'mock file content';
+      }
+    };
+
+    let callCount = 0;
+    const mockFetch = (async (url: string, opts?: any) => {
+      callCount++;
+      const body = JSON.parse(opts.body);
+      if (callCount === 1) {
+        assert.ok(body.tools && body.tools.length > 0);
+        return new Response(JSON.stringify({
+          content: [
+            { type: 'text', text: 'I need to read the plan. ' },
+            { type: 'tool_use', id: 'toolu_1', name: 'read_file', input: { path: 'docs/plan.md' } }
+          ],
+          usage: { input_tokens: 10, output_tokens: 20 }
+        }), { status: 200 });
+      } else {
+        const toolMsg = body.messages[body.messages.length - 1];
+        assert.equal(toolMsg.role, 'user');
+        assert.equal(toolMsg.content[0].type, 'tool_result');
+        assert.equal(toolMsg.content[0].content, 'mock file content');
+
+        return new Response(JSON.stringify({
+          content: [
+            { type: 'text', text: 'Success! The plan is checked.' }
+          ],
+          usage: { input_tokens: 30, output_tokens: 40 }
+        }), { status: 200 });
+      }
+    }) as unknown as typeof fetch;
+
+    const adapter = createApiRuntimeAdapter({
+      provider: { id: 'anthropic-compatible', model: 'claude-opus-4-8' },
+      apiKey: 'key',
+      fetchFn: mockFetch,
+      repoClient: mockRepoClient
+    });
+
+    const handle = await adapter.startAgent({ systemPrompt: 'Test' });
+    await adapter.sendInput(handle, { content: 'Check the plan' });
+
+    const events: any[] = [];
+    for await (const ev of adapter.readOutput(handle)) {
+      events.push(ev);
+    }
+
+    const textDeltas = events.filter(e => e.type === 'output').map(e => e.content).join('');
+    assert.equal(textDeltas, 'I need to read the plan. Success! The plan is checked.');
+    
+    const toolCallEv = events.find(e => e.type === 'tool_call');
+    assert.ok(toolCallEv);
+    assert.equal(toolCallEv.data.name, 'read_file');
+
+    const doneEv = events.find(e => e.type === 'done');
+    assert.ok(doneEv);
+    assert.equal(doneEv.content, 'I need to read the plan. Success! The plan is checked.');
+  });
+
   console.log(`\n${passed} passed, ${failures.length} failed`);
   if (failures.length) { console.error(`FAILED: ${failures.join(', ')}`); process.exit(1); }
   console.log('verify-hosted: all checks passed ✓');

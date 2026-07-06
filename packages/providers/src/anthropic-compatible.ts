@@ -96,12 +96,46 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
     };
   }
 
-  /** Split system turns (hoisted to `system`) from the user/assistant turn list. */
-  private splitMessages(messages: CompletionMessage[]): { system?: string; turns: Array<{ role: 'user' | 'assistant'; content: string }> } {
+  /** Split system turns (hoisted to `system`) from the user/assistant/tool turn list, grouping tool results. */
+  private splitMessages(messages: CompletionMessage[]): { system?: string; turns: any[] } {
     const system = messages.filter((m) => m.role === 'system').map((m) => m.content).join('\n\n');
-    const turns = messages
-      .filter((m) => m.role !== 'system')
-      .map((m) => ({ role: m.role === 'assistant' ? ('assistant' as const) : ('user' as const), content: m.content }));
+    const turns: any[] = [];
+    for (const msg of messages) {
+      if (msg.role === 'system') continue;
+      if (msg.role === 'user') {
+        turns.push({ role: 'user', content: msg.content });
+      } else if (msg.role === 'assistant') {
+        if (msg.tool_calls && msg.tool_calls.length > 0) {
+          const content: any[] = [];
+          if (msg.content) {
+            content.push({ type: 'text', text: msg.content });
+          }
+          for (const tc of msg.tool_calls) {
+            content.push({
+              type: 'tool_use',
+              id: tc.id,
+              name: tc.name,
+              input: tc.arguments,
+            });
+          }
+          turns.push({ role: 'assistant', content });
+        } else {
+          turns.push({ role: 'assistant', content: msg.content });
+        }
+      } else if (msg.role === 'tool') {
+        const last = turns[turns.length - 1];
+        const block = {
+          type: 'tool_result',
+          tool_use_id: msg.tool_call_id,
+          content: msg.content,
+        };
+        if (last && last.role === 'user' && Array.isArray(last.content) && last.content[0]?.type === 'tool_result') {
+          last.content.push(block);
+        } else {
+          turns.push({ role: 'user', content: [block] });
+        }
+      }
+    }
     return { ...(system ? { system } : {}), turns };
   }
 
@@ -123,16 +157,24 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
     const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false) });
     if (!res.ok) throw new Error(`anthropic-compatible: ${res.status} ${await safeText(res)}`);
     const data = (await res.json()) as {
-      content?: Array<{ type?: string; text?: string }>;
+      content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: any }>;
       usage?: { input_tokens?: number; output_tokens?: number };
     };
     const content = (data.content ?? [])
       .filter((b) => b.type === 'text' && typeof b.text === 'string')
       .map((b) => b.text)
       .join('');
+    const toolCalls = (data.content ?? [])
+      .filter((b) => b.type === 'tool_use')
+      .map((b) => ({
+        id: b.id!,
+        name: b.name!,
+        arguments: b.input || {},
+      }));
     return {
       content,
       usage: { inputTokens: data.usage?.input_tokens, outputTokens: data.usage?.output_tokens },
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
     };
   }
 
