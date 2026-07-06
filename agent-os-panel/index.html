@@ -82,6 +82,7 @@
   <button data-tab="files">Files</button>
   <button data-tab="gantt">Gantt</button>
   <button data-tab="kb">Knowledge Base</button>
+  <button data-tab="memory">Memory</button>
   <button data-tab="loop">Loop</button>
   <button data-tab="identity">Identity</button>
 </div>
@@ -240,6 +241,16 @@
     <div id="identity-content" style="flex:1;overflow:auto;padding:12px;"></div>
   </div>
 
+  <!-- Memory Tab -->
+  <div id="tab-memory" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Workspace Memory (Epoch & Semantics)</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Corpus Index · Durability · Fact predicates · Diaries · Self-learning lessons</span>
+    </div>
+    <div id="memory-content" style="flex:1;overflow:hidden;"></div>
+  </div>
+
 </div>
 
 <script type="module">
@@ -256,6 +267,7 @@ import './tabs/gantt.js';
 import './tabs/kb.js';
 import './tabs/loop.js';
 import './tabs/identity.js';
+import './tabs/memory.js';
 
 init();
 </script>

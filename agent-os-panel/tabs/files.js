@@ -298,8 +298,8 @@ function renderEditor() {
           <p style="color:var(--color-text-soft); max-width:400px; margin:8px auto 24px; font-size:13px; line-height:1.5;">
             To browse, view, and run agent scripts server-side, you need to connect your GitHub repository to this lobby.
           </p>
-          <button class="btn btn-primary" onclick="document.querySelector('button[data-tab=\\'lobby\\']').click()" style="padding:8px 16px; font-size:12px; height:auto; line-height:1.2; border:none; cursor:pointer;">
-            Go to Lobby Integrations
+          <button class="btn btn-primary" onclick="const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin; window.open(origin, '_parent');" style="padding:8px 16px; font-size:12px; height:auto; line-height:1.2; border:none; cursor:pointer;">
+            Open Swarm Lobby Dashboard
           </button>
         </div>
       `;
