@@ -271,6 +271,14 @@ async function refresh() {
     renderAgents();
   }
   await updateOverviewStats();
+
+  const pkDiv = document.getElementById('agents-provider-keys');
+  if (pkDiv) {
+    pkDiv.style.display = lobbyMode === 'swarm' ? 'block' : 'none';
+    if (lobbyMode === 'swarm') {
+      await refreshProviderKeys();
+    }
+  }
 }
 
 function init() {
@@ -334,6 +342,143 @@ function init() {
 
   // Auto-refresh
   setInterval(refresh, 5000);
+}
+
+async function refreshProviderKeys() {
+  const pkDiv = document.getElementById('agents-provider-keys');
+  if (!pkDiv) return;
+
+  const token = localStorage.getItem('agent-os-lobby-token');
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+  const data = await fetchJson('/api/lobby/remote/provider-keys', { headers });
+  const keys = data?.provider_keys || [];
+
+  pkDiv.innerHTML = `
+    <h3 style="margin:0 0 10px 0;font-size:14px;font-weight:600;color:var(--text-primary);">Provider Keys (Server-side Encrypted Custody)</h3>
+    <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:12px;">
+      Configure API keys for model providers. Default keys apply to all agents in this lobby unless overridden per-agent.
+    </span>
+
+    <!-- Key Add Form -->
+    <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;">
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Provider</label>
+        <select id="pk-provider" style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="openai-compatible">OpenAI Compatible</option>
+        </select>
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Agent DID (Optional override)</label>
+        <input type="text" id="pk-agent-ref" placeholder="did:ccd:..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:160px;" />
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">API Key</label>
+        <input type="password" id="pk-key" placeholder="sk-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:150px;" />
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Base URL (Optional)</label>
+        <input type="text" id="pk-base-url" placeholder="https://..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:120px;" />
+      </div>
+      <div>
+        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Model (Optional)</label>
+        <input type="text" id="pk-model" placeholder="claude-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:110px;" />
+      </div>
+      <button class="btn btn-primary btn-sm" id="pk-store-btn">Store Key</button>
+    </div>
+
+    <!-- Active Keys Table -->
+    <table class="data-table" style="font-size:12px;">
+      <thead>
+        <tr>
+          <th>Provider</th>
+          <th>Scope / Agent Ref</th>
+          <th>Masked Key Hint</th>
+          <th>Base URL</th>
+          <th>Model</th>
+          <th style="width:80px;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${keys.length ? keys.map(k => `
+          <tr>
+            <td><strong>${escapeHtml(k.provider)}</strong></td>
+            <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.scope === 'lobby_default' ? 'Lobby Default' : k.agent_ref || '')}</span></td>
+            <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.keyHint)}</span></td>
+            <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.baseUrl || '—')}</span></td>
+            <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.model || '—')}</span></td>
+            <td>
+              <button class="btn btn-danger btn-sm" data-action="revoke-key" data-key-id="${k.id}">Revoke</button>
+            </td>
+          </tr>
+        `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">No keys configured yet. Connect keys so hosted agents can run.</td></tr>'}
+      </tbody>
+    </table>
+  `;
+
+  // Bind key storage and revocation
+  document.getElementById('pk-store-btn')?.addEventListener('click', handleStoreKey);
+  pkDiv.querySelectorAll('[data-action="revoke-key"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const keyId = e.target.dataset.keyId;
+      if (confirm('Revoke this API key? Hosted agents using this provider will stop working unless another key covers them.')) {
+        const token = localStorage.getItem('agent-os-lobby-token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const res = await fetchJson(`/api/lobby/remote/provider-keys/${keyId}`, {
+          method: 'POST',
+          headers
+        });
+        if (res && res.error) {
+          alert('Failed to revoke key: ' + res.error);
+        }
+        await refreshProviderKeys();
+      }
+    });
+  });
+}
+
+async function handleStoreKey() {
+  const provider = document.getElementById('pk-provider')?.value;
+  const agentRef = document.getElementById('pk-agent-ref')?.value?.trim() || null;
+  const apiKey = document.getElementById('pk-key')?.value?.trim();
+  const baseUrl = document.getElementById('pk-base-url')?.value?.trim() || null;
+  const model = document.getElementById('pk-model')?.value?.trim() || null;
+
+  if (!apiKey) {
+    alert('API Key is required.');
+    return;
+  }
+
+  const token = localStorage.getItem('agent-os-lobby-token');
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+  const res = await fetchJson('/api/lobby/remote/provider-keys', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', ...headers },
+    body: JSON.stringify({
+      provider,
+      agent_ref: agentRef,
+      api_key: apiKey,
+      base_url: baseUrl,
+      model
+    })
+  });
+
+  if (res && res.error) {
+    alert('Failed to store key: ' + res.error);
+  } else {
+    // Clear fields
+    const keyEl = document.getElementById('pk-key');
+    if (keyEl) keyEl.value = '';
+    const refEl = document.getElementById('pk-agent-ref');
+    if (refEl) refEl.value = '';
+    const urlEl = document.getElementById('pk-base-url');
+    if (urlEl) urlEl.value = '';
+    const modelEl = document.getElementById('pk-model');
+    if (modelEl) modelEl.value = '';
+
+    await refreshProviderKeys();
+  }
 }
 
 registerTab('agents', { init, onActivate: refresh });

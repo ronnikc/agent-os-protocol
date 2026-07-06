@@ -83,7 +83,7 @@ gRPC node injectable for tests). Client-supplied keys are never trusted; failure
 `AGENT_OS_DEV_TRUST_WALLET_SIGNATURES` bridge remains only for the legacy `/auth/verify` path (demo/
 testnet) and the server **refuses to start** if it is set in production.
 
-### Phase 4 — Full hosted panel (in progress)
+### Phase 4 — Full hosted panel ✅
 The hosted experience should be the **whole Agent OS Panel** (every sub-menu), not a single
 Hosted-Mode widget. Approach: serve the existing `agent-os-panel` SPA from the lobby server under
 `/panel`, made **hosted-aware**, and implement its API surface against the lobby's server-side model
@@ -96,8 +96,8 @@ so the same UI runs hosted. Built in slices, each testable on its own:
   empty states, so nothing crashes while backends are wired.
 - **Phase 4.2 — Agents (done):** `/api/agents` (+ overview stats) → the lobby roster joined with hosted agents; start/stop → the hosted-agents launch/stop API; "Create ID" already works via the registry proxy. Gated by the wallet session. Injected `repoClient` into the hosted agent runner so agents can use repository tools (`read_file`, `write_file`, `list_files`, `create_pr`).
 - **Phase 4.3 — Lobby / Messages / Tasks / Requests (done):** mapped to the lobby's remote backend endpoints (`/api/lobby/remote/*`) so they display live remote swarm state instead of local files or blank views.
-- **Phase 4.4 — Identity:** the Identity tab's card authoring + registration wired to the sponsored mint + registry proxy (same logic as the per-agent "Create ID").
-- **Phase 4.5 — Provider keys under Agents:** fold the per-lobby / per-agent provider-key config (already in the Hosted-Mode card) into the panel's Agents view.
+- **Phase 4.4 — Identity (done):** the Identity tab's card authoring + registration wired to the sponsored mint + registry proxy (same logic as the per-agent "Create ID"), supporting direct Concordium web-wallet co-signed gasless transactions on-chain.
+- **Phase 4.5 — Provider keys under Agents (done):** folded the per-lobby / per-agent provider-key config (already in the Hosted-Mode card) into the panel's Agents view, allowing users to configure default or override API keys for models directly in the panel.
 - **Phase 4.6 — Knowledge Base / KB (done):** refactored and renamed the panel's "Memory" tab to "KB". Added repo URL / branch settings configuration and direct file upload -> convert to markdown -> remote commit via the lobby's GitHub App installation token.
 - **Local-only views (Files, Gantt, Scheduled, Loop):** either given hosted data sources (wallet-scoped server-side state) or kept hidden in hosted mode.
 

@@ -4,8 +4,12 @@ let draftCard = null;
 let validationResult = null;
 let registrationPlan = null;
 let linkedDid = '';
+let lobbyMode = 'local';
 
 async function load() {
+  const modeData = await fetchJson('/api/mode');
+  lobbyMode = modeData?.mode || 'local';
+
   // Load card draft from server
   const data = await fetchJson('/api/identity/card');
   draftCard = data?.card || {
@@ -57,6 +61,65 @@ async function handlePrepareReg() {
     render();
   } else {
     alert('Validation failed, cannot prepare registration: ' + (res?.error || 'Make sure the card is valid first.'));
+  }
+}
+
+async function handleMintIdentity() {
+  readFormValues();
+  const network = document.getElementById('identity-network')?.value || 'testnet';
+  
+  if (!window.concordium) {
+    alert('Concordium Browser Wallet not found — install it and connect.');
+    return;
+  }
+  
+  const statusEl = document.getElementById('identity-mint-status');
+  if (statusEl) {
+    statusEl.style.color = 'var(--text)';
+    statusEl.textContent = 'Connecting wallet...';
+  }
+
+  try {
+    const accounts = await window.concordium.requestAccounts();
+    const owner = accounts[0];
+    if (!owner) {
+      alert('Please connect your Concordium wallet account.');
+      return;
+    }
+
+    if (statusEl) statusEl.textContent = 'Initializing mint...';
+    const { mintAgentId } = await import('../mint-agent-id.js');
+
+    const modeData = await fetchJson('/api/mode');
+    const lobbyUrl = modeData?.lobby_url || '';
+
+    const res = await mintAgentId({
+      provider: window.concordium,
+      owner,
+      network,
+      lobbyUrl,
+      base: '',
+      agentName: draftCard.name,
+      agentRole: draftCard.role || 'boss-agent',
+      onStatus: (status) => {
+        if (statusEl) statusEl.textContent = status;
+      }
+    });
+
+    if (res && res.did) {
+      linkedDid = res.did;
+      localStorage.setItem('agent-os-linked-did', res.did);
+      if (statusEl) {
+        statusEl.style.color = 'var(--success)';
+        statusEl.textContent = `Identity successfully minted! DID: ${res.did}`;
+      }
+      render();
+    }
+  } catch (err) {
+    if (statusEl) {
+      statusEl.style.color = 'var(--error)';
+      statusEl.textContent = 'Minting failed: ' + (err.message || err);
+    }
   }
 }
 
@@ -198,7 +261,7 @@ function render() {
             </div>
           `}
 
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:6px;">
               <span style="font-size:11px;color:var(--text-muted);">Target Registry:</span>
               <select id="identity-network" style="padding:4px 8px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:11px;appearance:auto;">
@@ -206,8 +269,14 @@ function render() {
                 <option value="mainnet">Concordium Mainnet</option>
               </select>
             </div>
-            <button class="btn btn-primary btn-sm" id="btn-prepare-reg" ${validationResult?.ok ? '' : 'disabled'} style="opacity:${validationResult?.ok ? 1 : 0.5};">Prepare Registry Plan</button>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-primary btn-sm" id="btn-prepare-reg" ${validationResult?.ok ? '' : 'disabled'} style="opacity:${validationResult?.ok ? 1 : 0.5};">Prepare Registry Plan</button>
+              ${lobbyMode === 'swarm' ? `
+                <button class="btn btn-primary btn-sm" id="btn-mint-identity" ${validationResult?.ok ? '' : 'disabled'} style="opacity:${validationResult?.ok ? 1 : 0.5};">Mint Agent ID</button>
+              ` : ''}
+            </div>
           </div>
+          <div id="identity-mint-status" style="margin-top:8px;font-size:11px;font-weight:500;word-break:break-all;"></div>
         </div>
 
         <!-- Registration Steps Checklist -->
@@ -245,6 +314,7 @@ function render() {
   document.getElementById('btn-save-draft')?.addEventListener('click', handleSave);
   document.getElementById('btn-validate-card')?.addEventListener('click', handleValidate);
   document.getElementById('btn-prepare-reg')?.addEventListener('click', handlePrepareReg);
+  document.getElementById('btn-mint-identity')?.addEventListener('click', handleMintIdentity);
   document.getElementById('btn-link-did')?.addEventListener('click', handleLinkDid);
 }
 
