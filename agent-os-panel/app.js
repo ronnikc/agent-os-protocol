@@ -37,6 +37,31 @@ export async function patchJson(url, body) {
   });
 }
 
+/**
+ * The wallet session shared by lobby-web (same origin) when the panel runs hosted at /panel.
+ * Returns { token, identityRef, lobbyId } or null (local mode, or not signed in).
+ */
+export function hostedSession() {
+  if (typeof window === 'undefined' || !window.AGENT_OS_HOSTED) return null;
+  try {
+    const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+    return s && s.token && s.lobbyId ? s : null;
+  } catch { return null; }
+}
+
+/** Call a lobby API (`/api/v1/agent-lobby<path>`) with the hosted wallet session token. */
+export async function lobbyApi(path, opts = {}) {
+  const s = hostedSession();
+  if (!s) return null;
+  try {
+    const r = await fetch(`/api/v1/agent-lobby${path}`, {
+      ...opts,
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${s.token}`, ...(opts.headers || {}) },
+    });
+    return await r.json();
+  } catch { return null; }
+}
+
 export async function putJson(url, body) {
   return fetchJson(url, {
     method: 'PUT',

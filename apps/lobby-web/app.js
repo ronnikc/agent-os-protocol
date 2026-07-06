@@ -540,6 +540,21 @@ function isSignedIn() {
   return !!(state.session.token && state.session.lobbyId && state.session.lobbyId === state.activeLobbyId);
 }
 
+/**
+ * Mirror the wallet session to localStorage so the hosted Agent OS Panel (served same-origin at
+ * /panel) can reuse it to call the lobby's wallet-gated APIs (e.g. browse the connected repo).
+ * Cleared on sign-out / 401.
+ */
+function persistSession() {
+  try {
+    if (state.session.token && state.session.lobbyId) {
+      localStorage.setItem('agentos.hosted.session', JSON.stringify(state.session));
+    } else {
+      localStorage.removeItem('agentos.hosted.session');
+    }
+  } catch { /* storage unavailable — panel just won't share the session */ }
+}
+
 /** Authenticated fetch — adds the Bearer session token. Returns { ok, status, data }. */
 async function authRequest(method, url, data) {
   if (!state.session.token) return { ok: false, status: 401, data: { error: 'not signed in' } };
@@ -550,7 +565,7 @@ async function authRequest(method, url, data) {
       body: data ? JSON.stringify(data) : undefined,
     });
     const body = await res.json().catch(() => ({}));
-    if (res.status === 401) { state.session = { token: null, identityRef: null, lobbyId: null }; renderHostedCard(); }
+    if (res.status === 401) { state.session = { token: null, identityRef: null, lobbyId: null }; persistSession(); renderHostedCard(); }
     return { ok: res.ok, status: res.status, data: body };
   } catch (err) {
     console.error(`auth ${method} ${url} failed:`, err);
@@ -588,6 +603,7 @@ async function signInToLobby() {
     if (!verified?.token) { setStatus('sign-in rejected — wallet signature could not be verified on-chain'); return; }
 
     state.session = { token: verified.token, identityRef: verified.identity_ref, lobbyId };
+    persistSession();
     setStatus('');
     renderHostedCard();
   } catch (err) {
