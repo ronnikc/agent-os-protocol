@@ -17,8 +17,8 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
-import { resolve, extname, sep } from 'node:path';
-import { existsSync, statSync, readFileSync, writeFileSync } from 'node:fs';
+import { resolve, join, extname, sep } from 'node:path';
+import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
 import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore } from './store.js';
@@ -40,6 +40,89 @@ import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
 const WS_PATH = '/api/v1/agent-lobby/ws/agent';
+
+function parseGithubUrl(url: string): { owner: string; repo: string } | null {
+  const match = url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
+  if (!match) return null;
+  return { owner: match[1], repo: match[2] };
+}
+
+function parseAgentDef(fileName: string, content: string) {
+  const titleMatch = content.match(/^Title:\s*(.+)$/m);
+  const scopeMatch = content.match(/^Scope:\s*(.+)$/m);
+  const slugMatch = content.match(/^Slug:\s*(.+)$/m);
+  const runtimeMatch = content.match(/^Runtime:\s*(.+)$/m);
+  const modelMatch = content.match(/^Model:\s*(.+)$/m);
+  const identityMatch = content.match(/^Identity:\s*(.+)$/m);
+
+  const promptLines = content.split('\n').filter(line => {
+    const trimmed = line.trim();
+    return !/^(Title|Scope|Slug|Runtime|Model|Identity):/i.test(trimmed);
+  });
+  const systemPrompt = promptLines.join('\n').trim();
+
+  const slug = slugMatch?.[1]?.trim() ?? fileName.replace('.md', '');
+  return {
+    slug,
+    name: titleMatch?.[1]?.trim() ?? fileName.replace('.md', ''),
+    scope: scopeMatch?.[1]?.trim() ?? '',
+    file: fileName,
+    runtime: runtimeMatch?.[1]?.trim() || 'api',
+    model: modelMatch?.[1]?.trim(),
+    identity: identityMatch?.[1]?.trim(),
+    system_prompt: systemPrompt
+  };
+}
+
+async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<any[]> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  const agents: any[] = [];
+
+  if (integration && integration.repo_full_name) {
+    const { getDecryptedSecret } = await import('./integrations/githubApp.js');
+    const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
+    if (token) {
+      const parsed = parseGithubUrl(integration.repo_full_name);
+      if (parsed) {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integration.branch || 'main';
+        try {
+          const files = await client.readDir('agent-os/sub-agents/agents', branchName);
+          const mdFiles = files.filter((f: any) => f.name.endsWith('.md') && f.type === 'file');
+          for (const file of mdFiles) {
+            try {
+              const content = await client.readFile(file.path, branchName);
+              agents.push(parseAgentDef(file.name, content));
+            } catch {}
+          }
+          return agents;
+        } catch (err) {
+          console.warn('[Lobby Server] Failed to read agents from GitHub:', err);
+        }
+      }
+    }
+  }
+
+  // Local filesystem fallback
+  try {
+    const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+    const localAgentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
+    if (existsSync(localAgentsDir)) {
+      const files = readdirSync(localAgentsDir).filter(f => f.endsWith('.md'));
+      for (const file of files) {
+        try {
+          const content = readFileSync(join(localAgentsDir, file), 'utf-8');
+          agents.push(parseAgentDef(file, content));
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('[Lobby Server] Failed to read agents from local fs:', err);
+  }
+
+  return agents;
+}
 
 export interface LobbyServerOptions {
   port?: number;
@@ -314,6 +397,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return payload ? payload.identityRef : null;
     };
 
+    const ghToken = async (lobbyId: string): Promise<string | null> => {
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
+      try { return await getInstallationToken(integ.installation_id); } catch { return null; }
+    };
+
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
 
     // ── Wallet session auth (Hosted Mode) — nonce challenge → wallet signature → session token ──
@@ -459,6 +548,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const resolved = await resolveProviderKey(store, lobbyId, providerName, agentRef);
         if (!resolved) return json({ error: `no provider key configured for "${providerName}" — set one first (POST .../provider-keys)` }, 400);
         const model = (typeof body.model === 'string' && body.model.trim()) || resolved.model || 'claude-opus-4-8';
+        let systemPrompt = typeof body.system_prompt === 'string' ? body.system_prompt : undefined;
+        if (!systemPrompt && typeof body.agent_role === 'string') {
+          try {
+            const defs = await getAgentDefinitions(lobbyId, store);
+            const def = defs.find(d => d.slug === body.agent_role);
+            if (def && def.system_prompt) {
+              systemPrompt = def.system_prompt;
+            }
+          } catch (e) {
+            console.warn('[Lobby Server] Failed to resolve system prompt for hosted agent:', e);
+          }
+        }
+
         try {
           const newId = await spawnHostedAgent({
             lobbyId,
@@ -468,7 +570,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             providerId: providerIdFor(providerName),
             model,
             baseUrl: resolved.baseUrl,
-            systemPrompt: typeof body.system_prompt === 'string' ? body.system_prompt : undefined,
+            systemPrompt,
             joinToken: agentRef ?? undefined,
           });
           await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
@@ -485,15 +587,168 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ stopped: agentId });
       }
     }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/agent-definitions
+    const agentDefsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/agent-definitions$/);
+    if (agentDefsMatch && req.method === 'GET') {
+      const lobbyId = agentDefsMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      try {
+        const agents = await getAgentDefinitions(lobbyId, store);
+        return json({ agents });
+      } catch (err: any) {
+        return json({ error: err.message ?? String(err) }, 500);
+      }
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/scheduled
+    const scheduledGetMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/scheduled$/);
+    if (scheduledGetMatch && req.method === 'GET') {
+      const lobbyId = scheduledGetMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      const defaultTasks = [
+        {
+          name: "graph-update",
+          config: { enabled: false, description: "Update dependency graph via graph-update.sh to keep codebase intelligence current", time_utc: "03:00" },
+          running: false,
+          state: {}
+        },
+        {
+          name: "pr-quality-review",
+          config: { enabled: false, description: "Review merged PRs using Agent OS specialist agents, generate fix-sprint specs for issues found.", time_utc: "04:00" },
+          running: false,
+          state: {}
+        },
+        {
+          name: "fix-sprint-executor",
+          config: { enabled: false, description: "Execute pending fix-sprints, commit to branch, open PR for human review", time_utc: "05:00" },
+          running: false,
+          state: {}
+        }
+      ];
+
+      const integration = await store.getIntegration(lobbyId, 'github');
+      if (!integration || !integration.repo_full_name) {
+        return json({ repoConfigured: false, tasks: defaultTasks });
+      }
+
+      const token = await ghToken(lobbyId);
+      if (!token) {
+        return json({ repoConfigured: false, tasks: defaultTasks });
+      }
+
+      const parsed = parseGithubUrl(integration.repo_full_name);
+      if (!parsed) {
+        return json({ repoConfigured: false, tasks: defaultTasks });
+      }
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integration.branch || 'main';
+        const fileContent = await client.readFile('agent-os/config.json', branchName).catch(() => null);
+
+        if (!fileContent) {
+          return json({ repoConfigured: false, tasks: defaultTasks });
+        }
+
+        const config = JSON.parse(fileContent);
+        if (config && Array.isArray(config.scheduled)) {
+          const tasks = defaultTasks.map(t => {
+            const remoteTask = config.scheduled.find((rt: any) => rt.name === t.name);
+            if (remoteTask) {
+              return {
+                ...t,
+                config: {
+                  ...t.config,
+                  enabled: remoteTask.enabled !== false,
+                  time_utc: remoteTask.time_utc || t.config.time_utc
+                }
+              };
+            }
+            return t;
+          });
+          return json({ repoConfigured: true, tasks });
+        }
+      } catch (e) {
+        console.warn('[Lobby Server] Failed to fetch scheduled config from GitHub:', e);
+      }
+
+      return json({ repoConfigured: false, tasks: defaultTasks });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/scheduled/setup
+    const scheduledSetupMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/scheduled\/setup$/);
+    if (scheduledSetupMatch && req.method === 'POST') {
+      const lobbyId = scheduledSetupMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      const integration = await store.getIntegration(lobbyId, 'github');
+      if (!integration || !integration.repo_full_name) {
+        return json({ error: 'GitHub integration not connected' }, 400);
+      }
+
+      const token = await ghToken(lobbyId);
+      if (!token) return json({ error: 'GitHub installation token unavailable' }, 502);
+
+      const parsed = parseGithubUrl(integration.repo_full_name);
+      if (!parsed) return json({ error: 'Invalid GitHub repository URL' }, 400);
+
+      const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+      const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+      const branchName = integration.branch || 'main';
+
+      try {
+        const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+        
+        // 1. Write agent-os/config.json
+        const configPath = join(REPO_ROOT, 'agent-os/scheduled/config.json');
+        if (existsSync(configPath)) {
+          const content = readFileSync(configPath, 'utf-8');
+          await client.writeFile('agent-os/config.json', content, 'chore: setup agent-os scheduled config', branchName);
+        }
+
+        // 2. Write scheduled prompts (graph-update, pr-quality-review, fix-sprint-executor)
+        const promptsDir = join(REPO_ROOT, 'agent-os/scheduled/prompts');
+        if (existsSync(promptsDir)) {
+          const files = readdirSync(promptsDir).filter(f => f.endsWith('.md'));
+          for (const file of files) {
+            const content = readFileSync(join(promptsDir, file), 'utf-8');
+            await client.writeFile(`agent-os/scheduled/prompts/${file}`, content, `chore: setup scheduled prompt for ${file}`, branchName);
+          }
+        }
+
+        // 3. Write core agent definitions (60 files)
+        const agentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
+        if (existsSync(agentsDir)) {
+          const files = readdirSync(agentsDir).filter(f => f.endsWith('.md'));
+          for (const file of files) {
+            const content = readFileSync(join(agentsDir, file), 'utf-8');
+            await client.writeFile(`agent-os/sub-agents/agents/${file}`, content, `chore: bootstrap core agent definition ${file}`, branchName);
+          }
+        }
+
+        await recordEvent(lobbyId, 'scheduled_tasks_configured', identityRef, { repo: integration.repo_full_name, branch: branchName });
+        return json({ ok: true });
+      } catch (err: any) {
+        console.error('[Lobby Server] Failed to bootstrap agent-os to GitHub repo:', err);
+        return json({ error: `failed to configure repository: ${err.message || String(err)}` }, 500);
+      }
+    }
+
     // ── GitHub App integration (wallet-gated) — connect the user's OWN repo so hosted agents can
     // read it and land changes as commits/PRs. We host no repo; the lobby holds only a revocable,
     // short-lived installation token. Flow: connect → install URL → GitHub redirects to the callback
     // (state carries the wallet-authed lobby binding) → store installation → pick repo + branch.
-    const ghToken = async (lobbyId: string): Promise<string | null> => {
-      const integ = await store.getIntegration(lobbyId, 'github');
-      if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
-      try { return await getInstallationToken(integ.installation_id); } catch { return null; }
-    };
+
 
     // POST /lobbies/:id/integrations/github/connect → { install_url }
     const ghConnect = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/github\/connect$/);
