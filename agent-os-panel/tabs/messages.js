@@ -71,13 +71,26 @@ function renderFilterBar() {
   `;
 }
 
+let lobbyMode = 'local';
+
 async function refresh() {
+  const modeData = await fetchJson('/api/mode');
+  lobbyMode = modeData?.mode || 'local';
+
   const params = new URLSearchParams();
   if (filters.agent) params.set('agent', filters.agent);
   if (filters.type) params.set('type', filters.type);
   params.set('limit', String(filters.limit));
 
-  const data = await fetchJson(`/api/messages?${params}`);
+  let data;
+  if (lobbyMode === 'swarm') {
+    const token = localStorage.getItem('agent-os-lobby-token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    data = await fetchJson(`/api/lobby/remote/messages?${params}`, { headers });
+  } else {
+    data = await fetchJson(`/api/messages?${params}`);
+  }
+
   if (data) {
     const apiMessages = data.messages || [];
     // Merge API messages with WS-received lobby messages (dedup by content+from)
@@ -95,8 +108,19 @@ async function populateToDropdown() {
   const toEl = document.getElementById('msg-send-to');
   if (!toEl) return;
   const currentVal = toEl.value;
-  const agentData = await fetchJson('/api/agents');
-  const agents = agentData?.agents || state.agents || [];
+  let agents = [];
+  if (lobbyMode === 'swarm') {
+    const token = localStorage.getItem('agent-os-lobby-token');
+    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+    const agentData = await fetchJson('/api/lobby/remote/agents', { headers });
+    agents = (agentData?.agents || []).map(a => ({
+      slug: a.agent_role || a.agent_id,
+      name: a.display_name || a.agent_role
+    }));
+  } else {
+    const agentData = await fetchJson('/api/agents');
+    agents = agentData?.agents || state.agents || [];
+  }
   toEl.innerHTML = '<option value="*">All Agents (broadcast)</option>' +
     agents.map(a => `<option value="${a.slug}">${a.name}</option>`).join('');
   if (currentVal && currentVal !== '*') toEl.value = currentVal;

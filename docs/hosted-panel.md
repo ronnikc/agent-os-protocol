@@ -94,17 +94,12 @@ so the same UI runs hosted. Built in slices, each testable on its own:
   panel shows a context banner and hides the local-only views (Files, Gantt, Scheduled, Memory, Loop)
   whose data comes from a local filesystem/process host. `fetchJson` degrades unmapped endpoints to
   empty states, so nothing crashes while backends are wired.
-- **Phase 4.2 — Agents:** `/api/agents` (+ overview stats) → the lobby roster joined with hosted
-  agents; start/stop → the hosted-agents launch/stop API; "Create ID" already works via the registry
-  proxy. Gated by the wallet session.
-- **Phase 4.3 — Lobby / Messages / Tasks / Requests:** map to the lobby's existing
-  `/api/v1/agent-lobby/*` data (roster, coordination messages, tasks, hand-raises).
-- **Phase 4.4 — Identity:** the Identity tab's card authoring + registration wired to the sponsored
-  mint + registry proxy (same logic as the per-agent "Create ID").
-- **Phase 4.5 — Provider keys under Agents:** fold the per-lobby / per-agent provider-key config
-  (already in the Hosted-Mode card) into the panel's Agents view.
-- **Local-only views (Files, Gantt, Scheduled, Memory, Loop):** either given hosted data sources
-  (wallet-scoped server-side state) or kept hidden in hosted mode.
+- **Phase 4.2 — Agents (done):** `/api/agents` (+ overview stats) → the lobby roster joined with hosted agents; start/stop → the hosted-agents launch/stop API; "Create ID" already works via the registry proxy. Gated by the wallet session. Injected `repoClient` into the hosted agent runner so agents can use repository tools (`read_file`, `write_file`, `list_files`, `create_pr`).
+- **Phase 4.3 — Lobby / Messages / Tasks / Requests (done):** mapped to the lobby's remote backend endpoints (`/api/lobby/remote/*`) so they display live remote swarm state instead of local files or blank views.
+- **Phase 4.4 — Identity:** the Identity tab's card authoring + registration wired to the sponsored mint + registry proxy (same logic as the per-agent "Create ID").
+- **Phase 4.5 — Provider keys under Agents:** fold the per-lobby / per-agent provider-key config (already in the Hosted-Mode card) into the panel's Agents view.
+- **Phase 4.6 — Knowledge Base / KB (done):** refactored and renamed the panel's "Memory" tab to "KB". Added repo URL / branch settings configuration and direct file upload -> convert to markdown -> remote commit via the lobby's GitHub App installation token.
+- **Local-only views (Files, Gantt, Scheduled, Loop):** either given hosted data sources (wallet-scoped server-side state) or kept hidden in hosted mode.
 
 ## Verification
 
