@@ -15,6 +15,7 @@ let lobbyInfo = { id: null, name: null, url: null, connected: false }; // which 
 let createLobbyFormOpen = false;
 let lobbySettings = null;
 let lobbyMembers = [];
+let lobbyGithub = null;
 
 /**
  * Roster identity badge (Phase 8). Renders the verification status an agent presented at join time
@@ -341,6 +342,53 @@ function renderLobby() {
             </div>
           </div>
 
+          <!-- GitHub Connection Column -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <h4 style="margin:0 0 4px 0; font-size:14px; font-weight:600; color:var(--text-primary);">GitHub Swarm Connection</h4>
+            <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px; line-height:1.45;">
+              Connect your GitHub repository via the Agent OS GitHub App. This grants the swarm secure, scoped access to read your codebase, run background checks, and propose code fixes as pull requests.
+            </span>
+            
+            <div id="panel-github-status-container">
+              ${!lobbyGithub || !lobbyGithub.connected ? `
+                ${lobbyGithub?.configured === false ? `
+                  <span style="color:var(--color-yellow); font-size:12px;">GitHub App is not configured on this lobby server. Please configure GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY.</span>
+                ` : `
+                  <button class="btn btn-primary btn-sm" id="btn-panel-github-connect" style="width:100%; padding:8px 12px; font-size:12px; height:auto;">Connect via GitHub App</button>
+                  <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:8px; line-height:1.4;">
+                    Clicking will redirect to GitHub to authorize the app and select your working repositories.
+                  </span>
+                `}
+              ` : `
+                <div style="display:flex; flex-direction:column; gap:10px;">
+                  <div style="font-size:12px; background:rgba(0,200,100,0.05); padding:8px; border-radius:4px; border:1px solid rgba(0,200,100,0.15);">
+                    <span style="color:var(--color-green); font-weight:600;">✓ Connected Account:</span>
+                    <span style="color:var(--text-secondary); font-family:monospace; display:block; margin-top:2px;">${escapeHtml(lobbyGithub.account || '')}</span>
+                  </div>
+                  
+                  <div>
+                    <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Target Repository</label>
+                    <select id="panel-github-repo" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                      ${(lobbyGithub.repos || []).map(r => `
+                        <option value="${escapeHtml(r.full_name)}" ${r.full_name === lobbyGithub.repo ? 'selected' : ''}>${escapeHtml(r.full_name)}${r.private ? ' 🔒' : ''}</option>
+                      `).join('') || '<option value="">(no repositories configured)</option>'}
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Working Branch (optional)</label>
+                    <input type="text" id="panel-github-branch" placeholder="main" value="${escapeHtml(lobbyGithub.branch || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+                  </div>
+                  
+                  <div style="display:flex; gap:6px; margin-top:4px;">
+                    <button class="btn btn-secondary btn-sm" id="btn-panel-github-save-repo" style="flex:1;">Save Settings</button>
+                    <button class="btn btn-danger btn-sm" id="btn-panel-github-disconnect">Disconnect</button>
+                  </div>
+                </div>
+              `}
+            </div>
+          </div>
+
         </div>
       ` : ''}
     </div>
@@ -399,6 +447,51 @@ function renderLobby() {
         }
       });
     });
+
+    // GitHub Connection event listeners
+    document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {
+      const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
+      if (res && res.install_url) {
+        window.open(res.install_url, '_blank', 'noopener');
+      } else {
+        showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
+      }
+    });
+
+    document.getElementById('btn-panel-github-save-repo')?.addEventListener('click', async () => {
+      const repo = document.getElementById('panel-github-repo')?.value;
+      const branch = document.getElementById('panel-github-branch')?.value?.trim() || undefined;
+      if (!repo) {
+        showAlert('Error', 'Please select a repository.');
+        return;
+      }
+      const res = await fetchJson('/api/lobby/remote/integrations/github', {
+        method: 'POST',
+        body: JSON.stringify({ repo, branch })
+      });
+      if (res && !res.error) {
+        showAlert('Success', 'GitHub repository linked successfully!');
+        refresh();
+      } else {
+        showAlert('Error', 'Could not set repo: ' + (res?.error || 'Unknown error'));
+      }
+    });
+
+    document.getElementById('btn-panel-github-disconnect')?.addEventListener('click', async () => {
+      showConfirm(
+        'Disconnect GitHub',
+        'Disconnect the GitHub repository from this lobby? Your agents will lose access to repo files.',
+        async () => {
+          const res = await fetchJson('/api/lobby/remote/integrations/github', { method: 'DELETE' });
+          if (res && !res.error) {
+            showAlert('Disconnected', 'GitHub repository disconnected.');
+            refresh();
+          } else {
+            showAlert('Error', 'Could not disconnect: ' + (res?.error || 'Unknown error'));
+          }
+        }
+      );
+    });
   }
 }
 
@@ -450,6 +543,12 @@ async function refresh() {
       if (membersRes && !membersRes.error) {
         lobbyMembers = membersRes.members || [];
       }
+      const ghRes = await fetchJson('/api/lobby/remote/integrations/github');
+      if (ghRes && !ghRes.error) {
+        lobbyGithub = ghRes;
+      } else {
+        lobbyGithub = null;
+      }
     }
   } else {
     remoteAgents = localAgents.map(a => ({
@@ -459,6 +558,7 @@ async function refresh() {
     lobbyConnected = localAgents.length > 0;
     lobbySettings = null;
     lobbyMembers = [];
+    lobbyGithub = null;
   }
   renderLobby();
 }
