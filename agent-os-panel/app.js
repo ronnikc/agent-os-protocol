@@ -49,13 +49,35 @@ export async function fetchJson(url, opts) {
 
     // Intercept /api/agents and /api/agents/status
     if (url === '/api/agents' || url === '/api/agents/status') {
-      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      let data = await fetchJson('/api/lobby/remote/agent-definitions');
+      if (!data || data.error || !data.agents || data.agents.length === 0) {
+        try {
+          const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+          const fallbackRes = await fetch(`${origin}/panel/agents-list.json`);
+          if (fallbackRes.ok) {
+            data = await fallbackRes.json();
+          }
+        } catch (e) {
+          console.warn('[Panel] Failed to fetch static agents-list.json fallback:', e);
+        }
+      }
       return data || { agents: [] };
     }
 
     // Intercept /api/presets
     if (url === '/api/presets') {
-      const data = await fetchJson('/api/lobby/remote/agent-definitions');
+      let data = await fetchJson('/api/lobby/remote/agent-definitions');
+      if (!data || data.error || !data.agents || data.agents.length === 0) {
+        try {
+          const origin = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+          const fallbackRes = await fetch(`${origin}/panel/agents-list.json`);
+          if (fallbackRes.ok) {
+            data = await fallbackRes.json();
+          }
+        } catch (e) {
+          console.warn('[Panel] Failed to fetch static agents-list.json fallback:', e);
+        }
+      }
       const presets = {};
       if (data && data.agents) {
         data.agents.forEach(a => {
