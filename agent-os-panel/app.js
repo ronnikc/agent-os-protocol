@@ -166,6 +166,10 @@ export async function fetchJson(url, opts) {
           const parts = cleanPath.split('/');
           const memberId = parts[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/members/${memberId}/status`;
+        } else if (cleanPath === 'integrations/github') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
+        } else if (cleanPath === 'integrations/github/connect') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
         } else {
           lobbyPath = `/api/v1/agent-lobby/${path}`;
         }
