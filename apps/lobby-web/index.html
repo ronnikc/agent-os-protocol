@@ -49,7 +49,7 @@
     <button class="nav-tab active" data-view="lobby" onclick="switchView('lobby')">Lobby</button>
     <button class="nav-tab" data-view="manage" onclick="switchView('manage')">Manage</button>
     <button class="nav-tab" data-view="marketplace" onclick="switchView('marketplace')">Marketplace</button>
-    <button class="nav-tab" data-view="panel" onclick="switchView('panel')" title="Open the full Agent OS Panel (hosted)">Panel</button>
+    <a href="/panel/" target="_blank" style="text-decoration:none;"><button class="nav-tab">Panel ↗</button></a>
   </nav>
 
   <div class="header-right">
@@ -474,10 +474,7 @@
 
 </div>
 
-<!-- PANEL VIEW -->
-<div class="view" id="view-panel" style="display:none; flex: 1; width: 100%; height: 100%; overflow: hidden;">
-  <iframe id="panel-iframe" src="" style="width: 100%; height: 100%; border: none; background: var(--color-bg);"></iframe>
-</div>
+
 
   <!-- Styled Dialog Modals -->
   <style>

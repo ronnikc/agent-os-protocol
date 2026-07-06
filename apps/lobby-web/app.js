@@ -51,6 +51,7 @@ const state = {
     private_lobbies: 0
   }
 };
+window.state = state;
 
 const AGENT_ROLES = [
   { value: 'accessibility', label: 'Accessibility Specialist' },
@@ -577,7 +578,16 @@ async function authRequest(method, url, data) {
 async function signInToLobby() {
   const statusEl = document.getElementById('hosted-signin-status');
   const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
-  if (!state.activeLobbyId) { setStatus('select a lobby first'); return; }
+  if (!state.activeLobbyId) {
+    setStatus('creating default lobby…');
+    const created = await postJson('/api/v1/agent-lobby/lobbies', { name: 'Default Swarm Lobby' });
+    if (created && created.lobby_id) {
+      selectLobby(created.lobby_id);
+    } else {
+      setStatus('select a lobby first');
+      return;
+    }
+  }
   if (!state.wallet.connected || !state.wallet.address) { setStatus('connect your wallet first'); return; }
   const provider = window.concordium;
   if (!provider) { setStatus('wallet extension not found'); return; }
@@ -611,6 +621,7 @@ async function signInToLobby() {
     setStatus(`sign-in failed: ${err.message || err}`);
   }
 }
+window.signInToLobby = signInToLobby;
 
 /** Render the Hosted-Mode card: session badge, and (when signed in) provider keys + hosted agents. */
 async function renderHostedCard() {
@@ -1706,54 +1717,57 @@ function init() {
     });
   }
 
-  // Concordium Wallet Connection click handler
+  // Concordium Wallet Connection function
+  async function connectConcordiumWallet() {
+    if (state.wallet.connected) {
+      state.wallet.connected = false;
+      state.wallet.address = null;
+      state.wallet.balance = null;
+      updateWalletUI();
+      return;
+    }
+
+    const textEl = document.getElementById('wallet-status-text');
+    const provider = window.concordium;
+
+    if (!provider) {
+      if (textEl) textEl.textContent = 'Disconnected — wallet extension not found';
+      alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+      return;
+    }
+
+    if (textEl) textEl.textContent = 'Connecting to Concordium Wallet extension...';
+    try {
+      const accountAddress = await provider.connect();
+      if (!accountAddress) {
+        throw new Error('Connection rejected by user.');
+      }
+
+      // Normalize address to a plain string (some wallet versions return an object)
+      const addrStr = (typeof accountAddress === 'string')
+        ? accountAddress
+        : (accountAddress?.address || accountAddress?.toString?.() || String(accountAddress));
+
+      console.log('[Wallet] Connected address:', addrStr, '| Raw type:', typeof accountAddress);
+
+      const balanceCcd = await fetchWalletBalance(provider, addrStr);
+
+      state.wallet.connected = true;
+      state.wallet.address = addrStr;
+      state.wallet.balance = balanceCcd;
+      updateWalletUI();
+      alert(`Connected successfully to Concordium Wallet!\nAddress: ${addrStr}`);
+    } catch (err) {
+      console.error('Concordium Wallet connection failed:', err);
+      alert(`Concordium Wallet Connection Failed: ${err.message || err}`);
+      if (textEl) textEl.textContent = 'Disconnected';
+    }
+  }
+  window.connectConcordiumWallet = connectConcordiumWallet;
+
   const btnConnectWallet = document.getElementById('btn-connect-wallet');
   if (btnConnectWallet) {
-    btnConnectWallet.addEventListener('click', async () => {
-      if (state.wallet.connected) {
-        state.wallet.connected = false;
-        state.wallet.address = null;
-        state.wallet.balance = null;
-        updateWalletUI();
-        return;
-      }
-
-      const textEl = document.getElementById('wallet-status-text');
-      const provider = window.concordium;
-
-      if (!provider) {
-        if (textEl) textEl.textContent = 'Disconnected — wallet extension not found';
-        alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
-        return;
-      }
-
-      if (textEl) textEl.textContent = 'Connecting to Concordium Wallet extension...';
-      try {
-        const accountAddress = await provider.connect();
-        if (!accountAddress) {
-          throw new Error('Connection rejected by user.');
-        }
-
-        // Normalize address to a plain string (some wallet versions return an object)
-        const addrStr = (typeof accountAddress === 'string')
-          ? accountAddress
-          : (accountAddress?.address || accountAddress?.toString?.() || String(accountAddress));
-
-        console.log('[Wallet] Connected address:', addrStr, '| Raw type:', typeof accountAddress);
-
-        const balanceCcd = await fetchWalletBalance(provider, addrStr);
-
-        state.wallet.connected = true;
-        state.wallet.address = addrStr;
-        state.wallet.balance = balanceCcd;
-        updateWalletUI();
-        alert(`Connected successfully to Concordium Wallet!\nAddress: ${addrStr}`);
-      } catch (err) {
-        console.error('Concordium Wallet connection failed:', err);
-        alert(`Concordium Wallet Connection Failed: ${err.message || err}`);
-        if (textEl) textEl.textContent = 'Disconnected';
-      }
-    });
+    btnConnectWallet.addEventListener('click', connectConcordiumWallet);
   }
 
   // Wire up Post Task button
@@ -2083,28 +2097,18 @@ window.switchOnboardTab = function(tabName) {
 };
 
 // ── Top-nav view switcher (Lobby / Manage / Marketplace / Panel) ──
-const VIEWS = ['lobby', 'manage', 'marketplace', 'panel'];
+const VIEWS = ['lobby', 'manage', 'marketplace'];
 window.switchView = function(view) {
   if (!VIEWS.includes(view)) return;
   VIEWS.forEach(v => {
     const el = document.getElementById('view-' + v);
     if (el) {
-      if (v === 'panel') {
-        el.style.display = v === view ? 'flex' : 'none'; // flex layout holds iframe perfectly
-      } else {
-        el.style.display = v === view ? '' : 'none';
-      }
+      el.style.display = v === view ? '' : 'none';
     }
   });
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
-  if (view === 'panel') {
-    const iframe = document.getElementById('panel-iframe');
-    if (iframe && !iframe.src) {
-      iframe.src = '/panel/';
-    }
-  }
   if (view === 'marketplace') pollLobbyDetails();
   if (view === 'manage') renderManageView();
 };
