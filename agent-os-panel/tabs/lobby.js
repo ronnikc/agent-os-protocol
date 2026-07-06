@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showConfirm } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
@@ -13,6 +13,8 @@ let events = [];
 let lobbyMode = 'local'; // 'local' or 'swarm'
 let lobbyInfo = { id: null, name: null, url: null, connected: false }; // which lobby the panel is in
 let createLobbyFormOpen = false;
+let lobbySettings = null;
+let lobbyMembers = [];
 
 /**
  * Roster identity badge (Phase 8). Renders the verification status an agent presented at join time
@@ -273,9 +275,131 @@ function renderLobby() {
           `).join('')}
         </div>
       ` : ''}
+      ${lobbyMode === 'swarm' && lobbySettings ? `
+        <div style="margin-top:20px; display:grid; grid-template-columns:repeat(auto-fit, minmax(320px, 1fr)); gap:16px; border-top:1px solid var(--border); padding-top:20px;">
+          
+          <!-- Settings Column -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <h4 style="margin:0 0 4px 0; font-size:14px; font-weight:600; color:var(--text-primary);">Lobby Settings</h4>
+            <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Configure visibility and policy access rules for this remote swarm.</span>
+            
+            <div>
+              <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Lobby Name</label>
+              <input type="text" id="settings-lobby-name" value="${escapeHtml(lobbySettings.name || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+            </div>
+            
+            <div style="display:flex; gap:10px;">
+              <div style="flex:1;">
+                <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Visibility</label>
+                <select id="settings-lobby-visibility" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                  <option value="public" ${lobbySettings.visibility === 'public' ? 'selected' : ''}>Public</option>
+                  <option value="private" ${lobbySettings.visibility === 'private' ? 'selected' : ''}>Private</option>
+                </select>
+              </div>
+              <div style="flex:1.2;">
+                <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Join Policy</label>
+                <select id="settings-lobby-policy" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                  <option value="none" ${lobbySettings.join_policy === 'none' ? 'selected' : ''}>None (Open)</option>
+                  <option value="registered" ${lobbySettings.join_policy === 'registered' ? 'selected' : ''}>Registered ID</option>
+                  <option value="verified_human_link" ${lobbySettings.join_policy === 'verified_human_link' ? 'selected' : ''}>Verified Human Link</option>
+                </select>
+              </div>
+            </div>
+            
+            <button class="btn btn-primary btn-sm" id="btn-save-lobby-settings" style="margin-top:8px;">Save Settings</button>
+          </div>
+
+          <!-- Members Column -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border); border-radius:8px; padding:16px; display:flex; flex-direction:column; gap:12px;">
+            <h4 style="margin:0 0 4px 0; font-size:14px; font-weight:600; color:var(--text-primary);">Membership Control</h4>
+            <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Invite Concordium DIDs or local agents, and manage floor permissions.</span>
+            
+            <div style="display:flex; gap:6px;">
+              <input type="text" id="invite-member-did" placeholder="did:ccd:testnet:..." style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+              <select id="invite-member-role" style="padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                <option value="contributor">Contributor</option>
+                <option value="admin">Admin</option>
+                <option value="observer">Observer</option>
+              </select>
+              <button class="btn btn-secondary btn-sm" id="btn-invite-member">Invite</button>
+            </div>
+
+            <div style="max-height:140px; overflow-y:auto; border:1px solid var(--border); border-radius:4px; background:var(--bg-elevated); padding:4px;">
+              ${lobbyMembers.map(m => `
+                <div style="display:flex; justify-content:space-between; align-items:center; padding:6px 8px; border-bottom:1px solid var(--border-light); font-size:11px;">
+                  <div style="display:flex; flex-direction:column;">
+                    <span style="font-family:monospace; color:var(--text-primary);" title="${escapeHtml(m.identity_ref)}">${escapeHtml(m.identity_ref.slice(0, 15))}...</span>
+                    <span style="color:var(--text-muted); font-size:9px;">Role: ${m.role} (${m.status})</span>
+                  </div>
+                  ${m.status !== 'revoked' ? `
+                    <button class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:9px; height:auto; line-height:1;" data-revoke-member="${escapeHtml(m.id)}">Kick</button>
+                  ` : `
+                    <span style="color:var(--color-red); font-weight:600; font-size:9px; text-transform:uppercase;">Kicked</span>
+                  `}
+                </div>
+              `).join('') || '<div style="padding:12px; text-align:center; color:var(--text-muted); font-size:11px;">No members invited.</div>'}
+            </div>
+          </div>
+
+        </div>
+      ` : ''}
     </div>
   `;
   restoreCreateLobbyForm(savedForm);
+
+  if (lobbyMode === 'swarm' && lobbySettings) {
+    document.getElementById('btn-save-lobby-settings')?.addEventListener('click', async () => {
+      const name = document.getElementById('settings-lobby-name')?.value?.trim();
+      const visibility = document.getElementById('settings-lobby-visibility')?.value;
+      const join_policy = document.getElementById('settings-lobby-policy')?.value;
+      if (!name) return;
+      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+      const res = await fetchJson('/api/lobby/remote/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ name, visibility, join_policy, actor: s?.identityRef })
+      });
+      if (res && !res.error) {
+        showAlert('Settings Saved', 'Lobby settings successfully updated on the remote swarm.');
+        refresh();
+      } else {
+        showAlert('Failed to Save Settings', res?.error || 'Unknown error');
+      }
+    });
+
+    document.getElementById('btn-invite-member')?.addEventListener('click', async () => {
+      const identity_ref = document.getElementById('invite-member-did')?.value?.trim();
+      const role = document.getElementById('invite-member-role')?.value;
+      if (!identity_ref) return;
+      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+      const res = await fetchJson('/api/lobby/remote/members', {
+        method: 'POST',
+        body: JSON.stringify({ identity_ref, role, invited_by_identity_ref: s?.identityRef })
+      });
+      if (res && !res.error) {
+        showAlert('Member Invited', 'Successfully invited member DID to join this remote swarm.');
+        refresh();
+      } else {
+        showAlert('Failed to Invite Member', res?.error || 'Unknown error');
+      }
+    });
+
+    el.querySelectorAll('[data-revoke-member]').forEach(b => {
+      b.addEventListener('click', async () => {
+        const memberId = b.getAttribute('data-revoke-member');
+        const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+        const res = await fetchJson(`/api/lobby/remote/members/${memberId}/status`, {
+          method: 'POST',
+          body: JSON.stringify({ status: 'revoked', actor: s?.identityRef })
+        });
+        if (res && !res.error) {
+          showAlert('Member Revoked', 'Member access revoked successfully.');
+          refresh();
+        } else {
+          showAlert('Failed to Revoke Member', res?.error || 'Unknown error');
+        }
+      });
+    });
+  }
 }
 
 async function refresh() {
@@ -316,12 +440,25 @@ async function refresh() {
   if (agentData && !agentData.error) {
     remoteAgents = agentData.agents || [];
     lobbyConnected = true;
+
+    if (lobbyMode === 'swarm') {
+      const settingsRes = await fetchJson('/api/lobby/remote/settings');
+      if (settingsRes && !settingsRes.error) {
+        lobbySettings = settingsRes.lobby;
+      }
+      const membersRes = await fetchJson('/api/lobby/remote/members');
+      if (membersRes && !membersRes.error) {
+        lobbyMembers = membersRes.members || [];
+      }
+    }
   } else {
     remoteAgents = localAgents.map(a => ({
       agent_id: a.slug, display_name: a.name, agent_role: a.slug,
       status: 'idle', current_work: '', pid: a.pid, source: 'local',
     }));
     lobbyConnected = localAgents.length > 0;
+    lobbySettings = null;
+    lobbyMembers = [];
   }
   renderLobby();
 }
