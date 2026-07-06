@@ -158,8 +158,14 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled${query}`;
         } else if (cleanPath === 'scheduled/setup') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled/setup${query}`;
-        } else if (cleanPath === 'agent-definitions') {
-          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions${query}`;
+        } else if (cleanPath === 'settings') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}`;
+        } else if (cleanPath === 'members') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/members${query}`;
+        } else if (cleanPath.startsWith('members/') && cleanPath.endsWith('/status')) {
+          const parts = cleanPath.split('/');
+          const memberId = parts[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/members/${memberId}/status`;
         } else {
           lobbyPath = `/api/v1/agent-lobby/${path}`;
         }
@@ -365,6 +371,31 @@ export function showModal(html, { wide = false } = {}) {
 export function closeModal() {
   const overlay = document.getElementById('modal-overlay');
   if (overlay) overlay.style.display = 'none';
+}
+
+export function showAlert(title, message) {
+  showModal(`
+    <h2>${escapeHtml(title)}</h2>
+    <p style="font-size:13px; color:var(--color-text-soft); line-height:1.5; margin:12px 0 20px;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+    <div class="form-actions" style="margin:0;">
+      <button class="btn btn-primary" onclick="closeModal()">OK</button>
+    </div>
+  `);
+}
+
+export function showConfirm(title, message, onConfirm) {
+  showModal(`
+    <h2>${escapeHtml(title)}</h2>
+    <p style="font-size:13px; color:var(--color-text-soft); line-height:1.5; margin:12px 0 20px;">${escapeHtml(message).replace(/\n/g, '<br>')}</p>
+    <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="modal-confirm-btn">Confirm</button>
+    </div>
+  `);
+  document.getElementById('modal-confirm-btn')?.addEventListener('click', () => {
+    closeModal();
+    onConfirm();
+  });
 }
 
 // ── Init ──

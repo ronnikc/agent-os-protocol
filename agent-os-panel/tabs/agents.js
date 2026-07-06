@@ -2,7 +2,7 @@
  * Agents Tab — Agent management (start/stop, presets, bulk operations)
  * Refactored from original index.html inline JS.
  */
-import { state, fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby } from '../app.js';
 
 let selected = new Set();
 let lobbyMode = 'local';
@@ -103,13 +103,64 @@ function renderPresets() {
   ).join('');
 }
 
+function handleLaunchError(error, slug) {
+  const errMsg = String(error);
+  if (errMsg.includes('not authorized') || errMsg.includes('authentication required')) {
+    showConfirm(
+      'Lobby Sign-In Required',
+      'You are not signed in or authorized to manage this remote swarm lobby.\n\nWould you like to sign in to the lobby now using your connected Concordium wallet?',
+      async () => {
+        try {
+          await signInToLobby();
+          showAlert('Signed In', 'Successfully signed in. Retrying agent launch...');
+          await startOne(slug);
+        } catch (err) {
+          showAlert('Sign-In Failed', err.message || String(err));
+        }
+      }
+    );
+  } else if (errMsg.includes('no provider key configured')) {
+    showModal(`
+      <h2>Anthropic API Key Required</h2>
+      <p style="font-size:13px; color:var(--color-text-soft); line-height:1.5; margin:12px 0 16px;">
+        To start hosted agents in this remote swarm, you need to configure an Anthropic API Key for this lobby.
+      </p>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Anthropic API Key (sk-ant-...)</label>
+        <input type="password" id="modal-provider-api-key" placeholder="sk-ant-..." style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
+      </div>
+      <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-modal-key">Save & Launch</button>
+      </div>
+    `);
+    document.getElementById('btn-save-modal-key')?.addEventListener('click', async () => {
+      const apiKey = document.getElementById('modal-provider-api-key')?.value?.trim();
+      if (!apiKey) {
+        showAlert('Error', 'Please enter your Anthropic API Key.');
+        return;
+      }
+      const res = await fetchJson('/api/lobby/remote/provider-keys', {
+        method: 'POST',
+        body: JSON.stringify({ provider: 'anthropic', api_key: apiKey })
+      });
+      if (res && !res.error) {
+        closeModal();
+        showAlert('API Key Saved', 'Key saved successfully. Launching agent...');
+        await startOne(slug);
+      } else {
+        showAlert('Failed to Save Key', res?.error || 'Unknown error');
+      }
+    });
+  } else {
+    showAlert('Failed to Launch Agent', errMsg);
+  }
+}
+
 async function startOne(slug) {
   if (lobbyMode === 'swarm') {
-    const token = localStorage.getItem('agent-os-lobby-token');
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
     const res = await fetchJson('/api/lobby/remote/agents/start', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({
         name: slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent',
         agent_role: slug,
@@ -118,7 +169,7 @@ async function startOne(slug) {
       })
     });
     if (res && res.error) {
-      alert('Failed to launch hosted agent: ' + res.error);
+      handleLaunchError(res.error, slug);
     }
   } else {
     const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
@@ -129,19 +180,16 @@ async function startOne(slug) {
 
 async function stopOne(slug) {
   if (lobbyMode === 'swarm') {
-    const token = localStorage.getItem('agent-os-lobby-token');
-    const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-    const roster = await fetchJson('/api/lobby/remote/agents', { headers });
+    const roster = await fetchJson('/api/lobby/remote/agents');
     const remoteAgent = (roster?.agents || []).find(a => a.agent_role === slug && a.status !== 'disconnected');
     const agentId = remoteAgent?.agent_id || slug;
 
     const res = await fetchJson('/api/lobby/remote/agents/stop', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...headers },
       body: JSON.stringify({ agent_id: agentId })
     });
     if (res && res.error) {
-      alert('Failed to stop hosted agent: ' + res.error);
+      showAlert('Failed to Stop Agent', res.error);
     }
   } else {
     await postJson('/api/agents/stop', { slug });
@@ -151,20 +199,35 @@ async function stopOne(slug) {
 
 async function setId(slug) {
   const current = state.agents.find(a => a.slug === slug)?.identity || '';
-  const did = window.prompt(
-    `Agent ID (DID) for "${slug}".\n\nThis is persisted to the agent definition and passed as the lobby join token on every boot, so the agent always connects with this identity.\n\nFormat: did:ccd:<network>:<id>`,
-    current,
-  );
-  if (did === null) return; // cancelled
-  const trimmed = did.trim();
-  if (!trimmed) return;
-  const result = await postJson('/api/agents/identity', { slug, identity: trimmed });
-  if (result && result.ok === false) {
-    window.alert(`Could not set Agent ID: ${result.error || 'unknown error'}`);
-  } else if (result && result.restartRequired) {
-    window.alert('Agent ID saved. Restart the agent (Stop then Start) for it to reconnect with the new identity.');
-  }
-  setTimeout(refresh, 300);
+  showModal(`
+    <h2>Set Agent ID (DID)</h2>
+    <p style="font-size:13px; color:var(--color-text-soft); line-height:1.5; margin:12px 0 16px;">
+      Persist an Agent ID (DID) for <strong>${escapeHtml(slug)}</strong>. This is passed as the lobby join token on boot so the agent always connects with this identity.
+    </p>
+    <div class="form-group" style="margin-bottom:16px;">
+      <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">DID (did:ccd:&lt;network&gt;:&lt;id&gt;)</label>
+      <input type="text" id="modal-set-agent-did" value="${escapeHtml(current)}" placeholder="did:ccd:testnet:..." style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
+    </div>
+    <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-agent-did">Save DID</button>
+    </div>
+  `);
+  document.getElementById('btn-save-agent-did')?.addEventListener('click', async () => {
+    const did = document.getElementById('modal-set-agent-did')?.value?.trim();
+    if (!did) {
+      showAlert('Error', 'Please enter a valid DID.');
+      return;
+    }
+    closeModal();
+    const result = await postJson('/api/agents/identity', { slug, identity: did });
+    if (result && result.ok === false) {
+      showAlert('Error', `Could not set Agent ID: ${result.error || 'unknown error'}`);
+    } else if (result && result.restartRequired) {
+      showAlert('ID Saved', 'Agent ID saved. Restart the agent (Stop then Start) for it to reconnect with the new identity.');
+    }
+    setTimeout(refresh, 300);
+  });
 }
 
 /**
@@ -177,48 +240,77 @@ async function createId(slug) {
   const agent = state.agents.find(a => a.slug === slug);
   if (!agent) return;
   const provider = window.concordium;
-  if (!provider) { window.alert('Concordium Browser Wallet not found. Install the extension and reload to mint an Agent ID.'); return; }
-  const lobbyUrl = document.getElementById('lobbyUrl')?.value?.trim();
-  if (!lobbyUrl) { window.alert('Set the Lobby URL first — the Agent ID is minted via the connected lobby.'); return; }
-  if (agent.identity && !window.confirm(`"${slug}" already has an Agent ID.\n\nMint a NEW one and replace it? The old DID will no longer be used.`)) return;
+  if (!provider) {
+    showAlert('Wallet Not Found', 'Concordium Browser Wallet not found. Install the extension and reload to mint an Agent ID.');
+    return;
+  }
+  
+  let lobbyUrl = document.getElementById('lobbyUrl')?.value?.trim();
+  if (lobbyMode === 'swarm') {
+    lobbyUrl = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+  }
+  if (!lobbyUrl) {
+    showAlert('Error', 'Lobby URL is not configured.');
+    return;
+  }
 
-  const btn = document.querySelector(`[data-action="create-id"][data-slug="${slug}"]`);
-  const setBtnText = (t) => { if (btn) btn.textContent = t; };
-  const orig = btn?.textContent;
-  if (btn) btn.disabled = true;
-  try {
-    const owner = await provider.connect();
-    if (!owner) throw new Error('wallet connection was rejected');
-    const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
-    const { mintAgentId } = await import('../mint-agent-id.js'); // relative → works at root and under /panel/
-    const { did, txHash, outcome } = await mintAgentId({
-      base: '', lobbyUrl, network, provider, owner,
-      agentName: agent.name, agentRole: slug,
-      onStatus: (s) => setBtnText(s.length > 22 ? s.slice(0, 20) + '…' : s),
-    });
-    setBtnText('Saving…');
-    const saved = await postJson('/api/agents/identity', { slug, identity: did });
-    if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
-    const confirmedMsg = outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).';
-    window.alert(`Agent ID minted and bound to "${slug}".\n\nDID: ${did}\nTransaction: ${txHash}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`);
-  } catch (err) {
-    console.error('[Agents] Create ID failed:', err);
-    window.alert(`Could not mint the Agent ID: ${err.message || err}`);
-  } finally {
-    if (btn) { btn.disabled = false; setBtnText(orig || 'Create ID'); }
-    setTimeout(refresh, 300);
+  const proceed = async () => {
+    const btn = document.querySelector(`[data-action="create-id"][data-slug="${slug}"]`);
+    const setBtnText = (t) => { if (btn) btn.textContent = t; };
+    const orig = btn?.textContent;
+    if (btn) btn.disabled = true;
+    try {
+      const owner = await provider.connect();
+      if (!owner) throw new Error('wallet connection was rejected');
+      const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
+      const { mintAgentId } = await import('../mint-agent-id.js');
+      const { did, txHash, outcome } = await mintAgentId({
+        base: '', lobbyUrl, network, provider, owner,
+        agentName: agent.name, agentRole: slug,
+        onStatus: (s) => setBtnText(s.length > 22 ? s.slice(0, 20) + '…' : s),
+      });
+      setBtnText('Saving…');
+      const saved = await postJson('/api/agents/identity', { slug, identity: did });
+      if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
+      const confirmedMsg = outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).';
+      showAlert(
+        'Identity Minted',
+        `Agent ID minted and bound to "${slug}".\n\nDID: ${did}\nTransaction: ${txHash}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`
+      );
+    } catch (err) {
+      console.error('[Agents] Create ID failed:', err);
+      showAlert('Minting Failed', `Could not mint the Agent ID: ${err.message || err}`);
+    } finally {
+      if (btn) { btn.disabled = false; setBtnText(orig || 'Create ID'); }
+      setTimeout(refresh, 300);
+    }
+  };
+
+  if (agent.identity) {
+    showConfirm(
+      'Mint New Agent ID',
+      `"${slug}" already has an Agent ID.\n\nMint a NEW one and replace it? The old DID will no longer be used.`,
+      proceed
+    );
+  } else {
+    proceed();
   }
 }
 
 async function revokeId(slug) {
-  if (!window.confirm(`Remove the persisted Agent ID from "${slug}"? It will connect unverified on the next boot.`)) return;
-  const result = await postJson('/api/agents/identity/revoke', { slug });
-  if (result && result.ok === false) {
-    window.alert(`Could not revoke Agent ID: ${result.error || 'unknown error'}`);
-  } else if (result && result.restartRequired) {
-    window.alert('Agent ID revoked. Restart the agent (Stop then Start) to drop the identity.');
-  }
-  setTimeout(refresh, 300);
+  showConfirm(
+    'Revoke Agent ID',
+    `Remove the persisted Agent ID from "${slug}"? It will connect unverified on the next boot.`,
+    async () => {
+      const result = await postJson('/api/agents/identity/revoke', { slug });
+      if (result && result.ok === false) {
+        showAlert('Error', `Could not revoke Agent ID: ${result.error || 'unknown error'}`);
+      } else if (result && result.restartRequired) {
+        showAlert('ID Revoked', 'Agent ID revoked. Restart the agent (Stop then Start) to drop the identity.');
+      }
+      setTimeout(refresh, 300);
+    }
+  );
 }
 
 async function updateOverviewStats() {
