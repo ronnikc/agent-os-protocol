@@ -28,9 +28,18 @@ export interface ModelCapabilities {
   codeExecution?: boolean;
 }
 
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: any;
+}
+
 export interface CompletionMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  name?: string;
+  tool_call_id?: string;
+  tool_calls?: ToolCall[];
 }
 
 export interface AgentCompletionRequest {
@@ -43,11 +52,13 @@ export interface AgentCompletionRequest {
 export interface AgentCompletionResult {
   content: string;
   usage?: { inputTokens?: number; outputTokens?: number };
+  toolCalls?: ToolCall[];
 }
 
 export interface AgentCompletionEvent {
   type: 'text' | 'tool_call' | 'done' | 'error';
   content?: string;
+  toolCall?: ToolCall;
 }
 
 export interface ProviderValidationResult {

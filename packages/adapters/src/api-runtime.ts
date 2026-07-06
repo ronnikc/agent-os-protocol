@@ -32,6 +32,8 @@ export interface ApiRuntimeConfig {
   fetchFn?: typeof fetch;
   /** Max output tokens (Anthropic requires it; forwarded to the provider). */
   maxTokens?: number;
+  /** Injected repo client for hosted repository tool-use. */
+  repoClient?: any;
 }
 
 interface Session {
@@ -49,6 +51,74 @@ function providerFor(cfg: ApiRuntimeConfig): ModelProviderAdapter {
   return new AnthropicCompatibleProvider({ ...opts, maxTokens: cfg.maxTokens });
 }
 
+function buildToolsForProvider(providerId: string): any[] {
+  const definitions = [
+    {
+      name: 'read_file',
+      description: 'Read the text content of a file from the repository.',
+      properties: {
+        path: { type: 'string', description: 'Relative path of the file to read' }
+      },
+      required: ['path']
+    },
+    {
+      name: 'write_file',
+      description: 'Create or update a file in the repository and commit it.',
+      properties: {
+        path: { type: 'string', description: 'Relative path of the file to write' },
+        content: { type: 'string', description: 'File content to write' },
+        commit_message: { type: 'string', description: 'Commit message for the change' }
+      },
+      required: ['path', 'content', 'commit_message']
+    },
+    {
+      name: 'create_pr',
+      description: 'Create a new pull request on GitHub for changes.',
+      properties: {
+        title: { type: 'string', description: 'Title of the pull request' },
+        head: { type: 'string', description: 'The name of the branch with changes' },
+        base: { type: 'string', description: 'The branch to pull into (e.g., main)' },
+        body: { type: 'string', description: 'Optional description of the PR' }
+      },
+      required: ['title', 'head', 'base']
+    },
+    {
+      name: 'list_files',
+      description: 'List files and directories at a given path in the repository.',
+      properties: {
+        path: { type: 'string', description: 'Optional directory path to list (defaults to root)' }
+      },
+      required: []
+    }
+  ];
+
+  if (providerId === 'openai-compatible') {
+    return definitions.map(d => ({
+      type: 'function',
+      function: {
+        name: d.name,
+        description: d.description,
+        parameters: {
+          type: 'object',
+          properties: d.properties,
+          required: d.required
+        }
+      }
+    }));
+  } else {
+    // Anthropic-compatible
+    return definitions.map(d => ({
+      name: d.name,
+      description: d.description,
+      input_schema: {
+        type: 'object',
+        properties: d.properties,
+        required: d.required
+      }
+    }));
+  }
+}
+
 export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   readonly id = 'api' as const;
   readonly label = 'API runtime (server-side)';
@@ -56,7 +126,9 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   readonly supportsHeadlessMode = true;
   readonly supportsJsonOutput = true;
   readonly supportsSessionResume = true;
-  readonly supportsMcp = false;
+  get supportsMcp(): boolean {
+    return !!this.cfg.repoClient;
+  }
 
   private readonly provider: ModelProviderAdapter;
   private readonly sessions = new Map<string, Session>();
@@ -93,36 +165,135 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
     s.queue.push(message.content);
   }
 
+  private async executeTool(name: string, args: any): Promise<string> {
+    const client = this.cfg.repoClient;
+    if (!client) {
+      throw new Error(`repoClient is not configured for executing tool: ${name}`);
+    }
+    switch (name) {
+      case 'read_file': {
+        const content = await client.readFile(args.path);
+        return content;
+      }
+      case 'write_file': {
+        const commitSha = await client.writeFile(args.path, args.content, args.commit_message);
+        return `Successfully wrote file. Commit SHA: ${commitSha}`;
+      }
+      case 'create_pr': {
+        const prUrl = await client.createPullRequest(args.title, args.head, args.base, args.body);
+        return `Successfully created pull request: ${prUrl}`;
+      }
+      case 'list_files': {
+        const files = await client.listFiles(args.path || '');
+        return files.join('\n');
+      }
+      default:
+        throw new Error(`Unknown tool: ${name}`);
+    }
+  }
+
   async *readOutput(handle: AgentProcessHandle): AsyncIterable<RuntimeEvent> {
     const s = this.sessions.get(handle.id);
     if (!s) { yield { type: 'error', content: `unknown session: ${handle.id}` }; return; }
     const next = s.queue.shift();
     if (next === undefined) { yield { type: 'done' }; return; }
 
-    // Assemble the request: system prompt (once, as a system message) + full prior turn history
-    // + this turn's user input. The provider hoists system messages itself.
     s.messages.push({ role: 'user', content: next });
-    const messages: CompletionMessage[] = [
-      ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
-      ...s.messages,
-    ];
 
-    let assistant = '';
-    try {
-      for await (const ev of this.provider.stream({ messages, stream: true })) {
-        if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
-        if (ev.type === 'text' && ev.content) { assistant += ev.content; yield { type: 'output', content: ev.content }; }
-        else if (ev.type === 'error') { yield { type: 'error', content: ev.content ?? 'provider error' }; }
+    if (!this.cfg.repoClient) {
+      // Normal streaming path when no repoClient is injected
+      const messages: CompletionMessage[] = [
+        ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
+        ...s.messages,
+      ];
+      let assistant = '';
+      try {
+        for await (const ev of this.provider.stream({ messages, stream: true })) {
+          if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
+          if (ev.type === 'text' && ev.content) { assistant += ev.content; yield { type: 'output', content: ev.content }; }
+          else if (ev.type === 'error') { yield { type: 'error', content: ev.content ?? 'provider error' }; }
+        }
+      } catch (err) {
+        yield { type: 'error', content: err instanceof Error ? err.message : 'API runtime error' };
+        yield { type: 'done' };
+        return;
       }
-    } catch (err) {
-      yield { type: 'error', content: err instanceof Error ? err.message : 'API runtime error' };
-      yield { type: 'done' };
+      if (assistant) s.messages.push({ role: 'assistant', content: assistant });
+      yield { type: 'done', content: assistant };
       return;
     }
 
-    // Keep conversation continuity for the next turn.
-    if (assistant) s.messages.push({ role: 'assistant', content: assistant });
-    yield { type: 'done', content: assistant };
+    // Repo client tool loop (non-streaming intermediate turns, final turn yields output)
+    const tools = buildToolsForProvider(this.cfg.provider.id);
+    let assistantText = '';
+    let loopCount = 0;
+    const maxLoops = 10;
+
+    while (loopCount < maxLoops) {
+      if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
+
+      const messages: CompletionMessage[] = [
+        ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
+        ...s.messages,
+      ];
+
+      yield { type: 'status', content: 'Thinking...' };
+
+      let result: any;
+      try {
+        result = await this.provider.complete({ messages, tools });
+      } catch (err) {
+        yield { type: 'error', content: err instanceof Error ? err.message : 'Provider execution error' };
+        yield { type: 'done' };
+        return;
+      }
+
+      if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
+
+      if (result.content) {
+        assistantText += result.content;
+        yield { type: 'output', content: result.content };
+      }
+
+      if (result.toolCalls && result.toolCalls.length > 0) {
+        s.messages.push({
+          role: 'assistant',
+          content: result.content || '',
+          tool_calls: result.toolCalls,
+        });
+
+        for (const tc of result.toolCalls) {
+          yield { type: 'tool_call', content: `Calling tool ${tc.name}`, data: tc };
+          try {
+            const output = await this.executeTool(tc.name, tc.arguments);
+            s.messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              name: tc.name,
+              content: output,
+            });
+            yield { type: 'status', content: `Tool ${tc.name} returned output` };
+          } catch (err: any) {
+            s.messages.push({
+              role: 'tool',
+              tool_call_id: tc.id,
+              name: tc.name,
+              content: `Error: ${err.message}`,
+            });
+            yield { type: 'status', content: `Tool ${tc.name} failed: ${err.message}` };
+          }
+        }
+        loopCount++;
+      } else {
+        s.messages.push({
+          role: 'assistant',
+          content: result.content || '',
+        });
+        break;
+      }
+    }
+
+    yield { type: 'done', content: assistantText.trim() };
   }
 }
 

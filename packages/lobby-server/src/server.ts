@@ -202,10 +202,27 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     lobbyId: string; name: string; role?: string; apiKey: string; providerId: ProviderId;
     model: string; baseUrl?: string; systemPrompt?: string; joinToken?: string;
   }): Promise<string> {
+    const kb = await store.getKnowledgeBase(params.lobbyId);
+    let repoClient: any = undefined;
+    if (kb && kb.repository_url) {
+      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
+      const githubToken = await getDecryptedSecret(params.lobbyId, 'github', 'installation_token', store).catch(() => null);
+      if (githubToken) {
+        const match = kb.repository_url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
+        if (match) {
+          const owner = match[1];
+          const repo = match[2];
+          const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+          repoClient = new GitHubRepoClient(owner, repo, githubToken);
+        }
+      }
+    }
+
     const adapter = createApiRuntimeAdapter({
       provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
       apiKey: params.apiKey,
       fetchFn: options.apiRuntimeFetch,
+      repoClient,
     });
     const runner = new HostedAgentRunner(adapter, { systemPrompt: params.systemPrompt });
     await runner.start();
@@ -468,7 +485,6 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ stopped: agentId });
       }
     }
-
     // ── GitHub App integration (wallet-gated) — connect the user's OWN repo so hosted agents can
     // read it and land changes as commits/PRs. We host no repo; the lobby holds only a revocable,
     // short-lived installation token. Flow: connect → install URL → GitHub redirects to the callback
@@ -593,7 +609,82 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
-    // ── Concordium Agent Registry proxy (on-chain anchoring via the official MCP service) ──
+    // ── KB (Knowledge Base) endpoints (wallet-gated) ──
+    const kbMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/kb(?:\/(upload|jobs))?$/);
+    if (kbMatch) {
+      const lobbyId = kbMatch[1];
+      const action = kbMatch[2]; // undefined, 'upload', or 'jobs'
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      // GET .../kb — get KB settings
+      if (req.method === 'GET' && !action) {
+        const kb = await store.getKnowledgeBase(lobbyId);
+        return json({ kb: kb || null });
+      }
+
+      // POST .../kb — update/create KB settings
+      if (req.method === 'POST' && !action) {
+        const body = await readBody(req);
+        const repositoryUrl = typeof body.repository_url === 'string' ? body.repository_url.trim() : '';
+        const branch = typeof body.branch === 'string' ? body.branch.trim() : 'main';
+        const kbRootPath = typeof body.kb_root_path === 'string' ? body.kb_root_path.trim() : 'kb';
+        if (!repositoryUrl) return json({ error: 'repository_url is required' }, 400);
+
+        const existing = await store.getKnowledgeBase(lobbyId);
+        const kb = await store.upsertKnowledgeBase({
+          id: existing?.id || randomUUID(),
+          lobby_id: lobbyId,
+          repository_url: repositoryUrl,
+          branch,
+          kb_root_path: kbRootPath,
+          latest_commit_sha: existing?.latest_commit_sha,
+          last_synced_at: existing?.last_synced_at,
+          last_indexed_at: existing?.last_indexed_at,
+        });
+
+        await recordEvent(lobbyId, 'kb_configured', identityRef, { repository_url: repositoryUrl, branch, kb_root_path: kbRootPath });
+        return json({ kb });
+      }
+
+      // GET .../kb/jobs — list sync jobs
+      if (req.method === 'GET' && action === 'jobs') {
+        const jobs = await store.listKnowledgeSyncJobs(lobbyId);
+        return json({ jobs });
+      }
+
+      // POST .../kb/upload — upload file for KB conversion
+      if (req.method === 'POST' && action === 'upload') {
+        const body = await readBody(req);
+        const fileName = typeof body.file_name === 'string' ? body.file_name.trim() : '';
+        const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : '';
+        const fileContentBase64 = typeof body.file_content === 'string' ? body.file_content : '';
+
+        if (!fileName || !mimeType || !fileContentBase64) {
+          return json({ error: 'file_name, mime_type, and file_content (base64) are required' }, 400);
+        }
+
+        const buffer = Buffer.from(fileContentBase64, 'base64');
+        const jobId = `job_${randomUUID()}`;
+        const job = await store.upsertKnowledgeSyncJob({
+          id: jobId,
+          lobby_id: lobbyId,
+          kb_id: (await store.getKnowledgeBase(lobbyId))?.id || 'none',
+          source_provider: 'upload',
+          status: 'queued',
+          created_by_identity_ref: identityRef,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        // Trigger processing in the background asynchronously
+        const { processKnowledgeSyncJob } = await import('./kb/jobs.js');
+        processKnowledgeSyncJob(jobId, buffer, fileName, mimeType, store).catch((err) => {
+          console.error(`[KB Upload] Async processing failed for job ${jobId}:`, err);
+        });
+
+        return json({ job }, 202);
     // The lobby only relays reads and sign-ready payload builders; signing and submission
     // happen in the owner's wallet, client-side. No keys pass through here.
 

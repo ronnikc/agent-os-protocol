@@ -91,6 +91,9 @@ export async function processKnowledgeSyncJob(
       throw new Error('Knowledge Base configuration not found for lobby');
     }
 
+    const { getDecryptedSecret } = await import('../integrations/githubApp.js');
+    const githubToken = await getDecryptedSecret(job.lobby_id, 'github', 'installation_token', store).catch(() => null);
+
     const commitSha = await commitAndPushRepo(
       kb.kb_root_path,
       kb.repository_url,
@@ -99,7 +102,8 @@ export async function processKnowledgeSyncJob(
       markdownContent,
       graphData,
       chunksData,
-      provenanceData
+      provenanceData,
+      githubToken || undefined
     );
 
     // 6. Update cache properties

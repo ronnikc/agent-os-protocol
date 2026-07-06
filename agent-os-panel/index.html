@@ -60,7 +60,7 @@
   <button data-tab="scheduled">Scheduled</button>
   <button data-tab="files">Files</button>
   <button data-tab="gantt">Gantt</button>
-  <button data-tab="memory">Memory</button>
+  <button data-tab="kb">KB</button>
   <button data-tab="loop">Loop</button>
   <button data-tab="identity">Identity</button>
 </div>
@@ -189,14 +189,14 @@
     <div class="scroll-panel" id="gantt-content"></div>
   </div>
 
-  <!-- Memory Tab (Sprint 46.6.5) -->
-  <div id="tab-memory" class="tab-pane" style="flex-direction:column;">
+  <!-- KB Tab -->
+  <div id="tab-kb" class="tab-pane" style="flex-direction:column;">
     <div class="toolbar">
-      <span style="font-size:13px;font-weight:600;">Memory</span>
+      <span style="font-size:13px;font-weight:600;">Knowledge Base (KB)</span>
       <span style="flex:1"></span>
-      <span style="font-size:11px;color:var(--text-muted)">Index · Facts · Diaries · Lessons (read-only)</span>
+      <span style="font-size:11px;color:var(--text-muted)">Index · Facts · Diaries · Lessons</span>
     </div>
-    <div id="memory-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
+    <div id="kb-content" style="flex:1;overflow:hidden;display:flex;flex-direction:column;"></div>
   </div>
 
   <div id="tab-loop" class="tab-pane" style="flex-direction:column;">
@@ -231,7 +231,7 @@ import './tabs/requests.js';
 import './tabs/sprint.js';
 import './tabs/files.js';
 import './tabs/gantt.js';
-import './tabs/memory.js';
+import './tabs/kb.js';
 import './tabs/loop.js';
 import './tabs/identity.js';
 

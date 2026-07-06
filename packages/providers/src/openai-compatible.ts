@@ -83,9 +83,28 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
 
   private body(request: AgentCompletionRequest, stream: boolean): string {
     const config = this.requireConfig();
+    const messages = request.messages.map((m) => {
+      const msg: any = { role: m.role, content: m.content };
+      if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+        msg.tool_calls = m.tool_calls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: typeof tc.arguments === 'string' ? tc.arguments : JSON.stringify(tc.arguments),
+          },
+        }));
+      }
+      if (m.role === 'tool') {
+        msg.tool_call_id = m.tool_call_id;
+        msg.name = m.name;
+      }
+      return msg;
+    });
+
     return JSON.stringify({
       model: config.model,
-      messages: request.messages.map((m) => ({ role: m.role, content: m.content })),
+      messages,
       ...(request.tools ? { tools: request.tools } : {}),
       ...(request.jsonMode ? { response_format: { type: 'json_object' } } : {}),
       stream,
@@ -97,12 +116,26 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
     const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false) });
     if (!res.ok) throw new Error(`openai-compatible: ${res.status} ${await safeText(res)}`);
     const data = (await res.json()) as {
-      choices?: Array<{ message?: { content?: string } }>;
+      choices?: Array<{ message?: { content?: string; tool_calls?: any[] } }>;
       usage?: { prompt_tokens?: number; completion_tokens?: number };
     };
+    const choice = data.choices?.[0]?.message;
+    const content = choice?.content ?? '';
+    const toolCalls = choice?.tool_calls?.map((tc) => {
+      let args = {};
+      try {
+        args = typeof tc.function.arguments === 'string' ? JSON.parse(tc.function.arguments) : tc.function.arguments;
+      } catch {}
+      return {
+        id: tc.id,
+        name: tc.function.name,
+        arguments: args,
+      };
+    });
     return {
-      content: data.choices?.[0]?.message?.content ?? '',
+      content,
       usage: { inputTokens: data.usage?.prompt_tokens, outputTokens: data.usage?.completion_tokens },
+      ...(toolCalls && toolCalls.length > 0 ? { toolCalls } : {}),
     };
   }
 
