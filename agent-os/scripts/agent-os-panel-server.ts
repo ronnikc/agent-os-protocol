@@ -2207,6 +2207,22 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/api/lobby/remote/scheduled' && method === 'GET') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { tasks: [], repoConfigured: false, error: 'No active lobby' }); return; }
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/scheduled`, 'GET', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
+  if (path === '/api/lobby/remote/scheduled/setup' && method === 'POST') {
+    const lobbyId = await resolveLobbyId();
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/scheduled/setup`, 'POST', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
   {
     const params = matchRoute('/api/lobby/remote/requests/:id/decide', path);
     if (params && method === 'POST') {

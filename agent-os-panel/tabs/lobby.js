@@ -167,8 +167,10 @@ function renderLobby() {
         </span>` : ''}
       </div>
       <div style="display:flex;gap:6px;">
-        <button class="btn btn-primary btn-sm" data-action="toggle-create-lobby" style="padding:4px 10px;">Create Lobby</button>
-        <button class="btn btn-secondary btn-sm" data-action="leave-lobby">Leave Lobby</button>
+        ${lobbyMode !== 'swarm' ? `
+          <button class="btn btn-primary btn-sm" data-action="toggle-create-lobby" style="padding:4px 10px;">Create Lobby</button>
+          <button class="btn btn-secondary btn-sm" data-action="leave-lobby">Leave Lobby</button>
+        ` : ''}
         <button class="btn btn-warning btn-sm" data-action="pause-lobby">Pause</button>
         <button class="btn btn-danger btn-sm" data-action="close-lobby">Close Lobby</button>
       </div>
@@ -280,12 +282,22 @@ async function refresh() {
   const modeData = await fetchJson('/api/mode');
   if (modeData) {
     lobbyMode = modeData.mode || 'local';
-    lobbyInfo = {
-      id: modeData.lobby_id || null,
-      name: modeData.lobby_name || null,
-      url: modeData.lobbyUrl || null,
-      connected: modeData.lobby_connected !== false,
-    };
+    if (lobbyMode === 'swarm') {
+      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+      lobbyInfo = {
+        id: s?.lobbyId || modeData.lobby_id || null,
+        name: 'Remote Swarm',
+        url: modeData.lobbyUrl || null,
+        connected: lobbyConnected,
+      };
+    } else {
+      lobbyInfo = {
+        id: modeData.lobby_id || null,
+        name: modeData.lobby_name || null,
+        url: modeData.lobbyUrl || null,
+        connected: modeData.lobby_connected !== false,
+      };
+    }
   }
 
   const stateData = await fetchJson('/api/lobby/state');
@@ -317,7 +329,23 @@ async function refresh() {
 function init() {
   try {
     const saved = localStorage.getItem('agent-os-lobby-user');
-    if (saved) currentUser = JSON.parse(saved);
+    if (saved) {
+      currentUser = JSON.parse(saved);
+    } else if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+      if (s && s.identityRef) {
+        currentUser = {
+          name: s.identityRef.split(':').pop() || 'Wallet Owner',
+          role: 'product-owner',
+          type: 'human',
+          joinedAt: new Date().toISOString(),
+          identity_status: 'registry_verified',
+          agent_id: s.identityRef,
+          join_token: s.identityRef
+        };
+        localStorage.setItem('agent-os-lobby-user', JSON.stringify(currentUser));
+      }
+    }
   } catch {}
 
   refresh();

@@ -5,6 +5,8 @@
 import { fetchJson, postJson, putJson, registerTab, formatDate, escapeHtml, showModal, closeModal, onWsMessage } from '../app.js';
 
 let tasks = [];
+let lobbyMode = 'local';
+let repoConfigured = true;
 
 function utcToLocal(timeUtc) {
   if (!timeUtc) return '';
@@ -41,12 +43,25 @@ function renderTasks() {
   const el = document.getElementById('scheduled-content');
   if (!el) return;
 
+  let bannerHtml = '';
+  if (lobbyMode === 'swarm' && !repoConfigured) {
+    bannerHtml = `
+      <div style="background:rgba(255,165,0,0.1); border:1px solid var(--color-yellow); border-radius:8px; padding:16px; margin:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <strong style="color:var(--color-yellow); font-size:14px; display:block; margin-bottom:4px;">Daily Scheduled Tasks Not Set Up</strong>
+          <span style="font-size:12px; color:var(--color-text-soft);">Initialize config.json and specialist prompts in your connected GitHub repository so the swarm can run them daily.</span>
+        </div>
+        <button class="btn btn-primary btn-sm" id="btn-setup-scheduled" style="white-space:nowrap;">Add to Repository (Sponsored)</button>
+      </div>
+    `;
+  }
+
   if (!tasks.length) {
-    el.innerHTML = '<div class="empty-state">No scheduled tasks configured</div>';
+    el.innerHTML = bannerHtml + '<div class="empty-state">No scheduled tasks configured</div>';
     return;
   }
 
-  el.innerHTML = `<div style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">
+  el.innerHTML = bannerHtml + `<div style="padding:12px;display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;">
     ${tasks.map(t => {
       const cfg = t.config || {};
       const st = t.state || {};
@@ -168,11 +183,39 @@ async function openPromptEditor(name) {
 }
 
 async function refresh() {
-  const data = await fetchJson('/api/scheduled');
-  if (data) {
-    tasks = data.tasks || [];
-    renderTasks();
+  const modeData = await fetchJson('/api/mode');
+  lobbyMode = modeData?.mode || 'local';
+
+  if (lobbyMode === 'swarm') {
+    const data = await fetchJson('/api/lobby/remote/scheduled');
+    if (data) {
+      repoConfigured = data.repoConfigured !== false;
+      tasks = data.tasks || [];
+      if (!repoConfigured && tasks.length === 0) {
+        tasks = [
+          {
+            name: "graph-update",
+            config: { enabled: false, description: "Update dependency graph via graph-update.sh to keep codebase intelligence current", time_utc: "03:00" }
+          },
+          {
+            name: "pr-quality-review",
+            config: { enabled: false, description: "Review merged PRs using Agent OS specialist agents, generate fix-sprint specs for issues found.", time_utc: "04:00" }
+          },
+          {
+            name: "fix-sprint-executor",
+            config: { enabled: false, description: "Execute pending fix-sprints, commit to branch, open PR for human review", time_utc: "05:00" }
+          }
+        ];
+      }
+    }
+  } else {
+    repoConfigured = true;
+    const data = await fetchJson('/api/scheduled');
+    if (data) {
+      tasks = data.tasks || [];
+    }
   }
+  renderTasks();
 }
 
 function init() {
@@ -184,6 +227,20 @@ function init() {
   onWsMessage('scheduled-done', refresh);
 
   document.getElementById('scheduled-content')?.addEventListener('click', async (e) => {
+    if (e.target && e.target.id === 'btn-setup-scheduled') {
+      const btn = e.target;
+      btn.disabled = true;
+      btn.textContent = 'Setting up...';
+      const res = await postJson('/api/lobby/remote/scheduled/setup', {});
+      if (res && res.ok) {
+        alert('Successfully added daily scheduled tasks config and prompts to your repository!');
+      } else {
+        alert('Failed to set up scheduled tasks: ' + (res?.error || 'Unknown error'));
+      }
+      await refresh();
+      return;
+    }
+
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const name = btn.dataset.name;

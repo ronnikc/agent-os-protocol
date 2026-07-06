@@ -687,6 +687,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ job }, 202);
       }
     }
+
     // The lobby only relays reads and sign-ready payload builders; signing and submission
     // happen in the owner's wallet, client-side. No keys pass through here.
 

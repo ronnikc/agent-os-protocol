@@ -15,8 +15,89 @@ export const state = {
 
 // ── Utilities ──
 export async function fetchJson(url, opts) {
+  let finalUrl = url;
+  let finalOpts = opts || {};
+
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    // 1. Intercept /api/mode
+    if (url === '/api/mode') {
+      const s = hostedSession();
+      return { mode: 'swarm', lobbyUrl: window.location.origin, lobbyId: s?.lobbyId || null };
+    }
+
+    // 2. Intercept /api/overview-stats
+    if (url === '/api/overview-stats') {
+      return {
+        agents: { online: 0, total: 0 },
+        tasks: { in_progress: 0 },
+        sprint: { active: false, progress_percent: 0 },
+        throughput: { tasks_per_day: 0 },
+        success_rate: { percent: 100 }
+      };
+    }
+
+    // 3. Map proxy endpoints to direct lobby REST endpoints
+    if (url.startsWith('/api/lobby/remote/')) {
+      const s = hostedSession();
+      if (s && s.lobbyId) {
+        const path = url.slice('/api/lobby/remote/'.length);
+        const cleanPath = path.split('?')[0];
+        const query = path.includes('?') ? '?' + path.split('?')[1] : '';
+
+        let lobbyPath = '';
+        if (cleanPath === 'agents') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/roster${query}`;
+        } else if (cleanPath === 'agents/start') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/hosted-agents${query}`;
+        } else if (cleanPath === 'agents/stop') {
+          try {
+            const body = JSON.parse(finalOpts.body || '{}');
+            const agentId = body.agent_id;
+            if (agentId) {
+              lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/hosted-agents/${agentId}`;
+              finalOpts.method = 'DELETE';
+              delete finalOpts.body;
+            } else {
+              lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/hosted-agents`;
+            }
+          } catch {
+            lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/hosted-agents`;
+          }
+        } else if (cleanPath === 'messages') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages${query}`;
+        } else if (cleanPath === 'tasks') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks${query}`;
+        } else if (cleanPath === 'kb') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb${query}`;
+        } else if (cleanPath === 'kb/upload') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/upload${query}`;
+        } else if (cleanPath === 'kb/jobs') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/jobs${query}`;
+        } else if (cleanPath === 'provider-keys') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/provider-keys${query}`;
+        } else if (cleanPath.startsWith('provider-keys/')) {
+          const keyId = cleanPath.slice('provider-keys/'.length);
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/provider-keys/${keyId}`;
+          finalOpts.method = 'DELETE';
+        } else if (cleanPath === 'scheduled') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled${query}`;
+        } else if (cleanPath === 'scheduled/setup') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/scheduled/setup${query}`;
+        } else {
+          lobbyPath = `/api/v1/agent-lobby/${path}`;
+        }
+
+        finalUrl = lobbyPath;
+        finalOpts.headers = {
+          ...(finalOpts.headers || {}),
+          'Authorization': `Bearer ${s.token}`
+        };
+      }
+    }
+  }
+
   try {
-    const r = await fetch(url, opts);
+    const r = await fetch(finalUrl, finalOpts);
     return await r.json();
   } catch { return null; }
 }
@@ -208,6 +289,14 @@ export function closeModal() {
 
 // ── Init ──
 export async function init() {
+  if (typeof window !== 'undefined') {
+    window.addEventListener('storage', (e) => {
+      if (e.key === 'agentos.hosted.session' || e.key === 'agent-os-lobby-user') {
+        window.location.reload();
+      }
+    });
+  }
+
   connectWs();
 
   // ── Hosted mode ── When the panel is served by the lobby (/panel), it runs against the hosted
@@ -276,7 +365,7 @@ export async function init() {
   }
 
   const presetData = await fetchJson('/api/presets');
-  if (presetData) state.presets = presetData;
+  if (presetData && !presetData.error) state.presets = presetData;
 
   updateStatusBar();
 

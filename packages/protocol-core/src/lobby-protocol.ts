@@ -452,6 +452,7 @@ export type LobbyEventType =
   | 'hosted_agent_launched' // Hosted Mode: a server-side agent was launched into the lobby
   | 'hosted_agent_stopped' // Hosted Mode: a server-side agent was stopped
   | 'github_connected' // Hosted Mode: a GitHub App installation was connected to the lobby
+  | 'kb_configured' // Hosted Mode: Knowledge Base configured
   | 'github_repo_selected' // Hosted Mode: the working repo/branch was chosen
   | 'github_disconnected'; // Hosted Mode: the GitHub integration was revoked
 
