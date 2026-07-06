@@ -2082,17 +2082,29 @@ window.switchOnboardTab = function(tabName) {
   });
 };
 
-// ── Top-nav view switcher (Lobby / Manage / Marketplace) ──
-const VIEWS = ['lobby', 'manage', 'marketplace'];
+// ── Top-nav view switcher (Lobby / Manage / Marketplace / Panel) ──
+const VIEWS = ['lobby', 'manage', 'marketplace', 'panel'];
 window.switchView = function(view) {
   if (!VIEWS.includes(view)) return;
   VIEWS.forEach(v => {
     const el = document.getElementById('view-' + v);
-    if (el) el.style.display = v === view ? '' : 'none';
+    if (el) {
+      if (v === 'panel') {
+        el.style.display = v === view ? 'flex' : 'none'; // flex layout holds iframe perfectly
+      } else {
+        el.style.display = v === view ? '' : 'none';
+      }
+    }
   });
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
+  if (view === 'panel') {
+    const iframe = document.getElementById('panel-iframe');
+    if (iframe && !iframe.src) {
+      iframe.src = '/panel/';
+    }
+  }
   if (view === 'marketplace') pollLobbyDetails();
   if (view === 'manage') renderManageView();
 };
