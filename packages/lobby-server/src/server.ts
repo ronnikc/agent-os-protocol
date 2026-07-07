@@ -763,6 +763,50 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ install_url: installUrl(cfg, state) });
     }
 
+    // GET /api/v1/agent-lobby/integrations/github/setup-callback?code=&state= → convert manifest + redirect to panel
+    if (path === '/api/v1/agent-lobby/integrations/github/setup-callback' && req.method === 'GET') {
+      const code = url.searchParams.get('code') ?? '';
+      const returnUrl = url.searchParams.get('state') ?? '';
+      try {
+        const response = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, {
+          method: 'POST',
+          headers: {
+            'accept': 'application/vnd.github+json',
+            'user-agent': 'agent-os-lobby'
+          }
+        });
+        if (!response.ok) {
+          throw new Error(`Failed to convert app manifest (HTTP ${response.status}): ${await response.text()}`);
+        }
+        const data = await response.json() as {
+          id: number;
+          slug: string;
+          client_id: string;
+          client_secret: string;
+          pem: string;
+        };
+
+        const cfg = {
+          appId: String(data.id),
+          privateKey: data.pem,
+          slug: data.slug
+        };
+
+        const { setDynamicGithubAppConfig } = await import('./integrations/github/appAuth.js');
+        setDynamicGithubAppConfig(cfg);
+
+        // Redirect back to the caller panel URL
+        const redirectBase = returnUrl || '/panel';
+        res.writeHead(302, { location: `${redirectBase}/?github_app=configured` });
+        res.end();
+        return;
+      } catch (e) {
+        res.writeHead(502, { 'content-type': 'text/html; charset=utf-8' });
+        res.end(`<p>Failed to complete GitHub App setup: ${String((e as Error).message ?? e)}</p>`);
+        return;
+      }
+    }
+
     // GET /integrations/github/callback?installation_id=&state= → store + redirect back to /panel
     if (path === '/api/v1/agent-lobby/integrations/github/callback' && req.method === 'GET') {
       const state = url.searchParams.get('state') ?? '';

@@ -145,7 +145,7 @@ async function handlePrepareReg() {
     return;
   }
 
-  const network = document.getElementById('identity-network')?.value || 'testnet';
+  const network = document.getElementById('identity-network')?.value || 'mainnet';
   try {
     const canonical = JSON.stringify(sortKeys(draftCard));
     const cardHash = await sha256(canonical);
@@ -174,7 +174,8 @@ async function handlePrepareReg() {
 
 async function handleMintIdentity() {
   readFormValues();
-  const network = document.getElementById('identity-network')?.value || 'testnet';
+  const network = document.getElementById('identity-network')?.value || 'mainnet';
+  const selectedSlug = document.getElementById('identity-agent-select')?.value || 'boss';
   
   if (!window.concordium) {
     alert('Concordium Browser Wallet not found — install it and connect.');
@@ -208,7 +209,7 @@ async function handleMintIdentity() {
       lobbyUrl,
       base: '',
       agentName: draftCard.name,
-      agentRole: draftCard.role || 'boss-agent',
+      agentRole: selectedSlug,
       onStatus: (status) => {
         if (statusEl) statusEl.textContent = status;
       }
@@ -217,6 +218,18 @@ async function handleMintIdentity() {
     if (res && res.did) {
       linkedDid = res.did;
       localStorage.setItem('agent-os-linked-did', res.did);
+
+      // Auto-save the DID to the agent identity mapping on the server
+      const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: res.did });
+      if (saved && saved.ok === false) {
+        console.warn('Failed to auto-bind DID to agent on server:', saved.error);
+      } else {
+        const localAgent = (state.agents || []).find(a => a.slug === selectedSlug);
+        if (localAgent) {
+          localAgent.identity = res.did;
+        }
+      }
+
       if (statusEl) {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `Identity successfully minted! DID: ${res.did}`;
@@ -383,8 +396,8 @@ function render() {
             <div style="display:flex;align-items:center;gap:6px;">
               <span style="font-size:11px;color:var(--text-muted);">Target Registry:</span>
               <select id="identity-network" style="padding:4px 8px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:11px;appearance:auto;">
-                <option value="testnet">Concordium Testnet</option>
                 <option value="mainnet">Concordium Mainnet</option>
+                <option value="testnet">Concordium Testnet</option>
               </select>
             </div>
             <div style="display:flex;gap:6px;">
@@ -418,7 +431,7 @@ function render() {
           <h3 style="margin:0 0 4px 0;font-size:14px;font-weight:600;color:var(--text-primary);">4. Link Registry Reference (DID)</h3>
           <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px;">Once registered, bind your non-secret DID reference to this workspace.</span>
           <div style="display:flex;gap:6px;">
-            <input type="text" id="linked-did-input" value="${escapeHtml(linkedDid)}" placeholder="did:ccd:testnet:..." style="flex:1;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;" />
+            <input type="text" id="linked-did-input" value="${escapeHtml(linkedDid)}" placeholder="did:ccd:mainnet:..." style="flex:1;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;" />
             <button class="btn btn-secondary btn-sm" id="btn-link-did">Link Reference</button>
           </div>
         </div>
@@ -440,6 +453,7 @@ function render() {
         if (agent.model) {
           draftCard.description += ` (model: ${agent.model})`;
         }
+        linkedDid = agent.identity || '';
         render();
       }
     }
