@@ -188,7 +188,8 @@ export async function fetchJson(url, opts) {
         finalUrl = lobbyPath;
         finalOpts.headers = {
           ...(finalOpts.headers || {}),
-          'Authorization': `Bearer ${s.token}`
+          'Authorization': `Bearer ${s.token}`,
+          'X-Lobby-Id': s.lobbyId
         };
       }
     }
@@ -441,8 +442,12 @@ export async function init() {
     updateHeaderUI();
     loadLobbies();
 
-    if (window.concordium && localStorage.getItem('agentos.wallet.connected') === 'true') {
-      connectWallet({ silent: true }).catch(() => {});
+    if (localStorage.getItem('agentos.wallet.connected') === 'true') {
+      setTimeout(() => {
+        if (window.concordium) {
+          connectWallet({ silent: true }).catch(() => {});
+        }
+      }, 500);
     }
   }
 
@@ -595,8 +600,8 @@ export async function connectWallet({ silent = false } = {}) {
     updateHeaderUI();
   } catch (err) {
     console.error('Wallet connection failed:', err);
-    localStorage.removeItem('agentos.wallet.connected');
     if (!silent) {
+      localStorage.removeItem('agentos.wallet.connected');
       alert(`Wallet Connection Failed: ${err.message || err}`);
     }
   }

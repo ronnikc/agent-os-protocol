@@ -199,7 +199,7 @@ async function handleMintIdentity() {
     const { mintAgentId } = await import('../mint-agent-id.js');
 
     const modeData = await fetchJson('/api/mode');
-    const lobbyUrl = modeData?.lobby_url || '';
+    const lobbyUrl = modeData?.lobbyUrl || '';
 
     const res = await mintAgentId({
       provider: window.concordium,
