@@ -95,13 +95,7 @@ function updateStartBtn() {
   }
 }
 
-function renderPresets() {
-  const el = document.getElementById('presets');
-  if (!el) return;
-  el.innerHTML = Object.entries(state.presets).map(([key, p]) =>
-    `<button class="preset-btn" data-preset="${key}" title="${p.description}">${p.name}</button>`
-  ).join('');
-}
+
 
 function handleLaunchError(error, slug) {
   const errMsg = String(error);
@@ -162,23 +156,65 @@ async function startOne(slug) {
   const agentRef = agent?.identity || undefined;
 
   if (lobbyMode === 'swarm') {
-    const res = await fetchJson('/api/lobby/remote/agents/start', {
-      method: 'POST',
-      body: JSON.stringify({
-        name: slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent',
-        agent_role: slug,
-        provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20240620',
-        agent_ref: agentRef
-      })
+    showModal(`
+      <h2>Start Swarm Agent</h2>
+      <p style="font-size:13px; color:var(--color-text-soft); margin-bottom:16px;">
+        Choose the LLM provider and model to run this agent:
+      </p>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider</label>
+        <select id="start-provider" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px; appearance:auto;">
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="openai-compatible">OpenAI Compatible</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:16px;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Model</label>
+        <input type="text" id="start-model" value="claude-3-5-sonnet-20240620" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
+      </div>
+      <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+        <button class="btn btn-primary" id="btn-confirm-start">Launch</button>
+      </div>
+    `);
+
+    document.getElementById('start-provider')?.addEventListener('change', (e) => {
+      const p = e.target.value;
+      const modelInput = document.getElementById('start-model');
+      if (modelInput) {
+        if (p === 'anthropic') modelInput.value = 'claude-3-5-sonnet-20240620';
+        else if (p === 'openai') modelInput.value = 'gpt-4o';
+        else modelInput.value = '';
+      }
     });
-    if (res && res.error) {
-      handleLaunchError(res.error, slug);
-    }
-  } else {
-    const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
-    await postJson('/api/agents/start', { slug, lobbyUrl });
+
+    document.getElementById('btn-confirm-start')?.addEventListener('click', async () => {
+      const provider = document.getElementById('start-provider').value;
+      const model = document.getElementById('start-model').value.trim();
+      closeModal();
+
+      const res = await fetchJson('/api/lobby/remote/agents/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent',
+          agent_role: slug,
+          provider,
+          model,
+          agent_ref: agentRef
+        })
+      });
+      if (res && res.error) {
+        handleLaunchError(res.error, slug);
+      } else {
+        setTimeout(refresh, 500);
+      }
+    });
+    return;
   }
+
+  const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
+  await postJson('/api/agents/start', { slug, lobbyUrl });
   setTimeout(refresh, 500);
 }
 
@@ -384,8 +420,8 @@ async function refresh() {
 
 function init() {
   renderAgents();
-  renderPresets();
   updateStartBtn();
+  initProviderKeysLayout();
 
   // Delegated event handlers
   document.getElementById('agentList')?.addEventListener('change', (e) => {
@@ -405,17 +441,6 @@ function init() {
     if (btn.dataset.action === 'set-id') setId(slug);
     if (btn.dataset.action === 'create-id') createId(slug);
     if (btn.dataset.action === 'revoke-id') revokeId(slug);
-  });
-
-  document.getElementById('presets')?.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-preset]');
-    if (!btn) return;
-    const p = state.presets[btn.dataset.preset];
-    if (!p) return;
-    selected.clear();
-    p.agents.forEach(s => selected.add(s));
-    renderAgents();
-    updateStartBtn();
   });
 
   document.getElementById('startSelected')?.addEventListener('click', async () => {
@@ -445,14 +470,9 @@ function init() {
   setInterval(refresh, 5000);
 }
 
-async function refreshProviderKeys() {
+function initProviderKeysLayout() {
   const pkDiv = document.getElementById('agents-provider-keys');
   if (!pkDiv) return;
-
-  const token = localStorage.getItem('agent-os-lobby-token');
-  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-  const data = await fetchJson('/api/lobby/remote/provider-keys', { headers });
-  const keys = data?.provider_keys || [];
 
   pkDiv.innerHTML = `
     <h3 style="margin:0 0 10px 0;font-size:14px;font-weight:600;color:var(--text-primary);">Provider Keys (Server-side Encrypted Custody)</h3>
@@ -464,7 +484,7 @@ async function refreshProviderKeys() {
     <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;">
       <div>
         <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Provider</label>
-        <select id="pk-provider" style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;">
+        <select id="pk-provider" style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
           <option value="anthropic">Anthropic</option>
           <option value="openai">OpenAI</option>
           <option value="openai-compatible">OpenAI Compatible</option>
@@ -501,28 +521,42 @@ async function refreshProviderKeys() {
           <th style="width:80px;">Action</th>
         </tr>
       </thead>
-      <tbody>
-        ${keys.length ? keys.map(k => `
-          <tr>
-            <td><strong>${escapeHtml(k.provider)}</strong></td>
-            <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.scope === 'lobby_default' ? 'Lobby Default' : k.agent_ref || '')}</span></td>
-            <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.keyHint)}</span></td>
-            <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.baseUrl || '—')}</span></td>
-            <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.model || '—')}</span></td>
-            <td>
-              <button class="btn btn-danger btn-sm" data-action="revoke-key" data-key-id="${k.id}">Revoke</button>
-            </td>
-          </tr>
-        `).join('') : '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">No keys configured yet. Connect keys so hosted agents can run.</td></tr>'}
+      <tbody id="hosted-keys-table-body">
+        <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">Loading keys...</td></tr>
       </tbody>
     </table>
   `;
 
-  // Bind key storage and revocation
   document.getElementById('pk-store-btn')?.addEventListener('click', handleStoreKey);
-  pkDiv.querySelectorAll('[data-action="revoke-key"]').forEach(btn => {
+}
+
+async function refreshProviderKeys() {
+  const tbody = document.getElementById('hosted-keys-table-body');
+  if (!tbody) return;
+
+  const token = localStorage.getItem('agent-os-lobby-token');
+  const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+  const data = await fetchJson('/api/lobby/remote/provider-keys', { headers });
+  const keys = data?.provider_keys || [];
+
+  tbody.innerHTML = keys.length === 0
+    ? '<tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">No keys configured yet. Connect keys so hosted agents can run.</td></tr>'
+    : keys.map(k => `
+      <tr>
+        <td><strong>${escapeHtml(k.provider)}</strong></td>
+        <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.scope === 'lobby_default' ? 'Lobby Default' : k.agent_ref || '')}</span></td>
+        <td><span style="font-family:var(--mono);font-size:11px;">${escapeHtml(k.keyHint || k.key_hint || '')}</span></td>
+        <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.baseUrl || k.base_url || '—')}</span></td>
+        <td><span style="font-family:var(--mono);font-size:11px;color:var(--text-muted);">${escapeHtml(k.model || '—')}</span></td>
+        <td>
+          <button class="btn btn-danger btn-sm" data-action="revoke-key" data-key-id="${k.id}">Revoke</button>
+        </td>
+      </tr>
+    `).join('');
+
+  tbody.querySelectorAll('[data-action="revoke-key"]').forEach(btn => {
     btn.addEventListener('click', async (e) => {
-      const keyId = e.target.dataset.keyId;
+      const keyId = e.currentTarget.dataset.keyId;
       if (confirm('Revoke this API key? Hosted agents using this provider will stop working unless another key covers them.')) {
         const token = localStorage.getItem('agent-os-lobby-token');
         const headers = token ? { 'Authorization': `Bearer ${token}` } : {};

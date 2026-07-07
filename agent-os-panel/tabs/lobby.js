@@ -533,6 +533,7 @@ async function refresh() {
   if (agentData && !agentData.error) {
     remoteAgents = agentData.agents || [];
     lobbyConnected = true;
+    lobbyInfo.connected = true;
 
     if (lobbyMode === 'swarm') {
       const settingsRes = await fetchJson('/api/lobby/remote/settings');
@@ -556,10 +557,12 @@ async function refresh() {
       status: 'idle', current_work: '', pid: a.pid, source: 'local',
     }));
     lobbyConnected = localAgents.length > 0;
+    lobbyInfo.connected = lobbyConnected;
     lobbySettings = null;
     lobbyMembers = [];
     lobbyGithub = null;
   }
+  lobbyInfo.connected = lobbyConnected;
   renderLobby();
 }
 
