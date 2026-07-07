@@ -152,6 +152,23 @@ async function refreshSwarmKb() {
   if (!settingsEl) return;
 
   if (!kbConfig) {
+    let githubHtml = '';
+    let githubIntegration = null;
+    try {
+      githubIntegration = await fetchJson('/api/lobby/remote/integrations/github');
+    } catch (e) {
+      console.warn('[KB] Failed to fetch lobby GitHub integration:', e);
+    }
+
+    if (githubIntegration && githubIntegration.connected && githubIntegration.repo) {
+      githubHtml = `
+        <div style="margin-top:16px; padding:12px; background:rgba(49, 140, 255, 0.08); border:1px solid rgba(49, 140, 255, 0.15); border-radius:6px; font-size:12px; display:flex; flex-direction:column; gap:8px;">
+          <span style="color:var(--text-secondary);">Lobby has a connected GitHub repository: <strong style="color:var(--text-primary);">${escapeHtml(githubIntegration.repo)}</strong></span>
+          <button id="kb-btn-use-lobby-repo" class="btn btn-sm btn-primary" style="align-self:flex-start;">Use Connected Repo</button>
+        </div>
+      `;
+    }
+
     settingsEl.innerHTML = `
       <h3 style="margin-top:0;">Configure Knowledge Base (KB)</h3>
       <p style="font-size:12px;color:var(--text-muted);">Please connect a Git repository to store the converted markdown documents and indices.</p>
@@ -169,9 +186,23 @@ async function refreshSwarmKb() {
           <input type="text" id="kb-config-path" value="kb" style="width:100%;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:4px;" />
         </div>
         <button id="kb-config-save-btn" class="btn btn-primary" style="align-self:flex-start;">Save Configuration</button>
+        ${githubHtml}
       </div>
     `;
+
     settingsEl.querySelector('#kb-config-save-btn')?.addEventListener('click', saveKbConfig);
+    if (githubIntegration && githubIntegration.connected && githubIntegration.repo) {
+      settingsEl.querySelector('#kb-btn-use-lobby-repo')?.addEventListener('click', () => {
+        const repoInput = settingsEl.querySelector('#kb-config-repo');
+        const branchInput = settingsEl.querySelector('#kb-config-branch');
+        const pathInput = settingsEl.querySelector('#kb-config-path');
+        if (repoInput) repoInput.value = `https://github.com/${githubIntegration.repo}`;
+        if (branchInput) branchInput.value = githubIntegration.branch || 'main';
+        if (pathInput) pathInput.value = 'kb';
+        saveKbConfig();
+      });
+    }
+
     if (uploadEl) uploadEl.style.display = 'none';
     if (jobsEl) jobsEl.style.display = 'none';
   } else {
