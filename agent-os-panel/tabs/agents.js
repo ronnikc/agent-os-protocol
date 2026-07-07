@@ -159,19 +159,54 @@ async function startOne(slug) {
     showModal(`
       <h2>Start Swarm Agent</h2>
       <p style="font-size:13px; color:var(--color-text-soft); margin-bottom:16px;">
+        Checking configured API keys...
+      </p>
+    `);
+
+    let configuredKeys = [];
+    try {
+      const token = localStorage.getItem('agent-os-lobby-token') || JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null')?.token;
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const keysRes = await fetchJson('/api/lobby/remote/provider-keys', { headers });
+      configuredKeys = keysRes?.provider_keys || [];
+    } catch (err) {
+      console.warn('Failed to load configured keys for start modal:', err);
+    }
+
+    const hasAnthropic = configuredKeys.some(k => k.provider === 'anthropic' && (!k.agent_ref || k.agent_ref === agentRef));
+    const hasOpenAi = configuredKeys.some(k => k.provider === 'openai' && (!k.agent_ref || k.agent_ref === agentRef));
+    const hasOpenAiCompatible = configuredKeys.some(k => k.provider === 'openai-compatible' && (!k.agent_ref || k.agent_ref === agentRef));
+
+    const defaultProvider = hasOpenAi && !hasAnthropic ? 'openai' : 'anthropic';
+    const defaultModel = defaultProvider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20240620';
+
+    showModal(`
+      <h2>Start Swarm Agent</h2>
+      <p style="font-size:13px; color:var(--color-text-soft); margin-bottom:16px;">
         Choose the LLM provider and model to run this agent:
       </p>
       <div class="form-group" style="margin-bottom:12px;">
         <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider</label>
         <select id="start-provider" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px; appearance:auto;">
-          <option value="anthropic">Anthropic</option>
-          <option value="openai">OpenAI</option>
-          <option value="openai-compatible">OpenAI Compatible</option>
+          <option value="anthropic" ${defaultProvider === 'anthropic' ? 'selected' : ''}>Anthropic ${hasAnthropic ? '(Configured)' : '(Not Configured)'}</option>
+          <option value="openai" ${defaultProvider === 'openai' ? 'selected' : ''}>OpenAI ${hasOpenAi ? '(Configured)' : '(Not Configured)'}</option>
+          <option value="openai-compatible" ${defaultProvider === 'openai-compatible' ? 'selected' : ''}>OpenAI Compatible ${hasOpenAiCompatible ? '(Configured)' : '(Not Configured)'}</option>
+        </select>
+        <div id="provider-status-note" style="font-size:11px; margin-top:6px; font-weight:500;"></div>
+      </div>
+      <div id="start-api-key-group" style="margin-bottom:12px; display:none;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">API Key Override (Optional)</label>
+        <input type="password" id="start-api-key" placeholder="sk-..." style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
+        <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:2px;">Unique key for this specific agent. Overrides the default lobby key.</span>
+      </div>
+      <div class="form-group" style="margin-bottom:12px;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Model</label>
+        <select id="start-model-select" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px; appearance:auto;">
         </select>
       </div>
-      <div class="form-group" style="margin-bottom:16px;">
-        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Model</label>
-        <input type="text" id="start-model" value="claude-3-5-sonnet-20240620" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
+      <div id="start-model-custom-group" class="form-group" style="margin-bottom:16px; display:none;">
+        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Custom Model ID</label>
+        <input type="text" id="start-model-custom" placeholder="e.g. gpt-4o-mini" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
       </div>
       <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -179,20 +214,95 @@ async function startOne(slug) {
       </div>
     `);
 
-    document.getElementById('start-provider')?.addEventListener('change', (e) => {
-      const p = e.target.value;
-      const modelInput = document.getElementById('start-model');
-      if (modelInput) {
-        if (p === 'anthropic') modelInput.value = 'claude-3-5-sonnet-20240620';
-        else if (p === 'openai') modelInput.value = 'gpt-4o';
-        else modelInput.value = '';
+    const updateProviderStatus = () => {
+      const p = document.getElementById('start-provider')?.value;
+      const noteEl = document.getElementById('provider-status-note');
+      const keyGroup = document.getElementById('start-api-key-group');
+      const modelSelect = document.getElementById('start-model-select');
+      const customGroup = document.getElementById('start-model-custom-group');
+      if (!modelSelect) return;
+
+      let optionsHtml = '';
+      if (p === 'anthropic') {
+        optionsHtml = `
+          <option value="claude-3-5-sonnet-20240620" selected>Claude 3.5 Sonnet (claude-3-5-sonnet-20240620)</option>
+          <option value="claude-3-haiku-20240307">Claude 3 Haiku (claude-3-haiku-20240307)</option>
+          <option value="claude-3-opus-20240229">Claude 3 Opus (claude-3-opus-20240229)</option>
+          <option value="custom">Custom Model...</option>
+        `;
+      } else if (p === 'openai') {
+        optionsHtml = `
+          <option value="gpt-4o" selected>GPT-4o (gpt-4o)</option>
+          <option value="gpt-4o-mini">GPT-4o Mini (gpt-4o-mini)</option>
+          <option value="gpt-4-turbo">GPT-4 Turbo (gpt-4-turbo)</option>
+          <option value="gpt-3.5-turbo">GPT-3.5 Turbo (gpt-3.5-turbo)</option>
+          <option value="custom">Custom Model...</option>
+        `;
+      } else {
+        optionsHtml = `
+          <option value="custom" selected>Custom Model...</option>
+        `;
       }
-    });
+      modelSelect.innerHTML = optionsHtml;
+
+      const updateCustomVisibility = () => {
+        if (modelSelect.value === 'custom') {
+          if (customGroup) customGroup.style.display = 'block';
+        } else {
+          if (customGroup) customGroup.style.display = 'none';
+        }
+      };
+
+      updateCustomVisibility();
+      modelSelect.onchange = updateCustomVisibility;
+
+      const isConfigured = configuredKeys.some(k => k.provider === p && (!k.agent_ref || k.agent_ref === agentRef));
+      if (isConfigured) {
+        if (noteEl) {
+          noteEl.textContent = '✓ Using configured lobby API key.';
+          noteEl.style.color = '#22c55e';
+        }
+        if (keyGroup) keyGroup.style.display = 'none';
+      } else {
+        if (noteEl) {
+          noteEl.textContent = '⚠ No key configured for this provider in this lobby.';
+          noteEl.style.color = '#eab308';
+        }
+        if (keyGroup) keyGroup.style.display = 'block';
+      }
+    };
+
+    updateProviderStatus();
+
+    document.getElementById('start-provider')?.addEventListener('change', updateProviderStatus);
 
     document.getElementById('btn-confirm-start')?.addEventListener('click', async () => {
       const provider = document.getElementById('start-provider').value;
-      const model = document.getElementById('start-model').value.trim();
+      const modelSelect = document.getElementById('start-model-select');
+      const model = modelSelect.value === 'custom'
+        ? document.getElementById('start-model-custom').value.trim()
+        : modelSelect.value;
+      const apiKeyOverride = document.getElementById('start-api-key')?.value?.trim();
       closeModal();
+
+      const token = localStorage.getItem('agent-os-lobby-token') || JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null')?.token;
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      if (apiKeyOverride) {
+        try {
+          await fetchJson('/api/lobby/remote/provider-keys', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...headers },
+            body: JSON.stringify({
+              provider,
+              agent_ref: agentRef,
+              api_key: apiKeyOverride
+            })
+          });
+        } catch (err) {
+          console.warn('Failed to save override API key:', err);
+        }
+      }
 
       const res = await fetchJson('/api/lobby/remote/agents/start', {
         method: 'POST',
