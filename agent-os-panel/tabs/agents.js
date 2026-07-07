@@ -555,20 +555,24 @@ async function refreshProviderKeys() {
     `).join('');
 
   tbody.querySelectorAll('[data-action="revoke-key"]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    btn.addEventListener('click', (e) => {
       const keyId = e.currentTarget.dataset.keyId;
-      if (confirm('Revoke this API key? Hosted agents using this provider will stop working unless another key covers them.')) {
-        const token = localStorage.getItem('agent-os-lobby-token');
-        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
-        const res = await fetchJson(`/api/lobby/remote/provider-keys/${keyId}`, {
-          method: 'POST',
-          headers
-        });
-        if (res && res.error) {
-          alert('Failed to revoke key: ' + res.error);
+      showConfirm(
+        'Revoke API Key',
+        'Revoke this API key? Hosted agents using this provider will stop working unless another key covers them.',
+        async () => {
+          const token = localStorage.getItem('agent-os-lobby-token');
+          const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+          const res = await fetchJson(`/api/lobby/remote/provider-keys/${keyId}`, {
+            method: 'POST',
+            headers
+          });
+          if (res && res.error) {
+            showAlert('Error', 'Failed to revoke key: ' + res.error);
+          }
+          await refreshProviderKeys();
         }
-        await refreshProviderKeys();
-      }
+      );
     });
   });
 }
@@ -581,7 +585,7 @@ async function handleStoreKey() {
   const model = document.getElementById('pk-model')?.value?.trim() || null;
 
   if (!apiKey) {
-    alert('API Key is required.');
+    showAlert('Error', 'API Key is required.');
     return;
   }
 
@@ -600,7 +604,7 @@ async function handleStoreKey() {
   });
 
   if (res && res.error) {
-    alert('Failed to store key: ' + res.error);
+    showAlert('Error', 'Failed to store key: ' + res.error);
   } else {
     // Clear fields
     const keyEl = document.getElementById('pk-key');

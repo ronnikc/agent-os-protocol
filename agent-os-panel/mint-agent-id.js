@@ -37,8 +37,51 @@ function loadConnectors() {
   return _connectors;
 }
 
-/** POST to the panel's registry proxy (which forwards to the lobby). Returns the parsed body. */
+/** POST to the panel's registry proxy (which forwards to the lobby), or fetch directly from lobby-server in hosted mode. */
 async function registryProxy(base, endpoint, body) {
+  const isHosted = typeof window !== 'undefined' && (window.AGENT_OS_HOSTED || !window.location.port || window.location.pathname.startsWith('/panel/'));
+  
+  if (isHosted) {
+    const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+    const headers = { 'Content-Type': 'application/json' };
+    if (s && s.token) {
+      headers['Authorization'] = `Bearer ${s.token}`;
+      headers['X-Lobby-Id'] = s.lobbyId;
+    }
+
+    if (endpoint === 'status') {
+      const net = body.network || 'mainnet';
+      const res = await fetch(`/api/v1/agent-lobby/registry/status?network=${encodeURIComponent(net)}`, {
+        method: 'GET', headers
+      });
+      return res.json();
+    }
+    if (endpoint === 'tools') {
+      const res = await fetch(`/api/v1/agent-lobby/registry/tools`, {
+        method: 'GET', headers
+      });
+      return res.json();
+    }
+    if (endpoint === 'call') {
+      const res = await fetch(`/api/v1/agent-lobby/registry/call`, {
+        method: 'POST', headers, body: JSON.stringify({ tool: body.tool, arguments: body.arguments })
+      });
+      return res.json();
+    }
+    if (endpoint === 'sponsor') {
+      const res = await fetch(`/api/v1/agent-lobby/registry/sponsor`, {
+        method: 'POST', headers, body: JSON.stringify({ genesisHash: body.genesisHash, payload: body.payload, sender: body.sender, nonce: body.nonce })
+      });
+      return res.json();
+    }
+    if (endpoint === 'agent-cards') {
+      const res = await fetch(`/api/v1/agent-lobby/agent-cards`, {
+        method: 'POST', headers, body: JSON.stringify({ did: body.did, card: body.card, lobby_id: s?.lobbyId })
+      });
+      return res.json();
+    }
+  }
+
   const res = await fetch(`${base}/api/registry/${endpoint}`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -232,8 +275,21 @@ export async function mintAgentId(opts) {
   const agentDid = `did:ccd:${network}:agent-${Math.random().toString(36).slice(2, 8)}`;
 
   const card = {
-    did: agentDid, name: agentName, role: agentRole, owner: ownerDid,
-    network, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+    mediaType: "application/vnd.agent-os.card.v1+json",
+    name: agentName,
+    description: `Specialized sub-agent running ${agentRole} role.`,
+    version: "1.0.0",
+    did: agentDid,
+    owner: ownerDid,
+    ownerAddress: owner,
+    runtime: "agent-os",
+    capabilities: [agentRole],
+    ownerPolicy: "self",
+    supportedProtocols: ["agent-os-lobby/v1"],
+    allowedScopes: ["*"],
+    network,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
   const sortedCard = {};
   for (const k of Object.keys(card).sort()) sortedCard[k] = card[k];
