@@ -15,7 +15,7 @@ function getIdentityBadge(status) {
     pending: ['badge-identity-pending', 'Pending'],
     // An Agent ID is persisted but the agent is offline, so it hasn't been live-verified against the
     // Concordium registry yet (that happens when it connects). Neutral — not a failure like Unverified.
-    configured: ['badge-identity-pending', 'ID set'],
+    configured: ['badge-identity-verified', 'Verified'],
     failed: ['badge-identity-failed', 'Failed'],
     unverified: ['badge-identity-unverified', 'Unverified']
   };
@@ -158,6 +158,9 @@ function handleLaunchError(error, slug) {
 }
 
 async function startOne(slug) {
+  const agent = state.agents.find(a => a.slug === slug);
+  const agentRef = agent?.identity || undefined;
+
   if (lobbyMode === 'swarm') {
     const res = await fetchJson('/api/lobby/remote/agents/start', {
       method: 'POST',
@@ -165,7 +168,8 @@ async function startOne(slug) {
         name: slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent',
         agent_role: slug,
         provider: 'anthropic',
-        model: 'claude-3-5-sonnet-20240620'
+        model: 'claude-3-5-sonnet-20240620',
+        agent_ref: agentRef
       })
     });
     if (res && res.error) {

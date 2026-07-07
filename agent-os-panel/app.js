@@ -11,6 +11,7 @@ export const state = {
   wsConnected: false,
   relayConnected: false,
   activeTab: 'agents',
+  mode: 'local',
   wallet: {
     connected: false,
     address: null,
@@ -294,7 +295,8 @@ export function onWsMessage(type, fn) {
 
 function connectWs() {
   try {
-    ws = new WebSocket(`ws://${location.host}/ws`);
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => {
       state.wsConnected = true;
       updateStatusBar();
@@ -429,6 +431,7 @@ export async function init() {
 
   const modeData = await fetchJson('/api/mode');
   const isSwarmMode = modeData?.mode === 'swarm';
+  state.mode = modeData?.mode || 'local';
 
   if (typeof window !== 'undefined' && (window.AGENT_OS_HOSTED || isSwarmMode)) {
     if (window.AGENT_OS_HOSTED && !session) {
@@ -438,16 +441,8 @@ export async function init() {
     updateHeaderUI();
     loadLobbies();
 
-    if (window.concordium) {
-      window.concordium.connect().then(async (addr) => {
-        if (addr) {
-          const addrStr = (typeof addr === 'string') ? addr : (addr.address || addr.toString?.());
-          state.wallet.connected = true;
-          state.wallet.address = addrStr;
-          state.wallet.balance = await fetchWalletBalance(window.concordium, addrStr);
-          updateHeaderUI();
-        }
-      }).catch(() => {});
+    if (window.concordium && localStorage.getItem('agentos.wallet.connected') === 'true') {
+      connectWallet({ silent: true }).catch(() => {});
     }
   }
 
@@ -560,18 +555,23 @@ function fetchWalletBalance(provider, addrStr) {
   });
 }
 
-export async function connectWallet() {
+export async function connectWallet({ silent = false } = {}) {
   if (state.wallet.connected) {
     state.wallet.connected = false;
     state.wallet.address = null;
     state.wallet.balance = null;
+    localStorage.removeItem('agentos.wallet.connected');
+    localStorage.removeItem('agentos.hosted.session');
+    state.session = { token: null, identityRef: null, lobbyId: null };
     updateHeaderUI();
     return;
   }
 
   const provider = window.concordium;
   if (!provider) {
-    alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+    if (!silent) {
+      alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+    }
     return;
   }
 
@@ -590,11 +590,15 @@ export async function connectWallet() {
     state.wallet.connected = true;
     state.wallet.address = addrStr;
     state.wallet.balance = balanceCcd;
+    localStorage.setItem('agentos.wallet.connected', 'true');
     
     updateHeaderUI();
   } catch (err) {
     console.error('Wallet connection failed:', err);
-    alert(`Wallet Connection Failed: ${err.message || err}`);
+    localStorage.removeItem('agentos.wallet.connected');
+    if (!silent) {
+      alert(`Wallet Connection Failed: ${err.message || err}`);
+    }
   }
 }
 
@@ -622,7 +626,21 @@ export async function signInToLobby() {
 
   const activeLobbyId = state.session.lobbyId;
   const provider = window.concordium;
-  if (!provider || !state.wallet.connected || !state.wallet.address) {
+  if (!provider) {
+    alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+    return;
+  }
+
+  if (!state.wallet.connected || !state.wallet.address) {
+    try {
+      await connectWallet();
+    } catch (err) {
+      alert('Wallet connection failed.');
+      return;
+    }
+  }
+
+  if (!state.wallet.connected || !state.wallet.address) {
     alert('Please connect your wallet first.');
     return;
   }
@@ -704,7 +722,9 @@ export async function loadLobbies() {
 }
 
 export function updateHeaderUI() {
-  if (typeof window === 'undefined' || !window.AGENT_OS_HOSTED) return;
+  if (typeof window === 'undefined') return;
+  const isSwarm = window.AGENT_OS_HOSTED || state.mode === 'swarm';
+  if (!isSwarm) return;
 
   const controls = document.getElementById('header-swarm-controls');
   if (controls) controls.style.display = 'flex';
