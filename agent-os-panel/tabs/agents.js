@@ -482,7 +482,7 @@ async function updateOverviewStats() {
 
 async function refresh() {
   const modeData = await fetchJson('/api/mode');
-  lobbyMode = modeData?.mode || 'local';
+  lobbyMode = (window.AGENT_OS_HOSTED || modeData?.mode === 'swarm') ? 'swarm' : 'local';
 
   const data = await fetchJson('/api/agents');
   if (data) {

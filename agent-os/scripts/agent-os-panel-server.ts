@@ -2385,12 +2385,12 @@ const server = createServer(async (req, res) => {
     return;
   }
 
-  if (path === '/api/lobby/remote/status' && method === 'PATCH') {
+  if (path === '/api/lobby/remote/status' && (method === 'POST' || method === 'PATCH')) {
     const body = await parseBody(req);
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL,
-      `/api/v1/agent-lobby/lobbies/${lobbyId}/status`,
+      `/api/v1/agent-lobby/lobbies/${lobbyId}`,
       'PATCH', JSON.stringify(body));
     cachedLobbyId = null; // Invalidate cache on status change
     sendJson(res, data);

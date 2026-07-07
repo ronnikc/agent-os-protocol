@@ -1215,6 +1215,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (Array.isArray(body.allowlist)) {
         patch.allowlist = body.allowlist.filter((x: unknown) => typeof x === 'string').slice(0, 200);
       }
+      if (body.status === 'active' || body.status === 'paused' || body.status === 'closed') {
+        patch.status = body.status;
+      }
       const updated = await store.updateLobby(lobbyId, patch);
       await recordEvent(lobbyId, 'lobby_settings_updated', String(body.actor ?? 'web-user'), { changed: Object.keys(patch) });
       return json({ lobby: updated });
