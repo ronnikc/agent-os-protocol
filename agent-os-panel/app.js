@@ -612,10 +612,13 @@ export async function signInToLobby() {
   }
 
   try {
+    const lobbyUrl = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+    const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
+
     const challengeRes = await fetchJson('/api/v1/agent-lobby/auth/challenge', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ account: state.wallet.address, lobby_id: activeLobbyId, network: 'testnet' })
+      body: JSON.stringify({ account: state.wallet.address, lobby_id: activeLobbyId, network })
     });
 
     if (!challengeRes || !challengeRes.challenge_id) {

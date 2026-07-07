@@ -2320,6 +2320,21 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // ── Authentication Proxy (verifies signatures using staging lobby nodes) ──
+  if (path === '/api/v1/agent-lobby/auth/challenge' && method === 'POST') {
+    const body = await parseBody(req);
+    const result = await postRemoteJson(DEFAULT_LOBBY_URL, '/api/v1/agent-lobby/auth/challenge', body);
+    sendJson(res, result);
+    return;
+  }
+
+  if (path === '/api/v1/agent-lobby/auth/verify-wallet' && method === 'POST') {
+    const body = await parseBody(req);
+    const result = await postRemoteJson(DEFAULT_LOBBY_URL, '/api/v1/agent-lobby/auth/verify-wallet', body);
+    sendJson(res, result);
+    return;
+  }
+
   if (path === '/api/lobby/remote/join' && method === 'POST') {
     const body = await parseBody(req);
     const newLobbyId = body.lobby_id as string || null;
