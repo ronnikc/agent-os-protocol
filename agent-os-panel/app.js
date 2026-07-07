@@ -575,7 +575,7 @@ export async function connectWallet({ silent = false } = {}) {
   const provider = window.concordium;
   if (!provider) {
     if (!silent) {
-      alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+      showAlert('Wallet Not Found', 'Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
     }
     return;
   }
@@ -602,7 +602,7 @@ export async function connectWallet({ silent = false } = {}) {
     console.error('Wallet connection failed:', err);
     if (!silent) {
       localStorage.removeItem('agentos.wallet.connected');
-      alert(`Wallet Connection Failed: ${err.message || err}`);
+      showAlert('Connection Failed', `Wallet Connection Failed: ${err.message || err}`);
     }
   }
 }
@@ -622,7 +622,7 @@ export async function signInToLobby() {
       state.session.lobbyId = lobbyId;
       await loadLobbies();
     } else {
-      alert('Please create or select a lobby first.');
+      showAlert('Error', 'Please create or select a lobby first.');
       return;
     }
   } else {
@@ -632,7 +632,7 @@ export async function signInToLobby() {
   const activeLobbyId = state.session.lobbyId;
   const provider = window.concordium;
   if (!provider) {
-    alert('Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+    showAlert('Wallet Not Found', 'Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
     return;
   }
 
@@ -640,13 +640,13 @@ export async function signInToLobby() {
     try {
       await connectWallet();
     } catch (err) {
-      alert('Wallet connection failed.');
+      showAlert('Error', 'Wallet connection failed.');
       return;
     }
   }
 
   if (!state.wallet.connected || !state.wallet.address) {
-    alert('Please connect your wallet first.');
+    showAlert('Error', 'Please connect your wallet first.');
     return;
   }
 
@@ -693,7 +693,7 @@ export async function signInToLobby() {
     window.location.reload();
   } catch (err) {
     console.error('Sign-in failed:', err);
-    alert(`Authentication Failed: ${err.message || err}`);
+    showAlert('Authentication Failed', err.message || err);
   }
 }
 
@@ -868,7 +868,7 @@ function updateAuthStatus() {
       btn.disabled = true;
       btn.textContent = 'Signing in via wallet...';
       signInToLobby().catch((err) => {
-        alert('Sign in failed: ' + err.message);
+        showAlert('Sign In Failed', err.message || err);
         updateAuthStatus();
       });
     };

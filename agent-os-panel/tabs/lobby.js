@@ -53,7 +53,7 @@ function renderJoinScreen() {
         </div>
         <div style="margin-bottom:16px;">
           <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Identity DID (Optional)</label>
-          <input type="text" id="lobby-join-did" placeholder="did:ccd:testnet:..." value="${escapeHtml(savedDid)}" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;" />
+          <input type="text" id="lobby-join-did" placeholder="did:ccd:mainnet:..." value="${escapeHtml(savedDid)}" style="width:100%;padding:12px 14px;background:var(--bg-elevated);border:1px solid var(--border-light);color:var(--text-primary);border-radius:8px;font-size:14px;" />
         </div>
         <div style="margin-bottom:24px;">
           <label style="display:block;font-size:13px;color:var(--purple);margin-bottom:6px;">Role</label>
@@ -316,7 +316,7 @@ function renderLobby() {
             <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Invite Concordium DIDs or local agents, and manage floor permissions.</span>
             
             <div style="display:flex; gap:6px;">
-              <input type="text" id="invite-member-did" placeholder="did:ccd:testnet:..." style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+              <input type="text" id="invite-member-did" placeholder="did:ccd:mainnet:..." style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
               <select id="invite-member-role" style="padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
                 <option value="contributor">Contributor</option>
                 <option value="admin">Admin</option>
@@ -645,7 +645,7 @@ function init() {
         visibility,
         join_policy: policy,
         allowlist: invitees,
-        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:testnet:${state.wallet.address}` : undefined,
+        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:mainnet:${state.wallet.address}` : undefined,
       }).then(async res => {
         if (res && res.lobby) {
           const newLobbyId = res.lobby.lobby_id;
@@ -658,10 +658,10 @@ function init() {
           }
           await postJson('/api/lobby/remote/join', { lobby_id: newLobbyId });
           createLobbyFormOpen = false;
-          alert(`Lobby "${name}" created. Inviting ${invitees.length} agent(s) and joining...`);
+          showAlert('Lobby Created', `Lobby "${name}" created. Inviting ${invitees.length} agent(s) and joining...`);
           refresh();
         } else {
-          alert('Failed to create custom lobby: ' + (res?.error || 'Unknown error'));
+          showAlert('Error', 'Failed to create custom lobby: ' + (res?.error || 'Unknown error'));
         }
       });
     }
