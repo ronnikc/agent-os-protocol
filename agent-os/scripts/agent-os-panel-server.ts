@@ -2059,8 +2059,12 @@ const server = createServer(async (req, res) => {
   }
 
   const reqHeaders = (r: import('node:http').IncomingMessage): Record<string, string> => {
+    const out: Record<string, string> = {};
     const auth = r.headers['authorization'];
-    return auth ? { 'Authorization': auth } : {};
+    if (auth) out['Authorization'] = auth;
+    const lobbyId = r.headers['x-lobby-id'];
+    if (typeof lobbyId === 'string') out['X-Lobby-Id'] = lobbyId;
+    return out;
   };
 
   // Start remote hosted agent
@@ -2165,9 +2169,7 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/provider-keys' && method === 'GET') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { provider_keys: [], error: 'No active lobby' }); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'GET', undefined, headers);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2175,10 +2177,8 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/provider-keys' && method === 'POST') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
     const body = await parseBody(req);
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'POST', JSON.stringify(body), headers);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys`, 'POST', JSON.stringify(body), reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2188,9 +2188,7 @@ const server = createServer(async (req, res) => {
     const keyId = deleteKeyMatch[1];
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys/${keyId}`, 'DELETE', undefined, headers);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/provider-keys/${keyId}`, 'DELETE', undefined, reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2199,15 +2197,13 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/settings') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
     if (method === 'GET') {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}`, 'GET', undefined, headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}`, 'GET', undefined, reqHeaders(req));
       sendJson(res, data);
       return;
     } else if (method === 'PATCH' || method === 'POST') {
       const body = await parseBody(req);
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}`, 'PATCH', JSON.stringify(body), headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}`, 'PATCH', JSON.stringify(body), reqHeaders(req));
       sendJson(res, data);
       return;
     }
@@ -2216,15 +2212,13 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/members') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
     if (method === 'GET') {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members`, 'GET', undefined, headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members`, 'GET', undefined, reqHeaders(req));
       sendJson(res, data);
       return;
     } else if (method === 'POST') {
       const body = await parseBody(req);
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members`, 'POST', JSON.stringify(body), headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members`, 'POST', JSON.stringify(body), reqHeaders(req));
       sendJson(res, data);
       return;
     }
@@ -2235,10 +2229,8 @@ const server = createServer(async (req, res) => {
     const memberId = memberStatusMatch[1];
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
     const body = await parseBody(req);
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members/${memberId}/status`, 'POST', JSON.stringify(body), headers);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/members/${memberId}/status`, 'POST', JSON.stringify(body), reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2247,19 +2239,17 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/integrations/github') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
     if (method === 'GET') {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'GET', undefined, headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'GET', undefined, reqHeaders(req));
       sendJson(res, data);
       return;
     } else if (method === 'POST') {
       const body = await parseBody(req);
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'POST', JSON.stringify(body), headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'POST', JSON.stringify(body), reqHeaders(req));
       sendJson(res, data);
       return;
     } else if (method === 'DELETE') {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'DELETE', undefined, headers);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github`, 'DELETE', undefined, reqHeaders(req));
       sendJson(res, data);
       return;
     }
@@ -2268,9 +2258,17 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/integrations/github/connect' && method === 'POST') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
-    const authHeader = req.headers['authorization'];
-    const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github/connect`, 'POST', undefined, headers);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/integrations/github/connect`, 'POST', undefined, reqHeaders(req));
+    sendJson(res, data);
+  }
+
+  const agentIdentityProxyMatch = path.match(/^\/api\/lobby\/remote\/agents\/([^/]+)\/identity$/);
+  if (agentIdentityProxyMatch && method === 'POST') {
+    const slug = agentIdentityProxyMatch[1];
+    const lobbyId = await resolveLobbyId(req);
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/agents/${slug}/identity`, 'POST', JSON.stringify(body), reqHeaders(req));
     sendJson(res, data);
     return;
   }
