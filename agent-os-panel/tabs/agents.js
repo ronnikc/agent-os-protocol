@@ -501,7 +501,7 @@ async function refresh() {
           identity_status: activeRemote?.identity_status || la.identity_status,
           runtime: activeRemote?.runtime || la.runtime,
           model: activeRemote?.model || la.model,
-          identity: activeRemote?.agent_id || la.identity,
+          identity: activeRemote?.identity_ref || la.identity,
         };
       });
     } else {
