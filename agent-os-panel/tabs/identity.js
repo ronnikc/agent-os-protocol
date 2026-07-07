@@ -6,24 +6,82 @@ let registrationPlan = null;
 let linkedDid = '';
 let lobbyMode = 'local';
 
+function sortKeys(value) {
+  if (Array.isArray(value)) return value.map(sortKeys);
+  if (value && typeof value === 'object') {
+    const out = {};
+    for (const k of Object.keys(value).sort()) {
+      out[k] = sortKeys(value[k]);
+    }
+    return out;
+  }
+  return value;
+}
+
+function cardHasInlineSecret(card) {
+  const SECRET_PATTERNS = [
+    /sk-[A-Za-z0-9_-]{16,}/,
+    /\bAKIA[0-9A-Z]{16}\b/,
+    /ghp_[A-Za-z0-9]{20,}/,
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/,
+    /\bseed\s*phrase\b/i,
+    /\b(?:[a-z]+\s+){11,23}[a-z]+\b.*\bmnemonic\b/i,
+  ];
+  const haystack = JSON.stringify(card);
+  return SECRET_PATTERNS.some(re => re.test(haystack));
+}
+
+function validateAgentCard(card) {
+  const errors = [];
+  const mediaType = 'application/vnd.agent-os.card.v1+json';
+  if (card.mediaType !== mediaType) errors.push(`mediaType must be "${mediaType}"`);
+  if (!card.name?.trim()) errors.push('name is required');
+  if (!card.description?.trim()) errors.push('description is required');
+  if (!card.runtime?.trim()) errors.push('runtime is required');
+  if (!card.version?.trim()) errors.push('version is required');
+  if (!Array.isArray(card.capabilities)) errors.push('capabilities must be an array');
+  if (!Array.isArray(card.supportedProtocols)) errors.push('supportedProtocols must be an array');
+  if (!Array.isArray(card.allowedScopes)) errors.push('allowedScopes must be an array');
+  if (card.contactUrl && !/^https?:\/\//.test(card.contactUrl)) errors.push('contactUrl must be an http(s) URL');
+  if (!card.createdAt) errors.push('createdAt is required');
+  if (!card.updatedAt) errors.push('updatedAt is required');
+  if (cardHasInlineSecret(card)) errors.push('card must not contain a secret (key/seed/token)');
+  return { ok: errors.length === 0, errors };
+}
+
+async function sha256(message) {
+  const msgBuffer = new TextEncoder().encode(message);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
 async function load() {
   const modeData = await fetchJson('/api/mode');
   lobbyMode = modeData?.mode || 'local';
 
-  // Load card draft from server
-  const data = await fetchJson('/api/identity/card');
-  draftCard = data?.card || {
-    name: 'Boss Agent',
-    description: 'Central orchestrator agent',
-    capabilities: ['code-generation', 'sprint-planning'],
-    runtime: 'claude-cli',
-    ownerPolicy: 'none',
-    supportedProtocols: ['lobby-message'],
-    allowedScopes: ['*'],
-    version: '1.0.0',
-  };
+  let cachedCard = null;
+  try {
+    const cached = localStorage.getItem('agent-os-identity-card');
+    if (cached) cachedCard = JSON.parse(cached);
+  } catch {}
 
-  // Load linked DID from localStorage
+  if (cachedCard) {
+    draftCard = cachedCard;
+  } else {
+    const data = await fetchJson('/api/identity/card');
+    draftCard = data?.card || {
+      name: 'Boss Agent',
+      description: 'Central orchestrator agent',
+      capabilities: ['code-generation', 'sprint-planning'],
+      runtime: 'claude-cli',
+      ownerPolicy: 'none',
+      supportedProtocols: ['lobby-message'],
+      allowedScopes: ['*'],
+      version: '1.0.0',
+    };
+  }
+
   try {
     linkedDid = localStorage.getItem('agent-os-linked-did') || '';
   } catch {}
@@ -33,34 +91,84 @@ async function load() {
 
 async function handleSave() {
   readFormValues();
-  const res = await postJson('/api/identity/card', { card: draftCard });
-  if (res && res.ok) {
-    draftCard = res.card;
-    alert('Card draft saved locally!');
-    render();
+  draftCard.updatedAt = new Date().toISOString();
+  try {
+    localStorage.setItem('agent-os-identity-card', JSON.stringify(draftCard));
+  } catch {}
+
+  if (!window.AGENT_OS_HOSTED && lobbyMode !== 'swarm') {
+    const res = await postJson('/api/identity/card', { card: draftCard });
+    if (res && res.ok) {
+      draftCard = res.card;
+      alert('Card draft saved locally!');
+    } else {
+      alert('Failed to save draft card to server: ' + (res?.error || 'Unknown error'));
+    }
   } else {
-    alert('Failed to save draft card: ' + (res?.error || 'Unknown error'));
+    alert('Card draft saved locally in browser!');
   }
+  render();
 }
 
 async function handleValidate() {
   readFormValues();
-  const res = await postJson('/api/identity/validate-card', { card: draftCard });
-  if (res) {
-    validationResult = res;
+  draftCard.mediaType = 'application/vnd.agent-os.card.v1+json';
+  if (!draftCard.createdAt) draftCard.createdAt = new Date().toISOString();
+  draftCard.updatedAt = new Date().toISOString();
+
+  const validation = validateAgentCard(draftCard);
+  if (!validation.ok) {
+    validationResult = { ok: false, errors: validation.errors };
     render();
+    return;
   }
+
+  try {
+    const canonical = JSON.stringify(sortKeys(draftCard));
+    const hash = await sha256(canonical);
+    validationResult = { ok: true, hash };
+  } catch (err) {
+    validationResult = { ok: false, errors: [err.message] };
+  }
+  render();
 }
 
 async function handlePrepareReg() {
   readFormValues();
+  draftCard.mediaType = 'application/vnd.agent-os.card.v1+json';
+  if (!draftCard.createdAt) draftCard.createdAt = new Date().toISOString();
+  draftCard.updatedAt = new Date().toISOString();
+
+  const validation = validateAgentCard(draftCard);
+  if (!validation.ok) {
+    alert('Validation failed, cannot prepare registration: ' + validation.errors.join('; '));
+    return;
+  }
+
   const network = document.getElementById('identity-network')?.value || 'testnet';
-  const res = await postJson('/api/identity/prepare-registration', { card: draftCard, network });
-  if (res && res.ok) {
-    registrationPlan = res.plan;
+  try {
+    const canonical = JSON.stringify(sortKeys(draftCard));
+    const cardHash = await sha256(canonical);
+    const steps = [
+      `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
+      `Open your Concordium wallet (or the registry MCP service) on ${network}.`,
+      'Ask the registry to build the registration transaction for this card hash — it returns a sign-ready payload ({ hex, schema_json }); Agent OS does not build or hold it.',
+      'Sign the payload in your wallet and submit it yourself. Agent OS never signs or submits.',
+      'Once confirmed, copy the resulting DID back into Agent OS to link this profile to its reference.',
+    ];
+    registrationPlan = {
+      card: draftCard,
+      mediaType: draftCard.mediaType,
+      cardHash,
+      registry: 'concordium',
+      network,
+      steps,
+      walletSideOnly: true,
+      notice: 'Agent OS prepares this registration but never signs or submits it. Signing happens in your wallet; no private key is ever stored or transmitted by Agent OS.',
+    };
     render();
-  } else {
-    alert('Validation failed, cannot prepare registration: ' + (res?.error || 'Make sure the card is valid first.'));
+  } catch (err) {
+    alert('Failed to prepare registration: ' + err.message);
   }
 }
 
