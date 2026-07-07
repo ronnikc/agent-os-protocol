@@ -10,14 +10,15 @@
 
 import type { LobbyStore } from '../store.js';
 import type { LobbySession } from '@agent-os/protocol-core';
+import { randomUUID } from 'node:crypto';
 
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 
 /** The lobby's owner identity, if one was bound at creation (`created_by` holding a real ref). */
 export function lobbyOwnerRef(lobby: Pick<LobbySession, 'created_by'> | undefined): string | null {
   const owner = lobby?.created_by;
-  // 'system' / undefined are the legacy unauthenticated defaults — not a real owner.
-  if (!owner || owner === 'system') return null;
+  // 'system' / undefined / 'web-user' are the legacy unauthenticated defaults — not a real owner.
+  if (!owner || owner === 'system' || owner === 'web-user') return null;
   return owner;
 }
 
@@ -30,6 +31,22 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
   if (!identityRef) return false;
   const lobby = await store.getLobby(lobbyId);
   if (!lobby) return false;
+
+  // Auto-claim unowned/system/web-user lobbies upon first wallet management action
+  const owner = lobby.created_by;
+  if (!owner || owner === 'system' || owner === 'web-user') {
+    lobby.created_by = identityRef;
+    await store.updateLobby(lobbyId, { created_by: identityRef });
+    await store.addMember({
+      id: `mem_${randomUUID()}`,
+      lobby_id: lobbyId,
+      identity_ref: identityRef,
+      role: 'owner',
+      status: 'active',
+    });
+    return true;
+  }
+
   if (lobbyOwnerRef(lobby) === identityRef) return true;
   const member = await store.getMember(lobbyId, identityRef);
   return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
