@@ -5,6 +5,7 @@ let validationResult = null;
 let registrationPlan = null;
 let linkedDid = '';
 let lobbyMode = 'local';
+let selectedSlug = '';
 
 function sortKeys(value) {
   if (Array.isArray(value)) return value.map(sortKeys);
@@ -457,6 +458,7 @@ function render() {
   // Wire up event listeners
   document.getElementById('identity-agent-select')?.addEventListener('change', (e) => {
     const slug = e.target.value;
+    selectedSlug = slug;
     if (slug) {
       const agent = (state.agents || []).find(a => a.slug === slug);
       if (agent) {

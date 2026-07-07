@@ -30,12 +30,28 @@ export async function fetchJson(url, opts) {
   let finalUrl = url;
   let finalOpts = opts || {};
 
+  let token = null;
+  let lobbyId = null;
   const s = hostedSession();
   if (s && s.token) {
-    if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
+    token = s.token;
+    lobbyId = s.lobbyId;
+  } else {
+    token = localStorage.getItem('agent-os-lobby-token');
+    lobbyId = state.session?.lobbyId;
+  }
+
+  if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
+    if (token) {
       finalOpts.headers = {
         ...(finalOpts.headers || {}),
-        'Authorization': `Bearer ${s.token}`
+        'Authorization': `Bearer ${token}`
+      };
+    }
+    if (lobbyId) {
+      finalOpts.headers = {
+        ...(finalOpts.headers || {}),
+        'X-Lobby-Id': lobbyId
       };
     }
   }
@@ -964,6 +980,18 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress) {
         <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Signature:</strong> <span style="font-size:11px; font-family:monospace; color:#8da0bf; word-break:break-all;">${signatureHex ? signatureHex.slice(0, 48) + '...' : ''}</span></div>
         <div><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Status:</strong> <span style="color:#22c55e; font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}</div>
       </div>
+      ${typeof window !== 'undefined' && window.AGENT_OS_HOSTED ? `
+        <div style="margin-top:16px; padding:12px; background:rgba(49, 140, 255, 0.1); border:1px solid rgba(49, 140, 255, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
+          <strong style="color:#38bdf8; display:block; margin-bottom:4px;">Action Required to Bind to Agent Definition:</strong>
+          Since you are running in Swarm/Hosted mode, you must update the agent markdown file in your GitHub repository to link this DID permanently. Add the following header at the top of your agent's definition file:
+          <div style="margin-top:8px; background:rgba(0,0,0,0.3); padding:8px; border-radius:4px; font-family:monospace; color:#38bdf8; user-select:all; border:1px solid var(--border);">Identity: ${escapeHtml(did)}</div>
+        </div>
+      ` : `
+        <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
+          <strong style="color:#22c55e; display:block; margin-bottom:4px;">Notice:</strong>
+          The Agent ID was automatically saved to your local agent definition file. Please <strong>restart</strong> the agent to connect with the new ID and update its status to verified.
+        </div>
+      `}
       <div style="margin-top:20px; display:flex; justify-content:flex-end;">
         <button class="btn btn-primary" id="btn-close-id-success">Done</button>
       </div>
