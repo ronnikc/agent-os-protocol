@@ -105,6 +105,8 @@ export class LobbyCoordinator {
   private sendTimes = new Map<string, number[]>();
   /** agentId → last hand-raise timestamp (ms), for server-side hand-raise cooldown. */
   private lastHandRaise = new Map<string, number>();
+  /** agentId → last identity verification check timestamp (ms) */
+  private lastIdentityCheck = new Map<string, number>();
 
   constructor(private readonly store: LobbyStore, options: CoordinatorOptions = {}) {
     this.rateLimit = options.rateLimit ?? 30;
@@ -327,9 +329,32 @@ export class LobbyCoordinator {
   // ── Heartbeat ──
   private async onHeartbeat(conn: Connection, msg: Extract<AgentToLobbyMessage, { type: 'lobby-heartbeat' }>): Promise<HandleResult> {
     if (!conn.agentId) return { out: [] };
-    const agent = await this.store.updateAgent(conn.lobbyId, conn.agentId, { status: msg.status, current_work: msg.current_work, last_seen: new Date().toISOString() });
+    const agent = await this.store.getAgent(conn.lobbyId, conn.agentId);
     if (!agent) return { out: [] };
-    return { out: [{ target: { kind: 'lobby' }, message: { type: 'lobby-agent-updated', agent } }] };
+
+    const updatedFields: Partial<LobbyAgent> = {
+      status: msg.status,
+      current_work: msg.current_work,
+      last_seen: new Date().toISOString()
+    };
+
+    // Non-blocking background verification check, limited to once per 60s per agent to prevent lag/heartbeat timeouts.
+    const now = Date.now();
+    const lastCheck = this.lastIdentityCheck.get(conn.agentId) ?? 0;
+    if (agent.identity_ref && (!agent.identity_status || agent.identity_status === 'unverified') && (now - lastCheck > 60_000)) {
+      this.lastIdentityCheck.set(conn.agentId, now);
+      this.verifyIdentity(agent.identity_ref)
+        .then(async (verification) => {
+          if (verification && verification.status !== 'unverified') {
+            await this.store.updateAgent(conn.lobbyId, conn.agentId!, { identity_status: verification.status });
+          }
+        })
+        .catch(() => {});
+    }
+
+    const updated = await this.store.updateAgent(conn.lobbyId, conn.agentId, updatedFields);
+    if (!updated) return { out: [] };
+    return { out: [{ target: { kind: 'lobby' }, message: { type: 'lobby-agent-updated', agent: updated } }] };
   }
 
   // ── Message (floor control + lobby-scoping) ──
