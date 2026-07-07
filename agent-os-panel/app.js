@@ -30,12 +30,28 @@ export async function fetchJson(url, opts) {
   let finalUrl = url;
   let finalOpts = opts || {};
 
+  let token = null;
+  let lobbyId = null;
   const s = hostedSession();
   if (s && s.token) {
-    if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
+    token = s.token;
+    lobbyId = s.lobbyId;
+  } else {
+    token = localStorage.getItem('agent-os-lobby-token');
+    lobbyId = state.session?.lobbyId;
+  }
+
+  if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
+    if (token) {
       finalOpts.headers = {
         ...(finalOpts.headers || {}),
-        'Authorization': `Bearer ${s.token}`
+        'Authorization': `Bearer ${token}`
+      };
+    }
+    if (lobbyId) {
+      finalOpts.headers = {
+        ...(finalOpts.headers || {}),
+        'X-Lobby-Id': lobbyId
       };
     }
   }
