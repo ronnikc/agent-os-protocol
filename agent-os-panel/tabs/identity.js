@@ -58,7 +58,7 @@ async function sha256(message) {
 
 async function load() {
   const modeData = await fetchJson('/api/mode');
-  lobbyMode = modeData?.mode || 'local';
+  lobbyMode = (window.AGENT_OS_HOSTED || modeData?.mode === 'swarm') ? 'swarm' : 'local';
 
   let cachedCard = null;
   try {
@@ -245,14 +245,26 @@ async function handleMintIdentity() {
   }
 }
 
-function handleLinkDid() {
+async function handleLinkDid() {
   const input = document.getElementById('linked-did-input');
   const value = input?.value?.trim() || '';
   linkedDid = value;
+  
+  if (!selectedSlug) {
+    showAlert('Select Agent', 'Please select an agent in Step 1 to link this DID reference to.');
+    return;
+  }
+  
   try {
     localStorage.setItem('agent-os-linked-did', value);
-    showAlert('Success', 'DID linked and saved locally!');
-  } catch {}
+    const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: value });
+    if (saved && saved.ok === false) {
+      throw new Error(saved.error || 'Failed to save mapping on server.');
+    }
+    showAlert('Success', `Agent ID reference successfully linked and saved to "${selectedSlug}"!`);
+  } catch (err) {
+    showAlert('Linking Failed', 'Failed to link DID: ' + err.message);
+  }
   render();
 }
 
@@ -301,7 +313,7 @@ function render() {
           <select id="identity-agent-select" style="width:100%;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
             <option value="">-- Select an Agent --</option>
             ${(state.agents || []).map(a => `
-              <option value="${escapeHtml(a.slug)}">${escapeHtml(a.name)} (${escapeHtml(a.slug)})</option>
+              <option value="${escapeHtml(a.slug)}" ${a.slug === selectedSlug ? 'selected' : ''}>${escapeHtml(a.name)} (${escapeHtml(a.slug)})</option>
             `).join('')}
           </select>
         </div>

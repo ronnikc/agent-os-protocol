@@ -526,25 +526,24 @@ function renderLobby() {
 }
 
 async function refresh() {
-  const modeData = await fetchJson('/api/mode');
-  if (modeData) {
-    lobbyMode = modeData.mode || 'local';
-    if (lobbyMode === 'swarm') {
-      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
-      lobbyInfo = {
-        id: s?.lobbyId || modeData.lobby_id || null,
-        name: 'Remote Swarm',
-        url: modeData.lobbyUrl || null,
-        connected: lobbyConnected,
-      };
-    } else {
-      lobbyInfo = {
-        id: modeData.lobby_id || null,
-        name: modeData.lobby_name || null,
-        url: modeData.lobbyUrl || null,
-        connected: modeData.lobby_connected !== false,
-      };
-    }
+  let modeData = null;
+  try { modeData = await fetchJson('/api/mode'); } catch {}
+  lobbyMode = (window.AGENT_OS_HOSTED || modeData?.mode === 'swarm') ? 'swarm' : 'local';
+  if (lobbyMode === 'swarm') {
+    const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+    lobbyInfo = {
+      id: s?.lobbyId || modeData?.lobby_id || null,
+      name: 'Remote Swarm',
+      url: modeData?.lobbyUrl || window.AGENT_OS_LOBBY_ORIGIN || window.location.origin || null,
+      connected: lobbyConnected,
+    };
+  } else {
+    lobbyInfo = {
+      id: modeData?.lobby_id || null,
+      name: modeData?.lobby_name || null,
+      url: modeData?.lobbyUrl || null,
+      connected: modeData?.lobby_connected !== false,
+    };
   }
 
   const stateData = await fetchJson('/api/lobby/state');

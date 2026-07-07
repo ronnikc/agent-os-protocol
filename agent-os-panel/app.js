@@ -181,6 +181,13 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
         } else if (cleanPath === 'integrations/github/connect') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
+        } else if (cleanPath === 'create') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies`;
+        } else if (cleanPath === 'status') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}`;
+          finalOpts.method = 'PATCH';
+        } else if (cleanPath === 'boss-agent') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/boss-agent`;
         } else {
           lobbyPath = `/api/v1/agent-lobby/${path}`;
         }
@@ -191,6 +198,19 @@ export async function fetchJson(url, opts) {
           'Authorization': `Bearer ${s.token}`,
           'X-Lobby-Id': s.lobbyId
         };
+      } else {
+        let token = localStorage.getItem('agent-os-lobby-token');
+        if (!token) {
+          try {
+            token = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null')?.token;
+          } catch {}
+        }
+        if (token) {
+          finalOpts.headers = {
+            ...(finalOpts.headers || {}),
+            'Authorization': `Bearer ${token}`
+          };
+        }
       }
     }
   }
@@ -297,7 +317,13 @@ export function onWsMessage(type, fn) {
 function connectWs() {
   try {
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    ws = new WebSocket(`${proto}://${location.host}/ws`);
+    let wsUrl = `${proto}://${location.host}/ws`;
+    if (window.AGENT_OS_HOSTED) {
+      const s = hostedSession();
+      const lobbyQuery = s && s.lobbyId ? `?lobby_id=${encodeURIComponent(s.lobbyId)}` : '';
+      wsUrl = `${proto}://${location.host}/api/v1/agent-lobby/ws/agent${lobbyQuery}`;
+    }
+    ws = new WebSocket(wsUrl);
     ws.onopen = () => {
       state.wsConnected = true;
       updateStatusBar();
@@ -346,11 +372,24 @@ async function updateStatusBar() {
   const el = document.getElementById('status-bar');
   if (!el) return;
   const running = state.agents.filter(a => a.status === 'running').length;
-  const modeData = await fetchJson('/api/mode');
-  const mode = modeData?.mode || 'local';
+  
+  const isHosted = !!window.AGENT_OS_HOSTED;
+  let mode = 'local';
+  let lobbyUrl = '';
+  
+  if (isHosted) {
+    mode = 'swarm';
+    lobbyUrl = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+  } else {
+    try {
+      const modeData = await fetchJson('/api/mode');
+      mode = modeData?.mode || 'local';
+      lobbyUrl = modeData?.lobbyUrl || '';
+    } catch {}
+  }
   
   const modeHtml = mode === 'swarm'
-    ? `<span class="status-pill swarm" title="${escapeHtml(modeData?.lobbyUrl || '')}">Swarm: ${escapeHtml((modeData?.lobbyUrl || '').replace(/^https?:\/\//, '').slice(0, 30))}</span>`
+    ? `<span class="status-pill swarm" title="${escapeHtml(lobbyUrl)}">Swarm: ${escapeHtml(lobbyUrl.replace(/^https?:\/\//, '').slice(0, 30))}</span>`
     : `<span class="status-pill local">Local Mode</span>`;
     
   const wsHtml = `<span class="status-pill ${state.wsConnected ? 'connected' : ''}">
@@ -428,6 +467,13 @@ export async function init() {
   const session = hostedSession();
   if (session) {
     state.session = session;
+    if (session.identityRef) {
+      const parts = session.identityRef.split(':');
+      const address = parts[parts.length - 1];
+      state.wallet.connected = true;
+      state.wallet.address = address;
+      localStorage.setItem('agentos.wallet.connected', 'true');
+    }
   }
 
   const modeData = await fetchJson('/api/mode');
@@ -683,6 +729,12 @@ export async function signInToLobby() {
 
     state.session.token = verifyRes.token;
     state.session.identityRef = verifyRes.identity_ref;
+    
+    const didParts = verifyRes.identity_ref.split(':');
+    const address = didParts[didParts.length - 1];
+    state.wallet.connected = true;
+    state.wallet.address = address;
+    localStorage.setItem('agentos.wallet.connected', 'true');
     
     localStorage.setItem('agentos.hosted.session', JSON.stringify({
       token: verifyRes.token,
