@@ -247,7 +247,8 @@ async function createId(slug) {
   
   let lobbyUrl = document.getElementById('lobbyUrl')?.value?.trim();
   if (lobbyMode === 'swarm') {
-    lobbyUrl = window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
+    const modeData = await fetchJson('/api/mode');
+    lobbyUrl = modeData?.lobbyUrl || window.AGENT_OS_LOBBY_ORIGIN || window.location.origin;
   }
   if (!lobbyUrl) {
     showAlert('Error', 'Lobby URL is not configured.');
@@ -272,10 +273,14 @@ async function createId(slug) {
       setBtnText('Saving…');
       const saved = await postJson('/api/agents/identity', { slug, identity: did });
       if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
-      const confirmedMsg = outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).';
+      const confirmedMsg = txHash
+        ? (outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).')
+        : 'Registered off-chain (hosted by lobby).';
+      const txLine = txHash ? `\nTransaction: ${txHash}` : '';
+      const title = txHash ? 'Identity Minted' : 'Identity Registered';
       showAlert(
-        'Identity Minted',
-        `Agent ID minted and bound to "${slug}".\n\nDID: ${did}\nTransaction: ${txHash}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`
+        title,
+        `Agent ID registered and bound to "${slug}".\n\nDID: ${did}${txLine}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`
       );
     } catch (err) {
       console.error('[Agents] Create ID failed:', err);

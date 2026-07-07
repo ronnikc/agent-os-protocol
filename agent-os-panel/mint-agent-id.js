@@ -250,15 +250,20 @@ export async function mintAgentId(opts) {
   const hostRes = await registryProxy(base, 'agent-cards', { lobbyUrl, did: agentDid, card: sortedCard });
   const metadataUrl = hostRes?.url || `${normalizeHttp(lobbyUrl)}/agent-cards/${encodeURIComponent(agentDid)}`;
 
-  onStatus?.('Anchoring on-chain (sponsored)…');
-  const anchor = await anchorAgentOnChain(ctx, { metadataUrl, cardHash, owner, network, agentName, agentDid });
-  if (!anchor) throw new Error('the connected lobby has no Agent Registry configured (off-chain mode)');
+  try {
+    onStatus?.('Anchoring on-chain (sponsored)…');
+    const anchor = await anchorAgentOnChain(ctx, { metadataUrl, cardHash, owner, network, agentName, agentDid });
+    if (anchor) {
+      onStatus?.('Confirming on-chain…');
+      const outcome = await verifyMintOutcome(ctx, anchor.txHash);
+      if (outcome && outcome.success === false) throw new Error(`mint rejected on-chain (reason ${outcome.reason})`);
+      return { did: agentDid, txHash: anchor.txHash, metadataUrl, outcome };
+    }
+  } catch (anchorErr) {
+    console.warn('[Mint] On-chain anchoring failed, falling back to off-chain hosted mode:', anchorErr);
+  }
 
-  onStatus?.('Confirming on-chain…');
-  const outcome = await verifyMintOutcome(ctx, anchor.txHash);
-  if (outcome && outcome.success === false) throw new Error(`mint rejected on-chain (reason ${outcome.reason})`);
-
-  return { did: agentDid, txHash: anchor.txHash, metadataUrl, outcome };
+  return { did: agentDid, txHash: null, metadataUrl, outcome: null };
 }
 
 function normalizeHttp(url) {

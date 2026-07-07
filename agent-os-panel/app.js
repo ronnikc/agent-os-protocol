@@ -29,6 +29,16 @@ export async function fetchJson(url, opts) {
   let finalUrl = url;
   let finalOpts = opts || {};
 
+  const s = hostedSession();
+  if (s && s.token) {
+    if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
+      finalOpts.headers = {
+        ...(finalOpts.headers || {}),
+        'Authorization': `Bearer ${s.token}`
+      };
+    }
+  }
+
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
     // 1. Intercept /api/mode
     if (url === '/api/mode') {
@@ -210,7 +220,7 @@ export async function patchJson(url, body) {
  * Returns { token, identityRef, lobbyId } or null (local mode, or not signed in).
  */
 export function hostedSession() {
-  if (typeof window === 'undefined' || !window.AGENT_OS_HOSTED) return null;
+  if (typeof window === 'undefined') return null;
   try {
     const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
     return s && s.token && s.lobbyId ? s : null;
@@ -283,9 +293,6 @@ export function onWsMessage(type, fn) {
 }
 
 function connectWs() {
-  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
-    return;
-  }
   try {
     ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onopen = () => {
@@ -376,6 +383,9 @@ export function closeModal() {
   const overlay = document.getElementById('modal-overlay');
   if (overlay) overlay.style.display = 'none';
 }
+if (typeof window !== 'undefined') {
+  window.closeModal = closeModal;
+}
 
 export function showAlert(title, message) {
   showModal(`
@@ -412,13 +422,19 @@ export async function init() {
     });
   }
 
-  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
-    const session = hostedSession();
-    if (!session) {
+  const session = hostedSession();
+  if (session) {
+    state.session = session;
+  }
+
+  const modeData = await fetchJson('/api/mode');
+  const isSwarmMode = modeData?.mode === 'swarm';
+
+  if (typeof window !== 'undefined' && (window.AGENT_OS_HOSTED || isSwarmMode)) {
+    if (window.AGENT_OS_HOSTED && !session) {
       renderAuthOverlay();
       return;
     }
-    state.session = session;
     updateHeaderUI();
     loadLobbies();
 
