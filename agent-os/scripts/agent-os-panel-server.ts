@@ -998,7 +998,11 @@ async function discoverLobbyId(lobbyUrl: string): Promise<string | null> {
 
 let activeLobbyId: string | null = null;
 
-async function resolveLobbyId(): Promise<string | null> {
+async function resolveLobbyId(req?: import('node:http').IncomingMessage): Promise<string | null> {
+  const headerLobbyId = req?.headers['x-lobby-id'];
+  if (typeof headerLobbyId === 'string' && headerLobbyId.trim()) {
+    return headerLobbyId.trim();
+  }
   if (activeLobbyId) return activeLobbyId;
   return discoverLobbyId(DEFAULT_LOBBY_URL);
 }
@@ -1776,7 +1780,7 @@ const server = createServer(async (req, res) => {
   if (path === '/api/registry/agent-cards' && method === 'POST') {
     const body = await parseBody(req);
     const lobbyUrl = (body.lobbyUrl as string) || DEFAULT_LOBBY_URL;
-    const lobby_id = (body.lobby_id as string) || (await resolveLobbyId()) || undefined;
+    const lobby_id = (body.lobby_id as string) || (await resolveLobbyId(req)) || undefined;
     sendJson(res, await proxyToStaging(lobbyUrl, '/api/v1/agent-lobby/agent-cards', 'POST', JSON.stringify({ did: body.did, card: body.card, lobby_id })));
     return;
   }
@@ -2061,7 +2065,7 @@ const server = createServer(async (req, res) => {
 
   // Start remote hosted agent
   if (path === '/api/lobby/remote/agents/start' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const body = await parseBody(req);
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/hosted-agents`, 'POST', JSON.stringify(body), reqHeaders(req));
@@ -2071,7 +2075,7 @@ const server = createServer(async (req, res) => {
 
   // Stop remote hosted agent
   if (path === '/api/lobby/remote/agents/stop' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const body = await parseBody(req);
     const agentId = body.agent_id as string;
@@ -2083,7 +2087,7 @@ const server = createServer(async (req, res) => {
 
   // Get KB settings
   if (path === '/api/lobby/remote/kb' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { kb: null, error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
@@ -2092,7 +2096,7 @@ const server = createServer(async (req, res) => {
 
   // Configure KB settings
   if (path === '/api/lobby/remote/kb' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const body = await parseBody(req);
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb`, 'POST', JSON.stringify(body), reqHeaders(req));
@@ -2102,7 +2106,7 @@ const server = createServer(async (req, res) => {
 
   // Get KB jobs
   if (path === '/api/lobby/remote/kb/jobs' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { jobs: [] }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb/jobs`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
@@ -2111,7 +2115,7 @@ const server = createServer(async (req, res) => {
 
   // Upload KB file
   if (path === '/api/lobby/remote/kb/upload' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const body = await parseBody(req);
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/kb/upload`, 'POST', JSON.stringify(body), reqHeaders(req));
@@ -2120,7 +2124,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/agents' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId && stagingAgentRoster.size === 0) {
       sendJson(res, { agents: [], error: 'No active lobby' }); return;
     }
@@ -2150,7 +2154,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/messages' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { messages: [], error: 'No active lobby' }); return; }
     const limit = url.searchParams.get('limit') || '100';
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/messages?limit=${limit}`);
@@ -2159,7 +2163,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/provider-keys' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { provider_keys: [], error: 'No active lobby' }); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2169,7 +2173,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/provider-keys' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2182,7 +2186,7 @@ const server = createServer(async (req, res) => {
   const deleteKeyMatch = path.match(/^\/api\/lobby\/remote\/provider-keys\/([^/]+)$/);
   if (deleteKeyMatch && (method === 'DELETE' || method === 'POST')) {
     const keyId = deleteKeyMatch[1];
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2193,7 +2197,7 @@ const server = createServer(async (req, res) => {
 
   // ── Swarm/Lobby Settings & Members Proxy ──
   if (path === '/api/lobby/remote/settings') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2210,7 +2214,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/members') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2229,7 +2233,7 @@ const server = createServer(async (req, res) => {
   const memberStatusMatch = path.match(/^\/api\/lobby\/remote\/members\/([^/]+)\/status$/);
   if (memberStatusMatch && method === 'POST') {
     const memberId = memberStatusMatch[1];
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2241,7 +2245,7 @@ const server = createServer(async (req, res) => {
 
   // ── GitHub Integrations Proxy ──
   if (path === '/api/lobby/remote/integrations/github') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2262,7 +2266,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/integrations/github/connect' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const authHeader = req.headers['authorization'];
     const headers = authHeader ? { 'Authorization': authHeader as string } : undefined;
@@ -2272,7 +2276,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/tasks' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { tasks: [], error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`);
     sendJson(res, data);
@@ -2280,7 +2284,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/requests' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { requests: [], error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/pending`);
     sendJson(res, data);
@@ -2288,7 +2292,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/scheduled' && method === 'GET') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { tasks: [], repoConfigured: false, error: 'No active lobby' }); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/scheduled`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
@@ -2296,7 +2300,7 @@ const server = createServer(async (req, res) => {
   }
 
   if (path === '/api/lobby/remote/scheduled/setup' && method === 'POST') {
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/scheduled/setup`, 'POST', undefined, reqHeaders(req));
     sendJson(res, data);
@@ -2307,7 +2311,7 @@ const server = createServer(async (req, res) => {
     const params = matchRoute('/api/lobby/remote/requests/:id/decide', path);
     if (params && method === 'POST') {
       const body = await parseBody(req);
-      const lobbyId = await resolveLobbyId();
+      const lobbyId = await resolveLobbyId(req);
       if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
       const data = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/${params.id}/decide`,
@@ -2323,7 +2327,7 @@ const server = createServer(async (req, res) => {
     if (!agentId) { sendJson(res, { error: 'agent_id required' }, 400); return; }
 
     // Try REST proxy first (requires auth)
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (lobbyId) {
       const data = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/boss-agent`,
@@ -2383,7 +2387,7 @@ const server = createServer(async (req, res) => {
 
   if (path === '/api/lobby/remote/status' && method === 'PATCH') {
     const body = await parseBody(req);
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL,
       `/api/v1/agent-lobby/lobbies/${lobbyId}/status`,
@@ -2437,7 +2441,7 @@ const server = createServer(async (req, res) => {
     const limit = parseInt(url.searchParams.get('limit') ?? '50');
 
     // Build agent ID → display name lookup from cached roster + local agents
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     const agentNameMap = new Map<string, string>(stagingAgentNames); // WS-cached staging names
     for (const [id, agent] of localLobbyAgents) {
       agentNameMap.set(id, agent.display_name);
@@ -2660,7 +2664,7 @@ const server = createServer(async (req, res) => {
     const limit = parseInt(url.searchParams.get('limit') ?? '100');
 
     // Try staging lobby tasks first
-    const lobbyId = await resolveLobbyId();
+    const lobbyId = await resolveLobbyId(req);
     if (lobbyId) {
       const staging = await proxyToStaging(DEFAULT_LOBBY_URL,
         `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`);
@@ -2704,7 +2708,7 @@ const server = createServer(async (req, res) => {
     // Send to staging lobby if agent is assigned and lobby active
     let sentToStaging = false;
     if (task.assigned_to) {
-      const lobbyId = await resolveLobbyId();
+      const lobbyId = await resolveLobbyId(req);
       if (lobbyId) {
         const result = await proxyToStaging(DEFAULT_LOBBY_URL,
           `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`,
