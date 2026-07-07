@@ -612,6 +612,7 @@ function init() {
         visibility,
         join_policy: policy,
         allowlist: invitees,
+        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:testnet:${state.wallet.address}` : undefined,
       }).then(async res => {
         if (res && res.lobby) {
           const newLobbyId = res.lobby.lobby_id;
