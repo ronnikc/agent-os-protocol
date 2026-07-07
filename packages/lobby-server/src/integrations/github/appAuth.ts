@@ -17,6 +17,9 @@
 
 import { createSign } from 'node:crypto';
 
+import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+
 const GITHUB_API = 'https://api.github.com';
 
 export interface GitHubAppConfig {
@@ -25,8 +28,42 @@ export interface GitHubAppConfig {
   slug?: string;
 }
 
+const CONFIG_FILE = join(process.cwd(), '.github-app-config.json');
+
+let dynamicConfig: GitHubAppConfig | null = null;
+try {
+  if (existsSync(CONFIG_FILE)) {
+    const raw = readFileSync(CONFIG_FILE, 'utf-8');
+    const parsed = JSON.parse(raw);
+    if (parsed.appId && parsed.privateKey) {
+      dynamicConfig = {
+        appId: parsed.appId,
+        privateKey: parsed.privateKey,
+        slug: parsed.slug || undefined
+      };
+      console.log('Loaded dynamic GitHub App configuration from .github-app-config.json');
+    }
+  }
+} catch (e) {
+  // Silent fallback
+}
+
+export function setDynamicGithubAppConfig(cfg: GitHubAppConfig | null): void {
+  dynamicConfig = cfg;
+  try {
+    if (cfg) {
+      writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
+    } else if (existsSync(CONFIG_FILE)) {
+      writeFileSync(CONFIG_FILE, '{}', 'utf-8');
+    }
+  } catch (e) {
+    console.error('Failed to persist dynamic GitHub App configuration:', e);
+  }
+}
+
 /** Read the GitHub App config from env, or null when not configured (off = no GitHub connect). */
 export function githubAppConfig(env: NodeJS.ProcessEnv = process.env): GitHubAppConfig | null {
+  if (dynamicConfig) return dynamicConfig;
   const appId = env.GITHUB_APP_ID?.trim();
   const rawKey = env.GITHUB_APP_PRIVATE_KEY;
   if (!appId || !rawKey) return null;

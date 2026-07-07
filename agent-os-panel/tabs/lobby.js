@@ -352,7 +352,10 @@ function renderLobby() {
             <div id="panel-github-status-container">
               ${!lobbyGithub || !lobbyGithub.connected ? `
                 ${lobbyGithub?.configured === false ? `
-                  <span style="color:var(--color-yellow); font-size:12px;">GitHub App is not configured on this lobby server. Please configure GITHUB_APP_ID/GITHUB_APP_PRIVATE_KEY.</span>
+                  <div style="display:flex; flex-direction:column; gap:8px;">
+                    <span style="color:var(--color-yellow); font-size:12px; line-height:1.4;">GitHub App is not configured on this lobby server.</span>
+                    <button class="btn btn-primary btn-sm" id="btn-panel-github-setup" style="width:100%; padding:8px 12px; font-size:12px; height:auto;">Register GitHub App automatically</button>
+                  </div>
                 ` : `
                   <button class="btn btn-primary btn-sm" id="btn-panel-github-connect" style="width:100%; padding:8px 12px; font-size:12px; height:auto;">Connect via GitHub App</button>
                   <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:8px; line-height:1.4;">
@@ -449,6 +452,33 @@ function renderLobby() {
     });
 
     // GitHub Connection event listeners
+    document.getElementById('btn-panel-github-setup')?.addEventListener('click', async () => {
+      const modeData = await fetchJson('/api/mode');
+      const lobbyUrl = modeData?.lobbyUrl || window.location.origin;
+      const manifest = {
+        name: `Agent OS Swarm ${lobbyInfo.id ? lobbyInfo.id.slice(0, 8) : 'Local'}`,
+        url: lobbyUrl,
+        hook_attributes: {
+          active: false
+        },
+        redirect_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/setup-callback`,
+        callback_urls: [
+          `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`
+        ],
+        public: false,
+        default_permissions: {
+          contents: "write",
+          pull_requests: "write",
+          metadata: "read"
+        },
+        default_events: []
+      };
+
+      const manifestStr = JSON.stringify(manifest);
+      const targetUrl = `https://github.com/settings/apps/new?manifest=${encodeURIComponent(manifestStr)}&state=${encodeURIComponent(window.location.origin)}`;
+      window.open(targetUrl, '_blank', 'noopener');
+    });
+
     document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {
       const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
       if (res && res.install_url) {
