@@ -10,6 +10,10 @@
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
 import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig, WalletChallenge } from './models.js';
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
+
+const STORE_FILE = join(process.cwd(), 'lobby-store-db.json');
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
@@ -119,6 +123,85 @@ export class InMemoryLobbyStore implements LobbyStore {
   private bids = new Map<string, TaskBid[]>(); // taskId -> TaskBid[]
   private issuers = new Map<string, ConcordiumIssuerRecord>(); // issuerDid -> ConcordiumIssuerRecord
 
+  private saveTimer: NodeJS.Timeout | null = null;
+
+  constructor() {
+    this.loadSync();
+  }
+
+  private queueSave() {
+    if (this.saveTimer) return;
+    this.saveTimer = setTimeout(() => {
+      this.saveTimer = null;
+      this.saveSync();
+    }, 500);
+  }
+
+  private saveSync() {
+    try {
+      const lobbiesSerialized = Array.from(this.lobbies.entries()).map(([id, bucket]) => ({
+        id,
+        lobby: bucket.lobby,
+        agents: Array.from(bucket.agents.entries()),
+        messages: bucket.messages,
+        tasks: Array.from(bucket.tasks.entries()),
+        events: bucket.events,
+        seq: bucket.seq
+      }));
+
+      const data = {
+        lobbies: lobbiesSerialized,
+        members: Array.from(this.members.entries()),
+        integrations: Array.from(this.integrations.entries()),
+        secrets: Array.from(this.secrets.entries()),
+        providerKeys: Array.from(this.providerKeys.entries()),
+        externalLinks: Array.from(this.externalLinks.entries()),
+        knowledgeBases: Array.from(this.knowledgeBases.entries()),
+        syncJobs: Array.from(this.syncJobs.entries()),
+        marketplaceTasks: Array.from(this.marketplaceTasks.entries()),
+        bids: Array.from(this.bids.entries()),
+        issuers: Array.from(this.issuers.entries())
+      };
+
+      writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[Lobby Store] Failed to save store state to disk:', err);
+    }
+  }
+
+  private loadSync() {
+    if (!existsSync(STORE_FILE)) return;
+    try {
+      const content = readFileSync(STORE_FILE, 'utf-8');
+      const data = JSON.parse(content);
+      if (Array.isArray(data.lobbies)) {
+        for (const item of data.lobbies) {
+          this.lobbies.set(item.id, {
+            lobby: item.lobby,
+            agents: new Map(item.agents || []),
+            messages: item.messages || [],
+            tasks: new Map(item.tasks || []),
+            events: item.events || [],
+            seq: item.seq || 0
+          });
+        }
+      }
+      if (Array.isArray(data.members)) this.members = new Map(data.members);
+      if (Array.isArray(data.integrations)) this.integrations = new Map(data.integrations);
+      if (Array.isArray(data.secrets)) this.secrets = new Map(data.secrets);
+      if (Array.isArray(data.providerKeys)) this.providerKeys = new Map(data.providerKeys);
+      if (Array.isArray(data.externalLinks)) this.externalLinks = new Map(data.externalLinks);
+      if (Array.isArray(data.knowledgeBases)) this.knowledgeBases = new Map(data.knowledgeBases);
+      if (Array.isArray(data.syncJobs)) this.syncJobs = new Map(data.syncJobs);
+      if (Array.isArray(data.marketplaceTasks)) this.marketplaceTasks = new Map(data.marketplaceTasks);
+      if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
+      if (Array.isArray(data.issuers)) this.issuers = new Map(data.issuers);
+      console.log(`[Lobby Store] Successfully loaded ${this.lobbies.size} lobbies from ${STORE_FILE}`);
+    } catch (err) {
+      console.error('[Lobby Store] Failed to load store state from disk:', err);
+    }
+  }
+
   private bucket(lobbyId: string): LobbyBucket | undefined {
     return this.lobbies.get(lobbyId);
   }
@@ -132,6 +215,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       events: [],
       seq: lobby.message_seq ?? 0,
     });
+    this.queueSave();
     return lobby;
   }
 
@@ -147,11 +231,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     const b = this.bucket(lobbyId);
     if (!b) return undefined;
     b.lobby = { ...b.lobby, ...patch, updated_at: new Date().toISOString() };
+    this.queueSave();
     return b.lobby;
   }
 
   async addAgent(lobbyId: string, agent: LobbyAgent): Promise<void> {
     this.bucket(lobbyId)?.agents.set(agent.agent_id, agent);
+    this.queueSave();
   }
 
   async getAgent(lobbyId: string, agentId: string): Promise<LobbyAgent | undefined> {
@@ -163,11 +249,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!a) return undefined;
     const updated = { ...a, ...patch, last_seen: patch.last_seen ?? new Date().toISOString() };
     this.bucket(lobbyId)!.agents.set(agentId, updated);
+    this.queueSave();
     return updated;
   }
 
   async removeAgent(lobbyId: string, agentId: string): Promise<void> {
     this.bucket(lobbyId)?.agents.delete(agentId);
+    this.queueSave();
   }
 
   async roster(lobbyId: string): Promise<LobbyAgent[]> {
@@ -181,11 +269,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!b) return 0;
     b.seq += 1;
     b.lobby.message_seq = b.seq;
+    this.queueSave();
     return b.seq;
   }
 
   async appendMessage(lobbyId: string, message: LobbyMessage): Promise<void> {
     this.bucket(lobbyId)?.messages.push(message);
+    this.queueSave();
   }
 
   async listMessages(lobbyId: string): Promise<LobbyMessage[]> {
@@ -194,6 +284,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async upsertTask(task: LobbyTask): Promise<void> {
     this.bucket(task.lobby_id)?.tasks.set(task.task_id, task);
+    this.queueSave();
   }
 
   async getTask(lobbyId: string, taskId: string): Promise<LobbyTask | undefined> {
@@ -202,6 +293,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async appendEvent(event: LobbyEvent): Promise<void> {
     this.bucket(event.lobby_id)?.events.push(event);
+    this.queueSave();
   }
 
   async listEvents(lobbyId: string): Promise<LobbyEvent[]> {
@@ -211,6 +303,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   // --- New DB Model implementations ---
   async addMember(member: LobbyMember): Promise<LobbyMember> {
     this.members.set(member.id, member);
+    this.queueSave();
     return member;
   }
 
@@ -227,11 +320,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!m || m.lobby_id !== lobbyId) return undefined;
     const updated = { ...m, ...patch };
     this.members.set(memberId, updated);
+    this.queueSave();
     return updated;
   }
 
   async addIntegration(integration: LobbyIntegration): Promise<LobbyIntegration> {
     this.integrations.set(integration.id, integration);
+    this.queueSave();
     return integration;
   }
 
@@ -248,11 +343,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!i || i.lobby_id !== lobbyId) return undefined;
     const updated = { ...i, ...patch, updated_at: new Date().toISOString() };
     this.integrations.set(integrationId, updated);
+    this.queueSave();
     return updated;
   }
 
   async addSecret(secret: IntegrationSecret): Promise<IntegrationSecret> {
     this.secrets.set(secret.id, secret);
+    this.queueSave();
     return secret;
   }
 
@@ -265,6 +362,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!s) return undefined;
     const updated = { ...s, ...patch };
     this.secrets.set(secretId, updated);
+    this.queueSave();
     return updated;
   }
 
@@ -277,6 +375,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       }
     }
     this.providerKeys.set(config.id, config);
+    this.queueSave();
     return config;
   }
 
@@ -298,11 +397,13 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!k) return undefined;
     const updated = { ...k, revoked_at: new Date().toISOString() };
     this.providerKeys.set(id, updated);
+    this.queueSave();
     return updated;
   }
 
   async linkExternalIdentity(link: ExternalIdentityLink): Promise<ExternalIdentityLink> {
     this.externalLinks.set(link.id, link);
+    this.queueSave();
     return link;
   }
 
@@ -312,6 +413,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async upsertKnowledgeBase(kb: KnowledgeBase): Promise<KnowledgeBase> {
     this.knowledgeBases.set(kb.lobby_id, kb);
+    this.queueSave();
     return kb;
   }
 
@@ -321,6 +423,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob> {
     this.syncJobs.set(job.id, job);
+    this.queueSave();
     return job;
   }
 
@@ -359,6 +462,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   // Task Marketplace implementation
   async createMarketplaceTask(task: MarketplaceTask): Promise<MarketplaceTask> {
     this.marketplaceTasks.set(task.id, task);
+    this.queueSave();
     return task;
   }
 
@@ -377,6 +481,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     if (!t || t.lobby_id !== lobbyId) return undefined;
     const updated = { ...t, ...patch, updated_at: new Date().toISOString() };
     this.marketplaceTasks.set(taskId, updated);
+    this.queueSave();
     return updated;
   }
 
@@ -384,6 +489,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     const list = this.bids.get(bid.task_id) ?? [];
     list.push(bid);
     this.bids.set(bid.task_id, list);
+    this.queueSave();
     return bid;
   }
 
@@ -393,6 +499,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async registerIssuer(issuer: ConcordiumIssuerRecord): Promise<ConcordiumIssuerRecord> {
     this.issuers.set(issuer.issuer_did, issuer);
+    this.queueSave();
     return issuer;
   }
 

@@ -380,7 +380,26 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
-    const path = url.pathname;
+    let path = url.pathname;
+
+    // Rewrite panel-specific remote proxy requests to direct lobby sub-routes
+    if (path.startsWith('/api/lobby/remote/')) {
+      const subPath = path.slice('/api/lobby/remote'.length);
+      const lobbyIdHeader = req.headers['x-lobby-id'];
+      const activeLobbyId = typeof lobbyIdHeader === 'string' && lobbyIdHeader.trim() ? lobbyIdHeader.trim() : null;
+      if (activeLobbyId) {
+        if (subPath === '/settings') {
+          path = `/api/v1/agent-lobby/lobbies/${activeLobbyId}`;
+        } else if (subPath === '/status') {
+          path = `/api/v1/agent-lobby/lobbies/${activeLobbyId}/status`;
+        } else {
+          path = `/api/v1/agent-lobby/lobbies/${activeLobbyId}${subPath}`;
+        }
+      } else {
+        path = `/api/v1/agent-lobby${subPath}`;
+      }
+    }
+
     const json = (body: unknown, status = 200): void => {
       res.writeHead(status, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
       res.end(JSON.stringify(body));
