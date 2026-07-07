@@ -530,7 +530,18 @@ export async function init() {
     updateHeaderUI();
     loadLobbies();
 
-    if (localStorage.getItem('agentos.wallet.connected') === 'true') {
+    if (state.wallet.connected && state.wallet.address) {
+      setTimeout(() => {
+        if (window.concordium) {
+          fetchWalletBalance(window.concordium, state.wallet.address).then(bal => {
+            if (bal !== null) {
+              state.wallet.balance = bal;
+              updateHeaderUI();
+            }
+          }).catch(console.error);
+        }
+      }, 500);
+    } else if (localStorage.getItem('agentos.wallet.connected') === 'true') {
       setTimeout(() => {
         if (window.concordium) {
           connectWallet({ silent: true }).catch(() => {});
@@ -648,18 +659,20 @@ function fetchWalletBalance(provider, addrStr) {
   });
 }
 
-export async function connectWallet({ silent = false } = {}) {
-  if (state.wallet.connected) {
-    state.wallet.connected = false;
-    state.wallet.address = null;
-    state.wallet.balance = null;
-    localStorage.removeItem('agentos.wallet.connected');
-    localStorage.removeItem('agentos.hosted.session');
-    state.session = { token: null, identityRef: null, lobbyId: null };
-    updateHeaderUI();
-    return;
+export async function disconnectWallet() {
+  state.wallet.connected = false;
+  state.wallet.address = null;
+  state.wallet.balance = null;
+  localStorage.removeItem('agentos.wallet.connected');
+  localStorage.removeItem('agentos.hosted.session');
+  state.session = { token: null, identityRef: null, lobbyId: null };
+  updateHeaderUI();
+  if (window.AGENT_OS_HOSTED) {
+    window.location.reload();
   }
+}
 
+export async function connectWallet({ silent = false } = {}) {
   const provider = window.concordium;
   if (!provider) {
     if (!silent) {
@@ -840,7 +853,7 @@ export function updateHeaderUI() {
       walletStatus.textContent = shortAddr + balanceText;
       walletStatus.style.color = 'var(--color-green)';
       walletBtn.textContent = 'Disconnect';
-      walletBtn.onclick = connectWallet;
+      walletBtn.onclick = disconnectWallet;
     } else {
       walletStatus.textContent = 'Not Connected';
       walletStatus.style.color = 'var(--color-text-soft)';
