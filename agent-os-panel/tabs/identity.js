@@ -150,7 +150,14 @@ async function handlePrepareReg() {
   try {
     const canonical = JSON.stringify(sortKeys(draftCard));
     const cardHash = await sha256(canonical);
-    const steps = [
+    const isSwarm = lobbyMode === 'swarm';
+    const steps = isSwarm ? [
+      `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
+      `Open your Concordium wallet on ${network}.`,
+      `Click the "Mint Agent ID" button to initiate the sponsored, gasless transaction.`,
+      `Sign the card and submit the transaction in your wallet.`,
+      `Once submitted, the DID is automatically bound to your agent definition (committed to GitHub).`,
+    ] : [
       `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
       `Open your Concordium wallet (or the registry MCP service) on ${network}.`,
       'Ask the registry to build the registration transaction for this card hash — it returns a sign-ready payload ({ hex, schema_json }); Agent OS does not build or hold it.',
@@ -165,7 +172,9 @@ async function handlePrepareReg() {
       network,
       steps,
       walletSideOnly: true,
-      notice: 'Agent OS prepares this registration but never signs or submits it. Signing happens in your wallet; no private key is ever stored or transmitted by Agent OS.',
+      notice: isSwarm
+        ? 'Agent OS automates this registration through a sponsored, gasless transaction co-signed by the lobby and automatically binds the DID back to your repository.'
+        : 'Agent OS prepares this registration but never signs or submits it. Signing happens in your wallet; no private key is ever stored or transmitted by Agent OS.',
     };
     render();
   } catch (err) {
@@ -443,7 +452,11 @@ function render() {
         <!-- Linked DID Profile configuration -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
           <h3 style="margin:0 0 4px 0;font-size:14px;font-weight:600;color:var(--text-primary);">4. Link Registry Reference (DID)</h3>
-          <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px;">Once registered, bind your non-secret DID reference to this workspace.</span>
+          <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px;">
+            ${lobbyMode === 'swarm'
+              ? '✓ Minting automatically commits the DID to your agent definition in GitHub. You can also manually override it below.'
+              : 'Once registered, bind your non-secret DID reference to this workspace.'}
+          </span>
           <div style="display:flex;gap:6px;">
             <input type="text" id="linked-did-input" value="${escapeHtml(linkedDid)}" placeholder="did:ccd:mainnet:..." style="flex:1;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;" />
             <button class="btn btn-secondary btn-sm" id="btn-link-did">Link Reference</button>

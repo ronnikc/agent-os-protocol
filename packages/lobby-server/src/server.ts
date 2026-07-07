@@ -1559,10 +1559,22 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             /<head>/i,
             `<head>\n<script>window.AGENT_OS_HOSTED=true;window.AGENT_OS_LOBBY_ORIGIN=location.origin;</script>`,
           );
-          res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
+          res.writeHead(200, {
+            'content-type': mime,
+            'access-control-allow-origin': '*',
+            'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+            'pragma': 'no-cache',
+            'expires': '0'
+          });
           res.end(html);
         } else {
-          res.writeHead(200, { 'content-type': mime, 'access-control-allow-origin': '*' });
+          res.writeHead(200, {
+            'content-type': mime,
+            'access-control-allow-origin': '*',
+            'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+            'pragma': 'no-cache',
+            'expires': '0'
+          });
           res.end(readFileSync(panelPath));
         }
         return;
@@ -1574,7 +1586,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           /<head>/i,
           `<head>\n<script>window.AGENT_OS_HOSTED=true;window.AGENT_OS_LOBBY_ORIGIN=location.origin;</script>`,
         );
-        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'access-control-allow-origin': '*' });
+        res.writeHead(200, {
+          'content-type': 'text/html; charset=utf-8',
+          'access-control-allow-origin': '*',
+          'cache-control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+          'pragma': 'no-cache',
+          'expires': '0'
+        });
         res.end(html);
         return;
       }
