@@ -1,4 +1,4 @@
-import { state, fetchJson, postJson, registerTab, escapeHtml } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert } from '../app.js';
 
 let draftCard = null;
 let validationResult = null;
@@ -100,12 +100,12 @@ async function handleSave() {
     const res = await postJson('/api/identity/card', { card: draftCard });
     if (res && res.ok) {
       draftCard = res.card;
-      alert('Card draft saved locally!');
+      showAlert('Success', 'Card draft saved locally!');
     } else {
-      alert('Failed to save draft card to server: ' + (res?.error || 'Unknown error'));
+      showAlert('Error', 'Failed to save draft card to server: ' + (res?.error || 'Unknown error'));
     }
   } else {
-    alert('Card draft saved locally in browser!');
+    showAlert('Success', 'Card draft saved locally in browser!');
   }
   render();
 }
@@ -141,7 +141,7 @@ async function handlePrepareReg() {
 
   const validation = validateAgentCard(draftCard);
   if (!validation.ok) {
-    alert('Validation failed, cannot prepare registration: ' + validation.errors.join('; '));
+    showAlert('Validation Failed', 'Validation failed, cannot prepare registration: ' + validation.errors.join('; '));
     return;
   }
 
@@ -168,7 +168,7 @@ async function handlePrepareReg() {
     };
     render();
   } catch (err) {
-    alert('Failed to prepare registration: ' + err.message);
+    showAlert('Error', 'Failed to prepare registration: ' + err.message);
   }
 }
 
@@ -178,7 +178,7 @@ async function handleMintIdentity() {
   const selectedSlug = document.getElementById('identity-agent-select')?.value || 'boss';
   
   if (!window.concordium) {
-    alert('Concordium Browser Wallet not found — install it and connect.');
+    showAlert('Wallet Not Found', 'Concordium Browser Wallet not found — install it and connect.');
     return;
   }
   
@@ -192,7 +192,7 @@ async function handleMintIdentity() {
     const accounts = await window.concordium.requestAccounts();
     const owner = accounts[0];
     if (!owner) {
-      alert('Please connect your Concordium wallet account.');
+      showAlert('Error', 'Please connect your Concordium wallet account.');
       return;
     }
 
@@ -234,6 +234,7 @@ async function handleMintIdentity() {
         statusEl.style.color = 'var(--success)';
         statusEl.textContent = `Identity successfully minted! DID: ${res.did}`;
       }
+      showIdentitySuccessModal(res, draftCard.name, owner);
       render();
     }
   } catch (err) {
@@ -250,7 +251,7 @@ function handleLinkDid() {
   linkedDid = value;
   try {
     localStorage.setItem('agent-os-linked-did', value);
-    alert('DID linked and saved locally!');
+    showAlert('Success', 'DID linked and saved locally!');
   } catch {}
   render();
 }

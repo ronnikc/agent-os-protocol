@@ -3,7 +3,7 @@
  * Left panel: directory tree (lazy-loaded). Right panel: file editor + preview.
  * Restricted to agent-os/ directory only (server enforces path security).
  */
-import { fetchJson, putJson, registerTab, escapeHtml, hostedSession, lobbyApi } from '../app.js';
+import { fetchJson, putJson, registerTab, escapeHtml, hostedSession, lobbyApi, showAlert } from '../app.js';
 
 // In hosted mode the Files tab browses the lobby's CONNECTED GitHub repo (read-only) via the
 // wallet-gated /repo endpoints, instead of the local agent-os/ filesystem. Direct edits from here
@@ -266,7 +266,7 @@ async function openFile(path) {
 
 async function saveFile() {
   if (hostedSession()) {
-    alert('Editing the connected repo from the panel isn’t available yet — hosted agents land changes as commits/PRs. This view is read-only.');
+    showAlert('Read-Only View', 'Editing the connected repo from the panel isn’t available yet — hosted agents land changes as commits/PRs. This view is read-only.');
     return;
   }
   const textarea = document.getElementById('file-editor-textarea');
@@ -278,7 +278,7 @@ async function saveFile() {
     isEditing = false;
     renderEditor();
   } else {
-    alert('Save failed: ' + (result?.error || 'unknown'));
+    showAlert('Error', 'Save failed: ' + (result?.error || 'unknown'));
   }
 }
 

@@ -2,7 +2,7 @@
  * Agents Tab — Agent management (start/stop, presets, bulk operations)
  * Refactored from original index.html inline JS.
  */
-import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby, showIdentitySuccessModal } from '../app.js';
 
 let selected = new Set();
 let lobbyMode = 'local';
@@ -305,23 +305,15 @@ async function createId(slug) {
       if (!owner) throw new Error('wallet connection was rejected');
       const network = /testnet/i.test(lobbyUrl) ? 'testnet' : 'mainnet';
       const { mintAgentId } = await import('../mint-agent-id.js');
-      const { did, txHash, outcome } = await mintAgentId({
+      const res = await mintAgentId({
         base: '', lobbyUrl, network, provider, owner,
         agentName: agent.name, agentRole: slug,
         onStatus: (s) => setBtnText(s.length > 22 ? s.slice(0, 20) + '…' : s),
       });
       setBtnText('Saving…');
-      const saved = await postJson('/api/agents/identity', { slug, identity: did });
+      const saved = await postJson('/api/agents/identity', { slug, identity: res.did });
       if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
-      const confirmedMsg = txHash
-        ? (outcome?.success ? 'Confirmed on-chain.' : 'Submitted (confirm on the explorer).')
-        : 'Registered off-chain (hosted by lobby).';
-      const txLine = txHash ? `\nTransaction: ${txHash}` : '';
-      const title = txHash ? 'Identity Minted' : 'Identity Registered';
-      showAlert(
-        title,
-        `Agent ID registered and bound to "${slug}".\n\nDID: ${did}${txLine}\n${confirmedMsg}\n\nRestart the agent (Stop then Start) for it to connect with this identity.`
-      );
+      showIdentitySuccessModal(res, agent.name, owner);
     } catch (err) {
       console.error('[Agents] Create ID failed:', err);
       showAlert('Minting Failed', `Could not mint the Agent ID: ${err.message || err}`);
