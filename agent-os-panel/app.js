@@ -874,3 +874,52 @@ function updateAuthStatus() {
     };
   }
 }
+
+export function showIdentitySuccessModal(res, agentName, ownerAddress) {
+  const { did, txHash, metadataUrl, anchor, anchorError, cardHash, signatureHex, network = 'mainnet' } = res;
+  
+  const storedBadge = metadataUrl
+    ? `<span style="color:#22c55e;">✓ Hosted</span>`
+    : `<span style="color:#eab308;">⚠ Server unreachable — card not hosted</span>`;
+    
+  let onChainLine = '';
+  if (anchor) {
+    const verb = anchor.mode === 'update' ? 'setAgentURI submitted (pending)' : 'Mint submitted (pending)';
+    const gas = anchor.sponsored
+      ? ` <span style="color:#22c55e; font-size:10px;">· sponsored (no CCD spent)</span>`
+      : ` <span style="color:#8da0bf; font-size:10px;">· energy paid by your wallet</span>`;
+    onChainLine = `<span style="color:#22c55e; font-weight:600;">✓ ${verb}</span> — Tx <a href="https://ccdexplorer.io/${network}/transaction/${escapeHtml(String(anchor.txHash))}" target="_blank" style="color:#38bdf8; text-decoration:underline;">${escapeHtml(String(anchor.txHash).slice(0, 16))}… ↗</a> (registry ${anchor.contract.index},${anchor.contract.subindex})${gas}`;
+  } else if (anchorError) {
+    onChainLine = `<span style="color:#ef4444;">✗ anchoring failed</span> — <span style="font-size:10px;">${escapeHtml(anchorError)}</span>`;
+  } else {
+    onChainLine = `<span style="color:#eab308;">not anchored</span> — no Agent Registry MCP endpoint configured on this lobby`;
+  }
+
+  const explorerUrl = `https://ccdexplorer.io/${network}/account/${encodeURIComponent(ownerAddress)}`;
+
+  const html = `
+    <div style="padding:24px; box-sizing:border-box;">
+      <h3 style="margin:0 0 16px 0; color:#35f28a; font-size:18px; font-weight:600; display:flex; align-items:center; gap:8px;">
+        <span style="font-size:22px;">✓</span> Agent ID Issued Successfully!
+      </h3>
+      <div style="background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:16px; font-size:13px; line-height:1.8; color:#cbd5e1; box-sizing:border-box;">
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Agent Name:</strong> <span>${escapeHtml(agentName)}</span></div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">DID:</strong> <span style="color:#38bdf8; font-family:monospace;">${escapeHtml(did)}</span></div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Metadata:</strong> <a href="${escapeHtml(metadataUrl)}" target="_blank" style="color:#38bdf8; text-decoration:underline;">${escapeHtml(metadataUrl)}</a> ${storedBadge}</div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">On-Chain:</strong> <span>${onChainLine}</span></div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Owner Account:</strong> <a href="${escapeHtml(explorerUrl)}" target="_blank" style="color:#38bdf8; text-decoration:underline;">View on CCDExplorer ↗</a></div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Card Hash:</strong> <span style="font-size:11px; font-family:monospace; color:#8da0bf; word-break:break-all;">${cardHash || ''}</span></div>
+        <div style="margin-bottom:8px;"><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Signature:</strong> <span style="font-size:11px; font-family:monospace; color:#8da0bf; word-break:break-all;">${signatureHex ? signatureHex.slice(0, 48) + '...' : ''}</span></div>
+        <div><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Status:</strong> <span style="color:#22c55e; font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}</div>
+      </div>
+      <div style="margin-top:20px; display:flex; justify-content:flex-end;">
+        <button class="btn btn-primary" id="btn-close-id-success">Done</button>
+      </div>
+    </div>
+  `;
+
+  showModal(html, { wide: true });
+  document.getElementById('btn-close-id-success')?.addEventListener('click', () => {
+    closeModal();
+  });
+}

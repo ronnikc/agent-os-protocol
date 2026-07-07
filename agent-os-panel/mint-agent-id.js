@@ -306,20 +306,23 @@ export async function mintAgentId(opts) {
   const hostRes = await registryProxy(base, 'agent-cards', { lobbyUrl, did: agentDid, card: sortedCard });
   const metadataUrl = hostRes?.url || `${normalizeHttp(lobbyUrl)}/agent-cards/${encodeURIComponent(agentDid)}`;
 
+  let anchor = null;
+  let anchorError = null;
   try {
     onStatus?.('Anchoring on-chain (sponsored)…');
-    const anchor = await anchorAgentOnChain(ctx, { metadataUrl, cardHash, owner, network, agentName, agentDid });
+    anchor = await anchorAgentOnChain(ctx, { metadataUrl, cardHash, owner, network, agentName, agentDid });
     if (anchor) {
       onStatus?.('Confirming on-chain…');
       const outcome = await verifyMintOutcome(ctx, anchor.txHash);
       if (outcome && outcome.success === false) throw new Error(`mint rejected on-chain (reason ${outcome.reason})`);
-      return { did: agentDid, txHash: anchor.txHash, metadataUrl, outcome };
+      return { did: agentDid, txHash: anchor.txHash, metadataUrl, outcome, anchor, cardHash, signatureHex };
     }
   } catch (anchorErr) {
     console.warn('[Mint] On-chain anchoring failed, falling back to off-chain hosted mode:', anchorErr);
+    anchorError = anchorErr.message || String(anchorErr);
   }
 
-  return { did: agentDid, txHash: null, metadataUrl, outcome: null };
+  return { did: agentDid, txHash: null, metadataUrl, outcome: null, anchor: null, anchorError, cardHash, signatureHex };
 }
 
 function normalizeHttp(url) {
