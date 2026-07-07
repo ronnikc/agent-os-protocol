@@ -117,6 +117,28 @@ export async function fetchJson(url, opts) {
       return presets;
     }
 
+    // Intercept /api/agents/identity
+    if (url === '/api/agents/identity') {
+      const s = hostedSession();
+      if (s && s.lobbyId) {
+        try {
+          const body = JSON.parse(finalOpts.body || '{}');
+          const slug = body.slug;
+          const identity = body.identity;
+          if (slug && identity) {
+            const res = await fetchJson(`/api/lobby/remote/agents/${slug}/identity`, {
+              method: 'POST',
+              body: JSON.stringify({ identity })
+            });
+            return res;
+          }
+        } catch (e) {
+          console.error('[Panel] Failed to intercept agents/identity:', e);
+        }
+      }
+      return { ok: false, error: 'Swarm session inactive' };
+    }
+
     // Intercept /api/loops
     if (url === '/api/loops') {
       let presets = {};
@@ -193,6 +215,10 @@ export async function fetchJson(url, opts) {
           const parts = cleanPath.split('/');
           const memberId = parts[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/members/${memberId}/status`;
+        } else if (cleanPath.startsWith('agents/') && cleanPath.endsWith('/identity')) {
+          const parts = cleanPath.split('/');
+          const slug = parts[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agents/${slug}/identity`;
         } else if (cleanPath === 'integrations/github') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
         } else if (cleanPath === 'integrations/github/connect') {
@@ -981,10 +1007,9 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress) {
         <div><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Status:</strong> <span style="color:#22c55e; font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}</div>
       </div>
       ${typeof window !== 'undefined' && window.AGENT_OS_HOSTED ? `
-        <div style="margin-top:16px; padding:12px; background:rgba(49, 140, 255, 0.1); border:1px solid rgba(49, 140, 255, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
-          <strong style="color:#38bdf8; display:block; margin-bottom:4px;">Action Required to Bind to Agent Definition:</strong>
-          Since you are running in Swarm/Hosted mode, you must update the agent markdown file in your GitHub repository to link this DID permanently. Add the following header at the top of your agent's definition file:
-          <div style="margin-top:8px; background:rgba(0,0,0,0.3); padding:8px; border-radius:4px; font-family:monospace; color:#38bdf8; user-select:all; border:1px solid var(--border);">Identity: ${escapeHtml(did)}</div>
+        <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
+          <strong style="color:#22c55e; display:block; margin-bottom:4px;">✓ Auto-Bound to GitHub Definition:</strong>
+          The Agent ID has been automatically committed and pushed to your agent's definition file in your GitHub repository.
         </div>
       ` : `
         <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">

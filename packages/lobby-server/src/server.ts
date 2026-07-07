@@ -1223,6 +1223,64 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ lobby: updated });
     }
 
+    // POST /api/v1/agent-lobby/lobbies/:id/agents/:slug/identity — update DID identity reference in GitHub repo
+    const agentIdentityMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/agents\/([^/]+)\/identity$/);
+    if (agentIdentityMatch && req.method === 'POST') {
+      const lobbyId = agentIdentityMatch[1];
+      const slug = agentIdentityMatch[2];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      const body = await readBody(req);
+      if (typeof body.identity !== 'string' || !body.identity.trim()) {
+        return json({ error: 'identity is required' }, 400);
+      }
+
+      const integration = await store.getIntegration(lobbyId, 'github');
+      if (!integration || !integration.repo_full_name) {
+        return json({ error: 'no connected GitHub repository' }, 400);
+      }
+
+      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
+      const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
+      if (!token) return json({ error: 'GitHub authorization token expired or not found' }, 400);
+
+      const parsed = parseGithubUrl(integration.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository URL' }, 400);
+
+      const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+      const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+      const branchName = integration.branch || 'main';
+
+      const filePath = `agent-os/sub-agents/agents/${slug}.md`;
+      let content = '';
+      try {
+        content = await client.readFile(filePath, branchName);
+      } catch {
+        return json({ error: `agent definition file "${filePath}" not found in repository` }, 404);
+      }
+
+      const identityLine = `Identity: ${body.identity.trim()}`;
+      let newContent = '';
+      if (content.match(/^Identity:\s*(.+)$/m)) {
+        newContent = content.replace(/^Identity:\s*(.+)$/m, identityLine);
+      } else {
+        if (content.match(/^Title:\s*(.+)$/m)) {
+          newContent = content.replace(/^(Title:\s*.+)$/m, `$1\n${identityLine}`);
+        } else {
+          newContent = `${identityLine}\n${content}`;
+        }
+      }
+
+      try {
+        await client.writeFile(filePath, newContent, `chore: bind Agent ID identity ref to ${slug}`, branchName);
+        return json({ ok: true, identity: body.identity.trim() });
+      } catch (err: any) {
+        return json({ error: `failed to write to GitHub repository: ${err.message || err}` }, 500);
+      }
+    }
+
     // POST /api/v1/agent-lobby/lobbies/:id/members — invite a member
     const membersMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/members$/);
     if (membersMatch && req.method === 'POST') {
