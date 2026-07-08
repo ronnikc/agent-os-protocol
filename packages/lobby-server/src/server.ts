@@ -1527,6 +1527,41 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ ok: true });
     }
 
+    // POST /api/v1/agent-lobby/lobbies/:id/boss-agent
+    const bossAgentMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/boss-agent$/);
+    if (bossAgentMatch && req.method === 'POST') {
+      const lobbyId = bossAgentMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+
+      const body = await readBody(req);
+      const agentId = body.agent_id;
+      if (!agentId) return json({ error: 'agent_id is required' }, 400);
+
+      const lobby = await store.getLobby(lobbyId);
+      if (!lobby) return json({ error: 'lobby not found' }, 404);
+
+      const target = await store.getAgent(lobbyId, agentId);
+      if (!target) return json({ error: `unknown agent: ${agentId}` }, 404);
+
+      if (lobby.boss_agent_id) {
+        await store.updateAgent(lobbyId, lobby.boss_agent_id, { is_boss: false }).catch(() => null);
+      }
+      await store.updateAgent(lobbyId, agentId, { is_boss: true });
+      await store.updateLobby(lobbyId, { boss_agent_id: agentId });
+
+      await recordEvent(lobbyId, 'boss_appointed', identityRef, { boss: agentId });
+
+      // Broadcast to WebSocket clients
+      const out: LobbyToAgentMessage = { type: 'lobby-boss-appointed', agent_id: agentId };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) {
+        send(cid, out);
+      }
+
+      return json({ ok: true, boss_agent_id: agentId });
+    }
+
     // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases
     const ganttMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/gantt\/phases$/);
     if (ganttMatch && req.method === 'GET') {
