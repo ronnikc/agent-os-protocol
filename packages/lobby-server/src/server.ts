@@ -928,10 +928,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }
 
     // ── KB (Knowledge Base) endpoints (wallet-gated) ──
-    const kbMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/kb(?:\/(upload|jobs))?$/);
+    const kbMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/kb(?:\/(upload|jobs|sync))?$/);
     if (kbMatch) {
       const lobbyId = kbMatch[1];
-      const action = kbMatch[2]; // undefined, 'upload', or 'jobs'
+      const action = kbMatch[2]; // undefined, 'upload', 'jobs', or 'sync'
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
       if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
@@ -970,6 +970,44 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (req.method === 'GET' && action === 'jobs') {
         const jobs = await store.listKnowledgeSyncJobs(lobbyId);
         return json({ jobs });
+      }
+
+      // POST .../kb/sync — trigger manual Git repo sync / training
+      if (req.method === 'POST' && action === 'sync') {
+        const jobId = `job_${randomUUID()}`;
+        const job = await store.upsertKnowledgeSyncJob({
+          id: jobId,
+          lobby_id: lobbyId,
+          kb_id: (await store.getKnowledgeBase(lobbyId))?.id || 'none',
+          source_provider: 'github',
+          status: 'queued',
+          created_by_identity_ref: identityRef,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+        // Trigger background sync task
+        setTimeout(async () => {
+          try {
+            const { syncKnowledgeBaseCache } = await import('./kb/sync.js');
+            await syncKnowledgeBaseCache(lobbyId, store);
+            await store.upsertKnowledgeSyncJob({
+              ...job,
+              status: 'committed',
+              updated_at: new Date().toISOString(),
+            });
+          } catch (err) {
+            console.error(`[KB Sync] Manual sync job ${jobId} failed:`, err);
+            await store.upsertKnowledgeSyncJob({
+              ...job,
+              status: 'failed',
+              error: (err as Error).message,
+              updated_at: new Date().toISOString(),
+            });
+          }
+        }, 1000);
+
+        return json({ job }, 202);
       }
 
       // POST .../kb/upload — upload file for KB conversion
@@ -1427,15 +1465,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = taskListMatch[1];
       if (req.method === 'POST') {
         const body = await readBody(req);
-        if (!body.title || !body.description || typeof body.proposed_budget_ccd !== 'number') {
-          return json({ error: 'missing title, description, or proposed_budget_ccd' }, 400);
+        if (!body.title) {
+          return json({ error: 'missing title' }, 400);
         }
+        const description = typeof body.description === 'string' ? body.description : '';
+        const proposed_budget_ccd = typeof body.proposed_budget_ccd === 'number' ? body.proposed_budget_ccd : 0;
+        
         const task = await store.createMarketplaceTask({
           id: randomUUID(),
           lobby_id: lobbyId,
           title: body.title,
-          description: body.description,
-          proposed_budget_ccd: body.proposed_budget_ccd,
+          description,
+          proposed_budget_ccd,
           status: 'posted',
           posted_by_identity_ref: body.posted_by_identity_ref ?? 'anonymous',
           created_at: new Date().toISOString(),
@@ -1454,6 +1495,48 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const tasks = await store.listMarketplaceTasks(lobbyId);
         return json({ tasks });
       }
+    }
+
+    // PATCH /api/v1/agent-lobby/lobbies/:id/tasks/:taskId
+    const taskUpdateMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)$/);
+    if (taskUpdateMatch && req.method === 'PATCH') {
+      const lobbyId = taskUpdateMatch[1];
+      const taskId = taskUpdateMatch[2];
+      const body = await readBody(req);
+      const updated = await store.updateMarketplaceTask(lobbyId, taskId, body);
+      return json({ task: updated });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/delete
+    const taskDeleteMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/delete$/);
+    if (taskDeleteMatch && req.method === 'POST') {
+      const lobbyId = taskDeleteMatch[1];
+      const taskId = taskDeleteMatch[2];
+      await store.deleteMarketplaceTask(lobbyId, taskId);
+      return json({ ok: true });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/messages/clear
+    const clearMessagesMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/messages\/clear$/);
+    if (clearMessagesMatch && req.method === 'POST') {
+      const lobbyId = clearMessagesMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized' }, 403);
+      await store.clearMessages(lobbyId);
+      return json({ ok: true });
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases
+    const ganttMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/gantt\/phases$/);
+    if (ganttMatch && req.method === 'GET') {
+      return json({
+        phases: [
+          { id: 'phase-1', name: 'Phase 1: Foundation & Core Setup', completedSprints: 4, sprintCount: 4, status: 'complete', tasks: [] },
+          { id: 'phase-2', name: 'Phase 2: Swarm Capabilities', completedSprints: 2, sprintCount: 3, status: 'active', tasks: [] },
+          { id: 'phase-3', name: 'Phase 3: Visual Playgrounds & Market Bidding', completedSprints: 0, sprintCount: 2, status: 'planned', tasks: [] }
+        ]
+      });
     }
 
     // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/bid
@@ -1673,6 +1756,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const sweeper = setInterval(() => {
     void (async () => {
       try {
+        // Touch last_seen for all active hosted agents to prevent stale heartbeat reaping
+        for (const [agentId, entry] of hostedAgents.entries()) {
+          const lobbyId = entry.conn.lobbyId;
+          await store.updateAgent(lobbyId, agentId, { last_seen: new Date().toISOString() }).catch(() => null);
+        }
+
         for (const { lobbyId: reapLobbyId, reapedAgentIds, out } of await coordinator.reapStale(STALE_MS)) {
           dispatch({ connId: '', lobbyId: reapLobbyId, orgId: 'default' }, out);
           for (const agentId of reapedAgentIds) {

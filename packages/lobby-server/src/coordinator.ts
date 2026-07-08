@@ -34,6 +34,7 @@ import type {
 import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
 import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
+import { validateSessionToken } from './auth/identityProof.js';
 
 /**
  * The read-only identity-verification seam (Phase 8). The coordinator stays decoupled from any
@@ -286,6 +287,24 @@ export class LobbyCoordinator {
       // For 'none'/'allowlisted', best-effort verify a presented ref so the roster badge reflects reality.
       if (!verification && presentedRef) {
         verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
+      }
+
+      // To prevent identity/DID impersonation abuse, verify that the connecting client is authorized by the DID owner.
+      if (presentedRef && verification && isRegistryResolved(verification.status)) {
+        const ownerAccount = verification.ref?.account;
+        if (ownerAccount) {
+          const token = msg.join_token;
+          if (!token || !token.includes('.')) {
+            return deny('impersonation protection: a valid connection session token is required when registering with an Agent ID (DID)');
+          }
+          const payload = validateSessionToken(token, conn.lobbyId);
+          if (!payload) {
+            return deny('impersonation protection: invalid or expired session token');
+          }
+          if (payload.identityRef.toLowerCase() !== ownerAccount.toLowerCase()) {
+            return deny('impersonation protection: session token owner does not match Agent ID (DID) owner account');
+          }
+        }
       }
     }
 

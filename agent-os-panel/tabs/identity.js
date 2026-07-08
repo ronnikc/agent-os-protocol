@@ -1,4 +1,4 @@
-import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert, showHtmlAlert } from '../app.js';
 
 let draftCard = null;
 let validationResult = null;
@@ -6,6 +6,7 @@ let registrationPlan = null;
 let linkedDid = '';
 let lobbyMode = 'local';
 let selectedSlug = '';
+let githubConnected = false;
 
 function sortKeys(value) {
   if (Array.isArray(value)) return value.map(sortKeys);
@@ -60,6 +61,24 @@ async function sha256(message) {
 async function load() {
   const modeData = await fetchJson('/api/mode');
   lobbyMode = (window.AGENT_OS_HOSTED || modeData?.mode === 'swarm') ? 'swarm' : 'local';
+
+  if (lobbyMode === 'swarm') {
+    try {
+      const laRes = await fetchJson('/api/agents/list');
+      state.agents = laRes?.agents || [];
+    } catch (e) {
+      console.warn('[Identity] Failed to fetch agents list:', e);
+    }
+    try {
+      const gitRes = await fetchJson('/api/lobby/remote/integrations/github');
+      githubConnected = !!(gitRes && gitRes.connected && gitRes.repo);
+    } catch (e) {
+      console.warn('[Identity] Failed to fetch github integration:', e);
+      githubConnected = false;
+    }
+  } else {
+    githubConnected = true;
+  }
 
   let cachedCard = null;
   try {
@@ -187,8 +206,21 @@ async function handleMintIdentity() {
   const network = document.getElementById('identity-network')?.value || 'mainnet';
   const selectedSlug = document.getElementById('identity-agent-select')?.value || 'boss';
   
+  if (lobbyMode === 'swarm' && !githubConnected) {
+    showAlert('GitHub Required', 'Please connect a GitHub repository in the Lobby tab first to enable auto-binding of your Agent ID.');
+    return;
+  }
+  
   if (!window.concordium) {
-    showAlert('Wallet Not Found', 'Concordium Browser Wallet not found — install it and connect.');
+    showHtmlAlert('Concordium Wallet Required', `
+      <div style="text-align:left;font-size:12px;line-height:1.5;">
+        <p><strong>To register an Agent ID (DID) on the Concordium blockchain, you need the Concordium Browser Wallet.</strong></p>
+        <p>1. Download the wallet extension from the <a href="https://chrome.google.com/webstore/detail/concordium-wallet/odfbpeocbbpdnneocdnlphceeapeglne" target="_blank" style="color:var(--color-purple);text-decoration:underline;">Chrome Web Store</a>.</p>
+        <p>2. Create a Concordium ID. This ID links your real-world identity/accountability to your wallet address securely and privately.</p>
+        <p>3. Your wallet address is then used to co-sign Agent IDs. This establishes a cryptographic trust chain: <strong>Human Owner (via Concordium ID) ➔ Wallet Address ➔ Agent ID (DID)</strong>.</p>
+        <p>This accountability link is required to secure private lobbies, trace agent actions back to their owner, and prevent malicious agent spoofing.</p>
+      </div>
+    `);
     return;
   }
   
@@ -395,6 +427,12 @@ function render() {
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
           <h3 style="margin:0 0 12px 0;font-size:14px;font-weight:600;color:var(--text-primary);">2. Card Validation & Hash</h3>
           
+          ${lobbyMode === 'swarm' && !githubConnected ? `
+            <div style="padding:10px;border-radius:4px;margin-bottom:12px;font-size:12px;background:rgba(235,90,90,0.1);border:1px solid var(--color-red);color:var(--color-red);">
+              <strong>⚠️ GitHub Repository Not Connected:</strong> Please connect your repository under the Lobby tab first. You cannot auto-bind or persist Agent IDs without a repository connection.
+            </div>
+          ` : ''}
+
           ${validationResult ? `
             <div style="padding:10px;border-radius:4px;margin-bottom:12px;font-size:12px;background:${validationResult.ok ? 'rgba(0,200,100,0.1)' : 'rgba(235,90,90,0.1)'};border:1px solid ${validationResult.ok ? 'var(--color-green)' : 'var(--color-red)'};">
               <strong>Status:</strong> ${validationResult.ok ? 'Valid Agent Card ✓' : 'Validation Failed ✗'}

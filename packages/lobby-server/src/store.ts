@@ -32,6 +32,7 @@ export interface LobbyStore {
 
   appendMessage(lobbyId: string, message: LobbyMessage): Promise<void>;
   listMessages(lobbyId: string): Promise<LobbyMessage[]>;
+  clearMessages(lobbyId: string): Promise<void>;
 
   upsertTask(task: LobbyTask): Promise<void>;
   getTask(lobbyId: string, taskId: string): Promise<LobbyTask | undefined>;
@@ -87,6 +88,7 @@ export interface LobbyStore {
   getMarketplaceTask(lobbyId: string, taskId: string): Promise<MarketplaceTask | undefined>;
   listMarketplaceTasks(lobbyId: string): Promise<MarketplaceTask[]>;
   updateMarketplaceTask(lobbyId: string, taskId: string, patch: Partial<MarketplaceTask>): Promise<MarketplaceTask | undefined>;
+  deleteMarketplaceTask(lobbyId: string, taskId: string): Promise<void>;
 
   addTaskBid(bid: TaskBid): Promise<TaskBid>;
   listTaskBids(taskId: string): Promise<TaskBid[]>;
@@ -280,6 +282,14 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async listMessages(lobbyId: string): Promise<LobbyMessage[]> {
     return this.bucket(lobbyId)?.messages ?? [];
+  }
+
+  async clearMessages(lobbyId: string): Promise<void> {
+    const b = this.bucket(lobbyId);
+    if (b) {
+      b.messages = [];
+      this.queueSave();
+    }
   }
 
   async upsertTask(task: LobbyTask): Promise<void> {
@@ -483,6 +493,11 @@ export class InMemoryLobbyStore implements LobbyStore {
     this.marketplaceTasks.set(taskId, updated);
     this.queueSave();
     return updated;
+  }
+
+  async deleteMarketplaceTask(lobbyId: string, taskId: string): Promise<void> {
+    this.marketplaceTasks.delete(taskId);
+    this.queueSave();
   }
 
   async addTaskBid(bid: TaskBid): Promise<TaskBid> {

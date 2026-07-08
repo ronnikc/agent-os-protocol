@@ -577,57 +577,80 @@ function initProviderKeysLayout() {
   if (!pkDiv) return;
 
   pkDiv.innerHTML = `
-    <h3 style="margin:0 0 10px 0;font-size:14px;font-weight:600;color:var(--text-primary);">Provider Keys (Server-side Encrypted Custody)</h3>
-    <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:12px;">
-      Configure API keys for model providers. Default keys apply to all agents in this lobby unless overridden per-agent.
-    </span>
-
-    <!-- Key Add Form -->
-    <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;">
-      <div>
-        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Provider</label>
-        <select id="pk-provider" style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
-          <option value="anthropic">Anthropic</option>
-          <option value="openai">OpenAI</option>
-          <option value="openai-compatible">OpenAI Compatible</option>
-        </select>
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Agent DID (Optional override)</label>
-        <input type="text" id="pk-agent-ref" placeholder="did:ccd:..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:160px;" />
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">API Key</label>
-        <input type="password" id="pk-key" placeholder="sk-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:150px;" />
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Base URL (Optional)</label>
-        <input type="text" id="pk-base-url" placeholder="https://..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:120px;" />
-      </div>
-      <div>
-        <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Model (Optional)</label>
-        <input type="text" id="pk-model" placeholder="claude-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:110px;" />
-      </div>
-      <button class="btn btn-primary btn-sm" id="pk-store-btn">Store Key</button>
+    <div style="display:flex;justify-content:space-between;align-items:center;cursor:pointer;margin-bottom:10px;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:10px 14px;" id="pk-toggle-header">
+      <h3 style="margin:0;font-size:14px;font-weight:600;color:var(--text-primary);">Provider Keys (Server-side Encrypted Custody)</h3>
+      <span style="font-size:11px;color:var(--text-muted);font-weight:500;user-select:none;" id="pk-toggle-icon">▼ Expand</span>
     </div>
+    
+    <div id="pk-collapsible-content" style="display:none;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:16px;margin-top:-6px;margin-bottom:16px;">
+      <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:12px;">
+        Configure API keys for model providers. Default keys apply to all agents in this lobby unless overridden per-agent.
+      </span>
 
-    <!-- Active Keys Table -->
-    <table class="data-table" style="font-size:12px;">
-      <thead>
-        <tr>
-          <th>Provider</th>
-          <th>Scope / Agent Ref</th>
-          <th>Masked Key Hint</th>
-          <th>Base URL</th>
-          <th>Model</th>
-          <th style="width:80px;">Action</th>
-        </tr>
-      </thead>
-      <tbody id="hosted-keys-table-body">
-        <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">Loading keys...</td></tr>
-      </tbody>
-    </table>
+      <!-- Key Add Form -->
+      <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:12px;display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;">
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Provider</label>
+          <select id="pk-provider" style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
+            <option value="anthropic">Anthropic</option>
+            <option value="openai">OpenAI</option>
+            <option value="openai-compatible">OpenAI Compatible</option>
+          </select>
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Agent DID (Optional override)</label>
+          <input type="text" id="pk-agent-ref" placeholder="did:ccd:..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:160px;" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">API Key</label>
+          <input type="password" id="pk-key" placeholder="sk-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:150px;" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Base URL (Optional)</label>
+          <input type="text" id="pk-base-url" placeholder="https://..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:120px;" />
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Model (Optional)</label>
+          <input type="text" id="pk-model" placeholder="claude-..." style="padding:6px;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;width:110px;" />
+        </div>
+        <button class="btn btn-primary btn-sm" id="pk-store-btn">Store Key</button>
+      </div>
+
+      <!-- Active Keys Table -->
+      <table class="data-table" style="font-size:12px;">
+        <thead>
+          <tr>
+            <th>Provider</th>
+            <th>Scope / Agent Ref</th>
+            <th>Masked Key Hint</th>
+            <th>Base URL</th>
+            <th>Model</th>
+            <th style="width:80px;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="hosted-keys-table-body">
+          <tr><td colspan="6" style="text-align:center;color:var(--text-muted);padding:12px;">Loading keys...</td></tr>
+        </tbody>
+      </table>
+    </div>
   `;
+
+  const header = document.getElementById('pk-toggle-header');
+  const content = document.getElementById('pk-collapsible-content');
+  const icon = document.getElementById('pk-toggle-icon');
+
+  let expanded = localStorage.getItem('agent-os-pk-expanded') === 'true';
+  const setExpanded = (exp) => {
+    expanded = exp;
+    localStorage.setItem('agent-os-pk-expanded', exp ? 'true' : 'false');
+    if (content) content.style.display = exp ? 'block' : 'none';
+    if (icon) icon.textContent = exp ? '▲ Collapse' : '▼ Expand';
+  };
+  setExpanded(expanded);
+
+  header?.addEventListener('click', () => {
+    setExpanded(!expanded);
+  });
 
   document.getElementById('pk-store-btn')?.addEventListener('click', handleStoreKey);
 }

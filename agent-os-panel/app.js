@@ -41,6 +41,21 @@ export async function fetchJson(url, opts) {
     lobbyId = state.session?.lobbyId;
   }
 
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED && s && s.lobbyId) {
+    if (url.startsWith('/api/v1/agent-lobby/lobbies/local/')) {
+      url = url.replace('/api/v1/agent-lobby/lobbies/local/', `/api/v1/agent-lobby/lobbies/${s.lobbyId}/`);
+    }
+    if (url.startsWith('/api/messages')) {
+      url = `/api/lobby/remote/messages${url.slice('/api/messages'.length)}`;
+    } else if (url.startsWith('/api/tasks')) {
+      url = `/api/lobby/remote/tasks${url.slice('/api/tasks'.length)}`;
+    } else if (url.startsWith('/api/gantt/phases')) {
+      url = `/api/lobby/remote/gantt/phases${url.slice('/api/gantt/phases'.length)}`;
+    } else if (url.startsWith('/api/lobby/state')) {
+      url = `/api/lobby/remote/settings`;
+    }
+  }
+
   if (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/')) {
     if (token) {
       finalOpts.headers = {
@@ -230,6 +245,18 @@ export async function fetchJson(url, opts) {
           finalOpts.method = 'PATCH';
         } else if (cleanPath === 'boss-agent') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/boss-agent`;
+        } else if (cleanPath === 'messages/clear') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages/clear`;
+        } else if (cleanPath === 'agent-definitions') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
+        } else if (cleanPath === 'gantt/phases') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/gantt/phases`;
+        } else if (cleanPath.startsWith('tasks/') && cleanPath.endsWith('/delete')) {
+          const taskId = cleanPath.split('/')[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks/${taskId}/delete`;
+        } else if (cleanPath.startsWith('tasks/')) {
+          const taskId = cleanPath.split('/')[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks/${taskId}`;
         } else {
           lobbyPath = `/api/v1/agent-lobby/${path}`;
         }
@@ -337,6 +364,12 @@ export function escapeHtml(s) {
  * "localhost" (which, from a remote browser, would point at the viewer's own machine).
  */
 export async function getRelayWsUrl() {
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    const s = hostedSession();
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    const lobbyQuery = s && s.lobbyId ? `?lobby_id=${encodeURIComponent(s.lobbyId)}` : '';
+    return `${proto}://${location.host}/api/v1/agent-lobby/ws/agent${lobbyQuery}`;
+  }
   const data = await fetchJson('/api/relay');
   const port = Number(data?.port) || 4722;
   const host = location.hostname || 'localhost';
@@ -479,6 +512,19 @@ export function showAlert(title, message) {
       <button class="btn btn-primary" onclick="closeModal()">OK</button>
     </div>
   `);
+}
+
+export function showHtmlAlert(title, html) {
+  showModal(`
+    <h2>${escapeHtml(title)}</h2>
+    <div style="font-size:13px; color:var(--color-text-soft); line-height:1.5; margin:12px 0 20px;">${html}</div>
+    <div class="form-actions" style="margin:0;">
+      <button class="btn btn-primary" onclick="closeModal()">OK</button>
+    </div>
+  `);
+}
+if (typeof window !== 'undefined') {
+  window.showHtmlAlert = showHtmlAlert;
 }
 
 export function showConfirm(title, message, onConfirm) {
@@ -676,7 +722,15 @@ export async function connectWallet({ silent = false } = {}) {
   const provider = window.concordium;
   if (!provider) {
     if (!silent) {
-      showAlert('Wallet Not Found', 'Concordium Browser Wallet extension not found.\nPlease install it from https://www.concordium.com/wallet and reload this page.');
+      showHtmlAlert('Concordium Wallet Required', `
+        <div style="text-align:left;font-size:12px;line-height:1.5;">
+          <p><strong>To manage this lobby, you need the Concordium Browser Wallet.</strong></p>
+          <p>1. Download the wallet extension from the <a href="https://chrome.google.com/webstore/detail/concordium-wallet/odfbpeocbbpdnneocdnlphceeapeglne" target="_blank" style="color:var(--color-purple);text-decoration:underline;">Chrome Web Store</a>.</p>
+          <p>2. Create a Concordium ID. This ID links your real-world identity/accountability to your wallet address securely and privately.</p>
+          <p>3. Your wallet address is then used to authenticate against the lobby and co-sign Agent IDs. This establishes a cryptographic trust chain: <strong>Human Owner (via Concordium ID) ➔ Wallet Address ➔ Agent ID (DID)</strong>.</p>
+          <p>This accountability link is required to secure private lobbies, trace agent actions back to their owner, and prevent malicious agent spoofing.</p>
+        </div>
+      `);
     }
     return;
   }
