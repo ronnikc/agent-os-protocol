@@ -282,8 +282,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
     // Respond to direct messages addressed to us, or to broadcasts if we're the Boss
     if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return;
+
+    // Build context-enriched message for the runner — include sender info and roster for the Boss
+    let enrichedContent = String(m.content ?? '');
+    try {
+      const roster = await store.roster(conn.lobbyId);
+      const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
+      const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
+      const senderType = senderAgent?.participant_type === 'human' ? ' (human)' : '';
+      const header = `[From: ${senderName}${senderType}]`;
+
+      if (isBoss) {
+        // Give the Boss full roster context so it can coordinate effectively
+        const rosterSummary = roster
+          .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
+          .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
+          .join('\n');
+        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${enrichedContent}`;
+      } else {
+        enrichedContent = `${header} ${enrichedContent}`;
+      }
+    } catch { /* roster fetch failed, pass raw content */ }
+
     let reply = '';
-    try { reply = await entry.runner.respondTo(String(m.content ?? '')); } catch { return; }
+    try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
     // Boss broadcasts replies; non-boss agents MUST reply directly to the sender (floor control
     // rejects non-boss broadcasts, causing the "message_rejected: non-boss broadcast" error).

@@ -216,7 +216,13 @@ function renderLobby() {
       ${online.map(a => {
         const isBoss = a.agent_id === lobbyState.bossAgentSlug;
         const isPanel = a.agent_role === 'panel' || (a.display_name || '').toLowerCase().startsWith('panel-');
-        const roleOptions = ['general', 'backend', 'frontend', 'code-review', 'planning', 'research', 'i18n', 'accessibility', 'documentation', 'graph-navigator', 'product', 'security', 'compliance', 'test', 'boss-agent', 'panel', 'ui-assist'].map(r =>
+        // Build role options from agent definitions (dynamic) instead of a hardcoded subset
+        const allSlugs = (window.__agentDefinitions || []).map(d => d.slug).filter(Boolean);
+        // Fallback: if definitions not loaded yet, use the agent's own role as the only option
+        const roleSet = new Set(allSlugs.length > 0 ? allSlugs : ['general', 'backend', 'frontend', 'code-review', 'planning', 'research', 'boss-agent']);
+        // Also include the agent's current role in case it's not in definitions
+        if (a.agent_role) roleSet.add(a.agent_role);
+        const roleOptions = [...roleSet].sort().map(r =>
           `<option value="${r}" ${(a.agent_role || '') === r ? 'selected' : ''}>${r}</option>`
         ).join('');
         return `
@@ -474,25 +480,29 @@ function renderLobby() {
         default_events: []
       };
 
-      // Create a dynamic form to submit the manifest via POST to avoid URL size limits/corruption.
-      // IMPORTANT: Use .value property (not setAttribute) to avoid HTML attribute encoding issues
-      // with the JSON string that contains double quotes — setAttribute('value', json) can corrupt
-      // the manifest value, causing GitHub's "url wasn't supplied" error.
-      const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = 'https://github.com/settings/apps/new';
-      form.target = '_blank';
-
-      const manifestInput = document.createElement('input');
-      manifestInput.type = 'hidden';
-      manifestInput.name = 'manifest';
-      manifestInput.value = JSON.stringify(manifest);
-      form.appendChild(manifestInput);
-
-      document.body.appendChild(form);
-      form.submit();
-      // Delay removal so the browser fully processes the form submission
-      setTimeout(() => { try { document.body.removeChild(form); } catch {} }, 1000);
+      // Open a new window and build+submit the manifest form inside it.
+      // Previous approaches (setAttribute, .value on current-doc form with target=_blank) all
+      // failed with GitHub returning "url wasn't supplied" — the cross-origin form POST from the
+      // parent document mangles the JSON encoding. Building the form in the target window's own
+      // DOM avoids this.
+      const manifestJson = JSON.stringify(manifest);
+      const w = window.open('about:blank', '_blank');
+      if (!w) {
+        showAlert('Popup Blocked', 'Please allow popups for this site and try again.');
+        return;
+      }
+      w.document.open();
+      w.document.write(`<!DOCTYPE html><html><head><title>Redirecting to GitHub...</title></head><body>
+        <p>Redirecting to GitHub to create App...</p>
+        <form id="manifest-form" method="POST" action="https://github.com/settings/apps/new">
+          <input type="hidden" name="manifest" id="manifest-input">
+        </form>
+        <script>
+          document.getElementById('manifest-input').value = ${JSON.stringify(manifestJson)};
+          document.getElementById('manifest-form').submit();
+        </script>
+      </body></html>`);
+      w.document.close();
     });
 
     document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {
