@@ -222,12 +222,33 @@ async function refreshSwarmKb() {
             </div>
           ` : ''}
         </div>
-        <button id="kb-config-edit-btn" class="btn btn-secondary btn-sm">Edit Settings</button>
+        <div style="display:flex;gap:6px;">
+          <button id="kb-sync-btn" class="btn btn-primary btn-sm">Train / Sync KB</button>
+          <button id="kb-config-edit-btn" class="btn btn-secondary btn-sm">Edit Settings</button>
+        </div>
       </div>
     `;
     settingsEl.querySelector('#kb-config-edit-btn')?.addEventListener('click', () => {
       kbConfig = null;
       refreshSwarmKb();
+    });
+    settingsEl.querySelector('#kb-sync-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('kb-sync-btn');
+      if (btn) btn.disabled = true;
+      try {
+        const token = localStorage.getItem('agent-os-lobby-token');
+        const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+        const res = await fetchJson('/api/lobby/remote/kb/sync', { method: 'POST', headers });
+        if (res && res.error) {
+          alert('Failed to sync: ' + res.error);
+        } else {
+          await refreshKbJobs();
+        }
+      } catch (err) {
+        alert('Sync error: ' + err.message);
+      } finally {
+        if (btn) btn.disabled = false;
+      }
     });
 
     if (uploadEl) {

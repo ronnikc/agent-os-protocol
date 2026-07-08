@@ -475,8 +475,21 @@ function renderLobby() {
       };
 
       const manifestStr = JSON.stringify(manifest);
-      const targetUrl = `https://github.com/settings/apps/new?manifest=${encodeURIComponent(manifestStr)}&state=${encodeURIComponent(window.location.origin)}`;
-      window.open(targetUrl, '_blank', 'noopener');
+      
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = `https://github.com/settings/apps/new?state=${encodeURIComponent(window.location.origin)}`;
+      form.target = '_blank';
+
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'manifest';
+      input.value = manifestStr;
+      form.appendChild(input);
+
+      document.body.appendChild(form);
+      form.submit();
+      document.body.removeChild(form);
     });
 
     document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {

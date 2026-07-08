@@ -5,7 +5,7 @@ import { randomBytes, verify, createHmac, timingSafeEqual, createHash } from 'no
 import type { LobbyStore } from '../store.js';
 
 const NONCE_EXPIRY_MS = 5 * 60 * 1000; // Nonces expire in 5 minutes
-const SESSION_EXPIRY_MS = 15 * 60 * 1000; // Session tokens expire in 15 minutes
+const SESSION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // Session tokens expire in 7 days
 
 // Session tokens are HMAC-signed with a server secret so they cannot be forged. Before this,
 // the token was plain base64 of the payload — anyone could mint a session for ANY wallet, which
