@@ -244,7 +244,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
-  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection }>();
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout }>();
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -253,26 +253,44 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   // The coordinator delivers a lobby message to a hosted agent through its virtual socket; here we
   // run one API-runtime turn and post the reply back through the coordinator (broadcast if Boss,
-  // else a direct reply). Self-echoes and unrelated messages are ignored to prevent cascades.
+  // else a direct reply to the sender). Self-echoes and unrelated messages are ignored to prevent
+  // cascades. Also handles boss-appointed notifications so the agent becomes aware of its role.
   async function onHostedInbound(conn: Connection, data: string): Promise<void> {
-    let msg: { type?: string; message?: Record<string, unknown> };
+    let msg: { type?: string; message?: Record<string, unknown>; agent_id?: string };
     try { msg = JSON.parse(data); } catch { return; }
+    const myId = conn.agentId;
+    if (!myId) return;
+
+    // Handle boss appointment notification — inject awareness into the runner's context
+    if (msg?.type === 'lobby-boss-appointed' && msg.agent_id === myId) {
+      const entry = hostedAgents.get(myId);
+      if (entry) {
+        try {
+          await entry.runner.respondTo('[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.');
+        } catch { /* ignore errors from system injection */ }
+      }
+      return;
+    }
+
     if (msg?.type !== 'lobby-message-received' || !msg.message) return;
     const m = msg.message as { from_agent_id?: string; to_agent_id?: string; content?: string };
-    const myId = conn.agentId;
-    if (!myId || m.from_agent_id === myId) return;
+    if (m.from_agent_id === myId) return;
     const entry = hostedAgents.get(myId);
     if (!entry) return;
     const lobby = await store.getLobby(conn.lobbyId);
-    const isBoss = !lobby?.boss_agent_id || lobby.boss_agent_id === myId;
+    const isBoss = lobby?.boss_agent_id === myId;
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
-    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return; // respond only to us, or broadcasts as Boss or when no Boss is set
+    // Respond to direct messages addressed to us, or to broadcasts if we're the Boss
+    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return;
     let reply = '';
     try { reply = await entry.runner.respondTo(String(m.content ?? '')); } catch { return; }
     if (!reply) return;
+    // Boss broadcasts replies; non-boss agents MUST reply directly to the sender (floor control
+    // rejects non-boss broadcasts, causing the "message_rejected: non-boss broadcast" error).
+    const replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',
-      to_agent_id: isBoss ? 'all' : (m.from_agent_id ?? 'all'),
+      to_agent_id: replyTo,
       message_type: 'chat',
       content: reply.length > 4000 ? reply.slice(0, 4000) + '\n\n_(truncated)_' : reply,
     } as AgentToLobbyMessage);
@@ -333,13 +351,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (conn.agentId) agentConn.set(conn.agentId, connId);
     dispatch(conn, reg.out);
     const agentId = conn.agentId ?? connId;
-    hostedAgents.set(agentId, { runner, connId, conn });
+
+    // Start a periodic heartbeat so the stale-heartbeat sweeper does not reap this hosted agent.
+    // Without this, the agent registers (setting last_seen once) and then gets reaped after
+    // STALE_MS (default 90s) because nothing ever updates last_seen again.
+    const heartbeatInterval = setInterval(async () => {
+      try {
+        if (!hostedAgents.has(agentId)) { clearInterval(heartbeatInterval); return; }
+        await coordinator.handle(conn, {
+          type: 'lobby-heartbeat',
+          status: 'idle',
+          current_work: '',
+        } as AgentToLobbyMessage);
+      } catch { /* swallow heartbeat errors */ }
+    }, Math.max(Math.floor(STALE_MS / 3), 15_000)); // heartbeat at 1/3 of stale threshold, min 15s
+    if (typeof heartbeatInterval.unref === 'function') heartbeatInterval.unref();
+
+    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval });
     return agentId;
   }
 
   async function stopHostedAgent(agentId: string): Promise<boolean> {
     const entry = hostedAgents.get(agentId);
     if (!entry) return false;
+    if (entry.heartbeatInterval) clearInterval(entry.heartbeatInterval);
     await entry.runner.stop();
     const res = await coordinator.onDisconnect(entry.conn).catch(() => ({ out: [] as Outbound[] }));
     dispatch(entry.conn, res.out);
