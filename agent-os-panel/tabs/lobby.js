@@ -474,18 +474,23 @@ function renderLobby() {
         default_events: []
       };
 
-      const manifestStr = JSON.stringify(manifest);
-      
+      // Create a dynamic form to submit the manifest via POST to avoid URL size limits/corruption
       const form = document.createElement('form');
-      form.method = 'POST';
-      form.action = `https://github.com/settings/apps/new?state=${encodeURIComponent(window.location.origin)}`;
-      form.target = '_blank';
+      form.setAttribute('method', 'POST');
+      form.setAttribute('action', 'https://github.com/settings/apps/new');
+      form.setAttribute('target', '_blank');
 
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = 'manifest';
-      input.value = manifestStr;
-      form.appendChild(input);
+      const manifestInput = document.createElement('input');
+      manifestInput.setAttribute('type', 'hidden');
+      manifestInput.setAttribute('name', 'manifest');
+      manifestInput.setAttribute('value', JSON.stringify(manifest));
+      form.appendChild(manifestInput);
+
+      const stateInput = document.createElement('input');
+      stateInput.setAttribute('type', 'hidden');
+      stateInput.setAttribute('name', 'state');
+      stateInput.setAttribute('value', window.location.origin);
+      form.appendChild(stateInput);
 
       document.body.appendChild(form);
       form.submit();

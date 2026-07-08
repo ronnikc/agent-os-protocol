@@ -247,6 +247,15 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/boss-agent`;
         } else if (cleanPath === 'messages/clear') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages/clear`;
+        } else if (cleanPath === 'messages') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages${query}`;
+        } else if (cleanPath === 'tasks') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks${query}`;
+        } else if (cleanPath === 'requests') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/pending`;
+        } else if (cleanPath.startsWith('requests/') && cleanPath.endsWith('/decide')) {
+          const requestId = cleanPath.split('/')[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/${requestId}/decide`;
         } else if (cleanPath === 'agent-definitions') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
         } else if (cleanPath === 'gantt/phases') {

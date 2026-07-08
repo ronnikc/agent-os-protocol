@@ -8,7 +8,7 @@
  * store drops in unchanged.
  */
 
-import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent } from '@agent-os/protocol-core';
+import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent, LobbyRequest } from '@agent-os/protocol-core';
 import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig, WalletChallenge } from './models.js';
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
@@ -95,6 +95,12 @@ export interface LobbyStore {
 
   registerIssuer(issuer: ConcordiumIssuerRecord): Promise<ConcordiumIssuerRecord>;
   getIssuer(issuerDid: string): Promise<ConcordiumIssuerRecord | undefined>;
+
+  // Human approval request operations
+  createLobbyRequest(request: LobbyRequest): Promise<LobbyRequest>;
+  getLobbyRequest(lobbyId: string, requestId: string): Promise<LobbyRequest | undefined>;
+  listLobbyRequests(lobbyId: string): Promise<LobbyRequest[]>;
+  updateLobbyRequest(lobbyId: string, requestId: string, patch: Partial<LobbyRequest>): Promise<LobbyRequest | undefined>;
 }
 
 interface LobbyBucket {
@@ -124,6 +130,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private marketplaceTasks = new Map<string, MarketplaceTask>(); // taskId -> MarketplaceTask
   private bids = new Map<string, TaskBid[]>(); // taskId -> TaskBid[]
   private issuers = new Map<string, ConcordiumIssuerRecord>(); // issuerDid -> ConcordiumIssuerRecord
+  private requests = new Map<string, LobbyRequest>(); // requestId -> LobbyRequest
 
   private saveTimer: NodeJS.Timeout | null = null;
 
@@ -162,7 +169,8 @@ export class InMemoryLobbyStore implements LobbyStore {
         syncJobs: Array.from(this.syncJobs.entries()),
         marketplaceTasks: Array.from(this.marketplaceTasks.entries()),
         bids: Array.from(this.bids.entries()),
-        issuers: Array.from(this.issuers.entries())
+        issuers: Array.from(this.issuers.entries()),
+        requests: Array.from(this.requests.entries())
       };
 
       writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
@@ -198,6 +206,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       if (Array.isArray(data.marketplaceTasks)) this.marketplaceTasks = new Map(data.marketplaceTasks);
       if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
       if (Array.isArray(data.issuers)) this.issuers = new Map(data.issuers);
+      if (Array.isArray(data.requests)) this.requests = new Map(data.requests);
       console.log(`[Lobby Store] Successfully loaded ${this.lobbies.size} lobbies from ${STORE_FILE}`);
     } catch (err) {
       console.error('[Lobby Store] Failed to load store state from disk:', err);
@@ -520,5 +529,32 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async getIssuer(issuerDid: string): Promise<ConcordiumIssuerRecord | undefined> {
     return this.issuers.get(issuerDid);
+  }
+
+  async createLobbyRequest(request: LobbyRequest): Promise<LobbyRequest> {
+    // Map requests to include lobby_id context when it is set by connection
+    this.requests.set(request.request_id, request);
+    this.queueSave();
+    return request;
+  }
+
+  async getLobbyRequest(lobbyId: string, requestId: string): Promise<LobbyRequest | undefined> {
+    const r = this.requests.get(requestId);
+    // Since request might not explicitly set lobbyId in some messages, we fetch it by requestId
+    return r;
+  }
+
+  async listLobbyRequests(lobbyId: string): Promise<LobbyRequest[]> {
+    // In in-process memory, return requests corresponding to this lobby. If request has no lobby context, default it.
+    return [...this.requests.values()].filter(r => !r.context?.lobby_id || r.context.lobby_id === lobbyId);
+  }
+
+  async updateLobbyRequest(lobbyId: string, requestId: string, patch: Partial<LobbyRequest>): Promise<LobbyRequest | undefined> {
+    const r = this.requests.get(requestId);
+    if (!r) return undefined;
+    const updated = { ...r, ...patch, updated_at: new Date().toISOString() };
+    this.requests.set(requestId, updated);
+    this.queueSave();
+    return updated;
   }
 }

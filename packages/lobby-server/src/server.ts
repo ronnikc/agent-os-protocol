@@ -264,9 +264,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const entry = hostedAgents.get(myId);
     if (!entry) return;
     const lobby = await store.getLobby(conn.lobbyId);
-    const isBoss = lobby?.boss_agent_id === myId;
+    const isBoss = !lobby?.boss_agent_id || lobby.boss_agent_id === myId;
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
-    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return; // respond only to us, or broadcasts as Boss
+    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return; // respond only to us, or broadcasts as Boss or when no Boss is set
     let reply = '';
     try { reply = await entry.runner.respondTo(String(m.content ?? '')); } catch { return; }
     if (!reply) return;
@@ -1537,6 +1537,43 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           { id: 'phase-3', name: 'Phase 3: Visual Playgrounds & Market Bidding', completedSprints: 0, sprintCount: 2, status: 'planned', tasks: [] }
         ]
       });
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/requests/pending
+    const pendingRequestsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/requests\/pending$/);
+    if (pendingRequestsMatch && req.method === 'GET') {
+      const lobbyId = pendingRequestsMatch[1];
+      const requests = await store.listLobbyRequests(lobbyId);
+      const pending = requests.filter((r) => r.status === 'pending');
+      return json({ requests: pending });
+    }
+
+    // POST /api/v1/agent-lobby/lobbies/:id/requests/:requestId/decide
+    const decideRequestMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/requests\/([^/]+)\/decide$/);
+    if (decideRequestMatch && req.method === 'POST') {
+      const lobbyId = decideRequestMatch[1];
+      const requestId = decideRequestMatch[2];
+      const body = await readBody(req);
+      const request = await store.getLobbyRequest(lobbyId, requestId);
+      if (!request) return json({ error: 'request not found' }, 404);
+
+      const updated = await store.updateLobbyRequest(lobbyId, requestId, {
+        status: body.decision || 'approved',
+        decided_by: body.decided_by || 'panel',
+        decision_notes: body.decision_notes || '',
+        decided_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+
+      if (!updated) return json({ error: 'failed to update request' }, 500);
+
+      // Broadcast the decision to the lobby WebSocket
+      const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) {
+        send(cid, out);
+      }
+
+      return json({ ok: true, request: updated });
     }
 
     // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/bid

@@ -136,6 +136,8 @@ export class LobbyCoordinator {
         return this.onTaskCreate(conn, msg);
       case 'lobby-task-update':
         return this.onTaskUpdate(conn, msg);
+      case 'lobby-request':
+        return this.onRequest(conn, msg);
       case 'lobby-unregister':
         return this.onDisconnect(conn);
       default:
@@ -549,6 +551,24 @@ export class LobbyCoordinator {
     await this.store.upsertTask(updated);
     await this.event(conn.lobbyId, 'task_updated', conn.agentId, { task_id: msg.task_id, status: updated.status });
     return { out: [{ target: { kind: 'lobby' }, message: { type: 'lobby-task-updated', task: updated } }] };
+  }
+
+  // ── Requests ──
+  private async onRequest(conn: Connection, msg: Extract<AgentToLobbyMessage, { type: 'lobby-request' }>): Promise<HandleResult> {
+    const agent = await this.store.getAgent(conn.lobbyId, conn.agentId || '');
+    const req = await this.store.createLobbyRequest({
+      request_id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      agent_id: conn.agentId || 'anonymous',
+      agent_display_name: agent?.display_name || 'Anonymous Agent',
+      category: msg.category,
+      title: msg.title,
+      description: msg.description,
+      status: 'pending',
+      context: { ...msg.context, lobby_id: conn.lobbyId },
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    return { out: [{ target: { kind: 'lobby' }, message: { type: 'lobby-request-created', request: req } }] };
   }
 
   // ── Helpers ──
