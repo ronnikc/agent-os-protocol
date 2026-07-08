@@ -256,6 +256,9 @@ export async function fetchJson(url, opts) {
         } else if (cleanPath.startsWith('requests/') && cleanPath.endsWith('/decide')) {
           const requestId = cleanPath.split('/')[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/${requestId}/decide`;
+        } else if (cleanPath.startsWith('providers/') && cleanPath.endsWith('/models')) {
+          const provider = cleanPath.split('/')[1];
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/providers/${provider}/models`;
         } else if (cleanPath === 'agent-definitions') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
         } else if (cleanPath === 'gantt/phases') {

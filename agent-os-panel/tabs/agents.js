@@ -235,6 +235,8 @@ async function startOne(slug) {
       } else if (p === 'openai') {
         optionsHtml = `
           <option value="gpt-5.4-turbo" selected>GPT-5.4 Turbo (gpt-5.4-turbo)</option>
+          <option value="gpt-5.4-mini">GPT-5.4 Mini (gpt-5.4-mini)</option>
+          <option value="gpt-5.4-nano-2026-03-17">GPT-5.4 Nano (gpt-5.4-nano-2026-03-17)</option>
           <option value="gpt-5-preview">GPT-5 Preview (gpt-5-preview)</option>
           <option value="gpt-4o">GPT-4o (gpt-4o)</option>
           <option value="gpt-4o-mini">GPT-4o Mini (gpt-4o-mini)</option>
@@ -258,6 +260,27 @@ async function startOne(slug) {
       };
 
       updateCustomVisibility();
+
+      // Trigger dynamic models load if key is configured
+      if (p === 'openai' || p === 'anthropic' || p === 'openai-compatible') {
+        fetchJson(`/api/providers/${p}/models`)
+          .then(res => {
+            if (res && Array.isArray(res.models) && res.models.length > 0) {
+              const currentVal = modelSelect.value;
+              let dynamicHtml = '';
+              res.models.forEach(m => {
+                const isSelected = m === currentVal ? 'selected' : '';
+                dynamicHtml += `<option value="${m}" ${isSelected}>${m}</option>`;
+              });
+              dynamicHtml += `<option value="custom" ${currentVal === 'custom' ? 'selected' : ''}>Custom Model...</option>`;
+              modelSelect.innerHTML = dynamicHtml;
+              updateCustomVisibility();
+            }
+          })
+          .catch(err => {
+            console.warn('[Panel] Failed to fetch dynamic models for provider ' + p + ':', err);
+          });
+      }
       modelSelect.onchange = updateCustomVisibility;
 
       const isConfigured = configuredKeys.some(k => k.provider === p && (!k.agent_ref || k.agent_ref === agentRef));
