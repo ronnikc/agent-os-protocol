@@ -693,7 +693,21 @@ export async function init() {
   setInterval(async () => {
     const data = await fetchJson('/api/agents/status');
     if (data) {
-      state.agents = data.agents || state.agents;
+      let agents = data.agents || state.agents;
+      // In hosted/swarm mode, merge live roster status so the top-bar counter shows running agents
+      if (window.AGENT_OS_HOSTED) {
+        try {
+          const token = localStorage.getItem('agent-os-lobby-token');
+          const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+          const remoteData = await fetchJson('/api/lobby/remote/agents', { headers });
+          const remoteRoster = remoteData?.agents || [];
+          agents = agents.map(a => {
+            const activeRemote = remoteRoster.find(ra => ra.agent_role === a.slug && ra.status !== 'disconnected');
+            return { ...a, status: activeRemote ? 'running' : (a.status || 'stopped') };
+          });
+        } catch {}
+      }
+      state.agents = agents;
       updateStatusBar();
     }
   }, 5000);

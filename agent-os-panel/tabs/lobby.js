@@ -474,27 +474,25 @@ function renderLobby() {
         default_events: []
       };
 
-      // Create a dynamic form to submit the manifest via POST to avoid URL size limits/corruption
+      // Create a dynamic form to submit the manifest via POST to avoid URL size limits/corruption.
+      // IMPORTANT: Use .value property (not setAttribute) to avoid HTML attribute encoding issues
+      // with the JSON string that contains double quotes — setAttribute('value', json) can corrupt
+      // the manifest value, causing GitHub's "url wasn't supplied" error.
       const form = document.createElement('form');
-      form.setAttribute('method', 'POST');
-      form.setAttribute('action', 'https://github.com/settings/apps/new');
-      form.setAttribute('target', '_blank');
+      form.method = 'POST';
+      form.action = 'https://github.com/settings/apps/new';
+      form.target = '_blank';
 
       const manifestInput = document.createElement('input');
-      manifestInput.setAttribute('type', 'hidden');
-      manifestInput.setAttribute('name', 'manifest');
-      manifestInput.setAttribute('value', JSON.stringify(manifest));
+      manifestInput.type = 'hidden';
+      manifestInput.name = 'manifest';
+      manifestInput.value = JSON.stringify(manifest);
       form.appendChild(manifestInput);
-
-      const stateInput = document.createElement('input');
-      stateInput.setAttribute('type', 'hidden');
-      stateInput.setAttribute('name', 'state');
-      stateInput.setAttribute('value', window.location.origin);
-      form.appendChild(stateInput);
 
       document.body.appendChild(form);
       form.submit();
-      document.body.removeChild(form);
+      // Delay removal so the browser fully processes the form submission
+      setTimeout(() => { try { document.body.removeChild(form); } catch {} }, 1000);
     });
 
     document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {

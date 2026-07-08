@@ -111,6 +111,7 @@ function showActionMenu(target, type, file, x, y) {
 
   const items = [
     { label: 'Create Task', action: 'create-task' },
+    { label: 'Plan Sprint', action: 'plan-sprint' },
     { label: 'Request Code Review', action: 'request-code-review' },
     { label: 'Request UX Review', action: 'request-ux-review' },
   ];
@@ -120,6 +121,15 @@ function showActionMenu(target, type, file, x, y) {
   ).join('');
 
   document.body.appendChild(menu);
+
+  // Position adjustments to prevent viewport overflow
+  const rect = menu.getBoundingClientRect();
+  if (x + rect.width > window.innerWidth) {
+    menu.style.left = `${Math.max(16, window.innerWidth - rect.width - 16)}px`;
+  }
+  if (y + rect.height > window.innerHeight) {
+    menu.style.top = `${Math.max(16, window.innerHeight - rect.height - 16)}px`;
+  }
 
   // Close on outside click
   setTimeout(() => {
@@ -169,6 +179,20 @@ async function handleMenuAction(action, target, type, file) {
         category: 'implementation',
       });
       closeModal();
+    });
+  }
+
+  if (action === 'plan-sprint') {
+    await postJson('/api/tasks', {
+      title: `Sprint Planning: ${target}`,
+      description: `Sprint planning requested from Gantt chart.\nTarget: ${type} ${target}\n${file ? `File: ${file}` : ''}`,
+      assigned_to: 'planning',
+      priority: 'high',
+      category: 'planning',
+    });
+    await postJson('/api/messages', {
+      from: 'panel', to: 'planning', type: 'request',
+      content: `Sprint planning requested for ${type} ${target}`,
     });
   }
 
