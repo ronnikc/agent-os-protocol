@@ -725,14 +725,16 @@ function init() {
     events.push({ type: eventType, slug: info, ts: new Date().toISOString() });
     refresh();
   });
-  onWsMessage('lobby-boss-update', (data) => {
-    if (data?.type === 'appointed' && data?.agent_id) {
+  onWsMessage('lobby-boss-appointed', (data) => {
+    if (data?.agent_id) {
       lobbyState.bossAgentSlug = data.agent_id;
       events.push({ type: 'boss-appointed', slug: data.agent_id, ts: new Date().toISOString() });
-    } else if (data?.type === 'lost') {
-      lobbyState.bossAgentSlug = null;
-      events.push({ type: 'boss-lost', slug: '', ts: new Date().toISOString() });
+      renderLobby();
     }
+  });
+  onWsMessage('lobby-boss-lost', (data) => {
+    lobbyState.bossAgentSlug = null;
+    events.push({ type: 'boss-lost', slug: '', ts: new Date().toISOString() });
     renderLobby();
   });
   onWsMessage('lobby-message', (data) => {

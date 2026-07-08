@@ -201,6 +201,69 @@ async function handlePrepareReg() {
   }
 }
 
+function drawProgressModal(stepStates) {
+  const steps = [
+    { key: 'github', label: 'GitHub Connection Check' },
+    { key: 'signCard', label: 'Sign Agent Card (Wallet)' },
+    { key: 'publish', label: 'Publish Metadata to Lobby' },
+    { key: 'anchor', label: 'Anchor Registry on Concordium' },
+    { key: 'bind', label: 'Auto-Bind DID to Repository' }
+  ];
+
+  const html = `
+    <div style="padding:24px; text-align:left; min-width:340px; box-sizing:border-box;">
+      <h3 style="margin:0 0 20px 0; color:var(--text-primary); font-size:16px; font-weight:600; display:flex; align-items:center; gap:8px;">
+        <span style="display:inline-block; width:16px; height:16px; border:2px solid var(--primary); border-top-color:transparent; border-radius:50%; animation:mint-spin 1s linear infinite; box-sizing:border-box;"></span>
+        Minting Agent ID...
+      </h3>
+      <div style="display:flex; flex-direction:column; gap:16px; margin-bottom:24px;">
+        ${steps.map((s, idx) => {
+          const state = stepStates[s.key]; // 'pending', 'active', 'success', 'warning', 'error'
+          let icon = '';
+          let color = 'var(--text-muted)';
+          let desc = '';
+
+          if (state === 'pending') {
+            icon = `<span style="display:inline-block; width:16px; height:16px; border-radius:50%; border:2px solid var(--border); box-sizing:border-box; vertical-align:middle; margin-right:10px;"></span>`;
+          } else if (state === 'active') {
+            icon = `<span style="display:inline-block; width:16px; height:16px; border:2px solid var(--primary); border-top-color:transparent; border-radius:50%; animation:mint-spin 1s linear infinite; box-sizing:border-box; vertical-align:middle; margin-right:10px;"></span>`;
+            color = 'var(--primary)';
+            desc = `<div style="font-size:11px; color:var(--text-secondary); margin-left:26px; margin-top:4px;">${escapeHtml(stepStates[s.key + '_desc'] || 'Processing...')}</div>`;
+          } else if (state === 'success') {
+            icon = `<span style="color:#22c55e; font-size:16px; font-weight:600; margin-right:10px; vertical-align:middle;">✓</span>`;
+            color = 'var(--text-primary)';
+          } else if (state === 'warning') {
+            icon = `<span style="color:#eab308; font-size:16px; font-weight:600; margin-right:10px; vertical-align:middle;">⚠</span>`;
+            color = 'var(--text-secondary)';
+            desc = `<div style="font-size:11px; color:#eab308; margin-left:26px; margin-top:4px;">${escapeHtml(stepStates[s.key + '_desc'] || 'Skipped')}</div>`;
+          } else if (state === 'error') {
+            icon = `<span style="color:#ef4444; font-size:16px; font-weight:600; margin-right:10px; vertical-align:middle;">✗</span>`;
+            color = '#ef4444';
+            desc = `<div style="font-size:11px; color:#ef4444; margin-left:26px; margin-top:4px;">${escapeHtml(stepStates[s.key + '_desc'] || 'Failed')}</div>`;
+          }
+
+          return `
+            <div>
+              <div style="display:flex; align-items:center; font-size:13px; color:${color}; font-weight:${state === 'active' ? '600' : 'normal'};">
+                ${icon}
+                <span>${s.label}</span>
+              </div>
+              ${desc}
+            </div>
+          `;
+        }).join('')}
+      </div>
+      <style>
+        @keyframes mint-spin { to { transform: rotate(360deg); } }
+      </style>
+      <div class="form-actions" style="margin:0; justify-content:flex-end;">
+        <button class="btn btn-secondary" onclick="closeModal()" id="btn-mint-modal-close" ${Object.values(stepStates).includes('error') ? '' : 'disabled'}>Close</button>
+      </div>
+    </div>
+  `;
+  showModal(html);
+}
+
 async function handleMintIdentity() {
   readFormValues();
   const network = document.getElementById('identity-network')?.value || 'mainnet';
@@ -223,26 +286,86 @@ async function handleMintIdentity() {
     `);
     return;
   }
+
+  // 1. Check if GitHub is connected in Swarm Mode
+  const modeData = await fetchJson('/api/mode');
+  const lobbyUrl = modeData?.lobbyUrl || '';
+  const isHosted = typeof window !== 'undefined' && window.AGENT_OS_HOSTED;
   
-  const statusEl = document.getElementById('identity-mint-status');
-  if (statusEl) {
-    statusEl.style.color = 'var(--text)';
-    statusEl.textContent = 'Connecting wallet...';
+  let hasGithub = true;
+  if (isHosted) {
+    const gitRes = await fetchJson('/api/lobby/remote/integrations/github').catch(() => null);
+    hasGithub = gitRes && gitRes.connected;
   }
+
+  if (isHosted && !hasGithub) {
+    showModal(`
+      <div style="padding:20px; text-align:left; box-sizing:border-box;">
+        <h3 style="margin:0 0 12px 0; color:#eab308; font-size:16px; font-weight:600;">GitHub Repository Not Connected</h3>
+        <p style="font-size:13px; color:var(--text-secondary); line-height:1.5; margin:0 0 16px;">
+          Creating an Agent ID requires committing the resulting DID back to your repository's agent definition file. 
+          Without a connected GitHub repository, the lobby cannot automate this step.
+        </p>
+        <div style="background:var(--bg-elevated); border:1px solid var(--border); border-radius:6px; padding:12px; font-size:12px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
+          <strong>Recommended:</strong> Switch to the <strong>Lobby</strong> tab, configure the GitHub App, select your repository, and then return here to mint.
+        </div>
+        <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
+          <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" id="btn-mint-go-lobby">Go to Lobby Tab</button>
+          <button class="btn btn-danger" id="btn-mint-skip-github" style="background:#dc2626; border-color:#dc2626;">Skip & Mint Anyway</button>
+        </div>
+      </div>
+    `);
+
+    document.getElementById('btn-mint-go-lobby')?.addEventListener('click', () => {
+      closeModal();
+      document.querySelector('[data-tab="lobby"]')?.click();
+    });
+
+    document.getElementById('btn-mint-skip-github')?.addEventListener('click', () => {
+      runMintFlow(network, selectedSlug, lobbyUrl, false);
+    });
+  } else {
+    runMintFlow(network, selectedSlug, lobbyUrl, isHosted && hasGithub);
+  }
+}
+
+async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
+  const stepStates = {
+    github: 'pending',
+    signCard: 'pending',
+    publish: 'pending',
+    anchor: 'pending',
+    bind: 'pending'
+  };
+
+  // Step 1: GitHub Check
+  stepStates.github = 'active';
+  stepStates.github_desc = 'Verifying repository connection...';
+  drawProgressModal(stepStates);
+
+  await new Promise(r => setTimeout(r, 400));
+
+  if (isGithubConnected) {
+    stepStates.github = 'success';
+  } else {
+    stepStates.github = 'warning';
+    stepStates.github_desc = 'Skipped (no GitHub repository connected)';
+  }
+
+  // Step 2: Sign Card
+  stepStates.signCard = 'active';
+  stepStates.signCard_desc = 'Please sign the card message in your wallet...';
+  drawProgressModal(stepStates);
 
   try {
     const accounts = await window.concordium.requestAccounts();
     const owner = accounts[0];
     if (!owner) {
-      showAlert('Error', 'Please connect your Concordium wallet account.');
-      return;
+      throw new Error('Please connect your Concordium wallet account.');
     }
 
-    if (statusEl) statusEl.textContent = 'Initializing mint...';
     const { mintAgentId } = await import('../mint-agent-id.js');
-
-    const modeData = await fetchJson('/api/mode');
-    const lobbyUrl = modeData?.lobbyUrl || '';
 
     const res = await mintAgentId({
       provider: window.concordium,
@@ -253,37 +376,69 @@ async function handleMintIdentity() {
       agentName: draftCard.name,
       agentRole: selectedSlug,
       onStatus: (status) => {
-        if (statusEl) statusEl.textContent = status;
+        if (status.includes('Publishing')) {
+          stepStates.signCard = 'success';
+          stepStates.publish = 'active';
+          stepStates.publish_desc = 'Uploading metadata to lobby...';
+          drawProgressModal(stepStates);
+        } else if (status.includes('Anchoring')) {
+          stepStates.publish = 'success';
+          stepStates.anchor = 'active';
+          stepStates.anchor_desc = 'Please approve the anchor transaction in your wallet...';
+          drawProgressModal(stepStates);
+        }
       }
     });
 
     if (res && res.did) {
+      if (stepStates.anchor === 'active') {
+        stepStates.anchor = 'success';
+      }
+      
+      stepStates.bind = 'active';
+      stepStates.bind_desc = 'Binding DID on server...';
+      drawProgressModal(stepStates);
+
       linkedDid = res.did;
       localStorage.setItem('agent-os-linked-did', res.did);
 
-      // Auto-save the DID to the agent identity mapping on the server
       const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: res.did });
-      if (saved && saved.ok === false) {
-        console.warn('Failed to auto-bind DID to agent on server:', saved.error);
-      } else {
+      let githubBound = false;
+      if (saved && saved.ok !== false && !saved.error) {
+        githubBound = true;
         const localAgent = (state.agents || []).find(a => a.slug === selectedSlug);
         if (localAgent) {
           localAgent.identity = res.did;
         }
+        stepStates.bind = 'success';
+      } else {
+        stepStates.bind = 'warning';
+        stepStates.bind_desc = saved?.error || 'GitHub repository not connected';
       }
+      drawProgressModal(stepStates);
 
-      if (statusEl) {
-        statusEl.style.color = 'var(--success)';
-        statusEl.textContent = `Identity successfully minted! DID: ${res.did}`;
-      }
-      showIdentitySuccessModal(res, draftCard.name, owner);
+      await new Promise(r => setTimeout(r, 600));
+      closeModal();
+      showIdentitySuccessModal(res, draftCard.name, owner, githubBound);
       render();
     }
   } catch (err) {
-    if (statusEl) {
-      statusEl.style.color = 'var(--error)';
-      statusEl.textContent = 'Minting failed: ' + (err.message || err);
+    // Find current active step and mark it error
+    let activeKey = null;
+    for (const k of ['github', 'signCard', 'publish', 'anchor', 'bind']) {
+      if (stepStates[k] === 'active') {
+        activeKey = k;
+        break;
+      }
     }
+    if (activeKey) {
+      stepStates[activeKey] = 'error';
+      stepStates[activeKey + '_desc'] = err.message || String(err);
+    } else {
+      stepStates.signCard = 'error';
+      stepStates.signCard_desc = err.message || String(err);
+    }
+    drawProgressModal(stepStates);
   }
 }
 

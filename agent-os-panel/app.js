@@ -80,8 +80,9 @@ export async function fetchJson(url, opts) {
 
     // 2. Intercept /api/overview-stats
     if (url === '/api/overview-stats') {
+      const onlineCount = (state.agents || []).filter(a => a.status === 'running' || a.status === 'online' || a.status === 'idle' || a.status === 'active').length;
       return {
-        agents: { online: 0, total: 0 },
+        agents: { online: onlineCount, total: (state.agents || []).length || 60 },
         tasks: { in_progress: 0 },
         sprint: { active: false, progress_percent: 0 },
         throughput: { tasks_per_day: 0 },
@@ -1048,7 +1049,7 @@ function updateAuthStatus() {
   }
 }
 
-export function showIdentitySuccessModal(res, agentName, ownerAddress) {
+export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false) {
   const { did, txHash, metadataUrl, anchor, anchorError, cardHash, signatureHex, network = 'mainnet' } = res;
   
   const storedBadge = metadataUrl
@@ -1086,10 +1087,18 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress) {
         <div><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Status:</strong> <span style="color:#22c55e; font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}</div>
       </div>
       ${typeof window !== 'undefined' && window.AGENT_OS_HOSTED ? `
-        <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
-          <strong style="color:#22c55e; display:block; margin-bottom:4px;">✓ Auto-Bound to GitHub Definition:</strong>
-          The Agent ID has been automatically committed and pushed to your agent's definition file in your GitHub repository.
-        </div>
+        ${githubBound ? `
+          <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
+            <strong style="color:#22c55e; display:block; margin-bottom:4px;">✓ Auto-Bound to GitHub Definition:</strong>
+            The Agent ID has been automatically committed and pushed to your agent's definition file in your GitHub repository.
+          </div>
+        ` : `
+          <div style="margin-top:16px; padding:12px; background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
+            <strong style="color:#eab308; display:block; margin-bottom:4px;">⚠ GitHub Bind Skipped / Failed:</strong>
+            The Agent ID was minted successfully, but could not be auto-bound because <strong>no GitHub repository is connected</strong>. 
+            Please connect your GitHub repository in the <strong>Lobby</strong> tab, and then link this DID reference to your agent.
+          </div>
+        `}
       ` : `
         <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
           <strong style="color:#22c55e; display:block; margin-bottom:4px;">Notice:</strong>
