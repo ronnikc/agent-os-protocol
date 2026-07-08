@@ -178,7 +178,7 @@ async function startOne(slug) {
     const hasOpenAiCompatible = configuredKeys.some(k => k.provider === 'openai-compatible' && (!k.agent_ref || k.agent_ref === agentRef));
 
     const defaultProvider = hasOpenAi && !hasAnthropic ? 'openai' : 'anthropic';
-    const defaultModel = defaultProvider === 'openai' ? 'gpt-4o' : 'claude-3-5-sonnet-20240620';
+    const defaultModel = defaultProvider === 'openai' ? 'gpt-5.4-turbo' : 'claude-4-8-opus';
 
     showModal(`
       <h2>Start Swarm Agent</h2>
@@ -225,14 +225,18 @@ async function startOne(slug) {
       let optionsHtml = '';
       if (p === 'anthropic') {
         optionsHtml = `
-          <option value="claude-3-5-sonnet-20240620" selected>Claude 3.5 Sonnet (claude-3-5-sonnet-20240620)</option>
+          <option value="claude-4-8-opus" selected>Claude 4.8 Opus (claude-4-8-opus)</option>
+          <option value="claude-3-7-sonnet">Claude 3.7 Sonnet (claude-3-7-sonnet)</option>
+          <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet (claude-3-5-sonnet-20240620)</option>
           <option value="claude-3-haiku-20240307">Claude 3 Haiku (claude-3-haiku-20240307)</option>
           <option value="claude-3-opus-20240229">Claude 3 Opus (claude-3-opus-20240229)</option>
           <option value="custom">Custom Model...</option>
         `;
       } else if (p === 'openai') {
         optionsHtml = `
-          <option value="gpt-4o" selected>GPT-4o (gpt-4o)</option>
+          <option value="gpt-5.4-turbo" selected>GPT-5.4 Turbo (gpt-5.4-turbo)</option>
+          <option value="gpt-5-preview">GPT-5 Preview (gpt-5-preview)</option>
+          <option value="gpt-4o">GPT-4o (gpt-4o)</option>
           <option value="gpt-4o-mini">GPT-4o Mini (gpt-4o-mini)</option>
           <option value="gpt-4-turbo">GPT-4 Turbo (gpt-4-turbo)</option>
           <option value="gpt-3.5-turbo">GPT-3.5 Turbo (gpt-3.5-turbo)</option>
