@@ -104,6 +104,8 @@ export async function fetchJson(url, opts) {
           console.warn('[Panel] Failed to fetch static agents-list.json fallback:', e);
         }
       }
+      // Cache agent definitions for use by lobby tab role dropdown
+      if (data?.agents) window.__agentDefinitions = data.agents;
       return data || { agents: [] };
     }
 
