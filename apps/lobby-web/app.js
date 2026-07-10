@@ -1399,13 +1399,15 @@ function init() {
     }
     const content = chatInputText?.value?.trim();
     if (!content) return;
-    const username = chatUsername?.value?.trim() || 'WebUser';
-
-    const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, {
-      from_agent_id: username,
-      content,
-      message_type: 'chat'
-    });
+    // A signed-in wallet session speaks as the LobbyOwner; the server verifies the manager session
+    // and enforces the label (an unauthenticated sender can never claim it). The Bearer token is
+    // what lets the server recognize the owner — without it every message was an anonymous WebUser.
+    const signedIn = !!state.session?.token;
+    const username = chatUsername?.value?.trim() || (signedIn ? 'LobbyOwner' : 'WebUser');
+    const payload = { from_agent_id: username, content, message_type: 'chat' };
+    const res = signedIn
+      ? (await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, payload))?.data
+      : await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, payload);
 
     if (res && res.message) {
       if (chatInputText) chatInputText.value = '';

@@ -178,7 +178,7 @@ async function startOne(slug) {
     const hasOpenAiCompatible = configuredKeys.some(k => k.provider === 'openai-compatible' && (!k.agent_ref || k.agent_ref === agentRef));
 
     const defaultProvider = hasOpenAi && !hasAnthropic ? 'openai' : 'anthropic';
-    const defaultModel = defaultProvider === 'openai' ? 'gpt-5.4-turbo' : 'claude-4-8-opus';
+    const defaultModel = defaultProvider === 'openai' ? 'gpt-4o' : 'claude-opus-4-8';
 
     showModal(`
       <h2>Start Swarm Agent</h2>
@@ -214,7 +214,7 @@ async function startOne(slug) {
       </div>
     `);
 
-    const updateProviderStatus = () => {
+    const updateProviderStatus = async () => {
       const p = document.getElementById('start-provider')?.value;
       const noteEl = document.getElementById('provider-status-note');
       const keyGroup = document.getElementById('start-api-key-group');
@@ -222,29 +222,37 @@ async function startOne(slug) {
       const customGroup = document.getElementById('start-model-custom-group');
       if (!modelSelect) return;
 
+      // Prefer the LIVE model list from the provider API (via the lobby, using the configured
+      // key) so the dropdown only ever offers models the key can actually use — hardcoded lists
+      // previously included nonexistent ids, and every turn of an agent launched with one 404'd.
       let optionsHtml = '';
-      if (p === 'anthropic') {
+      if (p === 'anthropic' || p === 'openai') {
+        try {
+          const live = await fetchJson(`/api/lobby/remote/providers/${p}/models`);
+          const models = (live?.models || []).filter(id =>
+            p === 'openai' ? /^gpt-/.test(id) && !/(audio|realtime|image|tts|transcribe|search|embed)/.test(id) : true);
+          if (models.length) {
+            optionsHtml = models.map((id, i) => `<option value="${escapeHtml(id)}" ${i === 0 ? 'selected' : ''}>${escapeHtml(id)}</option>`).join('')
+              + '<option value="custom">Custom Model...</option>';
+          }
+        } catch { /* fall back to the static list */ }
+      }
+      if (!optionsHtml && p === 'anthropic') {
         optionsHtml = `
-          <option value="claude-4-8-opus" selected>Claude 4.8 Opus (claude-4-8-opus)</option>
-          <option value="claude-3-7-sonnet">Claude 3.7 Sonnet (claude-3-7-sonnet)</option>
-          <option value="claude-3-5-sonnet-20240620">Claude 3.5 Sonnet (claude-3-5-sonnet-20240620)</option>
-          <option value="claude-3-haiku-20240307">Claude 3 Haiku (claude-3-haiku-20240307)</option>
-          <option value="claude-3-opus-20240229">Claude 3 Opus (claude-3-opus-20240229)</option>
+          <option value="claude-opus-4-8" selected>Claude Opus 4.8 (claude-opus-4-8)</option>
+          <option value="claude-sonnet-5">Claude Sonnet 5 (claude-sonnet-5)</option>
+          <option value="claude-haiku-4-5-20251001">Claude Haiku 4.5 (claude-haiku-4-5-20251001)</option>
           <option value="custom">Custom Model...</option>
         `;
-      } else if (p === 'openai') {
+      } else if (!optionsHtml && p === 'openai') {
         optionsHtml = `
-          <option value="gpt-5.4-turbo" selected>GPT-5.4 Turbo (gpt-5.4-turbo)</option>
-          <option value="gpt-5.4-mini">GPT-5.4 Mini (gpt-5.4-mini)</option>
-          <option value="gpt-5.4-nano-2026-03-17">GPT-5.4 Nano (gpt-5.4-nano-2026-03-17)</option>
-          <option value="gpt-5-preview">GPT-5 Preview (gpt-5-preview)</option>
-          <option value="gpt-4o">GPT-4o (gpt-4o)</option>
+          <option value="gpt-4o" selected>GPT-4o (gpt-4o)</option>
           <option value="gpt-4o-mini">GPT-4o Mini (gpt-4o-mini)</option>
           <option value="gpt-4-turbo">GPT-4 Turbo (gpt-4-turbo)</option>
           <option value="gpt-3.5-turbo">GPT-3.5 Turbo (gpt-3.5-turbo)</option>
           <option value="custom">Custom Model...</option>
         `;
-      } else {
+      } else if (!optionsHtml) {
         optionsHtml = `
           <option value="custom" selected>Custom Model...</option>
         `;
@@ -576,12 +584,59 @@ function init() {
   });
 
   document.getElementById('startSelected')?.addEventListener('click', async () => {
+    if (lobbyMode === 'swarm') {
+      // Hosted: /api/agents/start-all only exists on the local panel-server — launch each selected
+      // agent as a hosted agent instead. Provider/model come from the lobby's configured provider
+      // keys (first key wins) so a bulk start doesn't need one modal per agent.
+      if (!selected.size) return;
+      let provider = 'anthropic'; let model;
+      try {
+        const keysRes = await fetchJson('/api/lobby/remote/provider-keys');
+        const keys = keysRes?.provider_keys || [];
+        // Prefer the lobby-scoped default key (no agent_ref); else the first configured key.
+        const key = keys.find(k => !k.agent_ref) || keys[0];
+        if (key?.provider) provider = key.provider;
+        if (key?.model) model = key.model;
+      } catch { /* fall back to defaults */ }
+      const failures = [];
+      for (const slug of selected) {
+        const agent = state.agents.find(a => a.slug === slug);
+        const res = await fetchJson('/api/lobby/remote/agents/start', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: agent?.name || (slug.charAt(0).toUpperCase() + slug.slice(1) + ' Agent'),
+            agent_role: slug,
+            provider,
+            ...(model ? { model } : {}),
+          })
+        });
+        if (res?.error) failures.push(`${slug}: ${res.error}`);
+      }
+      if (failures.length) showAlert('Some Launches Failed', failures.join('\n'));
+      setTimeout(refresh, 1000);
+      return;
+    }
     const lobbyUrl = document.getElementById('lobbyUrl')?.value || '';
     await postJson('/api/agents/start-all', { slugs: [...selected], lobbyUrl });
     setTimeout(refresh, 1000);
   });
 
   document.getElementById('stopAll')?.addEventListener('click', async () => {
+    if (lobbyMode === 'swarm') {
+      // Hosted: stop every connected hosted agent by id (the local stop-all endpoint doesn't exist
+      // on the lobby). Humans and the panel connection are skipped.
+      const roster = await fetchJson('/api/lobby/remote/agents');
+      const agents = (roster?.agents || []).filter(a =>
+        a.status !== 'disconnected' && a.participant_type !== 'human' && a.agent_role !== 'panel');
+      for (const a of agents) {
+        await fetchJson('/api/lobby/remote/agents/stop', {
+          method: 'POST',
+          body: JSON.stringify({ agent_id: a.agent_id })
+        }).catch(() => {});
+      }
+      setTimeout(refresh, 800);
+      return;
+    }
     await postJson('/api/agents/stop-all', {});
     setTimeout(refresh, 500);
   });

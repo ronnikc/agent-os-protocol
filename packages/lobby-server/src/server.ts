@@ -32,7 +32,7 @@ import { saveIntegrationSecret, getDecryptedSecret } from './integrations/github
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
-import { authorizeLobbyManager } from './auth/lobbyAuthz.js';
+import { authorizeLobbyManager, isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
@@ -90,10 +90,36 @@ async function githubTokenForLobby(lobbyId: string, store: LobbyStore): Promise<
   try { return await getInstallationToken(integration.installation_id); } catch { return null; }
 }
 
+/**
+ * Agent definitions for a lobby: the built-in catalog (this deployment's `agent-os/sub-agents/
+ * agents`) MERGED with any definitions in the lobby's connected GitHub repo — repo wins per slug.
+ * Merging matters: a user's own repo usually starts with zero (or one bootstrapped) definition
+ * file, and returning repo-only results would shadow the entire built-in roster the moment a
+ * single file exists there (e.g. after an Agent ID bind writes one).
+ */
 async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<any[]> {
-  const integration = await store.getIntegration(lobbyId, 'github');
-  const agents: any[] = [];
+  const bySlug = new Map<string, any>();
 
+  // Built-in catalog first (lowest precedence).
+  try {
+    const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+    const localAgentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
+    if (existsSync(localAgentsDir)) {
+      const files = readdirSync(localAgentsDir).filter(f => f.endsWith('.md'));
+      for (const file of files) {
+        try {
+          const content = readFileSync(join(localAgentsDir, file), 'utf-8');
+          const def = parseAgentDef(file, content);
+          bySlug.set(def.slug, def);
+        } catch {}
+      }
+    }
+  } catch (err) {
+    console.warn('[Lobby Server] Failed to read agents from local fs:', err);
+  }
+
+  // Connected-repo definitions override per slug (the user's customizations + bound identities).
+  const integration = await store.getIntegration(lobbyId, 'github');
   if (integration && integration.repo_full_name) {
     const token = await githubTokenForLobby(lobbyId, store);
     if (token) {
@@ -108,10 +134,10 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<
           for (const file of mdFiles) {
             try {
               const content = await client.readFile(file.path, branchName);
-              agents.push(parseAgentDef(file.name, content));
+              const def = parseAgentDef(file.name, content);
+              bySlug.set(def.slug, def);
             } catch {}
           }
-          return agents;
         } catch (err) {
           console.warn('[Lobby Server] Failed to read agents from GitHub:', err);
         }
@@ -119,24 +145,7 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<
     }
   }
 
-  // Local filesystem fallback
-  try {
-    const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
-    const localAgentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
-    if (existsSync(localAgentsDir)) {
-      const files = readdirSync(localAgentsDir).filter(f => f.endsWith('.md'));
-      for (const file of files) {
-        try {
-          const content = readFileSync(join(localAgentsDir, file), 'utf-8');
-          agents.push(parseAgentDef(file, content));
-        } catch {}
-      }
-    }
-  } catch (err) {
-    console.warn('[Lobby Server] Failed to read agents from local fs:', err);
-  }
-
-  return agents;
+  return [...bySlug.values()];
 }
 
 export interface LobbyServerOptions {
@@ -268,6 +277,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // disconnected status poll can't hammer the GitHub App rate limit.
   const lastGithubAutoDetect = new Map<string, number>();
   const GITHUB_AUTODETECT_THROTTLE_MS = 15_000;
+  // Boss task dispatches allowed on AGENT-originated turns between human messages. Human turns
+  // reset the budget; without a cap, a Boss reacting to task-completion handoffs could re-assign
+  // tasks in a self-sustaining loop with no human in it.
+  const bossAutoTaskBudget = new Map<string, number>();
+  const BOSS_AUTO_TASK_BUDGET = 3;
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -375,17 +389,37 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       // are never treated as human — they must not trigger delegation.
       senderIsHuman = m.from_agent_id !== 'system'
         && (senderAgent ? senderAgent.participant_type === 'human' : true);
+      const isOwner = m.from_agent_id === 'LobbyOwner';
       const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
-      const senderType = senderIsHuman ? ' (human)' : '';
+      const senderType = isOwner ? ' (LOBBY OWNER — their instructions carry final authority)' : (senderIsHuman ? ' (human)' : '');
       const header = `[From: ${senderName}${senderType}]`;
 
       if (isBoss) {
-        // Give the Boss full roster context so it can coordinate effectively
+        // Give the Boss full operational context: the live roster, open coordination tasks, and
+        // pending human-approval requests — without these it coordinated blind (it could not
+        // answer "what is in flight?" or notice work stuck in assigned/in_progress).
         const rosterSummary = roster
           .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
           .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
           .join('\n');
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
+        let opsSummary = '';
+        try {
+          const openTasks = (await store.listTasks(conn.lobbyId))
+            .filter(t => !['completed', 'cancelled'].includes(t.status));
+          if (openTasks.length) {
+            const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
+            opsSummary += `\n[OPEN TASKS — ${openTasks.length}]\n` + openTasks.slice(-10)
+              .map(t => `  - "${t.title}" → ${nameOf(t.assigned_to)} [${t.status}]${t.progress ? ` — ${String(t.progress).slice(0, 50)}` : ''}`)
+              .join('\n');
+          }
+          const pendingReqs = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending');
+          if (pendingReqs.length) {
+            opsSummary += `\n[PENDING HUMAN-APPROVAL REQUESTS — ${pendingReqs.length}]\n` + pendingReqs.slice(-5)
+              .map(r => `  - ${r.agent_display_name}: ${r.title}`)
+              .join('\n');
+          }
+        } catch { /* ops summary is best-effort */ }
+        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -395,18 +429,27 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
 
-    // Boss delegation: when a human asks the Boss to involve an agent, the Boss emits directive
-    // lines. A plain `@Name: msg` is a direct request/coordination message (no task); an explicit
-    // `@Name [task]: title` creates a tracked Task. Both reach the agent directly — a broadcast
-    // would be ignored by sub-agents (they only act on messages addressed to them), which is why
-    // this previously did nothing. Gated to human-originated turns so agent replies can't trigger
-    // a delegation cascade. Each target is acted on at most once per turn.
-    if (isBoss && senderIsHuman && roster.length) {
+    // Boss delegation: the Boss emits directive lines. A plain `@Name: msg` is a direct request/
+    // coordination message (no task); an explicit `@Name [task]: title` creates a tracked Task.
+    // Both reach the agent directly — a broadcast would be ignored by sub-agents (they only act on
+    // messages addressed to them). Cascade guard: plain coordination messages dispatch only on
+    // human-originated turns (agent↔boss message ping-pong must not fan out), but `[task]`
+    // directives ALSO dispatch on agent-originated turns — the Boss legitimately assigns a task
+    // after an agent ACKs or reports a result, and tasks are bounded, tracked, and visible rather
+    // than loop-prone chatter. Each target is acted on at most once per turn.
+    if (isBoss && roster.length) {
+      if (senderIsHuman) bossAutoTaskBudget.set(myId, BOSS_AUTO_TASK_BUDGET); // human turn resets the loop budget
       const directives = parseBossDelegations(reply);
       const dispatched = new Set<string>();
       for (const d of directives) {
+        if (!senderIsHuman && d.kind !== 'task') continue;
         const target = resolveRosterAgent(roster, d.target, myId);
         if (!target || dispatched.has(target.agent_id)) continue;
+        if (!senderIsHuman) {
+          const budget = bossAutoTaskBudget.get(myId) ?? BOSS_AUTO_TASK_BUDGET;
+          if (budget <= 0) continue; // out of unattended budget — wait for the next human turn
+          bossAutoTaskBudget.set(myId, budget - 1);
+        }
         dispatched.add(target.agent_id);
         if (d.kind === 'task') {
           // A tracked unit of work — creates a Task card (task_created event) and notifies the agent.
@@ -550,9 +593,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const heartbeatInterval = setInterval(async () => {
       try {
         if (!hostedAgents.has(agentId)) { clearInterval(heartbeatInterval); return; }
+        // Report real activity — an unconditional 'idle' used to overwrite the roster status even
+        // while the agent was mid-task, so the UI showed everything as idle.
         await coordinator.handle(conn, {
           type: 'lobby-heartbeat',
-          status: 'idle',
+          status: runner.busy ? 'working' : 'idle',
           current_work: '',
         } as AgentToLobbyMessage);
       } catch { /* swallow heartbeat errors */ }
@@ -1598,19 +1643,34 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const branchName = integration.branch || 'main';
 
       const filePath = `agent-os/sub-agents/agents/${slug}.md`;
+      const identityLine = `Identity: ${body.identity.trim()}`;
+      let newContent = '';
       let content = '';
       try {
         content = await client.readFile(filePath, branchName);
       } catch {
-        return json({ error: `agent definition file "${filePath}" not found in repository` }, 404);
+        // The connected repo has no definition file for this agent — normal for a user's own
+        // project repo, which starts without the agent-os structure. BOOTSTRAP the file from the
+        // built-in catalog definition (or a minimal stub) instead of failing the bind: this is
+        // exactly the DID-persistence step the mint flow promises.
+        const defs = await getAgentDefinitions(lobbyId, store).catch(() => [] as any[]);
+        const def = defs.find((d: any) => d.slug === slug);
+        newContent = [
+          `Title: ${def?.name ?? slug}`,
+          identityLine,
+          `Slug: ${slug}`,
+          ...(def?.scope ? [`Scope: ${def.scope}`] : []),
+          ...(def?.runtime ? [`Runtime: ${def.runtime}`] : []),
+          ...(def?.model ? [`Model: ${def.model}`] : []),
+          '',
+          def?.system_prompt ?? '',
+        ].join('\n').trimEnd() + '\n';
       }
 
-      const identityLine = `Identity: ${body.identity.trim()}`;
-      let newContent = '';
-      if (content.match(/^Identity:\s*(.+)$/m)) {
-        newContent = content.replace(/^Identity:\s*(.+)$/m, identityLine);
-      } else {
-        if (content.match(/^Title:\s*(.+)$/m)) {
+      if (!newContent) {
+        if (content.match(/^Identity:\s*(.+)$/m)) {
+          newContent = content.replace(/^Identity:\s*(.+)$/m, identityLine);
+        } else if (content.match(/^Title:\s*(.+)$/m)) {
           newContent = content.replace(/^(Title:\s*.+)$/m, `$1\n${identityLine}`);
         } else {
           newContent = `${identityLine}\n${content}`;
@@ -1691,7 +1751,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const lobby = await store.getLobby(lobbyId);
         if (!lobby) return json({ error: 'Lobby not found' }, 404);
 
-        const fromId = body.from_agent_id || 'WebUser';
+        // Sender attribution: a wallet-authenticated lobby manager speaks as LobbyOwner — the
+        // accountable human running this lobby — not as an anonymous "WebUser". The generic
+        // default only applies to unauthenticated visitors, and a client-supplied name can never
+        // claim the LobbyOwner label without holding a manager session (anti-spoofing).
+        let fromId = typeof body.from_agent_id === 'string' && body.from_agent_id.trim() ? body.from_agent_id.trim() : '';
+        const senderIdentity = sessionIdentity(lobbyId);
+        const senderIsManager = senderIdentity ? await isLobbyManager(store, lobbyId, senderIdentity) : false;
+        if (senderIsManager && (!fromId || fromId === 'WebUser' || fromId === 'LobbyOwner')) {
+          fromId = 'LobbyOwner';
+        } else if (!senderIsManager && fromId === 'LobbyOwner') {
+          fromId = 'WebUser';
+        } else if (!fromId) {
+          fromId = 'WebUser';
+        }
         const roster = await store.roster(lobbyId);
         if (roster.some((a) => a.agent_id === fromId && a.status !== 'disconnected')) {
           return json({ error: 'from_agent_id belongs to a connected agent — send via the agent WebSocket instead' }, 403);
@@ -1771,12 +1844,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           if (!target) return json({ error: `unknown assignee: ${assignedTo}` }, 400);
           const lobby = await store.getLobby(lobbyId);
           if (!lobby) return json({ error: 'Lobby not found' }, 404);
+          // Attribute the assigner: an authenticated lobby manager is the LobbyOwner.
+          const creatorIdentity = sessionIdentity(lobbyId);
+          const creatorIsManager = creatorIdentity ? await isLobbyManager(store, lobbyId, creatorIdentity) : false;
           const seq = await store.nextSeq(lobbyId);
           const task = {
             task_id: randomUUID(),
             lobby_id: lobbyId,
             org_id: lobby.org_id,
-            assigned_by: (typeof body.assigned_by === 'string' && body.assigned_by.trim()) || 'WebUser',
+            assigned_by: (typeof body.assigned_by === 'string' && body.assigned_by.trim()) || (creatorIsManager ? 'LobbyOwner' : 'WebUser'),
             assigned_to: assignedTo,
             assigned_at: new Date().toISOString(),
             title: String(body.title).slice(0, 200),
@@ -1840,7 +1916,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           ...(typeof body.result === 'string' ? { result: body.result } : {}),
         };
         await store.upsertTask(updatedTask);
-        await recordEvent(lobbyId, 'task_updated', 'WebUser', { task_id: taskId, status: updatedTask.status });
+        const patchIdentity = sessionIdentity(lobbyId);
+        const patchIsManager = patchIdentity ? await isLobbyManager(store, lobbyId, patchIdentity) : false;
+        await recordEvent(lobbyId, 'task_updated', patchIsManager ? 'LobbyOwner' : 'WebUser', { task_id: taskId, status: updatedTask.status });
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
         }

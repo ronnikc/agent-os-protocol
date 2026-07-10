@@ -20,11 +20,16 @@ export const BOSS_DELEGATION_GUIDE = [
   '[DELEGATION] To act on a specific agent, put each directive on its OWN line, starting with @ and',
   'the agent\'s exact name from the roster above. Two kinds:',
   '  • Ask for input / coordinate (no task):  `@<Agent Name>: <your question or request>`',
-  '  • Assign a tracked task (unit of work):  `@<Agent Name> [task]: <task title>`',
+  '  • Assign a tracked task (unit of work):  `@<Agent Name> [task]: <what to do>`',
   'Only lines in these exact forms are dispatched — a plain sentence naming an agent is NOT. Use',
   '[task] ONLY for real work worth tracking (e.g. part of a sprint or phase plan); use the plain',
   'form for questions, reviews-of-input, and coordination. Write any human-facing summary as normal',
   'prose on separate lines.',
+  'CRITICAL: You yourself have NO tools — you cannot edit repositories, run code, or produce',
+  'deliverables. The ONLY way any real work happens is a `[task]` directive to a specialist agent,',
+  'who executes it immediately on assignment (assignment IS the ask — do not pre-negotiate an ACK',
+  'and never claim you will "proceed" with work yourself). When the owner asks for work, emit the',
+  '`[task]` line in THIS reply.',
 ].join('\n');
 
 export interface BossDirective {
