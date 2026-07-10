@@ -3,30 +3,48 @@
 
 /**
  * Boss delegation — a hosted Boss coordinates sub-agents by emitting directive lines. We teach it a
- * strict, easy-to-parse syntax and translate each directive into a real direct message to the named
- * agent. Without this, the Boss can only broadcast prose — which sub-agents ignore (they act only on
- * messages addressed to them) — so "issue a task to a sub-agent" does nothing.
+ * strict, easy-to-parse syntax and translate each directive into an action against the named agent.
+ * Without this, the Boss can only broadcast prose — which sub-agents ignore (they act only on
+ * messages addressed to them) — so it can neither ask an agent for input nor assign it work.
+ *
+ * Two directive kinds, matching the domain model:
+ *   • communication (default) — `@<Agent>: <message>` — the Boss asks an agent for input or
+ *     coordinates. This is a plain direct message; NO task is created.
+ *   • task — `@<Agent> [task]: <title>` — the Boss assigns a tracked unit of work (e.g. part of a
+ *     sprint / phase plan). This creates a real Task in the lobby.
  *
  * Pure and side-effect-free so it is unit-testable independently of the lobby server.
  */
 
 export const BOSS_DELEGATION_GUIDE = [
-  '[DELEGATION] To assign work to a specific agent, put each assignment on its OWN line using EXACTLY',
-  'this format: `@<Agent Name>: <what to do>` (start the line with @, then the agent\'s exact name from',
-  'the roster above, a colon, then the instruction). Each such line is dispatched to that agent as a',
-  'real task — a plain sentence naming an agent is NOT dispatched. Write any human-facing summary as',
-  'normal prose on separate lines.',
+  '[DELEGATION] To act on a specific agent, put each directive on its OWN line, starting with @ and',
+  'the agent\'s exact name from the roster above. Two kinds:',
+  '  • Ask for input / coordinate (no task):  `@<Agent Name>: <your question or request>`',
+  '  • Assign a tracked task (unit of work):  `@<Agent Name> [task]: <task title>`',
+  'Only lines in these exact forms are dispatched — a plain sentence naming an agent is NOT. Use',
+  '[task] ONLY for real work worth tracking (e.g. part of a sprint or phase plan); use the plain',
+  'form for questions, reviews-of-input, and coordination. Write any human-facing summary as normal',
+  'prose on separate lines.',
 ].join('\n');
 
-/** Extract `@Name: instruction` delegation directives from a Boss reply. */
-export function parseBossDelegations(reply: string): Array<{ target: string; instruction: string }> {
-  const out: Array<{ target: string; instruction: string }> = [];
-  const re = /^\s*@([^\n:]+?)\s*:\s*(\S.*?)\s*$/gm;
+export interface BossDirective {
+  target: string;
+  instruction: string;
+  /** 'task' creates a tracked Task; 'message' is a plain coordination/request direct message. */
+  kind: 'task' | 'message';
+}
+
+/** Extract `@Name: instruction` / `@Name [task]: instruction` directives from a Boss reply. */
+export function parseBossDelegations(reply: string): BossDirective[] {
+  const out: BossDirective[] = [];
+  // group1: agent name (no ':' or '['); group2: optional [task] marker; group3: instruction.
+  const re = /^\s*@([^\n:[]+?)\s*(\[task\])?\s*:\s*(\S.*?)\s*$/gim;
   let m: RegExpExecArray | null;
   while ((m = re.exec(reply)) !== null) {
     const target = m[1].trim();
-    const instruction = m[2].trim();
-    if (target && instruction) out.push({ target, instruction });
+    const kind: 'task' | 'message' = m[2] ? 'task' : 'message';
+    const instruction = m[3].trim();
+    if (target && instruction) out.push({ target, instruction, kind });
   }
   return out;
 }

@@ -313,11 +313,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
 
-    // Boss delegation: when a human asks the Boss to task an agent, the Boss emits `@Name: work`
-    // directive lines. Turn each into a REAL direct message to that agent — a broadcast would be
-    // ignored by sub-agents (they only act on messages addressed to them), which is why "issue a
-    // task" previously did nothing. Gated to human-originated turns so agent replies can't trigger
-    // a delegation cascade.
+    // Boss delegation: when a human asks the Boss to involve an agent, the Boss emits directive
+    // lines. A plain `@Name: msg` is a direct request/coordination message (no task); an explicit
+    // `@Name [task]: title` creates a tracked Task. Both reach the agent directly — a broadcast
+    // would be ignored by sub-agents (they only act on messages addressed to them), which is why
+    // this previously did nothing. Gated to human-originated turns so agent replies can't trigger
+    // a delegation cascade. Each target is acted on at most once per turn.
     if (isBoss && senderIsHuman && roster.length) {
       const directives = parseBossDelegations(reply);
       const dispatched = new Set<string>();
@@ -325,14 +326,26 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const target = resolveRosterAgent(roster, d.target, myId);
         if (!target || dispatched.has(target.agent_id)) continue;
         dispatched.add(target.agent_id);
-        const dRes = await coordinator.handle(conn, {
-          type: 'lobby-message',
-          to_agent_id: target.agent_id,
-          message_type: 'coordination',
-          content: `[TASK from Boss] ${d.instruction}`,
-        } as AgentToLobbyMessage);
-        dispatch(conn, dRes.out);
-        await recordEvent(conn.lobbyId, 'boss_task_dispatched', myId, { to: target.agent_id, instruction: d.instruction.slice(0, 200) }).catch(() => {});
+        if (d.kind === 'task') {
+          // A tracked unit of work — creates a Task card (task_created event) and notifies the agent.
+          const title = d.instruction.length > 90 ? d.instruction.slice(0, 87) + '…' : d.instruction;
+          const taskRes = await coordinator.handle(conn, {
+            type: 'lobby-task-create',
+            assigned_to: target.agent_id,
+            title,
+            description: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, taskRes.out);
+        } else {
+          // Just the Boss talking to a sub-agent (asking for input / coordinating) — no task.
+          const msgRes = await coordinator.handle(conn, {
+            type: 'lobby-message',
+            to_agent_id: target.agent_id,
+            message_type: 'coordination',
+            content: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, msgRes.out);
+        }
       }
     }
 

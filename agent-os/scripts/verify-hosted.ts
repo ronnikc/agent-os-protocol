@@ -288,7 +288,7 @@ async function main(): Promise<void> {
     await r.stop();
   });
 
-  await check('boss delegation: parses @Name directives and resolves them to connected roster agents', () => {
+  await check('boss delegation: parses directives, distinguishes task vs message, and resolves agents', () => {
     const roster = [
       { agent_id: 'boss-1', display_name: 'Boss-agent Agent', agent_role: 'boss-agent', status: 'idle' },
       { agent_id: 'be-9', display_name: 'Backend Agent', agent_role: 'backend', status: 'idle' },
@@ -297,24 +297,26 @@ async function main(): Promise<void> {
     ];
     const reply = [
       'Here is the plan:',
-      '@Backend Agent: implement the /users endpoint and add tests',
+      '@Backend Agent [task]: implement the /users endpoint and add tests',  // tracked task
       'This part is prose that mentions the Frontend Agent but is not a directive.',
-      '  @code-review: review the diff once backend lands',
-      '@Frontend Agent: build the form',        // disconnected → must not resolve
-      '@Nonexistent: do something',             // unknown → must not resolve
+      '  @code-review: what is your read on the current diff?',              // plain message (ask for input)
+      '@Frontend Agent [task]: build the form',   // disconnected → must not resolve
+      '@Nonexistent: do something',               // unknown → must not resolve
     ].join('\n');
 
     const directives = parseBossDelegations(reply);
     assert.equal(directives.length, 4, 'four @-directives parsed (prose line excluded)');
+    assert.equal(directives[0].kind, 'task', 'the [task] directive is classified as a task');
     assert.equal(directives[0].instruction, 'implement the /users endpoint and add tests');
+    assert.equal(directives[1].kind, 'message', 'a plain @Name directive is a message, not a task');
 
     const resolved = directives
-      .map(d => resolveRosterAgent(roster, d.target, 'boss-1'))
-      .filter(Boolean)
-      .map(a => a!.agent_id);
-    assert.deepEqual(resolved, ['be-9', 'cr-3'], 'only connected, known agents resolve (disconnected + unknown dropped)');
+      .map(d => ({ agent: resolveRosterAgent(roster, d.target, 'boss-1'), kind: d.kind }))
+      .filter(r => r.agent);
+    assert.deepEqual(resolved.map(r => r.agent!.agent_id), ['be-9', 'cr-3'], 'only connected, known agents resolve');
+    assert.deepEqual(resolved.map(r => r.kind), ['task', 'message'], 'kinds are preserved through resolution');
     assert.equal(resolveRosterAgent(roster, 'boss-agent', 'boss-1'), undefined, 'the boss never delegates to itself');
-    assert.ok(BOSS_DELEGATION_GUIDE.includes('@<Agent Name>'), 'the guide documents the directive syntax');
+    assert.ok(BOSS_DELEGATION_GUIDE.includes('[task]'), 'the guide documents the task directive syntax');
   });
 
   await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
