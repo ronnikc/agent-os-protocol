@@ -82,9 +82,25 @@ export class GitHubRepoClient {
     return res.commit.sha;
   }
 
-  /** Every file path in the repo at `branch`, in one recursive-tree call (existence checks). */
+  /** True for the errors GitHub returns when a repo has no commits / the branch ref is absent. */
+  private static isEmptyRepoError(err: unknown): boolean {
+    const msg = String((err as Error)?.message ?? err);
+    return msg.includes('Git Repository is empty') || (msg.includes('409') && msg.toLowerCase().includes('empty'));
+  }
+
+  /**
+   * Every file path in the repo at `branch`, in one recursive-tree call (existence checks).
+   * An EMPTY repository (no commits yet — a fresh test repo) has no branch ref at all; that is
+   * simply "no files", not an error.
+   */
   async listTreePaths(branch = 'main'): Promise<Set<string>> {
-    const ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    let ref: any;
+    try {
+      ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    } catch (err) {
+      if (GitHubRepoClient.isEmptyRepoError(err) || String((err as Error)?.message ?? '').includes('404')) return new Set();
+      throw err;
+    }
     const commit = await this.request(`/git/commits/${ref.object.sha}`);
     const tree = await this.request(`/git/trees/${commit.tree.sha}?recursive=1`);
     return new Set<string>((tree.tree ?? []).filter((e: any) => e.type === 'blob').map((e: any) => e.path));
@@ -95,9 +111,24 @@ export class GitHubRepoClient {
    * The contents API (`writeFile`) creates one commit per file — initializing the Agent OS
    * structure writes ~140 files, and 140 commits would spam history and take minutes. Blobs are
    * created in parallel chunks; existing files at the same paths are updated in the same commit.
+   *
+   * EMPTY repositories (no commits yet) have no ref to anchor the batch on and the Git Data API
+   * rejects them (409 "Git Repository is empty"). Bootstrap: write the FIRST file through the
+   * contents API — which works on empty repos and creates `branch` with the initial commit — then
+   * batch the remainder on top. A fresh, empty test repo is the common first-connect case.
    */
   async commitFiles(files: Array<{ path: string; content: string }>, message: string, branch = 'main'): Promise<string> {
-    const ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    if (files.length === 0) throw new Error('commitFiles requires at least one file');
+    let ref: any;
+    try {
+      ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    } catch (err) {
+      if (!GitHubRepoClient.isEmptyRepoError(err)) throw err;
+      const [first, ...rest] = files;
+      const firstSha = await this.writeFile(first.path, first.content, message, branch);
+      if (rest.length === 0) return firstSha;
+      return this.commitFiles(rest, message, branch);
+    }
     const baseCommitSha = ref.object.sha;
     const baseCommit = await this.request(`/git/commits/${baseCommitSha}`);
 
