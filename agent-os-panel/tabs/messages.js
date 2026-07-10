@@ -183,11 +183,14 @@ function init() {
   // WebSocket live updates (local bus.jsonl changes)
   onWsMessage('messages', () => { refresh(); });
 
-  // WebSocket live updates from staging lobby
-  onWsMessage('lobby-message', (data) => {
+  // WebSocket live updates from the lobby. Local Mode: the panel-server rebroadcasts as
+  // 'lobby-message' with the payload in msg.data. Hosted Mode: the panel is connected straight to
+  // the lobby WS and receives the raw 'lobby-message-received' frame, where the payload lives on
+  // the frame itself (second arg) — data is undefined. Handle both shapes with one handler.
+  const onLobbyChat = (data, raw) => {
     // Add lobby message to the display immediately
-    const msg = data?.message || data;
-    if (msg) {
+    const msg = data?.message || data || raw?.message;
+    if (msg && (msg.content || msg.from_agent_id)) {
       const formatted = {
         timestamp: msg.created_at || msg.timestamp || new Date().toISOString(),
         from: msg.from_display_name || msg.from_agent_id || msg.from || '?',
@@ -213,7 +216,9 @@ function init() {
         renderFilterBar();
       }
     }
-  });
+  };
+  onWsMessage('lobby-message', onLobbyChat);
+  onWsMessage('lobby-message-received', onLobbyChat);
 
   // Auto-refresh
   setInterval(refresh, 5000);

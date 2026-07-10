@@ -550,6 +550,31 @@ async function renderActivitySubtab() {
 
 // ── Lifecycle ─────────────────────────────────────────────────────
 function onActivate() {
+  // Hosted Mode: the local Memory v2 substrate (INDEX.aaak/facts/diaries/lessons files) lives on a
+  // local Panel next to the working copy — the /api/memory/* endpoints don't exist on the lobby,
+  // so every sub-tab would silently 404. In a hosted lobby the shared memory is the Knowledge
+  // Base; say so and route the user there instead of rendering four dead sub-tabs.
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    const root = document.getElementById('memory-content');
+    if (!root) return;
+    root.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:320px;padding:24px;">
+        <div style="max-width:520px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:24px;">
+          <h3 style="margin:0 0 10px;font-size:16px;">Memory in Hosted Mode = Knowledge Base</h3>
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.55;margin:0 0 10px;">
+            The local Memory substrate (index, facts, diaries, lessons) lives alongside a local
+            Panel and its working copy. In this hosted lobby, shared memory is the
+            <strong>Knowledge&nbsp;Base</strong>: documents are converted to markdown, indexed, and
+            committed to your connected GitHub repository where every hosted agent can read them.
+          </p>
+          <button class="btn btn-primary btn-sm" id="memory-goto-kb">Open the KB tab</button>
+        </div>
+      </div>`;
+    document.getElementById('memory-goto-kb')?.addEventListener('click', () => {
+      document.querySelector('[data-tab="kb"]')?.click();
+    });
+    return;
+  }
   renderShell();
   switchSubtab(activeSubtab);
 }

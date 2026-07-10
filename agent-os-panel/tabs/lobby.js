@@ -768,34 +768,46 @@ function init() {
     if (agent) agent.agent_role = newRole;
   });
 
-  onWsMessage('agent-start', (data) => { events.push({ type: 'agent-start', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
-  onWsMessage('agent-exit', (data) => { events.push({ type: 'agent-exit', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
-  onWsMessage('lobby-agent-update', (data) => {
-    const info = data?.agent?.display_name || data?.agent_id || '';
-    const eventType = data?.type || 'agent-update';
+  // NOTE on payload shape: the Local-Mode panel-server wraps payloads as { type, data }, so the
+  // first arg carries the payload. In Hosted Mode the panel is connected directly to the lobby WS
+  // and receives raw protocol frames — fields live on the frame itself (second arg). Every handler
+  // below reads `data || raw` so both modes fire.
+  onWsMessage('agent-start', (data) => { events.push({ type: 'agent-start', slug: data?.slug || '', ts: new Date().toISOString() }); refresh(); });
+  onWsMessage('agent-exit', (data) => { events.push({ type: 'agent-exit', slug: data?.slug || '', ts: new Date().toISOString() }); refresh(); });
+  const onAgentUpdate = (data, raw) => {
+    const p = data || raw || {};
+    const info = p.agent?.display_name || p.agent_id || '';
+    const eventType = p.type || 'agent-update';
     events.push({ type: eventType, slug: info, ts: new Date().toISOString() });
     refresh();
-  });
-  onWsMessage('lobby-boss-appointed', (data) => {
-    if (data?.agent_id) {
-      lobbyState.bossAgentSlug = data.agent_id;
-      events.push({ type: 'boss-appointed', slug: data.agent_id, ts: new Date().toISOString() });
+  };
+  onWsMessage('lobby-agent-update', onAgentUpdate);   // Local Mode rebroadcast
+  onWsMessage('lobby-agent-joined', onAgentUpdate);   // raw lobby frames (Hosted Mode)
+  onWsMessage('lobby-agent-updated', onAgentUpdate);
+  onWsMessage('lobby-agent-left', onAgentUpdate);
+  onWsMessage('lobby-boss-appointed', (data, raw) => {
+    const p = data || raw || {};
+    if (p.agent_id) {
+      lobbyState.bossAgentSlug = p.agent_id;
+      events.push({ type: 'boss-appointed', slug: p.agent_id, ts: new Date().toISOString() });
       renderLobby();
     }
   });
-  onWsMessage('lobby-boss-lost', (data) => {
+  onWsMessage('lobby-boss-lost', () => {
     lobbyState.bossAgentSlug = null;
     events.push({ type: 'boss-lost', slug: '', ts: new Date().toISOString() });
     renderLobby();
   });
-  onWsMessage('lobby-message', (data) => {
-    const msg = data?.message || data;
+  const onLobbySystemMsg = (data, raw) => {
+    const msg = data?.message || data || raw?.message;
     if (msg?.from_agent_id === 'system') {
       events.push({ type: 'system', slug: (msg.content || '').slice(0, 80), ts: msg.created_at || new Date().toISOString() });
       // System messages include boss appointments — update local state
       if ((msg.content || '').includes('Boss Agent')) refresh();
     }
-  });
+  };
+  onWsMessage('lobby-message', onLobbySystemMsg);
+  onWsMessage('lobby-message-received', onLobbySystemMsg);
 
   setInterval(refresh, 10000);
 }
