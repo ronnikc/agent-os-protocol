@@ -1,7 +1,7 @@
 /**
  * Tasks Tab — Kanban board (Queued → Active → Done → Failed)
  */
-import { state, fetchJson, postJson, patchJson, registerTab, onWsMessage, escapeHtml, truncate, showModal, closeModal } from '../app.js';
+import { state, fetchJson, postJson, patchJson, registerTab, onWsMessage, escapeHtml, truncate, showModal, closeModal, showAlert } from '../app.js';
 
 let tasks = [];
 
@@ -94,15 +94,32 @@ function showTaskDetail(taskId) {
 
   document.querySelector('[data-action="delete-modal"]')?.addEventListener('click', async () => {
     if (confirm('Delete this task?')) {
-      await postJson(`/api/tasks/${t.task_id}/delete`, {});
+      const base = lobbyMode === 'swarm' ? '/api/lobby/remote/tasks' : '/api/tasks';
+      await postJson(`${base}/${t.task_id}/delete`, {});
       closeModal();
       await refresh();
     }
   });
 }
 
-function showCreateModal() {
-  const agentOptions = state.agents.map(a => `<option value="${a.slug}">${a.name}</option>`).join('');
+async function showCreateModal() {
+  // Assignees are the LIVE roster (who can actually receive the task), not the agent-definition
+  // catalog — a task assigned to a definition slug goes nowhere. Default to the Boss. Fall back to
+  // local agent definitions only in Local Mode where the roster proxy may be empty.
+  let agentOptions = '';
+  try {
+    const rosterData = await fetchJson('/api/lobby/remote/agents');
+    const roster = (rosterData?.agents || []).filter(a =>
+      a.status !== 'disconnected' && a.participant_type !== 'human' && a.agent_role !== 'panel');
+    if (roster.length) {
+      agentOptions = roster.map(a =>
+        `<option value="${escapeHtml(a.agent_id)}" ${a.is_boss ? 'selected' : ''}>${escapeHtml(a.display_name || a.agent_id)}${a.is_boss ? ' ★ Boss' : ''}</option>`
+      ).join('');
+    }
+  } catch { /* fall through to local definitions */ }
+  if (!agentOptions) {
+    agentOptions = state.agents.map(a => `<option value="${a.slug}">${a.name}</option>`).join('');
+  }
   showModal(`
     <h2>Create Task</h2>
     <div class="form-group">
@@ -145,19 +162,35 @@ function showCreateModal() {
   document.getElementById('create-task-btn')?.addEventListener('click', async () => {
     const title = document.getElementById('new-task-title')?.value?.trim();
     if (!title) return;
-    await postJson('/api/tasks', {
+    const payload = {
       title,
       description: document.getElementById('new-task-desc')?.value || '',
       assigned_to: document.getElementById('new-task-agent')?.value || '',
       priority: document.getElementById('new-task-priority')?.value || 'normal',
       category: document.getElementById('new-task-category')?.value || 'general',
-    });
+    };
+    // Swarm Mode creates a coordination task on the lobby (delivered to the assignee over WS);
+    // Local Mode keeps the panel-server work-item endpoint. Surface failures instead of silently
+    // closing — the old behavior swallowed a 404 and looked like a no-op.
+    const res = lobbyMode === 'swarm'
+      ? await postJson('/api/lobby/remote/tasks', payload)
+      : await postJson('/api/tasks', payload);
+    if (!res || res.error) {
+      showAlert('Failed to Create Task', res?.error || 'The task endpoint did not respond. Check the lobby connection and try again.');
+      return;
+    }
     closeModal();
     await refresh();
   });
 }
 
 let lobbyMode = 'local';
+
+// Map a lobby coordination-task status onto the kanban's four columns. The kanban advance buttons
+// speak the local work-item statuses (pending / in_progress / done), so the reverse map below
+// translates them back when PATCHing a swarm task.
+const SWARM_TO_KANBAN = { assigned: 'pending', accepted: 'pending', completed: 'done', cancelled: 'failed' };
+const KANBAN_TO_SWARM = { done: 'completed' };
 
 async function refresh() {
   const modeData = await fetchJson('/api/mode');
@@ -173,7 +206,13 @@ async function refresh() {
   }
 
   if (data) {
-    tasks = (data.tasks || []).filter(t => t && t.task_id);
+    if (lobbyMode === 'swarm') {
+      // Coordination tasks (Boss-/panel-created, delivered to agents) — not the marketplace list.
+      tasks = (data.coordination_tasks || []).filter(t => t && t.task_id)
+        .map(t => ({ ...t, status: SWARM_TO_KANBAN[t.status] || t.status }));
+    } else {
+      tasks = (data.tasks || []).filter(t => t && t.task_id);
+    }
     renderKanban();
     // Update stats
     const stats = document.getElementById('tasks-stats');
@@ -196,7 +235,11 @@ function init() {
     if (!btn) return;
 
     if (btn.dataset.action === 'advance') {
-      await patchJson(`/api/tasks/${btn.dataset.taskId}`, { status: btn.dataset.status });
+      const status = lobbyMode === 'swarm'
+        ? (KANBAN_TO_SWARM[btn.dataset.status] || btn.dataset.status)
+        : btn.dataset.status;
+      const base = lobbyMode === 'swarm' ? '/api/lobby/remote/tasks' : '/api/tasks';
+      await patchJson(`${base}/${btn.dataset.taskId}`, { status });
       await refresh();
     }
 
@@ -205,11 +248,13 @@ function init() {
     }
   });
 
-  // WS updates
+  // WS updates — local panel-server names and the lobby's raw swarm names
   onWsMessage('task-created', refresh);
   onWsMessage('task-updated', refresh);
   onWsMessage('tasks', refresh);
   onWsMessage('lobby-task-update', refresh);
+  onWsMessage('lobby-task-updated', refresh);
+  onWsMessage('lobby-task-assigned', refresh);
 }
 
 registerTab('tasks', { init, onActivate: refresh });

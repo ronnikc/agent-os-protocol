@@ -76,13 +76,26 @@ function parseAgentDef(fileName: string, content: string) {
   };
 }
 
+/**
+ * A FRESH GitHub installation token for a lobby's connected integration. Always mint via the App
+ * JWT (getInstallationToken caches and auto-renews) — do NOT read the `installation_token` secret
+ * stored at connect time: GitHub installation tokens expire after ~1h, so every consumer of the
+ * stored copy silently broke an hour after connecting (identity bind, KB sync, agent definitions,
+ * hosted-agent repo tools) while the Lobby tab — which already minted fresh — kept showing
+ * "connected". One token path, no drift.
+ */
+async function githubTokenForLobby(lobbyId: string, store: LobbyStore): Promise<string | null> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || integration.status !== 'active' || !integration.installation_id) return null;
+  try { return await getInstallationToken(integration.installation_id); } catch { return null; }
+}
+
 async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<any[]> {
   const integration = await store.getIntegration(lobbyId, 'github');
   const agents: any[] = [];
 
   if (integration && integration.repo_full_name) {
-    const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-    const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
+    const token = await githubTokenForLobby(lobbyId, store);
     if (token) {
       const parsed = parseGithubUrl(integration.repo_full_name);
       if (parsed) {
@@ -282,6 +295,50 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return;
     }
 
+    // A task assigned to this hosted agent — this is where assigned work actually gets DONE.
+    // Without this handler, lobby-task-assigned was silently ignored and a Boss- or panel-created
+    // task sat in "assigned" forever. Flow: mark in_progress → run one adapter turn on the task
+    // (the runner has repo tools when a GitHub repo is connected) → mark completed/failed with the
+    // result → report to the assigner (falling back to the Boss, then the lobby log).
+    if (msg?.type === 'lobby-task-assigned') {
+      const task = (msg as unknown as { task?: { task_id?: string; title?: string; description?: string; assigned_to?: string; assigned_by?: string } }).task;
+      if (!task?.task_id || task.assigned_to !== myId) return;
+      const entry = hostedAgents.get(myId);
+      if (!entry) return;
+      const upd = async (status: string, result?: string) => {
+        const r = await coordinator.handle(conn, {
+          type: 'lobby-task-update', task_id: task.task_id, status, ...(result ? { result } : {}),
+        } as AgentToLobbyMessage);
+        dispatch(conn, r.out);
+      };
+      await upd('in_progress').catch(() => {});
+      // Wait (bounded) for any in-flight chat turn to finish — respondTo drops overlapping calls,
+      // and a dropped task turn would spuriously fail the task.
+      for (let i = 0; i < 60 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+      let result = '';
+      try {
+        result = await entry.runner.respondTo(
+          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW. If you have repository tools, use them to make the actual changes. Reply with a concise report of what you did (or what blocked you).`,
+        );
+      } catch { /* fall through to failed */ }
+      const failed = !result || result.startsWith('⚠');
+      await upd(failed ? 'failed' : 'completed', result || 'no result produced').catch(() => {});
+      // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
+      // reply in message history, and the Boss is CC'd so coordination continues.
+      const lobbyNow = await store.getLobby(conn.lobbyId);
+      const recipients = new Set<string>();
+      if (task.assigned_by) recipients.add(task.assigned_by);
+      if (lobbyNow?.boss_agent_id && lobbyNow.boss_agent_id !== myId) recipients.add(lobbyNow.boss_agent_id);
+      for (const to of recipients) {
+        const r = await coordinator.handle(conn, {
+          type: 'lobby-message', to_agent_id: to, message_type: 'handoff',
+          content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}] ${(result || '').slice(0, 2000)}`,
+        } as AgentToLobbyMessage);
+        dispatch(conn, r.out);
+      }
+      return;
+    }
+
     if (msg?.type !== 'lobby-message-received' || !msg.message) return;
     const m = msg.message as { from_agent_id?: string; to_agent_id?: string; content?: string };
     if (m.from_agent_id === myId) return;
@@ -310,7 +367,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     try {
       roster = await store.roster(conn.lobbyId);
       const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
-      senderIsHuman = senderAgent?.participant_type === 'human';
+      // Human = a roster human participant, OR a sender that is NOT in the roster at all. The web
+      // UI posts chat over HTTP with from_agent_id 'WebUser' (or a display name), and that endpoint
+      // REJECTS ids belonging to connected agents — so an off-roster sender can only be a human.
+      // This was the bug that made Boss `@Agent [task]:` directives dead: WebUser was never in the
+      // roster, senderIsHuman stayed false, and the delegation parser never ran. 'system' notices
+      // are never treated as human — they must not trigger delegation.
+      senderIsHuman = m.from_agent_id !== 'system'
+        && (senderAgent ? senderAgent.participant_type === 'human' : true);
       const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
       const senderType = senderIsHuman ? ' (human)' : '';
       const header = `[From: ${senderName}${senderType}]`;
@@ -369,7 +433,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     // Boss broadcasts its prose reply; non-boss agents MUST reply directly to the sender (floor
     // control rejects non-boss broadcasts, causing "message_rejected: non-boss broadcast").
-    const replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
+    // A reply to a 'system' notice (e.g. "your hand-raise was approved — go ahead") is routed to
+    // the Boss: 'system' is not a connected agent, so replying to it would silently go nowhere,
+    // and the Boss is who coordinates the follow-up.
+    let replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
+    if (!isBoss && m.from_agent_id === 'system') {
+      if (!lobby?.boss_agent_id) return; // no boss to receive it — drop rather than dead-letter
+      replyTo = lobby.boss_agent_id;
+    }
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',
       to_agent_id: replyTo,
@@ -419,18 +490,23 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     lobbyId: string; name: string; role?: string; apiKey: string; providerId: ProviderId;
     model: string; baseUrl?: string; systemPrompt?: string; joinToken?: string;
   }): Promise<string> {
-    const kb = await store.getKnowledgeBase(params.lobbyId);
+    // Give the agent repo tools whenever the lobby has ANY repo connection: the KB's repository
+    // when configured, else the GitHub App integration's selected repo. Previously only the KB
+    // path was wired, so agents in a lobby with a connected GitHub repo (but no KB) had no way to
+    // actually do repository work. Token is minted fresh — never the stored (expiring) copy.
     let repoClient: any = undefined;
-    if (kb && kb.repository_url) {
-      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-      const githubToken = await getDecryptedSecret(params.lobbyId, 'github', 'installation_token', store).catch(() => null);
+    const kb = await store.getKnowledgeBase(params.lobbyId);
+    const integration = await store.getIntegration(params.lobbyId, 'github');
+    const repoRefUrl = (kb && kb.repository_url) || (integration?.status === 'active' && integration.repo_full_name) || '';
+    if (repoRefUrl) {
+      const githubToken = await githubTokenForLobby(params.lobbyId, store);
       if (githubToken) {
-        const match = kb.repository_url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
-        if (match) {
-          const owner = match[1];
-          const repo = match[2];
+        const parsed = parseGithubUrl(repoRefUrl) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoRefUrl)
+          ? { owner: repoRefUrl.split('/')[0], repo: repoRefUrl.split('/')[1] }
+          : null);
+        if (parsed) {
           const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-          repoClient = new GitHubRepoClient(owner, repo, githubToken);
+          repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken);
         }
       }
     }
@@ -568,11 +644,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return payload ? payload.identityRef : null;
     };
 
-    const ghToken = async (lobbyId: string): Promise<string | null> => {
-      const integ = await store.getIntegration(lobbyId, 'github');
-      if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
-      try { return await getInstallationToken(integ.installation_id); } catch { return null; }
-    };
+    const ghToken = (lobbyId: string): Promise<string | null> => githubTokenForLobby(lobbyId, store);
 
     // Adopt an existing GitHub App installation for a lobby that has none recorded yet — the recovery
     // path when GitHub didn't redirect back with an installation_id. Discovers installations via the
@@ -593,15 +665,22 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const repos = await listInstallationRepos(instToken);
       const account = chosen.account || repos[0]?.full_name?.split('/')[0];
       const now = new Date().toISOString();
+      // When the installation covers exactly one repository, select it automatically — every
+      // downstream feature (identity bind, KB, agent repo tools) needs repo_full_name, and a
+      // recovered/adopted connection would otherwise sit "connected" but unusable until the user
+      // notices the repo picker.
+      const soleRepo = repos.length === 1 ? repos[0] : undefined;
       let integration = existing;
       if (existing) {
         integration = await store.updateIntegration(lobbyId, existing.id, {
           status: 'active', installation_id: chosen.id, external_account_name: account, updated_at: now,
+          ...(soleRepo && !existing.repo_full_name ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
         }) ?? existing;
       } else {
         integration = await store.addIntegration({
           id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
           external_account_name: account, installation_id: chosen.id,
+          ...(soleRepo ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
           scopes: ['contents', 'pull_requests'], installed_by_identity_ref: identityRef,
           created_at: now, updated_at: now,
         });
@@ -757,15 +836,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!resolved) return json({ error: `no provider key configured for "${providerName}" — set one first (POST .../provider-keys)` }, 400);
         const model = (typeof body.model === 'string' && body.model.trim()) || resolved.model || 'claude-opus-4-8';
         let systemPrompt = typeof body.system_prompt === 'string' ? body.system_prompt : undefined;
-        if (!systemPrompt && typeof body.agent_role === 'string') {
+        // The agent's persisted DID (its definition's `Identity:` line) is presented as the join
+        // token so the roster reflects the bound identity. Without this, a DID saved via "Set ID"
+        // never reached the register step and the agent stayed "unverified" forever.
+        let definitionIdentity: string | undefined;
+        if (typeof body.agent_role === 'string') {
           try {
             const defs = await getAgentDefinitions(lobbyId, store);
             const def = defs.find(d => d.slug === body.agent_role);
-            if (def && def.system_prompt) {
+            if (def && def.system_prompt && !systemPrompt) {
               systemPrompt = def.system_prompt;
             }
+            if (def?.identity && /^did:/i.test(def.identity)) definitionIdentity = def.identity;
           } catch (e) {
-            console.warn('[Lobby Server] Failed to resolve system prompt for hosted agent:', e);
+            console.warn('[Lobby Server] Failed to resolve definition for hosted agent:', e);
           }
         }
 
@@ -779,7 +863,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             model,
             baseUrl: resolved.baseUrl,
             systemPrompt,
-            joinToken: agentRef ?? undefined,
+            joinToken: agentRef ?? definitionIdentity ?? undefined,
           });
           await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
           return json({ agent_id: newId, name: body.name ?? 'Hosted Agent', model, provider: providerName }, 201);
@@ -1035,15 +1119,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const account = repos[0]?.full_name?.split('/')[0];
         const existing = await store.getIntegration(lobbyId, 'github');
         const now = new Date().toISOString();
+        // Single-repo installs select that repo immediately — see autoAdoptGithubInstallation.
+        const soleRepo = repos.length === 1 ? repos[0] : undefined;
         let integration = existing;
         if (existing) {
           integration = await store.updateIntegration(lobbyId, existing.id, {
             status: 'active', installation_id: installationId, external_account_name: account, updated_at: now,
+            ...(soleRepo && !existing.repo_full_name ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
           }) ?? existing;
         } else {
           integration = await store.addIntegration({
             id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
             external_account_name: account, installation_id: installationId,
+            ...(soleRepo ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
             scopes: ['contents', 'pull_requests'], installed_by_identity_ref: payload.identityRef,
             created_at: now, updated_at: now,
           });
@@ -1496,12 +1584,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
       const integration = await store.getIntegration(lobbyId, 'github');
       if (!integration || !integration.repo_full_name) {
-        return json({ error: 'no connected GitHub repository' }, 400);
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab' }, 400);
       }
 
-      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-      const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
-      if (!token) return json({ error: 'GitHub authorization token expired or not found' }, 400);
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
 
       const parsed = parseGithubUrl(integration.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository URL' }, 400);
@@ -1532,7 +1619,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
       try {
         await client.writeFile(filePath, newContent, `chore: bind Agent ID identity ref to ${slug}`, branchName);
-        return json({ ok: true, identity: body.identity.trim() });
+        // restartRequired: identity is presented at REGISTER time (join_token) — a running agent
+        // keeps its old roster identity until it is relaunched with the new DID.
+        return json({ ok: true, identity: body.identity.trim(), restartRequired: true });
       } catch (err: any) {
         return json({ error: `failed to write to GitHub repository: ${err.message || err}` }, 500);
       }
@@ -1660,6 +1749,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }
 
     // POST / GET /api/v1/agent-lobby/lobbies/:id/tasks
+    // Two task systems share this path: COORDINATION tasks (the coordinator's LobbyTask — what the
+    // Boss's `[task]` directives create and what the panel's Tasks kanban shows) and MARKETPLACE
+    // tasks (budget/escrow — the web app's marketplace). POST discriminates by shape: `assigned_to`
+    // means a coordination task; a budget/escrow body means a marketplace posting. GET returns both,
+    // under separate keys, so each UI reads its own list.
     const taskListMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks$/);
     if (taskListMatch) {
       const lobbyId = taskListMatch[1];
@@ -1669,8 +1763,40 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ error: 'missing title' }, 400);
         }
         const description = typeof body.description === 'string' ? body.description : '';
+
+        // Coordination task — assigned to a named roster agent, delivered like a Boss-created task.
+        if (typeof body.assigned_to === 'string' && body.assigned_to.trim()) {
+          const assignedTo = body.assigned_to.trim();
+          const target = await store.getAgent(lobbyId, assignedTo);
+          if (!target) return json({ error: `unknown assignee: ${assignedTo}` }, 400);
+          const lobby = await store.getLobby(lobbyId);
+          if (!lobby) return json({ error: 'Lobby not found' }, 404);
+          const seq = await store.nextSeq(lobbyId);
+          const task = {
+            task_id: randomUUID(),
+            lobby_id: lobbyId,
+            org_id: lobby.org_id,
+            assigned_by: (typeof body.assigned_by === 'string' && body.assigned_by.trim()) || 'WebUser',
+            assigned_to: assignedTo,
+            assigned_at: new Date().toISOString(),
+            title: String(body.title).slice(0, 200),
+            description,
+            priority: (['critical', 'high', 'normal', 'low'].includes(body.priority) ? body.priority : 'normal') as 'critical' | 'high' | 'normal' | 'low',
+            category: typeof body.category === 'string' ? body.category : 'general',
+            status: 'assigned' as const,
+            seq,
+          };
+          await store.upsertTask(task as Parameters<typeof store.upsertTask>[0]);
+          await recordEvent(lobbyId, 'task_created', task.assigned_by, { task_id: task.task_id, assigned_to: assignedTo });
+          // Deliver to the assignee (hosted agents act on lobby-task-assigned) + tell the lobby.
+          send(agentConn.get(assignedTo), { type: 'lobby-task-assigned', task } as LobbyToAgentMessage);
+          for (const cid of lobbyConns.get(lobbyId) ?? []) {
+            send(cid, { type: 'lobby-task-updated', task } as LobbyToAgentMessage);
+          }
+          return json({ task }, 201);
+        }
+
         const proposed_budget_ccd = typeof body.proposed_budget_ccd === 'number' ? body.proposed_budget_ccd : 0;
-        
         const task = await store.createMarketplaceTask({
           id: randomUUID(),
           lobby_id: lobbyId,
@@ -1693,26 +1819,44 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       if (req.method === 'GET') {
         const tasks = await store.listMarketplaceTasks(lobbyId);
-        return json({ tasks });
+        const coordination_tasks = await store.listTasks(lobbyId);
+        return json({ tasks, coordination_tasks });
       }
     }
 
-    // PATCH /api/v1/agent-lobby/lobbies/:id/tasks/:taskId
+    // PATCH /api/v1/agent-lobby/lobbies/:id/tasks/:taskId — coordination task first, else marketplace.
     const taskUpdateMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)$/);
     if (taskUpdateMatch && req.method === 'PATCH') {
       const lobbyId = taskUpdateMatch[1];
       const taskId = taskUpdateMatch[2];
       const body = await readBody(req);
+      const coordTask = await store.getTask(lobbyId, taskId);
+      if (coordTask) {
+        const STATUSES = new Set(['pending', 'assigned', 'accepted', 'in_progress', 'completed', 'failed', 'cancelled']);
+        const updatedTask = {
+          ...coordTask,
+          ...(STATUSES.has(body.status) ? { status: body.status } : {}),
+          ...(typeof body.progress === 'string' ? { progress: body.progress } : {}),
+          ...(typeof body.result === 'string' ? { result: body.result } : {}),
+        };
+        await store.upsertTask(updatedTask);
+        await recordEvent(lobbyId, 'task_updated', 'WebUser', { task_id: taskId, status: updatedTask.status });
+        for (const cid of lobbyConns.get(lobbyId) ?? []) {
+          send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
+        }
+        return json({ task: updatedTask });
+      }
       const updated = await store.updateMarketplaceTask(lobbyId, taskId, body);
       return json({ task: updated });
     }
 
-    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/delete
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/delete — coordination task first, else marketplace.
     const taskDeleteMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/delete$/);
     if (taskDeleteMatch && req.method === 'POST') {
       const lobbyId = taskDeleteMatch[1];
       const taskId = taskDeleteMatch[2];
-      await store.deleteMarketplaceTask(lobbyId, taskId);
+      const deletedCoord = await store.deleteTask(lobbyId, taskId);
+      if (!deletedCoord) await store.deleteMarketplaceTask(lobbyId, taskId);
       return json({ ok: true });
     }
 
@@ -1806,6 +1950,32 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
       for (const cid of lobbyConns.get(lobbyId) ?? []) {
         send(cid, out);
+      }
+
+      // Surface the decision in the lobby itself — without this the decision only reaches the
+      // Requests tab: the Boss and the requesting agent never learn the outcome (hosted agents
+      // ignore lobby-request-decided), so an approved hand-raise went nowhere. Two messages:
+      //  1. a system broadcast into the chat (humans + the Boss see the outcome; the Boss runs a
+      //     turn on broadcasts, so it becomes aware and can coordinate follow-up);
+      //  2. a direct system message to the requesting agent — on approval it's the "go ahead":
+      //     the agent runs a turn and its reply routes to the Boss (see onHostedInbound).
+      const decision = String(updated.status);
+      const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
+      const announce = async (to: string, content: string) => {
+        const seq = await store.nextSeq(lobbyId);
+        const message: LobbyMessage = {
+          message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
+          message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
+        };
+        await store.appendMessage(lobbyId, message);
+        const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+        for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
+      };
+      await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${decision}${notes}`);
+      if (updated.agent_id && updated.agent_id !== 'anonymous') {
+        await announce(updated.agent_id, decision === 'approved'
+          ? `Your request "${updated.title}" was APPROVED${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
+          : `Your request "${updated.title}" was ${decision.toUpperCase()}${notes}.`);
       }
 
       return json({ ok: true, request: updated });

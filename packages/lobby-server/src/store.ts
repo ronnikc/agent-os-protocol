@@ -36,6 +36,8 @@ export interface LobbyStore {
 
   upsertTask(task: LobbyTask): Promise<void>;
   getTask(lobbyId: string, taskId: string): Promise<LobbyTask | undefined>;
+  listTasks(lobbyId: string): Promise<LobbyTask[]>;
+  deleteTask(lobbyId: string, taskId: string): Promise<boolean>;
 
   appendEvent(event: LobbyEvent): Promise<void>;
   listEvents(lobbyId: string): Promise<LobbyEvent[]>;
@@ -308,6 +310,16 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async getTask(lobbyId: string, taskId: string): Promise<LobbyTask | undefined> {
     return this.bucket(lobbyId)?.tasks.get(taskId);
+  }
+
+  async listTasks(lobbyId: string): Promise<LobbyTask[]> {
+    return [...(this.bucket(lobbyId)?.tasks.values() ?? [])].sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
+  }
+
+  async deleteTask(lobbyId: string, taskId: string): Promise<boolean> {
+    const deleted = this.bucket(lobbyId)?.tasks.delete(taskId) ?? false;
+    if (deleted) this.queueSave();
+    return deleted;
   }
 
   async appendEvent(event: LobbyEvent): Promise<void> {

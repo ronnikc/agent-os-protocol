@@ -450,7 +450,10 @@ async function createId(slug) {
       setBtnText('Saving…');
       const saved = await postJson('/api/agents/identity', { slug, identity: res.did });
       if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
-      showIdentitySuccessModal(res, agent.name, owner);
+      // Pass the bind outcome — omitting it made the modal claim "GitHub Bind Skipped / Failed"
+      // even when the DID was committed to the repo successfully.
+      const githubBound = !!(saved && saved.ok !== false && !saved.error);
+      showIdentitySuccessModal(res, agent.name, owner, githubBound);
     } catch (err) {
       console.error('[Agents] Create ID failed:', err);
       showAlert('Minting Failed', `Could not mint the Agent ID: ${err.message || err}`);
