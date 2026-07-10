@@ -24,7 +24,15 @@ let lobbyGithub = null;
  */
 function identityBadge(a) {
   const status = a.identity_status;
-  if (!status || status === 'unverified') return '';
+  if (!status || status === 'unverified') {
+    // A linked-but-unverified DID is still worth showing — the agent presented an identity ref at
+    // join time but no registry verifier is configured (or verification failed soft). Absence of
+    // ANY badge previously made a freshly bound Agent ID look like the save didn't work.
+    if (a.identity_ref) {
+      return `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="ID linked (${escapeHtml(a.identity_ref)}) — not registry-verified: configure AGENT_OS_CONCORDIUM_INDEXER_URL on the lobby to verify">🔗 ID linked</span>`;
+    }
+    return '';
+  }
   const map = {
     human_linked: ['badge-success', '✓ Human-linked', 'Backed by a verified human owner (Concordium VCK)'],
     org_linked: ['badge-success', '✓ Org-verified', 'Backed by a verified organization/domain (Concordium VCDC)'],

@@ -91,8 +91,14 @@ export async function processKnowledgeSyncJob(
       throw new Error('Knowledge Base configuration not found for lobby');
     }
 
-    const { getDecryptedSecret } = await import('../integrations/githubApp.js');
-    const githubToken = await getDecryptedSecret(job.lobby_id, 'github', 'installation_token', store).catch(() => null);
+    // Mint a fresh installation token via the App JWT — the secret stored at connect time expires
+    // after ~1h and silently broke KB pushes an hour after the GitHub App was connected.
+    let githubToken: string | null = null;
+    const integration = await store.getIntegration(job.lobby_id, 'github');
+    if (integration?.status === 'active' && integration.installation_id) {
+      const { getInstallationToken } = await import('../integrations/github/appAuth.js');
+      githubToken = await getInstallationToken(integration.installation_id).catch(() => null);
+    }
 
     const commitSha = await commitAndPushRepo(
       kb.kb_root_path,

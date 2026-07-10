@@ -64,7 +64,9 @@ async function load() {
 
   if (lobbyMode === 'swarm') {
     try {
-      const laRes = await fetchJson('/api/agents/list');
+      // /api/agents is served locally AND intercepted in hosted mode; /api/agents/list never
+      // existed on either backend, so this dropdown was always empty.
+      const laRes = await fetchJson('/api/agents');
       state.agents = laRes?.agents || [];
     } catch (e) {
       console.warn('[Identity] Failed to fetch agents list:', e);
@@ -293,21 +295,27 @@ async function handleMintIdentity() {
   const isHosted = typeof window !== 'undefined' && window.AGENT_OS_HOSTED;
   
   let hasGithub = true;
+  let appConnectedNoRepo = false;
   if (isHosted) {
     const gitRes = await fetchJson('/api/lobby/remote/integrations/github').catch(() => null);
-    hasGithub = gitRes && gitRes.connected;
+    // The bind step needs a SELECTED repository, not just an installed app — hold both to the
+    // same bar so "connected" here can't still fail at bind time.
+    hasGithub = !!(gitRes && gitRes.connected && gitRes.repo);
+    appConnectedNoRepo = !!(gitRes && gitRes.connected && !gitRes.repo);
   }
 
   if (isHosted && !hasGithub) {
     showModal(`
       <div style="padding:20px; text-align:left; box-sizing:border-box;">
-        <h3 style="margin:0 0 12px 0; color:#eab308; font-size:16px; font-weight:600;">GitHub Repository Not Connected</h3>
+        <h3 style="margin:0 0 12px 0; color:#eab308; font-size:16px; font-weight:600;">${appConnectedNoRepo ? 'GitHub Repository Not Selected' : 'GitHub Repository Not Connected'}</h3>
         <p style="font-size:13px; color:var(--text-secondary); line-height:1.5; margin:0 0 16px;">
-          Creating an Agent ID requires committing the resulting DID back to your repository's agent definition file. 
-          Without a connected GitHub repository, the lobby cannot automate this step.
+          Creating an Agent ID requires committing the resulting DID back to your repository's agent definition file.
+          ${appConnectedNoRepo
+            ? 'The GitHub App is connected, but no target repository is selected yet, so the lobby cannot automate this step.'
+            : 'Without a connected GitHub repository, the lobby cannot automate this step.'}
         </p>
         <div style="background:var(--bg-elevated); border:1px solid var(--border); border-radius:6px; padding:12px; font-size:12px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
-          <strong>Recommended:</strong> Switch to the <strong>Lobby</strong> tab, configure the GitHub App, select your repository, and then return here to mint.
+          <strong>Recommended:</strong> Switch to the <strong>Lobby</strong> tab, ${appConnectedNoRepo ? 'pick your repository in the GitHub Swarm Connection card and save' : 'configure the GitHub App, select your repository'}, and then return here to mint.
         </div>
         <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
           <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
