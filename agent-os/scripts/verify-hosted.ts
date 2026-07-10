@@ -613,6 +613,35 @@ async function main(): Promise<void> {
     assert.deepEqual(commitCalls[0].body.parents, ['base']);
     const refPatch = calls.find(c => c.method === 'PATCH' && c.url.includes('/git/refs/heads/'));
     assert.equal(refPatch?.body.sha, 'newcommit', 'branch ref advanced to the batch commit');
+
+    // EMPTY repository (no commits): the ref lookup 409s — bootstrap via the contents API (which
+    // creates the branch), then batch the remainder. A fresh test repo is the first-connect case.
+    let bootstrapped = false;
+    const emptyCalls: string[] = [];
+    const emptyFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      emptyCalls.push(`${method} ${url}`);
+      if (url.includes('/git/ref/heads/')) {
+        if (!bootstrapped) return new Response(JSON.stringify({ message: 'Git Repository is empty.' }), { status: 409 });
+        return new Response(JSON.stringify({ object: { sha: 'boot' } }), { status: 200 });
+      }
+      if (url.includes('/contents/first.md') && method === 'GET') return new Response('{"message":"Not Found"}', { status: 404 });
+      if (url.includes('/contents/first.md') && method === 'PUT') { bootstrapped = true; return new Response(JSON.stringify({ commit: { sha: 'bootsha' } }), { status: 201 }); }
+      if (url.includes('/git/commits/boot')) return new Response(JSON.stringify({ tree: { sha: 'boottree' } }), { status: 200 });
+      if (url.endsWith('/git/blobs')) return new Response(JSON.stringify({ sha: 'b1' }), { status: 201 });
+      if (url.endsWith('/git/trees') && method === 'POST') return new Response(JSON.stringify({ sha: 't1' }), { status: 201 });
+      if (url.endsWith('/git/commits') && method === 'POST') return new Response(JSON.stringify({ sha: 'c1' }), { status: 201 });
+      if (url.includes('/git/refs/heads/') && method === 'PATCH') return new Response('{}', { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const emptyClient = new GitHubRepoClient('o', 'r', 't', emptyFetch);
+    assert.equal((await emptyClient.listTreePaths('main')).size, 0, 'an empty repo lists as zero paths, not an error');
+    // Reset: listTreePaths didn't bootstrap; commitFiles must.
+    const sha2 = await emptyClient.commitFiles([
+      { path: 'first.md', content: '1' }, { path: 'second.md', content: '2' },
+    ], 'chore: init', 'main');
+    assert.equal(sha2, 'c1', 'remaining files land as a batch commit after the bootstrap');
+    assert.ok(emptyCalls.some(c => c.startsWith('PUT') && c.includes('/contents/first.md')), 'first file bootstraps the branch via the contents API');
   });
 
   // ── L. ApiRuntimeAdapter tool call loop ──

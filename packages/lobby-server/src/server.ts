@@ -358,7 +358,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       let result = '';
       try {
         result = await entry.runner.respondTo(
-          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW. If you have repository tools, use them to make the actual changes. Reply with a concise report of what you did (or what blocked you).`,
+          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files/create_pr) — writes commit directly. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests) or you have no repository tools, say so plainly as the blocker — do NOT fabricate work you did not do.`,
         );
       } catch { /* fall through to failed */ }
       const failed = !result || result.startsWith('⚠');
@@ -430,6 +430,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           .join('\n');
         let opsSummary = '';
         try {
+          // Working-repo state — without it the Boss invented "repository initialization" tasks
+          // when the owner asked to initialize the repo (a Panel action, not agent work).
+          const ghInteg = await store.getIntegration(conn.lobbyId, 'github');
+          if (ghInteg?.status === 'active' && ghInteg.repo_full_name) {
+            const initialized = await isRepoInitialized(conn.lobbyId, ghInteg.repo_full_name, ghInteg.branch);
+            opsSummary += `\n[WORKING REPO] ${ghInteg.repo_full_name}@${ghInteg.branch || 'main'} — Agent OS structure ${initialized ? 'initialized' : 'NOT initialized (the LobbyOwner initializes it from the Lobby tab — it is a Panel action, NOT a task for an agent)'}. Agents work on this repo via file tools only (no command execution).`;
+          } else {
+            opsSummary += `\n[WORKING REPO] none connected — repository work is impossible until the LobbyOwner connects the GitHub App in the Lobby tab. Do not assign repository tasks.`;
+          }
           const openTasks = (await store.listTasks(conn.lobbyId))
             .filter(t => !['completed', 'cancelled'].includes(t.status));
           if (openTasks.length) {
@@ -586,7 +595,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       fetchFn: options.apiRuntimeFetch,
       repoClient,
     });
-    const runner = new HostedAgentRunner(adapter, { systemPrompt: params.systemPrompt });
+    // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
+    // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
+    // having any tools at all — both observed live. The preamble states exactly what exists here:
+    // repository file tools when a repo is connected, and NOTHING that executes code.
+    const capabilities = repoClient
+      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits directly), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), and have no local workspace. Do file work through the repository tools and report exactly which files you read or wrote. NEVER claim to have run, built, compiled, or tested anything — if asked to, say you cannot execute commands and state what you CAN verify by reading files.`
+      : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
+    const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
+    const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
     await runner.start();
 
     const connId = `hosted-${randomUUID()}`;
