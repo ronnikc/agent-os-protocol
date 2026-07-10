@@ -120,8 +120,11 @@ function init() {
     await refresh();
   });
 
-  // Real-time WS listener for new requests
+  // Real-time WS listener for new requests. In Local Mode the panel-server re-broadcasts hand-raises
+  // and requests as 'lobby-request'; in Hosted Mode the panel receives the lobby's raw
+  // 'lobby-request-created' directly — listen for both so a raised hand appears immediately.
   onWsMessage('lobby-request', () => { refresh(); });
+  onWsMessage('lobby-request-created', () => { refresh(); });
   onWsMessage('lobby-request-decided', () => { refresh(); });
 
   // Auto-refresh every 10s

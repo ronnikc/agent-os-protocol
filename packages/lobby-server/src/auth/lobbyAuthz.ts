@@ -24,18 +24,33 @@ export function lobbyOwnerRef(lobby: Pick<LobbySession, 'created_by'> | undefine
 
 /**
  * True when `identityRef` may manage `lobbyId`: it is the bound owner (created_by) OR an active
- * member with an owner/admin role. Returns false for unknown lobbies and unowned (legacy) lobbies —
- * Hosted-Mode configuration requires an owned lobby.
+ * member with an owner/admin role. Returns false for unknown lobbies, unowned (legacy) lobbies, and
+ * revoked members. PURE predicate — no side effects; safe to call from anywhere. To adopt an unowned
+ * lobby for a wallet (the deliberate write path), use `authorizeLobbyManager`.
  */
 export async function isLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
   if (!identityRef) return false;
   const lobby = await store.getLobby(lobbyId);
   if (!lobby) return false;
+  if (lobbyOwnerRef(lobby) === identityRef) return true;
+  const member = await store.getMember(lobbyId, identityRef);
+  return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
+}
 
-  // Auto-claim unowned/system/web-user lobbies upon first wallet management action
+/**
+ * Authorize a wallet to manage a lobby, adopting an UNOWNED (legacy / bootstrap `system`) lobby for
+ * the caller on their first management action. This is the deliberate, authenticated write path used
+ * by the management HTTP endpoints — kept OUT of `isLobbyManager` so that predicate stays pure and
+ * testable. Claiming an unowned lobby is first-writer-wins and safe: every later management action
+ * requires proving the same wallet, so claiming a lobby you don't control only locks you out.
+ */
+export async function authorizeLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
+  if (!identityRef) return false;
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) return false;
+
   const owner = lobby.created_by;
   if (!owner || owner === 'system' || owner === 'web-user') {
-    lobby.created_by = identityRef;
     await store.updateLobby(lobbyId, { created_by: identityRef });
     await store.addMember({
       id: `mem_${randomUUID()}`,
@@ -46,8 +61,5 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
     });
     return true;
   }
-
-  if (lobbyOwnerRef(lobby) === identityRef) return true;
-  const member = await store.getMember(lobbyId, identityRef);
-  return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
+  return isLobbyManager(store, lobbyId, identityRef);
 }

@@ -32,10 +32,12 @@ import { saveIntegrationSecret, getDecryptedSecret } from './integrations/github
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
-import { isLobbyManager } from './auth/lobbyAuthz.js';
+import { authorizeLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
+import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from './hosted/boss-delegation.js';
+import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
 import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
@@ -245,6 +247,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
   const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout }>();
+  // Per-agent throttle for broadcast observation (see observeBroadcast) — bounds LLM cost so a
+  // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
+  const lastObservation = new Map<string, number>();
+  const OBSERVE_COOLDOWN_MS = Number(process.env.AGENT_OS_OBSERVE_COOLDOWN_MS) || 20_000;
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -266,7 +272,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const entry = hostedAgents.get(myId);
       if (entry) {
         try {
-          await entry.runner.respondTo('[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.');
+          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.\n${BOSS_DELEGATION_GUIDE}`);
         } catch { /* ignore errors from system injection */ }
       }
       return;
@@ -280,16 +286,29 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const lobby = await store.getLobby(conn.lobbyId);
     const isBoss = lobby?.boss_agent_id === myId;
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
-    // Respond to direct messages addressed to us, or to broadcasts if we're the Boss
-    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return;
+    const addressedToMe = m.to_agent_id === myId;
+    // Routing: reply to direct messages addressed to us, or (as Boss) to broadcasts. A non-boss
+    // agent does not reply to broadcasts — floor control forbids it — but it DOES silently observe
+    // them and may raise a hand via the Requests system. Everything else (chatter between other
+    // agents, system notices) is ignored to prevent cascades.
+    if (!addressedToMe && !(isBroadcast && isBoss)) {
+      if (isBroadcast && !isBoss && m.from_agent_id !== 'system') {
+        await observeBroadcast(conn, entry, myId, m).catch(() => {});
+      }
+      return;
+    }
 
-    // Build context-enriched message for the runner — include sender info and roster for the Boss
+    // Build context-enriched message for the runner — include sender info and roster for the Boss.
+    // Roster + sender type are captured for reuse after the turn (Boss delegation resolution).
     let enrichedContent = String(m.content ?? '');
+    let roster: Awaited<ReturnType<typeof store.roster>> = [];
+    let senderIsHuman = false;
     try {
-      const roster = await store.roster(conn.lobbyId);
+      roster = await store.roster(conn.lobbyId);
       const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
+      senderIsHuman = senderAgent?.participant_type === 'human';
       const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
-      const senderType = senderAgent?.participant_type === 'human' ? ' (human)' : '';
+      const senderType = senderIsHuman ? ' (human)' : '';
       const header = `[From: ${senderName}${senderType}]`;
 
       if (isBoss) {
@@ -298,7 +317,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
           .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
           .join('\n');
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${enrichedContent}`;
+        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -307,8 +326,45 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let reply = '';
     try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
-    // Boss broadcasts replies; non-boss agents MUST reply directly to the sender (floor control
-    // rejects non-boss broadcasts, causing the "message_rejected: non-boss broadcast" error).
+
+    // Boss delegation: when a human asks the Boss to involve an agent, the Boss emits directive
+    // lines. A plain `@Name: msg` is a direct request/coordination message (no task); an explicit
+    // `@Name [task]: title` creates a tracked Task. Both reach the agent directly — a broadcast
+    // would be ignored by sub-agents (they only act on messages addressed to them), which is why
+    // this previously did nothing. Gated to human-originated turns so agent replies can't trigger
+    // a delegation cascade. Each target is acted on at most once per turn.
+    if (isBoss && senderIsHuman && roster.length) {
+      const directives = parseBossDelegations(reply);
+      const dispatched = new Set<string>();
+      for (const d of directives) {
+        const target = resolveRosterAgent(roster, d.target, myId);
+        if (!target || dispatched.has(target.agent_id)) continue;
+        dispatched.add(target.agent_id);
+        if (d.kind === 'task') {
+          // A tracked unit of work — creates a Task card (task_created event) and notifies the agent.
+          const title = d.instruction.length > 90 ? d.instruction.slice(0, 87) + '…' : d.instruction;
+          const taskRes = await coordinator.handle(conn, {
+            type: 'lobby-task-create',
+            assigned_to: target.agent_id,
+            title,
+            description: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, taskRes.out);
+        } else {
+          // Just the Boss talking to a sub-agent (asking for input / coordinating) — no task.
+          const msgRes = await coordinator.handle(conn, {
+            type: 'lobby-message',
+            to_agent_id: target.agent_id,
+            message_type: 'coordination',
+            content: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, msgRes.out);
+        }
+      }
+    }
+
+    // Boss broadcasts its prose reply; non-boss agents MUST reply directly to the sender (floor
+    // control rejects non-boss broadcasts, causing "message_rejected: non-boss broadcast").
     const replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',
@@ -317,6 +373,40 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       content: reply.length > 4000 ? reply.slice(0, 4000) + '\n\n_(truncated)_' : reply,
     } as AgentToLobbyMessage);
     dispatch(conn, res.out);
+  }
+
+  // A non-boss hosted agent observing a broadcast. It runs one evaluation turn and, only if it
+  // decides it has a genuinely valuable contribution, raises a hand via the Requests system (a
+  // `lobby-request` of category `hand_raise` that surfaces in the Requests tab). A per-agent cooldown
+  // bounds cost and prevents an agent from flooding the queue; the runner's in-flight guard prevents
+  // overlapping turns. Never posts a chat reply — floor control forbids a non-boss broadcast.
+  async function observeBroadcast(
+    conn: Connection,
+    entry: { runner: HostedAgentRunner },
+    myId: string,
+    m: { from_agent_id?: string; content?: string },
+  ): Promise<void> {
+    const now = Date.now();
+    const last = lastObservation.get(myId) ?? 0;
+    if (now - last < OBSERVE_COOLDOWN_MS) return;
+    lastObservation.set(myId, now);
+
+    const content = String(m.content ?? '').trim();
+    if (!content) return;
+    const prompt = `${OBSERVATION_GUIDE}\n\n[LOBBY BROADCAST] ${content}`;
+    let verdict = '';
+    try { verdict = await entry.runner.respondTo(prompt); } catch { return; }
+    const intent = parseHandRaise(verdict);
+    if (!intent) return; // agent passed — nothing valuable to add
+
+    const reqRes = await coordinator.handle(conn, {
+      type: 'lobby-request',
+      category: 'hand_raise',
+      title: `HAND: ${intent.reason.length > 80 ? intent.reason.slice(0, 77) + '…' : intent.reason}`,
+      description: intent.reason,
+      context: { hand_category: intent.category, observed_from: m.from_agent_id ?? 'lobby' },
+    } as AgentToLobbyMessage);
+    dispatch(conn, reqRes.out);
   }
 
   // Launch a hosted agent: open an API-runtime session with the resolved key and register it into
@@ -404,6 +494,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     lobbyConns.get(entry.conn.lobbyId)?.delete(entry.connId);
     agentConn.delete(agentId);
     hostedAgents.delete(agentId);
+    lastObservation.delete(agentId);
     return true;
   }
 
@@ -568,7 +659,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const keyId = pkMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../provider-keys — list configured keys (masked)
       if (req.method === 'GET' && !keyId) {
@@ -609,7 +700,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const agentId = hostedMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../hosted-agents — list the running hosted agents in this lobby.
       if (req.method === 'GET' && !agentId) {
@@ -670,7 +761,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = agentDefsMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       try {
         const agents = await getAgentDefinitions(lobbyId, store);
@@ -686,7 +777,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = scheduledGetMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const defaultTasks = [
         {
@@ -765,7 +856,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = scheduledSetupMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const integration = await store.getIntegration(lobbyId, 'github');
       if (!integration || !integration.repo_full_name) {
@@ -832,7 +923,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = ghConnect[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
       const cfg = githubAppConfig();
       if (!cfg || !cfg.slug) return json({ error: 'GitHub App not configured on this lobby (set GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_SLUG)' }, 503);
       const state = `${lobbyId}.${issueSessionToken(identityRef, lobbyId)}`;
@@ -934,7 +1025,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = ghMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
       const integ = await store.getIntegration(lobbyId, 'github');
 
       if (req.method === 'GET') {
@@ -968,7 +1059,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const kind = repoMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
       const integ = await store.getIntegration(lobbyId, 'github');
       if (!integ || integ.status !== 'active' || !integ.repo_full_name) return json({ error: 'no connected repo — connect GitHub and select a repo first' }, 400);
       const token = await ghToken(lobbyId);
@@ -991,7 +1082,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const action = kbMatch[2]; // undefined, 'upload', 'jobs', or 'sync'
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../kb — get KB settings
       if (req.method === 'GET' && !action) {
@@ -1344,7 +1435,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const slug = agentIdentityMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const body = await readBody(req);
       if (typeof body.identity !== 'string' || !body.identity.trim()) {
@@ -1579,7 +1670,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = clearMessagesMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized' }, 403);
       await store.clearMessages(lobbyId);
       return json({ ok: true });
     }
@@ -1590,7 +1681,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = bossAgentMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const body = await readBody(req);
       const agentId = body.agent_id;
@@ -1675,7 +1766,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const provider = providerModelsMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const resolved = await resolveProviderKey(store, lobbyId, provider).catch(() => null);
       if (!resolved || !resolved.apiKey) {
