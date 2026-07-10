@@ -36,6 +36,7 @@ import { isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
+import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from './hosted/boss-delegation.js';
 import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
@@ -266,7 +267,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const entry = hostedAgents.get(myId);
       if (entry) {
         try {
-          await entry.runner.respondTo('[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.');
+          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.\n${BOSS_DELEGATION_GUIDE}`);
         } catch { /* ignore errors from system injection */ }
       }
       return;
@@ -283,13 +284,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // Respond to direct messages addressed to us, or to broadcasts if we're the Boss
     if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return;
 
-    // Build context-enriched message for the runner — include sender info and roster for the Boss
+    // Build context-enriched message for the runner — include sender info and roster for the Boss.
+    // Roster + sender type are captured for reuse after the turn (Boss delegation resolution).
     let enrichedContent = String(m.content ?? '');
+    let roster: Awaited<ReturnType<typeof store.roster>> = [];
+    let senderIsHuman = false;
     try {
-      const roster = await store.roster(conn.lobbyId);
+      roster = await store.roster(conn.lobbyId);
       const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
+      senderIsHuman = senderAgent?.participant_type === 'human';
       const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
-      const senderType = senderAgent?.participant_type === 'human' ? ' (human)' : '';
+      const senderType = senderIsHuman ? ' (human)' : '';
       const header = `[From: ${senderName}${senderType}]`;
 
       if (isBoss) {
@@ -298,7 +303,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
           .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
           .join('\n');
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${enrichedContent}`;
+        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -307,8 +312,32 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let reply = '';
     try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
-    // Boss broadcasts replies; non-boss agents MUST reply directly to the sender (floor control
-    // rejects non-boss broadcasts, causing the "message_rejected: non-boss broadcast" error).
+
+    // Boss delegation: when a human asks the Boss to task an agent, the Boss emits `@Name: work`
+    // directive lines. Turn each into a REAL direct message to that agent — a broadcast would be
+    // ignored by sub-agents (they only act on messages addressed to them), which is why "issue a
+    // task" previously did nothing. Gated to human-originated turns so agent replies can't trigger
+    // a delegation cascade.
+    if (isBoss && senderIsHuman && roster.length) {
+      const directives = parseBossDelegations(reply);
+      const dispatched = new Set<string>();
+      for (const d of directives) {
+        const target = resolveRosterAgent(roster, d.target, myId);
+        if (!target || dispatched.has(target.agent_id)) continue;
+        dispatched.add(target.agent_id);
+        const dRes = await coordinator.handle(conn, {
+          type: 'lobby-message',
+          to_agent_id: target.agent_id,
+          message_type: 'coordination',
+          content: `[TASK from Boss] ${d.instruction}`,
+        } as AgentToLobbyMessage);
+        dispatch(conn, dRes.out);
+        await recordEvent(conn.lobbyId, 'boss_task_dispatched', myId, { to: target.agent_id, instruction: d.instruction.slice(0, 200) }).catch(() => {});
+      }
+    }
+
+    // Boss broadcasts its prose reply; non-boss agents MUST reply directly to the sender (floor
+    // control rejects non-boss broadcasts, causing "message_rejected: non-boss broadcast").
     const replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',

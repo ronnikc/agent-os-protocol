@@ -438,6 +438,7 @@ export type LobbyEventType =
   | 'message_sent'
   | 'message_rejected' // floor control / scoping denial (records the anti-pattern attempt)
   | 'boss_appointed'
+  | 'boss_task_dispatched' // Hosted Mode: the Boss delegated a task to a specific agent via a directive
   | 'hand_raised'
   | 'task_created'
   | 'task_updated'

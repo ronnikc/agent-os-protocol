@@ -147,6 +147,18 @@ function renderLobby() {
   const online = onlineAgents; // alias for count
   const humanUsers = onlineHumans.length ? onlineHumans : (lobbyState.humanUsers || []);
 
+  // Membership Control picker — the set of connected participants (agents + humans) that are not
+  // already members of this lobby. Lets the owner invite anyone in the roster directly instead of
+  // hand-typing a DID. Humans carry their DID as agent_id; agents carry their agent_id.
+  const memberRefs = new Set((lobbyMembers || []).map(m => m.identity_ref));
+  const invitableParticipants = [
+    ...onlineHumans.map(h => ({ id: h.agent_id, label: `${h.display_name || h.name || h.agent_id} (human)` })),
+    ...onlineAgents.map(a => ({ id: a.agent_id, label: `${a.display_name || a.name || a.agent_id}${a.agent_role ? ` · ${a.agent_role}` : ''}` })),
+  ].filter(p => p.id && !memberRefs.has(p.id));
+  const invitePickerOptions = invitableParticipants
+    .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`)
+    .join('');
+
   const inviteCheckboxes = onlineAgents.map(a => `
     <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);cursor:pointer;background:var(--bg-base);padding:4px 8px;border-radius:4px;border:1px solid var(--border);">
       <input type="checkbox" name="invite-agent" value="${escapeHtml(a.agent_id)}" />
@@ -321,8 +333,14 @@ function renderLobby() {
             <h4 style="margin:0 0 4px 0; font-size:14px; font-weight:600; color:var(--text-primary);">Membership Control</h4>
             <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Invite Concordium DIDs or local agents, and manage floor permissions.</span>
             
+            <div style="display:flex; gap:6px; margin-bottom:6px;">
+              <select id="invite-member-picker" style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                <option value="">${invitableParticipants.length ? 'Select a connected agent or human…' : 'No connected participants to invite'}</option>
+                ${invitePickerOptions}
+              </select>
+            </div>
             <div style="display:flex; gap:6px;">
-              <input type="text" id="invite-member-did" placeholder="did:ccd:mainnet:..." style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+              <input type="text" id="invite-member-did" placeholder="…or paste a did:ccd:mainnet: / agent id" style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
               <select id="invite-member-role" style="padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
                 <option value="contributor">Contributor</option>
                 <option value="admin">Admin</option>
@@ -423,8 +441,16 @@ function renderLobby() {
       }
     });
 
+    // Selecting a connected participant fills the identity field so Invite works with one click.
+    document.getElementById('invite-member-picker')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const didInput = document.getElementById('invite-member-did');
+      if (val && didInput) didInput.value = val;
+    });
+
     document.getElementById('btn-invite-member')?.addEventListener('click', async () => {
-      const identity_ref = document.getElementById('invite-member-did')?.value?.trim();
+      const identity_ref = document.getElementById('invite-member-did')?.value?.trim()
+        || document.getElementById('invite-member-picker')?.value?.trim();
       const role = document.getElementById('invite-member-role')?.value;
       if (!identity_ref) return;
       const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
@@ -461,12 +487,13 @@ function renderLobby() {
     document.getElementById('btn-panel-github-setup')?.addEventListener('click', async () => {
       const modeData = await fetchJson('/api/mode');
       const lobbyUrl = modeData?.lobbyUrl || window.location.origin;
+      // NOTE: Do NOT include `hook_attributes` unless it carries a `url`. GitHub's manifest parser
+      // requires `hook_attributes.url` whenever the object is present, and reports its absence as the
+      // confusingly generic "Error 'url' wasn't supplied." (the top-level `url` below IS supplied).
+      // Since we register no webhook (`default_events: []`), we omit `hook_attributes` entirely.
       const manifest = {
         name: `Agent OS Swarm ${lobbyInfo.id ? lobbyInfo.id.slice(0, 8) : 'Local'}`,
         url: lobbyUrl,
-        hook_attributes: {
-          active: false
-        },
         redirect_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/setup-callback`,
         callback_urls: [
           `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`
@@ -479,6 +506,10 @@ function renderLobby() {
         },
         default_events: []
       };
+      if (!lobbyUrl || !/^https?:\/\//i.test(lobbyUrl)) {
+        showAlert('Cannot Register App', `The lobby URL ("${lobbyUrl || 'empty'}") is not a valid http(s) URL, so GitHub would reject the manifest. Open the panel over its public https URL and try again.`);
+        return;
+      }
 
       // Open a new window and build+submit the manifest form inside it.
       // Previous approaches (setAttribute, .value on current-doc form with target=_blank) all

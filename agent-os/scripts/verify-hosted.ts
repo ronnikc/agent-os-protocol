@@ -34,6 +34,7 @@ import {
 } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
+import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { createVerify } from 'node:crypto';
 import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
@@ -285,6 +286,35 @@ async function main(): Promise<void> {
     const reply = await r.respondTo('go');
     assert.match(reply, /^⚠/);
     await r.stop();
+  });
+
+  await check('boss delegation: parses @Name directives and resolves them to connected roster agents', () => {
+    const roster = [
+      { agent_id: 'boss-1', display_name: 'Boss-agent Agent', agent_role: 'boss-agent', status: 'idle' },
+      { agent_id: 'be-9', display_name: 'Backend Agent', agent_role: 'backend', status: 'idle' },
+      { agent_id: 'cr-3', display_name: 'Code-review Agent', agent_role: 'code-review', status: 'idle' },
+      { agent_id: 'gone-4', display_name: 'Frontend Agent', agent_role: 'frontend', status: 'disconnected' },
+    ];
+    const reply = [
+      'Here is the plan:',
+      '@Backend Agent: implement the /users endpoint and add tests',
+      'This part is prose that mentions the Frontend Agent but is not a directive.',
+      '  @code-review: review the diff once backend lands',
+      '@Frontend Agent: build the form',        // disconnected → must not resolve
+      '@Nonexistent: do something',             // unknown → must not resolve
+    ].join('\n');
+
+    const directives = parseBossDelegations(reply);
+    assert.equal(directives.length, 4, 'four @-directives parsed (prose line excluded)');
+    assert.equal(directives[0].instruction, 'implement the /users endpoint and add tests');
+
+    const resolved = directives
+      .map(d => resolveRosterAgent(roster, d.target, 'boss-1'))
+      .filter(Boolean)
+      .map(a => a!.agent_id);
+    assert.deepEqual(resolved, ['be-9', 'cr-3'], 'only connected, known agents resolve (disconnected + unknown dropped)');
+    assert.equal(resolveRosterAgent(roster, 'boss-agent', 'boss-1'), undefined, 'the boss never delegates to itself');
+    assert.ok(BOSS_DELEGATION_GUIDE.includes('@<Agent Name>'), 'the guide documents the directive syntax');
   });
 
   await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
