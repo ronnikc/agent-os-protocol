@@ -36,6 +36,10 @@ import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager } from '../../pack
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
+import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
+import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { createVerify } from 'node:crypto';
 import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, listAppInstallations, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
@@ -563,6 +567,52 @@ async function main(): Promise<void> {
 
     const prUrl = await client.createPullRequest('title', 'head', 'base');
     assert.equal(prUrl, 'https://github.com/owner/repo/pull/1');
+  });
+
+  await check('REPO INIT: seed collects agents + skills + prompts + scaffolds; batch commit is atomic', async () => {
+    // Seed collection reads this deployment's own agent-os tree.
+    const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../..');
+    const seed = collectAgentOsSeed(REPO_ROOT);
+    const paths = seed.map(f => f.path);
+    assert.ok(paths.filter(p => p.startsWith('agent-os/sub-agents/agents/')).length >= 50, 'seeds the agent-definition catalog');
+    assert.ok(paths.filter(p => /^agent-os\/sub-agents\/skills\/[^/]+\/SKILL\.md$/.test(p)).length >= 50, 'seeds the skills');
+    assert.ok(paths.filter(p => p.startsWith('agent-os/scheduled/prompts/')).length >= 3, 'seeds the self-learning prompts');
+    assert.ok(paths.includes('agent-os/config.json'), 'seeds a default scheduler config');
+    assert.ok(paths.includes('agent-os/shared-memory/README.md'), 'scaffolds shared memory');
+    assert.ok(paths.includes('agent-os/training/packs/README.md'), 'scaffolds trained packs');
+    assert.ok(!paths.includes(AGENT_OS_MANIFEST_PATH), 'the manifest is added by the endpoint, not the collector');
+    const manifest = JSON.parse(buildManifest('did:ccd:mainnet:test'));
+    assert.equal(manifest.initialized_by, 'did:ccd:mainnet:test');
+    assert.ok(Array.isArray(manifest.components) && manifest.components.includes('agents'));
+
+    // Batch commit: blobs → tree → commit → ref, ONE commit for N files.
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const gitFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      calls.push({ url, method, body: opts?.body ? JSON.parse(opts.body) : undefined });
+      if (url.includes('/git/ref/heads/')) return new Response(JSON.stringify({ object: { sha: 'base' } }), { status: 200 });
+      if (url.includes('/git/commits/base')) return new Response(JSON.stringify({ tree: { sha: 'basetree' } }), { status: 200 });
+      if (url.endsWith('/git/blobs')) return new Response(JSON.stringify({ sha: `blob${calls.length}` }), { status: 201 });
+      if (url.endsWith('/git/trees') && method === 'POST') return new Response(JSON.stringify({ sha: 'newtree' }), { status: 201 });
+      if (url.endsWith('/git/commits') && method === 'POST') return new Response(JSON.stringify({ sha: 'newcommit' }), { status: 201 });
+      if (url.includes('/git/refs/heads/') && method === 'PATCH') return new Response(JSON.stringify({ object: { sha: 'newcommit' } }), { status: 200 });
+      if (url.includes('/git/trees/basetree')) return new Response(JSON.stringify({ tree: [{ path: 'README.md', type: 'blob' }] }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new GitHubRepoClient('o', 'r', 't', gitFetch);
+
+    const existing = await client.listTreePaths('main');
+    assert.ok(existing.has('README.md'), 'recursive tree lists existing blobs');
+
+    const sha = await client.commitFiles([
+      { path: 'a.md', content: 'A' }, { path: 'b/c.md', content: 'C' },
+    ], 'chore: init', 'main');
+    assert.equal(sha, 'newcommit');
+    const commitCalls = calls.filter(c => c.url.endsWith('/git/commits') && c.method === 'POST');
+    assert.equal(commitCalls.length, 1, 'exactly ONE commit for the whole batch');
+    assert.deepEqual(commitCalls[0].body.parents, ['base']);
+    const refPatch = calls.find(c => c.method === 'PATCH' && c.url.includes('/git/refs/heads/'));
+    assert.equal(refPatch?.body.sha, 'newcommit', 'branch ref advanced to the batch commit');
   });
 
   // ── L. ApiRuntimeAdapter tool call loop ──

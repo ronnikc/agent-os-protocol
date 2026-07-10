@@ -82,6 +82,52 @@ export class GitHubRepoClient {
     return res.commit.sha;
   }
 
+  /** Every file path in the repo at `branch`, in one recursive-tree call (existence checks). */
+  async listTreePaths(branch = 'main'): Promise<Set<string>> {
+    const ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    const commit = await this.request(`/git/commits/${ref.object.sha}`);
+    const tree = await this.request(`/git/trees/${commit.tree.sha}?recursive=1`);
+    return new Set<string>((tree.tree ?? []).filter((e: any) => e.type === 'blob').map((e: any) => e.path));
+  }
+
+  /**
+   * Commit many files atomically as ONE commit via the Git Data API (blobs → tree → commit → ref).
+   * The contents API (`writeFile`) creates one commit per file — initializing the Agent OS
+   * structure writes ~140 files, and 140 commits would spam history and take minutes. Blobs are
+   * created in parallel chunks; existing files at the same paths are updated in the same commit.
+   */
+  async commitFiles(files: Array<{ path: string; content: string }>, message: string, branch = 'main'): Promise<string> {
+    const ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
+    const baseCommitSha = ref.object.sha;
+    const baseCommit = await this.request(`/git/commits/${baseCommitSha}`);
+
+    const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
+    const CHUNK = 10;
+    for (let i = 0; i < files.length; i += CHUNK) {
+      const chunk = files.slice(i, i + CHUNK);
+      const blobs = await Promise.all(chunk.map(f =>
+        this.request('/git/blobs', {
+          method: 'POST',
+          body: JSON.stringify({ content: Buffer.from(f.content, 'utf8').toString('base64'), encoding: 'base64' }),
+        })));
+      chunk.forEach((f, j) => treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blobs[j].sha }));
+    }
+
+    const tree = await this.request('/git/trees', {
+      method: 'POST',
+      body: JSON.stringify({ base_tree: baseCommit.tree.sha, tree: treeItems }),
+    });
+    const commit = await this.request('/git/commits', {
+      method: 'POST',
+      body: JSON.stringify({ message, tree: tree.sha, parents: [baseCommitSha] }),
+    });
+    await this.request(`/git/refs/heads/${encodeURIComponent(branch)}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ sha: commit.sha }),
+    });
+    return commit.sha;
+  }
+
   /** Create a new Pull Request. Returns the HTML URL of the PR. */
   async createPullRequest(title: string, head: string, base: string, body?: string): Promise<string> {
     const payload = { title, head, base, body };

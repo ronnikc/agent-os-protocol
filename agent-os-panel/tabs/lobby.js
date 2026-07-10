@@ -414,7 +414,20 @@ function renderLobby() {
                     <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Working Branch (optional)</label>
                     <input type="text" id="panel-github-branch" placeholder="main" value="${escapeHtml(lobbyGithub.branch || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
                   </div>
-                  
+
+                  ${lobbyGithub.repo ? (lobbyGithub.initialized ? `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(0,200,100,0.05); border:1px solid rgba(0,200,100,0.15); color:var(--text-secondary); line-height:1.45;">
+                      <span style="color:var(--color-green); font-weight:600;">✓ Agent OS structure initialized</span> —
+                      <code style="font-size:10px;">agent-os/</code> in <strong>${escapeHtml(lobbyGithub.repo)}</strong> holds the agent definitions (+ bound Agent IDs), skills, scheduled prompts, shared memories, and trained packs this lobby manages.
+                    </div>
+                  ` : `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.18); color:var(--text-secondary); line-height:1.45;">
+                      <span style="color:var(--color-yellow); font-weight:600;">Repository not initialized.</span>
+                      Seed <strong>${escapeHtml(lobbyGithub.repo)}</strong> with the Agent OS structure — agent definitions, skills, scheduled self-learning prompts, and the shared-memory/training scaffolding — in one commit so the lobby can manage agents, IDs, and memories there.
+                    </div>
+                    <button class="btn btn-primary btn-sm" id="btn-panel-github-init" style="width:100%;">Initialize Agent OS structure in ${escapeHtml(lobbyGithub.repo)}</button>
+                  `) : ''}
+
                   <div style="display:flex; gap:6px; margin-top:4px;">
                     <button class="btn btn-secondary btn-sm" id="btn-panel-github-save-repo" style="flex:1;">Save Settings</button>
                     <button class="btn btn-danger btn-sm" id="btn-panel-github-disconnect">Disconnect</button>
@@ -554,6 +567,19 @@ function renderLobby() {
         window.open(res.install_url, '_blank', 'noopener');
       } else {
         showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
+      }
+    });
+
+    document.getElementById('btn-panel-github-init')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-panel-github-init');
+      if (btn) { btn.disabled = true; btn.textContent = 'Initializing… (one batch commit)'; }
+      const res = await fetchJson('/api/lobby/remote/repo/initialize', { method: 'POST' });
+      if (res && res.ok) {
+        showAlert('Repository Initialized', `Committed ${res.files_committed} file(s) to ${res.repo}@${res.branch} (${res.skipped_existing} already present were left untouched). The lobby now manages agents, IDs, skills, memories, and trained packs in this repository.`);
+        refresh();
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = 'Initialize Agent OS structure'; }
+        showAlert('Initialization Failed', res?.error || 'Unknown error');
       }
     });
 

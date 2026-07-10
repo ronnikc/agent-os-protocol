@@ -455,6 +455,7 @@ export type LobbyEventType =
   | 'kb_configured' // Hosted Mode: Knowledge Base configured
   | 'github_repo_selected' // Hosted Mode: the working repo/branch was chosen
   | 'scheduled_tasks_configured' // Hosted Mode: daily scheduled tasks configured
+  | 'repo_initialized' // Hosted Mode: the Agent OS structure was seeded into the connected repo
   | 'github_disconnected'; // Hosted Mode: the GitHub integration was revoked
 
 /** One append-only entry in a lobby's event log. */
