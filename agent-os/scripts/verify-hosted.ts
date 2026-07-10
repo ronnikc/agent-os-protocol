@@ -32,9 +32,10 @@ import {
 import {
   generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, verifySignature,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
-import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
+import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
+import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { createVerify } from 'node:crypto';
 import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
@@ -251,6 +252,32 @@ async function main(): Promise<void> {
     assert.equal(await isLobbyManager(store, 'L4', 'did:ccd:testnet:anyone'), false);
     assert.equal(await isLobbyManager(store, 'does-not-exist', 'did:ccd:testnet:anyone'), false);
     assert.equal(await isLobbyManager(store, 'L4', ''), false);
+  });
+
+  await check('authorizeLobbyManager adopts an unowned lobby for the first wallet, then locks others out', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L5', 'system')); // legacy/bootstrap unowned lobby
+    // First wallet to manage claims ownership...
+    assert.equal(await authorizeLobbyManager(store, 'L5', 'did:ccd:testnet:first'), true);
+    // ...and is now the bound owner, resolvable by the pure predicate.
+    assert.equal(await isLobbyManager(store, 'L5', 'did:ccd:testnet:first'), true);
+    // A different wallet is denied once the lobby is owned (no re-claim).
+    assert.equal(await authorizeLobbyManager(store, 'L5', 'did:ccd:testnet:second'), false);
+    // Unknown lobby and empty ref stay denied.
+    assert.equal(await authorizeLobbyManager(store, 'nope', 'did:ccd:testnet:first'), false);
+    assert.equal(await authorizeLobbyManager(store, 'L5', ''), false);
+  });
+
+  await check('agent observation: parses a RAISE verdict into a hand-raise intent; PASS yields none', () => {
+    assert.equal(parseHandRaise('PASS'), null, 'PASS means nothing to add');
+    assert.equal(parseHandRaise('I think this is fine, nothing to add.'), null, 'prose without RAISE is a pass');
+    const a = parseHandRaise('RAISE: the migration drops the users index — queries will table-scan');
+    assert.ok(a, 'a RAISE line is parsed');
+    assert.equal(a!.reason, 'the migration drops the users index — queries will table-scan');
+    const b = parseHandRaise('RAISE [risk]: no auth check on the new endpoint');
+    assert.equal(b!.category, 'risk', 'an optional [tag] sets the category');
+    assert.equal(b!.reason, 'no auth check on the new endpoint');
+    assert.ok(OBSERVATION_GUIDE.includes('PASS') && OBSERVATION_GUIDE.includes('RAISE'), 'guide documents both verdicts');
   });
 
   // ── I. Hosted agent runner (server-side execution via the API runtime) ──
