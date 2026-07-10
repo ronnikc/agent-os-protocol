@@ -38,6 +38,7 @@ import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
+import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
 import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
@@ -282,6 +283,31 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // tasks in a self-sustaining loop with no human in it.
   const bossAutoTaskBudget = new Map<string, number>();
   const BOSS_AUTO_TASK_BUDGET = 3;
+  // Cached "is the Agent OS structure initialized in the connected repo?" per lobby — the GitHub
+  // status endpoint is polled every ~10s and the answer costs an API read of the manifest file.
+  const repoInitializedCache = new Map<string, { value: boolean; at: number }>();
+  const REPO_INIT_CACHE_MS = 60_000;
+
+  /** Whether the connected repo carries the Agent OS manifest (cached; see repoInitializedCache). */
+  async function isRepoInitialized(lobbyId: string, repoFullName: string | undefined, branch: string | undefined): Promise<boolean> {
+    if (!repoFullName) return false;
+    const cached = repoInitializedCache.get(lobbyId);
+    if (cached && Date.now() - cached.at < REPO_INIT_CACHE_MS) return cached.value;
+    let value = false;
+    try {
+      const token = await githubTokenForLobby(lobbyId, store);
+      const parsed = token ? parseGithubUrl(repoFullName) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoFullName)
+        ? { owner: repoFullName.split('/')[0], repo: repoFullName.split('/')[1] } : null) : null;
+      if (token && parsed) {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        await client.readFile(AGENT_OS_MANIFEST_PATH, branch || 'main');
+        value = true;
+      }
+    } catch { value = false; }
+    repoInitializedCache.set(lobbyId, { value, at: Date.now() });
+    return value;
+  }
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -1044,34 +1070,28 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const branchName = integration.branch || 'main';
 
       try {
+        // Scheduled setup IS repo initialization plus enabling the tasks: seed the full Agent OS
+        // structure in one atomic commit (files already present in the repo are left untouched),
+        // then enable the scheduled tasks in agent-os/config.json. Replaces the old per-file
+        // commit loop (~65 commits of history spam, and it overwrote user-customized files).
         const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
-        
-        // 1. Write agent-os/config.json
-        const configPath = join(REPO_ROOT, 'agent-os/scheduled/config.json');
-        if (existsSync(configPath)) {
-          const content = readFileSync(configPath, 'utf-8');
-          await client.writeFile('agent-os/config.json', content, 'chore: setup agent-os scheduled config', branchName);
+        const seed = collectAgentOsSeed(REPO_ROOT);
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = seed.filter(f => !existing.has(f.path) && f.path !== 'agent-os/config.json');
+        // Config is authoritative from this action: tasks the user just set up are enabled.
+        const enabledConfig = JSON.stringify({
+          scheduled: [
+            { name: 'graph-update', enabled: true, time_utc: '03:00' },
+            { name: 'pr-quality-review', enabled: true, time_utc: '04:00' },
+            { name: 'fix-sprint-executor', enabled: true, time_utc: '05:00' },
+          ],
+        }, null, 2) + '\n';
+        toWrite.push({ path: 'agent-os/config.json', content: enabledConfig });
+        if (!existing.has(AGENT_OS_MANIFEST_PATH)) {
+          toWrite.push({ path: AGENT_OS_MANIFEST_PATH, content: buildManifest(identityRef) });
         }
-
-        // 2. Write scheduled prompts (graph-update, pr-quality-review, fix-sprint-executor)
-        const promptsDir = join(REPO_ROOT, 'agent-os/scheduled/prompts');
-        if (existsSync(promptsDir)) {
-          const files = readdirSync(promptsDir).filter(f => f.endsWith('.md'));
-          for (const file of files) {
-            const content = readFileSync(join(promptsDir, file), 'utf-8');
-            await client.writeFile(`agent-os/scheduled/prompts/${file}`, content, `chore: setup scheduled prompt for ${file}`, branchName);
-          }
-        }
-
-        // 3. Write core agent definitions (60 files)
-        const agentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
-        if (existsSync(agentsDir)) {
-          const files = readdirSync(agentsDir).filter(f => f.endsWith('.md'));
-          for (const file of files) {
-            const content = readFileSync(join(agentsDir, file), 'utf-8');
-            await client.writeFile(`agent-os/sub-agents/agents/${file}`, content, `chore: bootstrap core agent definition ${file}`, branchName);
-          }
-        }
+        await client.commitFiles(toWrite, 'chore: set up Agent OS scheduled self-learning (config, prompts, agents)', branchName);
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
 
         await recordEvent(lobbyId, 'scheduled_tasks_configured', identityRef, { repo: integration.repo_full_name, branch: branchName });
         return json({ ok: true });
@@ -1218,10 +1238,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         let repos: unknown[] = [];
         const token = await ghToken(lobbyId);
         if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
-        return json({ connected: true, account: integ.external_account_name, repo: integ.repo_full_name, branch: integ.branch, repos });
+        const initialized = await isRepoInitialized(lobbyId, integ.repo_full_name, integ.branch);
+        return json({ connected: true, account: integ.external_account_name, repo: integ.repo_full_name, branch: integ.branch, repos, initialized });
       }
       if (req.method === 'POST') {
         if (!integ) return json({ error: 'GitHub is not connected' }, 400);
+        repoInitializedCache.delete(lobbyId); // repo/branch may change — re-check the manifest
         const body = await readBody(req);
         const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
         if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return json({ error: 'repo must be "owner/repo"' }, 400);
@@ -1232,8 +1254,55 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       if (req.method === 'DELETE') {
         if (integ) await store.updateIntegration(lobbyId, integ.id, { status: 'revoked', updated_at: new Date().toISOString() });
+        repoInitializedCache.delete(lobbyId);
         await recordEvent(lobbyId, 'github_disconnected', identityRef, {});
         return json({ connected: false });
+      }
+    }
+
+    // POST /lobbies/:id/repo/initialize — seed the Agent OS structure into the connected repo.
+    // One atomic commit "clones down" what the lobby needs to manage agents there: agent
+    // definitions (where Agent IDs bind), skills, scheduled self-learning prompts, the scheduler
+    // config, and scaffolding for shared memories + locally trained packs. Idempotent: files that
+    // already exist in the repo are left untouched (user customizations win); only the manifest is
+    // always (re)written.
+    const repoInitMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/initialize$/);
+    if (repoInitMatch && req.method === 'POST') {
+      const lobbyId = repoInitMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
+        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+        const seed = collectAgentOsSeed(REPO_ROOT);
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = seed.filter(f => !existing.has(f.path));
+        toWrite.push({ path: AGENT_OS_MANIFEST_PATH, content: buildManifest(identityRef) });
+        const commitSha = await client.commitFiles(
+          toWrite,
+          'chore: initialize Agent OS structure (agents, skills, prompts, memory + training scaffold)',
+          branchName,
+        );
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        await recordEvent(lobbyId, 'repo_initialized', identityRef, {
+          repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha,
+        });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `repository initialization failed: ${String((e as Error).message ?? e)}` }, 502);
       }
     }
 

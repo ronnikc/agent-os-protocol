@@ -101,6 +101,42 @@ so the same UI runs hosted. Built in slices, each testable on its own:
 - **Phase 4.6 — Knowledge Base / KB (done):** refactored and renamed the panel's "Memory" tab to "KB". Added repo URL / branch settings configuration and direct file upload -> convert to markdown -> remote commit via the lobby's GitHub App installation token.
 - **Local-only views (Files, Gantt, Scheduled, Loop):** either given hosted data sources (wallet-scoped server-side state) or kept hidden in hosted mode.
 
+## The working repository (GitHub App)
+
+The connected repository is the **durable home of everything the lobby manages** — the lobby host
+stores only ephemeral coordination state. The working repo is always visible in the panel's top
+bar (`📁 owner/repo@branch`); every surface below depends on it and tells you to connect the
+GitHub App first when it isn't.
+
+**Initialization** (`POST /lobbies/:id/repo/initialize`, or the "Initialize Agent OS structure"
+button in the Lobby tab's GitHub card) seeds the repo in ONE atomic commit with the parts of Agent
+OS needed to manage a swarm there. Idempotent — files already in the repo are never overwritten:
+
+| Path seeded | Purpose |
+|---|---|
+| `agent-os/sub-agents/agents/*.md` | Agent definitions — the launchable roster; bound Agent IDs (`Identity:` lines) live here |
+| `agent-os/sub-agents/skills/*/SKILL.md` | Skills agents can invoke |
+| `agent-os/scheduled/prompts/*.md` + `agent-os/config.json` | Self-learning scheduled tasks (graph update, PR quality review, fix-sprint executor) |
+| `agent-os/shared-memory/` | Shared memories (facts, lessons, diaries) written by the swarm |
+| `agent-os/training/packs/` | Locally trained (`/train`) packs promoted to the repo |
+| `agent-os/.agent-os.json` | Initialization manifest (who/when/what) — the "initialized" marker |
+
+**Everything that depends on the connected repo:**
+
+| Feature | Repo dependency |
+|---|---|
+| Launching agents | Definitions merged repo-over-catalog (repo wins per slug); a definition's `Identity:` DID becomes the agent's join token |
+| Agent IDs (mint / Set ID) | The DID is committed to the agent's definition file (bootstrapped if missing) |
+| Agent work (repo tools) | Hosted agents get `read_file`/`write_file`/`create_pr` against the working repo |
+| Knowledge Base | Uploaded docs are converted and committed under the KB root path |
+| Scheduled self-learning | `config.json` + prompts are read from / written to the repo |
+| Files tab | Read-only browse of the working repo |
+| Memories | Shared memory lands in the repo (`shared-memory/`, KB indices) — restarts lose nothing |
+
+All repo operations mint **fresh** installation tokens per call (the GitHub App's ~1h token expiry
+never surfaces), and the lobby holds no long-lived credential — uninstalling the App revokes
+everything.
+
 ## Verification
 
 Each phase ships an offline, seam-injected verify suite (`npm run verify-hosted`) — no live wallet,

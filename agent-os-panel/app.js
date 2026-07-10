@@ -12,6 +12,8 @@ export const state = {
   relayConnected: false,
   activeTab: 'agents',
   mode: 'local',
+  // Hosted GitHub integration snapshot for the top-bar working-repo pill (refreshed periodically).
+  githubStatus: null,
   wallet: {
     connected: false,
     address: null,
@@ -241,6 +243,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
         } else if (cleanPath === 'integrations/github/connect') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
+        } else if (cleanPath === 'repo/initialize') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/initialize`;
         } else if (cleanPath === 'create') {
           lobbyPath = `/api/v1/agent-lobby/lobbies`;
         } else if (cleanPath === 'status') {
@@ -481,16 +485,33 @@ async function updateStatusBar() {
   const modeHtml = mode === 'swarm'
     ? `<span class="status-pill swarm" title="${escapeHtml(lobbyUrl)}">Swarm: ${escapeHtml(lobbyUrl.replace(/^https?:\/\//, '').slice(0, 30))}</span>`
     : `<span class="status-pill local">Local Mode</span>`;
-    
+
   const wsHtml = `<span class="status-pill ${state.wsConnected ? 'connected' : ''}">
     <span class="status-dot ${state.wsConnected ? 'status-running' : 'status-stopped'}"></span>WS
   </span>`;
-  
+
   const agentsHtml = `<span class="status-pill">${running} / ${state.agents.length} agents</span>`;
+
+  // Working-repo pill (hosted): the repository this lobby's agents operate on — definitions,
+  // Agent IDs, KB/memories, scheduled prompts, and agent commits all target it, so it must be
+  // obvious from every tab (like a git branch indicator). Click routes to the Lobby tab.
+  let repoHtml = '';
+  if (mode === 'swarm') {
+    const g = state.githubStatus;
+    if (!g || g.configured === false && !g.connected) {
+      repoHtml = `<span class="status-pill" id="status-repo-pill" style="cursor:pointer;color:var(--warning,#eab308);" title="No GitHub App configured — connect it in the Lobby tab so agents can work on a repository">⚠ Connect GitHub</span>`;
+    } else if (!g.connected || !g.repo) {
+      repoHtml = `<span class="status-pill" id="status-repo-pill" style="cursor:pointer;color:var(--warning,#eab308);" title="GitHub App ${g.connected ? 'connected — select the working repository' : 'not installed'} in the Lobby tab">⚠ Select repo</span>`;
+    } else {
+      const init = g.initialized ? '' : ' · not initialized';
+      repoHtml = `<span class="status-pill ${g.initialized ? 'connected' : ''}" id="status-repo-pill" style="cursor:pointer;" title="Working repository for this lobby${g.initialized ? ' (Agent OS structure initialized)' : ' — initialize the Agent OS structure in the Lobby tab'}">📁 ${escapeHtml(g.repo)}@${escapeHtml(g.branch || 'main')}${init}</span>`;
+    }
+  }
 
   el.innerHTML = `
     <div class="status-pill-group">
       ${modeHtml}
+      ${repoHtml}
       ${wsHtml}
       ${agentsHtml}
     </div>
@@ -680,6 +701,24 @@ export async function init() {
 
   const presetData = await fetchJson('/api/presets');
   if (presetData && !presetData.error) state.presets = presetData;
+
+  // Hosted: keep the top-bar working-repo pill current. 30s cadence — the server caches the
+  // initialized check, and repo changes come through the Lobby tab which triggers its own refresh.
+  if (window.AGENT_OS_HOSTED) {
+    const refreshGithubStatus = async () => {
+      try {
+        const g = await fetchJson('/api/lobby/remote/integrations/github');
+        state.githubStatus = (g && !g.error) ? g : null;
+      } catch { state.githubStatus = null; }
+      updateStatusBar();
+    };
+    refreshGithubStatus();
+    setInterval(refreshGithubStatus, 30000);
+    // The pill is re-rendered on every status-bar update; delegate the click once.
+    document.getElementById('status-bar')?.addEventListener('click', (e) => {
+      if (e.target.closest('#status-repo-pill')) switchTab('lobby');
+    });
+  }
 
   updateStatusBar();
 
