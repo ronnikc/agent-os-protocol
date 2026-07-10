@@ -494,10 +494,14 @@ function renderLobby() {
       const manifest = {
         name: `Agent OS Swarm ${lobbyInfo.id ? lobbyInfo.id.slice(0, 8) : 'Local'}`,
         url: lobbyUrl,
+        // `redirect_url` fires ONCE, right after the app is created from this manifest (carries the
+        // temporary `code` we exchange in setup-callback). `setup_url` is what GitHub redirects to
+        // AFTER the user installs the app on their repos — it carries `installation_id` + our `state`,
+        // which the callback handler needs to record the installation. Without setup_url the app
+        // installs on GitHub but the lobby never learns about it, so the panel stays on "Connect".
         redirect_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/setup-callback`,
-        callback_urls: [
-          `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`
-        ],
+        setup_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`,
+        setup_on_update: false,
         public: false,
         default_permissions: {
           contents: "write",

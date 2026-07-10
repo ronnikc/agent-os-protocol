@@ -26,7 +26,7 @@ import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.js';
-import { githubAppConfig, getInstallationToken, installUrl } from './integrations/github/appAuth.js';
+import { githubAppConfig, getInstallationToken, installUrl, listAppInstallations } from './integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
@@ -251,6 +251,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
   const lastObservation = new Map<string, number>();
   const OBSERVE_COOLDOWN_MS = Number(process.env.AGENT_OS_OBSERVE_COOLDOWN_MS) || 20_000;
+  // Per-lobby throttle for GitHub-installation auto-detect (see autoAdoptGithubInstallation) so a
+  // disconnected status poll can't hammer the GitHub App rate limit.
+  const lastGithubAutoDetect = new Map<string, number>();
+  const GITHUB_AUTODETECT_THROTTLE_MS = 15_000;
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -568,6 +572,43 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const integ = await store.getIntegration(lobbyId, 'github');
       if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
       try { return await getInstallationToken(integ.installation_id); } catch { return null; }
+    };
+
+    // Adopt an existing GitHub App installation for a lobby that has none recorded yet — the recovery
+    // path when GitHub didn't redirect back with an installation_id. Discovers installations via the
+    // App JWT and adopts the most recent, minting + storing its token. Throttled per lobby so a poll
+    // loop while disconnected can't exhaust the GitHub App rate limit. Returns the connected payload
+    // on success, or null (leaving the caller to report not-connected).
+    const autoAdoptGithubInstallation = async (
+      lobbyId: string, identityRef: string, existing: Awaited<ReturnType<typeof store.getIntegration>>,
+    ): Promise<{ connected: true; account?: string; repo?: string; branch?: string; repos: unknown[] } | null> => {
+      const last = lastGithubAutoDetect.get(lobbyId) ?? 0;
+      if (Date.now() - last < GITHUB_AUTODETECT_THROTTLE_MS) return null;
+      lastGithubAutoDetect.set(lobbyId, Date.now());
+
+      const installs = await listAppInstallations();
+      if (installs.length === 0) return null;
+      const chosen = installs[0]; // most recently updated — the one the user most likely just added
+      const instToken = await getInstallationToken(chosen.id);
+      const repos = await listInstallationRepos(instToken);
+      const account = chosen.account || repos[0]?.full_name?.split('/')[0];
+      const now = new Date().toISOString();
+      let integration = existing;
+      if (existing) {
+        integration = await store.updateIntegration(lobbyId, existing.id, {
+          status: 'active', installation_id: chosen.id, external_account_name: account, updated_at: now,
+        }) ?? existing;
+      } else {
+        integration = await store.addIntegration({
+          id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
+          external_account_name: account, installation_id: chosen.id,
+          scopes: ['contents', 'pull_requests'], installed_by_identity_ref: identityRef,
+          created_at: now, updated_at: now,
+        });
+      }
+      await saveIntegrationSecret(integration!.id, 'installation_token', instToken, store, 3300);
+      await recordEvent(lobbyId, 'github_connected', identityRef, { account, repos: repos.length, via: 'auto-detect' });
+      return { connected: true, account, repo: integration!.repo_full_name, branch: integration!.branch, repos };
     };
 
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
@@ -1029,7 +1070,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const integ = await store.getIntegration(lobbyId, 'github');
 
       if (req.method === 'GET') {
-        if (!integ || integ.status !== 'active') return json({ connected: false, configured: Boolean(githubAppConfig()) });
+        if (!integ || integ.status !== 'active') {
+          // Recovery: the app may already be installed but GitHub never redirected back with an
+          // installation_id (app created without a setup_url, blocked popup, etc.). Discover the
+          // installation via the App JWT and adopt it so the panel connects on its own. Throttled
+          // per lobby so a poll while disconnected doesn't hammer the GitHub App rate limit.
+          const cfg = githubAppConfig();
+          if (cfg) {
+            const adopted = await autoAdoptGithubInstallation(lobbyId, identityRef, integ).catch(() => null);
+            if (adopted) return json(adopted);
+          }
+          return json({ connected: false, configured: Boolean(cfg) });
+        }
         let repos: unknown[] = [];
         const token = await ghToken(lobbyId);
         if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
