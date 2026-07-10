@@ -38,7 +38,7 @@ import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from 
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { createVerify } from 'node:crypto';
-import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
+import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, listAppInstallations, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, putFile, parseRepoRef } from '../../packages/lobby-server/src/integrations/github/repoClient.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
@@ -495,6 +495,18 @@ async function main(): Promise<void> {
     assert.ok(parsed && parsed.privateKey.includes('\n') && !parsed.privateKey.includes('\\n'), 'escaped-newline PEM is normalized');
     assert.ok(installUrl(cfg, 'st.ate').includes('/apps/agent-os/installations/new?state=st.ate'));
     assert.equal(githubAppConfig({} as NodeJS.ProcessEnv), null, 'no config → null (GitHub connect off)');
+
+    // Installation auto-detect: list via the App JWT, most-recently-updated first (recovery path).
+    const listFetch = (async (u: unknown, init: { headers?: Record<string, string> }) => {
+      assert.ok(String(u).includes('/app/installations'), 'hits the app installations endpoint');
+      assert.ok(String(init.headers?.authorization).startsWith('Bearer '), 'authenticates with the app JWT');
+      return new Response(JSON.stringify([
+        { id: 11, account: { login: 'old-org' }, updated_at: '2026-01-01T00:00:00Z' },
+        { id: 22, account: { login: 'fresh-org' }, updated_at: '2026-07-01T00:00:00Z' },
+      ]), { status: 200 });
+    }) as unknown as typeof fetch;
+    const installs = await listAppInstallations({ config: cfg, fetchFn: listFetch });
+    assert.deepEqual(installs, [{ id: '22', account: 'fresh-org' }, { id: '11', account: 'old-org' }], 'most recent installation first');
   });
 
   await check('GITHUB REPO CLIENT: lists repos/tree, decodes a file, base64-encodes a commit', async () => {

@@ -133,6 +133,34 @@ export async function getInstallationToken(installationId: string, opts: Install
   return data.token;
 }
 
+/**
+ * List the installations of this App (via the App JWT, not an installation token). Used to recover
+ * a connection when GitHub never redirected back with an `installation_id` — e.g. an app created
+ * from a manifest that lacked a `setup_url`, or a blocked post-install popup. Returns most-recent
+ * first so the caller can adopt the installation the user most likely just created.
+ */
+export async function listAppInstallations(opts: InstallationTokenOptions = {}): Promise<Array<{ id: string; account: string }>> {
+  const config = opts.config ?? githubAppConfig();
+  if (!config) throw new Error('GitHub App is not configured (set GITHUB_APP_ID + GITHUB_APP_PRIVATE_KEY)');
+  const fetchFn = opts.fetchFn ?? fetch;
+  const now = opts.now ?? Date.now;
+  const jwt = createAppJwt(config, now());
+  const res = await fetchFn(`${GITHUB_API}/app/installations?per_page=100`, {
+    headers: {
+      authorization: `Bearer ${jwt}`,
+      accept: 'application/vnd.github+json',
+      'x-github-api-version': '2022-11-28',
+      'user-agent': 'agent-os-lobby',
+    },
+  });
+  const text = await res.text();
+  if (!res.ok) throw new Error(`GitHub list installations failed (HTTP ${res.status}): ${text.slice(0, 300)}`);
+  const data = JSON.parse(text) as Array<{ id: number; account?: { login?: string }; updated_at?: string }>;
+  return data
+    .sort((a, b) => Date.parse(b.updated_at ?? '') - Date.parse(a.updated_at ?? ''))
+    .map((i) => ({ id: String(i.id), account: i.account?.login ?? '' }));
+}
+
 /** Build the App install URL the panel sends the user to (carrying an opaque `state`). */
 export function installUrl(config: GitHubAppConfig, state: string): string {
   const slug = config.slug;
