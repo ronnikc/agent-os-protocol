@@ -477,7 +477,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const directives = parseBossDelegations(reply);
       const dispatched = new Set<string>();
       for (const d of directives) {
-        if (!senderIsHuman && d.kind !== 'task') continue;
+        // Plain coordination directives dispatch on human-originated turns AND on 'system' turns
+        // (request decisions, appointments — bounded, human-triggered events): observed live, the
+        // Boss reacting to an approved hand-raise addressed the requester and the directive was
+        // silently dropped. Agent-originated turns still only dispatch [task] (budgeted below).
+        if (!senderIsHuman && m.from_agent_id !== 'system' && d.kind !== 'task') continue;
         const target = resolveRosterAgent(roster, d.target, myId);
         if (!target || dispatched.has(target.agent_id)) continue;
         if (!senderIsHuman) {
@@ -629,6 +633,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (conn.agentId) agentConn.set(conn.agentId, connId);
     dispatch(conn, reg.out);
     const agentId = conn.agentId ?? connId;
+
+    // Auto-appoint a boss-role agent as the Boss when the lobby has none. Relaunching agents mints
+    // new agent ids, so the previous appointment always dies with the old id — and with no Boss,
+    // floor control leaves every human broadcast unanswered ("who is ready to work?" → silence,
+    // observed live). The coordinator allows the first appointment when the seat is empty.
+    if (conn.agentId && /boss/i.test(`${params.role ?? ''} ${params.name}`)) {
+      const lobbyNow = await store.getLobby(params.lobbyId);
+      if (lobbyNow && !lobbyNow.boss_agent_id) {
+        const appointRes = await coordinator.handle(conn, {
+          type: 'lobby-boss-appoint', agent_id: conn.agentId,
+        } as AgentToLobbyMessage).catch(() => ({ out: [] as Outbound[] }));
+        dispatch(conn, appointRes.out);
+      }
+    }
 
     // Start a periodic heartbeat so the stale-heartbeat sweeper does not reap this hosted agent.
     // Without this, the agent registers (setting last_seen once) and then gets reaped after
@@ -1323,6 +1341,66 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // POST /lobbies/:id/repo/ui-assist — clone the UI Assist embed into the connected repo:
+    // the dependency-free overlay (embed.js) plus a README tailored to THIS lobby (its WS URL) with
+    // both integration paths (hosted lobby chat / local panel + relay). Skip-if-exists, one commit.
+    const uiAssistCloneMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/ui-assist$/);
+    if (uiAssistCloneMatch && req.method === 'POST') {
+      const lobbyId = uiAssistCloneMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
+        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      try {
+        const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+        const embedSrc = readFileSync(join(REPO_ROOT, 'packages/ui-assist-embed/embed.js'), 'utf-8');
+        const proto = (req.headers['x-forwarded-proto'] as string) === 'https' ? 'wss' : 'ws';
+        const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost:4730';
+        const lobbyWsUrl = `${proto}://${host}${WS_PATH}?lobby_id=${encodeURIComponent(lobbyId)}`;
+        const readme = [
+          '# UI Assist — embeddable assistant overlay', '',
+          'A floating launcher + chat panel for YOUR web app: one script tag, dependency-free,',
+          'framework-agnostic, **suggest-only by default** (edit authority stays off until you enable it).', '',
+          '## Option A — connect to your hosted lobby chat', '',
+          '```html', '<script type="module">', "  import { mountUiAssist } from '/agent-os/ui-assist/embed.js';",
+          `  mountUiAssist({ relayUrl: '${lobbyWsUrl}' });`, '</script>', '```', '',
+          'Messages from your app land in the lobby chat where the Boss coordinates the swarm.', '',
+          '## Option B — run against a local Agent OS Panel + relay', '',
+          '```bash', 'npm run agent-os-panel        # panel :4800 · relay ws://localhost:4722',
+          'npm run ui-assist-integrate -- /path/to/your/app   # framework detection + embed plan', '```', '',
+          '```html', '<script type="module">', "  import { mountUiAssist } from './ui-assist/embed.js';",
+          "  mountUiAssist({ relayUrl: 'ws://localhost:4722' });", '</script>', '```', '',
+          'Docs: `agent-os/UI-ASSIST.md`, `agent-os/UI-ASSIST-GUIDE.md`, and `docs/ui-assist/` in the',
+          '[Agent OS Protocol](https://github.com/ronnikc/agent-os-protocol) repository.', '',
+        ].join('\n');
+
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: 'agent-os/ui-assist/embed.js', content: embedSrc },
+          { path: 'agent-os/ui-assist/README.md', content: readme },
+        ].filter(f => !existing.has(f.path));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'UI Assist already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: add UI Assist embed + integration instructions', branchName);
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `UI Assist clone failed: ${String((e as Error).message ?? e)}` }, 502);
+      }
+    }
+
     // GET /lobbies/:id/repo/(tree|file)?path=&ref= — browse the connected repo (Files tab).
     const repoMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/(tree|file)$/);
     if (repoMatch && req.method === 'GET') {
@@ -1429,9 +1507,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ job }, 202);
       }
 
-      // POST .../kb/upload — upload file for KB conversion
+      // POST .../kb/upload — upload file for KB conversion. Uploads carry base64 file content, so
+      // they get their own (much larger) body limit — the 1 MiB control-plane default rejected any
+      // real document and surfaced as "unknown error" in the panel.
       if (req.method === 'POST' && action === 'upload') {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_UPLOAD_BODY_BYTES);
+        if (body.__body_too_large) {
+          return json({ error: `file too large — uploads are limited to ~${Math.floor(MAX_UPLOAD_BODY_BYTES / 1_048_576 * 0.75)} MB per document` }, 413);
+        }
         const fileName = typeof body.file_name === 'string' ? body.file_name.trim() : '';
         const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : '';
         const fileContentBase64 = typeof body.file_content === 'string' ? body.file_content : '';
@@ -2070,16 +2153,65 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ ok: true, boss_agent_id: agentId });
     }
 
-    // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases
+    // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases — the lobby's OWN plan, not demo data.
+    // Phases/sprints come from `agent-os/planning.json` in the connected repo (seeded empty by
+    // initialization; the LobbyOwner or agents edit it); live coordination tasks are appended as a
+    // synthetic phase so real in-flight work is always visible. The old handler returned this
+    // deployment's hardcoded roadmap for every lobby.
     const ganttMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/gantt\/phases$/);
     if (ganttMatch && req.method === 'GET') {
-      return json({
-        phases: [
-          { id: 'phase-1', name: 'Phase 1: Foundation & Core Setup', completedSprints: 4, sprintCount: 4, status: 'complete', tasks: [] },
-          { id: 'phase-2', name: 'Phase 2: Swarm Capabilities', completedSprints: 2, sprintCount: 3, status: 'active', tasks: [] },
-          { id: 'phase-3', name: 'Phase 3: Visual Playgrounds & Market Bidding', completedSprints: 0, sprintCount: 2, status: 'planned', tasks: [] }
-        ]
-      });
+      const lobbyId = ganttMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+
+      const phases: any[] = [];
+      let repoLabel: string | null = null;
+      let planningFound = false;
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (integ?.status === 'active' && integ.repo_full_name) {
+        repoLabel = `${integ.repo_full_name}@${integ.branch || 'main'}`;
+        try {
+          const token = await githubTokenForLobby(lobbyId, store);
+          const parsed = token ? (parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
+            ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null)) : null;
+          if (token && parsed) {
+            const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+            const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+            const raw = await client.readFile('agent-os/planning.json', integ.branch || 'main');
+            const plan = JSON.parse(raw);
+            planningFound = true;
+            for (const p of (Array.isArray(plan?.phases) ? plan.phases : [])) {
+              const sprints = Array.isArray(p.sprints) ? p.sprints : [];
+              phases.push({
+                id: String(p.id ?? `phase-${phases.length + 1}`),
+                name: String(p.name ?? `Phase ${phases.length + 1}`),
+                sprintCount: sprints.length,
+                completedSprints: sprints.filter((s: any) => s?.status === 'complete').length,
+                status: p.status ?? 'planned',
+                tasks: sprints.map((s: any) => ({ id: String(s?.id ?? ''), name: String(s?.name ?? ''), status: s?.status ?? 'planned' })),
+              });
+            }
+          }
+        } catch { /* no planning.json yet — fall through with planningFound=false */ }
+      }
+
+      // Live coordination tasks — real work in flight, independent of the written plan.
+      const liveTasks = await store.listTasks(lobbyId);
+      if (liveTasks.length) {
+        const roster = await store.roster(lobbyId);
+        const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
+        const done = liveTasks.filter(t => t.status === 'completed').length;
+        phases.push({
+          id: 'live-tasks',
+          name: 'Lobby Tasks (live)',
+          sprintCount: liveTasks.length,
+          completedSprints: done,
+          status: done === liveTasks.length ? 'complete' : 'active',
+          tasks: liveTasks.map(t => ({ id: t.task_id, name: `${t.title} → ${nameOf(t.assigned_to)}`, status: t.status })),
+        });
+      }
+
+      return json({ phases, repo: repoLabel, planning_found: planningFound });
     }
 
     // GET /api/v1/agent-lobby/lobbies/:id/requests/pending
@@ -2458,16 +2590,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   };
 }
 
-const MAX_BODY_BYTES = 1_048_576; // 1 MiB — no lobby control-plane payload is legitimately larger
+const MAX_BODY_BYTES = 1_048_576; // 1 MiB — control-plane default; uploads pass their own limit
+// KB uploads carry base64 file content (~33% inflation) — a 25 MiB body ≈ an 18 MB document.
+const MAX_UPLOAD_BODY_BYTES = 25 * 1_048_576;
 
-async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
+async function readBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<Record<string, any>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const c of req) {
     total += (c as Buffer).length;
-    if (total > MAX_BODY_BYTES) {
+    if (total > maxBytes) {
       req.destroy();
-      return {};
+      // Marker instead of a silent {} — routes with large payloads (KB upload) answer 413 with a
+      // real message; the old destroy-and-{} path surfaced as "unknown error" in the panel.
+      return { __body_too_large: true };
     }
     chunks.push(c as Buffer);
   }

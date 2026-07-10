@@ -461,7 +461,7 @@ async function createId(slug) {
       // Pass the bind outcome — omitting it made the modal claim "GitHub Bind Skipped / Failed"
       // even when the DID was committed to the repo successfully.
       const githubBound = !!(saved && saved.ok !== false && !saved.error);
-      showIdentitySuccessModal(res, agent.name, owner, githubBound);
+      showIdentitySuccessModal(res, agent.name, owner, githubBound, saved?.error || (saved ? '' : 'the bind endpoint did not respond'));
     } catch (err) {
       console.error('[Agents] Create ID failed:', err);
       showAlert('Minting Failed', `Could not mint the Agent ID: ${err.message || err}`);

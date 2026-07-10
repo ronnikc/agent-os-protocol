@@ -550,33 +550,87 @@ async function renderActivitySubtab() {
 
 // ── Lifecycle ─────────────────────────────────────────────────────
 function onActivate() {
-  // Hosted Mode: the local Memory v2 substrate (INDEX.aaak/facts/diaries/lessons files) lives on a
-  // local Panel next to the working copy — the /api/memory/* endpoints don't exist on the lobby,
-  // so every sub-tab would silently 404. In a hosted lobby the shared memory is the Knowledge
-  // Base; say so and route the user there instead of rendering four dead sub-tabs.
+  // Hosted Mode: the local Memory v2 substrate lives on a local Panel — the /api/memory/*
+  // endpoints don't exist on the lobby. Hosted shared memory is `agent-os/shared-memory/` in the
+  // connected repo (seeded by Initialize) plus the KB indices: browse the repo's shared-memory
+  // directory read-only here, with a pointer to the KB tab for uploads/indexing.
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
-    const root = document.getElementById('memory-content');
-    if (!root) return;
-    root.innerHTML = `
-      <div style="display:flex;align-items:center;justify-content:center;height:100%;min-height:320px;padding:24px;">
-        <div style="max-width:520px;background:var(--bg-surface);border:1px solid var(--border);border-radius:10px;padding:24px;">
-          <h3 style="margin:0 0 10px;font-size:16px;">Memory in Hosted Mode = Knowledge Base</h3>
-          <p style="font-size:13px;color:var(--text-secondary);line-height:1.55;margin:0 0 10px;">
-            The local Memory substrate (index, facts, diaries, lessons) lives alongside a local
-            Panel and its working copy. In this hosted lobby, shared memory is the
-            <strong>Knowledge&nbsp;Base</strong>: documents are converted to markdown, indexed, and
-            committed to your connected GitHub repository where every hosted agent can read them.
-          </p>
-          <button class="btn btn-primary btn-sm" id="memory-goto-kb">Open the KB tab</button>
-        </div>
-      </div>`;
-    document.getElementById('memory-goto-kb')?.addEventListener('click', () => {
-      document.querySelector('[data-tab="kb"]')?.click();
-    });
+    renderHostedSharedMemory();
     return;
   }
   renderShell();
   switchSubtab(activeSubtab);
+}
+
+async function renderHostedSharedMemory() {
+  const root = document.getElementById('memory-content');
+  if (!root) return;
+  root.innerHTML = '<div style="padding:20px;color:var(--text-secondary);">Loading shared memory from the working repository…</div>';
+
+  const s = (() => { try { return JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null'); } catch { return null; } })();
+  let repoLabel = '';
+  let entries = [];
+  let error = '';
+  try {
+    const g = await fetchJson('/api/lobby/remote/integrations/github');
+    if (!g?.connected || !g.repo) {
+      error = 'no-repo';
+    } else {
+      repoLabel = `${g.repo}@${g.branch || 'main'}`;
+      const tree = await fetchJson(`/api/v1/agent-lobby/lobbies/${s?.lobbyId || 'local'}/repo/tree?path=${encodeURIComponent('agent-os/shared-memory')}`);
+      entries = (tree?.entries || []).filter(e => e.type !== 'dir');
+    }
+  } catch { error = error || 'fetch-failed'; }
+
+  if (error === 'no-repo') {
+    root.innerHTML = `
+      <div class="empty-state" style="padding:32px;line-height:1.6;">
+        ⚠ No GitHub repository connected — hosted shared memory lives in <code>agent-os/shared-memory/</code>
+        of your working repo. Connect the GitHub App in the <strong>Lobby</strong> tab first.
+      </div>`;
+    return;
+  }
+
+  root.innerHTML = `
+    <div style="padding:16px;display:flex;flex-direction:column;gap:12px;height:100%;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;">
+        <div>
+          <h3 style="margin:0;font-size:15px;">Shared Memory — <code style="font-size:12px;">agent-os/shared-memory/</code>${repoLabel ? ` in 📁 ${escapeHtml(repoLabel)}` : ''}</h3>
+          <span style="font-size:11px;color:var(--text-muted);">Durable memories the swarm writes to your repository (read-only view). Document uploads + indexing live in the KB tab.</span>
+        </div>
+        <button class="btn btn-secondary btn-sm" id="memory-goto-kb">Open the KB tab</button>
+      </div>
+      ${entries.length ? `
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          ${entries.map(e => `
+            <div class="card memory-repo-file" data-path="${escapeHtml(e.path)}" style="padding:8px 12px;cursor:pointer;font-size:12px;">
+              📄 ${escapeHtml(String(e.path).split('/').pop())}
+              <span style="color:var(--text-muted);font-size:10px;margin-left:8px;">${e.size ? `${e.size} bytes` : ''}</span>
+            </div>`).join('')}
+        </div>
+        <div id="memory-repo-viewer" style="flex:1;overflow:auto;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:14px;display:none;font-size:13px;line-height:1.55;"></div>
+      ` : `
+        <div class="empty-state" style="padding:24px;line-height:1.6;">
+          No shared memories yet. Agents write facts, lessons, and diaries here as they work;
+          the self-learning scheduled tasks also land their outputs in this directory.
+        </div>
+      `}
+    </div>`;
+
+  document.getElementById('memory-goto-kb')?.addEventListener('click', () => {
+    document.querySelector('[data-tab="kb"]')?.click();
+  });
+  root.querySelectorAll('.memory-repo-file').forEach(el => {
+    el.addEventListener('click', async () => {
+      const viewer = document.getElementById('memory-repo-viewer');
+      if (!viewer) return;
+      viewer.style.display = 'block';
+      viewer.textContent = 'Loading…';
+      const f = await fetchJson(`/api/v1/agent-lobby/lobbies/${s?.lobbyId || 'local'}/repo/file?path=${encodeURIComponent(el.dataset.path)}`);
+      const content = f?.content || f?.error || '(empty)';
+      viewer.innerHTML = el.dataset.path.endsWith('.md') ? renderMarkdown(content) : `<pre style="white-space:pre-wrap;font-size:12px;">${escapeHtml(content)}</pre>`;
+    });
+  });
 }
 
 registerTab('memory', { onActivate });

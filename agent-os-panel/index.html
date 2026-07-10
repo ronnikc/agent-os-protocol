@@ -85,6 +85,7 @@
   <button data-tab="memory">Memory</button>
   <button data-tab="loop">Loop</button>
   <button data-tab="identity">Identity</button>
+  <button data-tab="uiassist">UI Assist</button>
 </div>
 
 <!-- Tab Panes -->
@@ -241,6 +242,16 @@
     <div id="identity-content" style="flex:1;overflow:auto;padding:12px;"></div>
   </div>
 
+  <!-- UI Assist Tab -->
+  <div id="tab-uiassist" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">UI Assist</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Embed the in-app assistant overlay into your own product · suggest-only by default</span>
+    </div>
+    <div id="uiassist-content" style="flex:1;overflow:auto;padding:12px;"></div>
+  </div>
+
   <!-- Memory Tab -->
   <div id="tab-memory" class="tab-pane" style="flex-direction:column;">
     <div class="toolbar">
@@ -267,6 +278,7 @@ import './tabs/gantt.js';
 import './tabs/kb.js';
 import './tabs/loop.js';
 import './tabs/identity.js';
+import './tabs/uiassist.js';
 import './tabs/memory.js';
 
 init();
