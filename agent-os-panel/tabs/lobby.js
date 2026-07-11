@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showConfirm } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
@@ -429,6 +429,14 @@ function renderLobby() {
                     <button class="btn btn-primary btn-sm" id="btn-panel-github-init" style="width:100%;">Initialize Agent OS structure in ${escapeHtml(lobbyGithub.repo)}</button>
                   `) : ''}
 
+                  ${lobbyGithub.repo ? `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(49,140,255,0.05); border:1px solid rgba(49,140,255,0.15); color:var(--text-secondary); line-height:1.45; margin-top:4px;">
+                      <span style="color:var(--color-cyan); font-weight:600;">▲ Deploy to Vercel</span> —
+                      scaffold <code style="font-size:10px;">vercel.json</code> + a GitHub Actions deploy workflow into <strong>${escapeHtml(lobbyGithub.repo)}</strong>. Deploys run on <strong>your own</strong> Vercel from your repo; Agent OS never holds your Vercel token (it lives in your repo's Actions secrets).
+                    </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-panel-vercel-scaffold" style="width:100%;" title="Writes vercel.json, .github/workflows/deploy-vercel.yml, and agent-os/VERCEL-SETUP.md (skip-if-exists)">Set up Vercel deploy in ${escapeHtml(lobbyGithub.repo)}</button>
+                  ` : ''}
+
                   <div style="display:flex; gap:6px; margin-top:4px;">
                     <button class="btn btn-secondary btn-sm" id="btn-panel-github-save-repo" style="flex:1;">Save Settings</button>
                     <button class="btn btn-danger btn-sm" id="btn-panel-github-disconnect">Disconnect</button>
@@ -581,6 +589,31 @@ function renderLobby() {
       } else {
         if (btn) { btn.disabled = false; btn.textContent = 'Initialize Agent OS structure'; }
         showAlert('Initialization Failed', res?.error || 'Unknown error');
+      }
+    });
+
+    document.getElementById('btn-panel-vercel-scaffold')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-panel-vercel-scaffold');
+      const original = btn?.textContent;
+      if (btn) { btn.disabled = true; btn.textContent = 'Scaffolding Vercel deploy…'; }
+      const res = await fetchJson('/api/lobby/remote/repo/scaffold-vercel', { method: 'POST' });
+      if (res && res.ok) {
+        const secrets = (res.required_secrets || []).map(s => `<code>${s}</code>`).join(', ');
+        const filesNote = res.files_committed
+          ? `Committed ${res.files_committed} file(s) to ${res.repo}@${res.branch}: <code>vercel.json</code>, <code>.github/workflows/deploy-vercel.yml</code>, <code>agent-os/VERCEL-SETUP.md</code>.`
+          : `The Vercel deploy scaffold is already present in ${res.repo}@${res.branch}.`;
+        showHtmlAlert('Vercel Deploy Scaffolded', `
+          <div style="text-align:left; font-size:13px; line-height:1.6;">
+            <p>${filesNote}</p>
+            <p style="margin-top:10px;">Deploys run on <strong>your own</strong> Vercel, from your repo. Add these three <strong>GitHub Actions secrets</strong> in your repository (Settings → Secrets and variables → Actions) — from your Vercel account:</p>
+            <p style="margin:8px 0;">${secrets}</p>
+            <p style="font-size:12px; color:var(--text-muted);">Full steps are in <code>agent-os/VERCEL-SETUP.md</code>. Push to your working branch → production deploy; open a PR → preview deploy. Agent OS never stores your Vercel token.</p>
+          </div>
+        `);
+        refresh();
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = original || 'Set up Vercel deploy'; }
+        showAlert('Vercel Scaffold Failed', res?.error || 'Unknown error');
       }
     });
 

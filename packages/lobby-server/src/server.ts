@@ -1778,6 +1778,114 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // POST /lobbies/:id/repo/scaffold-vercel — write the Vercel deploy setup + scripts into the repo.
+    // Agent OS only FACILITATES: it scaffolds vercel.json + a GitHub Actions deploy workflow + an
+    // owner setup doc. The deploy runs on the OWNER's Vercel, from the OWNER's repo — the lobby never
+    // holds a Vercel token; the token lives in the owner's GitHub repo secrets that the workflow
+    // reads. Idempotent (skip-if-exists), one commit. Returns the secrets the owner must add.
+    const vercelScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-vercel$/);
+    if (vercelScaffoldMatch && req.method === 'POST') {
+      const lobbyId = vercelScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      // Built as arrays of lines so GitHub Actions ${{ … }} expressions pass through verbatim.
+      const vercelJson = [
+        '{',
+        '  "$schema": "https://openapi.vercel.sh/vercel.json"',
+        '}',
+        '',
+      ].join('\n');
+      const workflow = [
+        '# Deploys this repository to YOUR Vercel project.',
+        '# Add these repository secrets (Settings → Secrets and variables → Actions):',
+        '#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID  — from your own Vercel account.',
+        '# See agent-os/VERCEL-SETUP.md. Agent OS never holds these; they stay in your repo.',
+        'name: Deploy to Vercel',
+        'on:',
+        '  push:',
+        '    branches: [' + (integ.branch || 'main') + ']',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  deploy:',
+        '    runs-on: ubuntu-latest',
+        '    env:',
+        '      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}',
+        '      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 20',
+        '      - name: Install Vercel CLI',
+        '        run: npm install --global vercel@latest',
+        '      - name: Resolve environment (production on the default branch, else preview)',
+        '        id: env',
+        "        run: echo \"target=${{ github.ref == 'refs/heads/" + (integ.branch || 'main') + "' && 'production' || 'preview' }}\" >> \"$GITHUB_OUTPUT\"",
+        '      - name: Pull Vercel environment',
+        '        run: vercel pull --yes --environment=${{ steps.env.outputs.target }} --token=${{ secrets.VERCEL_TOKEN }}',
+        '      - name: Build',
+        "        run: vercel build ${{ steps.env.outputs.target == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}",
+        '      - name: Deploy',
+        "        run: vercel deploy --prebuilt ${{ steps.env.outputs.target == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}",
+        '',
+      ].join('\n');
+      const setupDoc = [
+        '# Deploy to Vercel — setup', '',
+        'Agent OS scaffolds the deploy config; the deploy runs on **your** Vercel project, from **your**',
+        'GitHub repo. Agent OS never stores your Vercel credentials — they live only in this repo\'s',
+        'GitHub Actions secrets, which you control.', '',
+        '## One-time setup', '',
+        '1. Create (or pick) a project in your [Vercel dashboard](https://vercel.com/dashboard) and link it to this repository, or run `vercel link` locally.',
+        '2. Create a Vercel access token: Vercel → Account Settings → Tokens.',
+        '3. Find your project + org IDs: they are in `.vercel/project.json` after `vercel link`, or in your Vercel project settings.',
+        '4. In this GitHub repo, add three **Actions secrets** (Settings → Secrets and variables → Actions):',
+        '   - `VERCEL_TOKEN` — your Vercel access token',
+        '   - `VERCEL_ORG_ID` — your Vercel org/team ID',
+        '   - `VERCEL_PROJECT_ID` — your Vercel project ID', '',
+        '## How it deploys', '',
+        '- Push to `' + (integ.branch || 'main') + '` → **production** deploy.',
+        '- Open a pull request → **preview** deploy.', '',
+        'The workflow lives at `.github/workflows/deploy-vercel.yml` and uses the Vercel CLI. Edit it,',
+        'or `vercel.json`, to fit your framework and build — Vercel auto-detects most frameworks.', '',
+        '> Alternatively, skip the workflow entirely and import the repo directly in Vercel — its native',
+        '> Git integration will deploy on every push. This scaffold is the scripted path when you want',
+        '> the deploy defined in-repo and reviewable.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: 'vercel.json', content: vercelJson },
+          { path: '.github/workflows/deploy-vercel.yml', content: workflow },
+          { path: 'agent-os/VERCEL-SETUP.md', content: setupDoc },
+        ].filter(f => !existing.has(f.path));
+        const requiredSecrets = ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID'];
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, required_secrets: requiredSecrets, note: 'Vercel deploy scaffold already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: scaffold Vercel deploy config + workflow', branchName);
+        await recordEvent(lobbyId, 'vercel_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), required_secrets: requiredSecrets, commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `Vercel scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
     // GET /lobbies/:id/repo/(tree|file)?path=&ref= — browse the connected repo (Files tab).
     const repoMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/(tree|file)$/);
     if (repoMatch && req.method === 'GET') {
