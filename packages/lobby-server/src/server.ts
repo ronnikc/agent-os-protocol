@@ -585,9 +585,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
 
       const resultWithPr = prUrl ? `${result}\n\n🔀 Pull Request opened for review: ${prUrl}` : result;
-      // Persist the PR URL on the task so the panel can link it.
+      // Persist the PR URL + task branch so the panel can link the PR and read its CI check results.
       const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
-      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl } as any).catch(() => {});
+      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: taskBranch } as any).catch(() => {});
       await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
 
       // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
@@ -1883,6 +1883,111 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), required_secrets: requiredSecrets, commit_sha: commitSha });
       } catch (e) {
         return json({ error: `Vercel scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // POST /lobbies/:id/repo/scaffold-ci — write a GitHub Actions CI workflow into the repo so the
+    // agents' task PRs get install → lint → build → test run on GitHub's ephemeral runners. This is
+    // the execution environment: agents never get a shell on this host; instead their PRs are built
+    // and tested by CI, and the lobby reads the results back (see the task-PR check read-back).
+    const ciScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-ci$/);
+    if (ciScaffoldMatch && req.method === 'POST') {
+      const lobbyId = ciScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      // Built as lines so GitHub Actions ${{ … }} passes through verbatim. --if-present means a repo
+      // without a lint/build/test script still passes rather than failing on a missing script.
+      const workflow = [
+        '# Continuous integration for this repository. Runs on pushes and on every pull request —',
+        '# including the agent-os/task/* branches the lobby opens — so agent work is built and tested',
+        '# on GitHub\'s runners. The lobby reads these check results back to guide the agents.',
+        'name: CI',
+        'on:',
+        '  push:',
+        '    branches: [' + (integ.branch || 'main') + ']',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  build-test:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 20',
+        '      - name: Install dependencies',
+        '        run: npm ci || npm install',
+        '      - name: Lint',
+        '        run: npm run lint --if-present',
+        '      - name: Build',
+        '        run: npm run build --if-present',
+        '      - name: Test',
+        '        run: npm test --if-present',
+        '',
+      ].join('\n');
+      const ciDoc = [
+        '# Continuous integration', '',
+        'The lobby scaffolded `.github/workflows/ci.yml` so every push and pull request — including the',
+        '`agent-os/task/*` branches the swarm opens — runs **install → lint → build → test** on GitHub\'s',
+        'ephemeral runners.', '',
+        'Agents have no shell on the lobby host by design; this is how their work gets verified. Adjust',
+        'the workflow to match your project (Node version, extra steps, matrix). Steps use `--if-present`,',
+        'so a repo without a `lint`/`build`/`test` script still passes until you add one.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: '.github/workflows/ci.yml', content: workflow },
+          { path: 'agent-os/CI.md', content: ciDoc },
+        ].filter(f => !existing.has(f.path));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'CI workflow already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: add CI workflow (install, lint, build, test)', branchName);
+        await recordEvent(lobbyId, 'ci_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `CI scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // GET /lobbies/:id/repo/checks?ref=<branch|sha> — CI check-run summary for a ref (read-back so
+    // the panel/agents see whether a task's PR built and tested green). Owner-gated.
+    const checksMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/checks$/);
+    if (checksMatch && req.method === 'GET') {
+      const lobbyId = checksMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) return json({ error: 'no connected repo' }, 400);
+      const ref = url.searchParams.get('ref') || '';
+      if (!ref) return json({ error: 'ref is required' }, 400);
+      const token = await githubTokenForLobby(lobbyId, store);
+      const parsed = token ? repoRef(integ.repo_full_name) : null;
+      if (!parsed) return json({ error: 'could not access repository' }, 400);
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+        const summary = await client.getCheckRunsForRef(ref);
+        return json(summary);
+      } catch (e) {
+        return json({ error: `could not read checks: ${githubErrorMessage(e)}` }, 502);
       }
     }
 
