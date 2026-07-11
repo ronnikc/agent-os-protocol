@@ -38,7 +38,7 @@ export function parseHandRaise(reply: string): HandRaiseIntent | null {
   if (!reply) return null;
   const line = reply.split(/\r?\n/).map(l => l.trim()).find(l => /^RAISE\b/i.test(l));
   if (!line) return null;
-  let rest = line.replace(/^RAISE\b[\s:.\-]*/i, '').trim();
+  let rest = line.replace(/^RAISE\b[\s:.\-—–]*/i, '').trim();
   let category = 'idea';
   const tag = rest.match(/^\[([^\]]+)\]\s*[:.\-]?\s*/);
   if (tag) {

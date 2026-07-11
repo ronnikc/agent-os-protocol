@@ -36,7 +36,7 @@ import { authorizeLobbyManager, isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
-import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from './hosted/boss-delegation.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
 import type { ProviderId } from '@agent-os/protocol-core';
@@ -343,8 +343,26 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const entry = hostedAgents.get(myId);
       if (entry) {
         try {
-          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.\n${BOSS_DELEGATION_GUIDE}`);
+          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, facilitate the lobby, and triage the Requests queue.\n${BOSS_DELEGATION_GUIDE}`);
         } catch { /* ignore errors from system injection */ }
+        // Backlog sweep: triage pending requests left over from before this Boss existed (bounded —
+        // a large stale queue must not turn the appointment into a long LLM loop).
+        try {
+          const pending = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending').slice(0, 5);
+          for (const r of pending) await bossTriageRequest(conn, myId, r);
+        } catch { /* sweep is best-effort */ }
+      }
+      return;
+    }
+
+    // A new request in the lobby — the Boss triages it (decides hand-raises, recommends on
+    // authority categories). Fire-and-forget so the creating flow isn't blocked.
+    if (msg?.type === 'lobby-request-created') {
+      const request = (msg as unknown as { request?: Record<string, any> }).request;
+      if (!request) return;
+      const lobbyForReq = await store.getLobby(conn.lobbyId);
+      if (lobbyForReq?.boss_agent_id === myId) {
+        void bossTriageRequest(conn, myId, request as any).catch(() => {});
       }
       return;
     }
@@ -587,6 +605,86 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       context: { hand_category: intent.category, observed_from: m.from_agent_id ?? 'lobby' },
     } as AgentToLobbyMessage);
     dispatch(conn, reqRes.out);
+  }
+
+  /**
+   * Apply a decision to a lobby request and propagate it everywhere it matters: the store, the
+   * Requests-tab WS event, a system broadcast into the chat (the Boss runs a turn on it), and the
+   * "go ahead" direct message to the requester (whose reply routes to the Boss). Shared by the
+   * HTTP decide endpoint (human) and Boss triage. Returns 'not-found' | undefined | the request.
+   */
+  async function applyRequestDecision(lobbyId: string, requestId: string, decision: string, decidedBy: string, decisionNotes: string) {
+    const request = await store.getLobbyRequest(lobbyId, requestId);
+    if (!request) return 'not-found' as const;
+    const updated = await store.updateLobbyRequest(lobbyId, requestId, {
+      status: decision as any,
+      decided_by: decidedBy,
+      decision_notes: decisionNotes,
+      decided_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!updated) return undefined;
+
+    const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
+    for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, out);
+
+    const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
+    const by = decidedBy && decidedBy !== 'panel' ? ` by ${decidedBy}` : '';
+    const announce = async (to: string, content: string) => {
+      const seq = await store.nextSeq(lobbyId);
+      const message: LobbyMessage = {
+        message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
+        message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
+      };
+      await store.appendMessage(lobbyId, message);
+      const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
+    };
+    await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${updated.status}${by}${notes}`);
+    if (updated.agent_id && updated.agent_id !== 'anonymous') {
+      await announce(updated.agent_id, updated.status === 'approved'
+        ? `Your request "${updated.title}" was APPROVED${by}${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
+        : `Your request "${updated.title}" was ${String(updated.status).toUpperCase()}${by}${notes}.`);
+    }
+    return updated;
+  }
+
+  // Boss request triage (opt-out: AGENT_OS_BOSS_TRIAGE=off). The Boss DECIDES hand-raises itself
+  // (floor-control coordination) and only RECOMMENDS on authority categories — those stay pending
+  // for the LobbyOwner with the recommendation attached (boss-agent.md: "no autonomous approvals").
+  const BOSS_TRIAGE_ENABLED = (process.env.AGENT_OS_BOSS_TRIAGE ?? 'on') !== 'off';
+
+  async function bossTriageRequest(conn: Connection, bossId: string, request: { request_id?: string; category?: string; title?: string; description?: string; agent_display_name?: string; agent_id?: string; status?: string }): Promise<void> {
+    if (!BOSS_TRIAGE_ENABLED || !request?.request_id || request.status !== 'pending') return;
+    if (request.agent_id === bossId) return; // never triage your own request
+    const entry = hostedAgents.get(bossId);
+    if (!entry) return;
+    // Wait briefly for any in-flight turn; if still busy, leave it pending for the human.
+    for (let i = 0; i < 15 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+    if (entry.runner.busy) return;
+
+    const bossName = (await store.getAgent(conn.lobbyId, bossId))?.display_name || 'Boss';
+    const summary = `Request from ${request.agent_display_name ?? request.agent_id ?? 'unknown'} [${request.category ?? 'general'}]: ${request.title ?? ''}\n${request.description ?? ''}`;
+
+    if (BOSS_DECIDABLE_CATEGORIES.has(String(request.category))) {
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_TRIAGE_GUIDE}\n\n${summary}`); } catch { return; }
+      const triage = parseBossTriage(verdict);
+      if (!triage) return; // ESCALATE / off-format → stays pending for the LobbyOwner
+      await applyRequestDecision(conn.lobbyId, request.request_id, triage.decision, bossName, triage.note).catch(() => {});
+    } else {
+      // Authority category — attach a recommendation, keep it pending for the human.
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_RECOMMEND_GUIDE}\n\n${summary}`); } catch { return; }
+      const rec = parseBossRecommendation(verdict);
+      if (!rec) return;
+      await store.updateLobbyRequest(conn.lobbyId, request.request_id, {
+        decision_notes: `Boss recommendation: ${rec}`,
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      const reqOut: LobbyToAgentMessage = { type: 'lobby-request-updated' as any, request: await store.getLobbyRequest(conn.lobbyId, request.request_id) } as any;
+      for (const cid of lobbyConns.get(conn.lobbyId) ?? []) send(cid, reqOut);
+    }
   }
 
   // Launch a hosted agent: open an API-runtime session with the resolved key and register it into
@@ -2254,51 +2352,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = decideRequestMatch[1];
       const requestId = decideRequestMatch[2];
       const body = await readBody(req);
-      const request = await store.getLobbyRequest(lobbyId, requestId);
-      if (!request) return json({ error: 'request not found' }, 404);
-
-      const updated = await store.updateLobbyRequest(lobbyId, requestId, {
-        status: body.decision || 'approved',
-        decided_by: body.decided_by || 'panel',
-        decision_notes: body.decision_notes || '',
-        decided_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
+      const updated = await applyRequestDecision(lobbyId, requestId, body.decision || 'approved', body.decided_by || 'panel', body.decision_notes || '');
+      if (updated === 'not-found') return json({ error: 'request not found' }, 404);
       if (!updated) return json({ error: 'failed to update request' }, 500);
-
-      // Broadcast the decision to the lobby WebSocket
-      const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
-      for (const cid of lobbyConns.get(lobbyId) ?? []) {
-        send(cid, out);
-      }
-
-      // Surface the decision in the lobby itself — without this the decision only reaches the
-      // Requests tab: the Boss and the requesting agent never learn the outcome (hosted agents
-      // ignore lobby-request-decided), so an approved hand-raise went nowhere. Two messages:
-      //  1. a system broadcast into the chat (humans + the Boss see the outcome; the Boss runs a
-      //     turn on broadcasts, so it becomes aware and can coordinate follow-up);
-      //  2. a direct system message to the requesting agent — on approval it's the "go ahead":
-      //     the agent runs a turn and its reply routes to the Boss (see onHostedInbound).
-      const decision = String(updated.status);
-      const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
-      const announce = async (to: string, content: string) => {
-        const seq = await store.nextSeq(lobbyId);
-        const message: LobbyMessage = {
-          message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
-          message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
-        };
-        await store.appendMessage(lobbyId, message);
-        const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
-        for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
-      };
-      await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${decision}${notes}`);
-      if (updated.agent_id && updated.agent_id !== 'anonymous') {
-        await announce(updated.agent_id, decision === 'approved'
-          ? `Your request "${updated.title}" was APPROVED${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
-          : `Your request "${updated.title}" was ${decision.toUpperCase()}${notes}.`);
-      }
-
       return json({ ok: true, request: updated });
     }
 

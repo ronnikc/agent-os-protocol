@@ -35,6 +35,7 @@ function renderRequests() {
           </div>
           ${r.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;white-space:pre-wrap;">${escapeHtml(r.description.slice(0, 400))}</div>` : ''}
           ${r.context ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-family:var(--mono);">${escapeHtml((typeof r.context === 'object' ? Object.entries(r.context).map(([k, v]) => `${k}: ${v}`).join(' · ') : String(r.context)).slice(0, 200))}</div>` : ''}
+          ${r.decision_notes ? `<div style="font-size:11px;color:var(--color-cyan,#38bdf8);margin-top:6px;">🧭 ${escapeHtml(r.decision_notes)}</div>` : ''}
           <div style="margin-top:10px;">
             <input type="text" id="request-notes-${r.request_id || r.id}" placeholder="Decision notes (optional)" style="width:100%;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);padding:8px 10px;border-radius:4px;font-size:12px;margin-bottom:8px;" />
             <div style="display:flex;gap:8px;">
@@ -56,7 +57,7 @@ function renderRequests() {
               <strong style="font-size:13px;">${escapeHtml(r.title || 'Request')}</strong>
               <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">from ${escapeHtml(r.agent_display_name || r.from || '?')}</span>
             </div>
-            <span class="badge ${r.status === 'approved' ? 'badge-success' : r.status === 'rejected' ? 'badge-danger' : 'badge-muted'}">${r.status}</span>
+            <span class="badge ${r.status === 'approved' ? 'badge-success' : r.status === 'rejected' ? 'badge-danger' : 'badge-muted'}">${r.status}${r.decided_by && r.decided_by !== 'panel' ? ` · ${escapeHtml(r.decided_by)}` : ''}</span>
           </div>
           ${r.decision_notes ? `<div style="font-size:11px;color:var(--text-muted);margin-top:2px;">Notes: ${escapeHtml(r.decision_notes)}</div>` : ''}
         </div>
@@ -125,6 +126,7 @@ function init() {
   // 'lobby-request-created' directly — listen for both so a raised hand appears immediately.
   onWsMessage('lobby-request', () => { refresh(); });
   onWsMessage('lobby-request-created', () => { refresh(); });
+  onWsMessage('lobby-request-updated', () => { refresh(); }); // boss recommendation attached
   onWsMessage('lobby-request-decided', () => { refresh(); });
 
   // Auto-refresh every 10s

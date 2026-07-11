@@ -34,7 +34,7 @@ import {
 } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
-import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
@@ -348,6 +348,19 @@ async function main(): Promise<void> {
     assert.deepEqual(resolved.map(r => r.kind), ['task', 'message'], 'kinds are preserved through resolution');
     assert.equal(resolveRosterAgent(roster, 'boss-agent', 'boss-1'), undefined, 'the boss never delegates to itself');
     assert.ok(BOSS_DELEGATION_GUIDE.includes('[task]'), 'the guide documents the task directive syntax');
+  });
+
+  await check('boss triage: decides hand-raises, escalation stays pending, recommendations parse', () => {
+    assert.deepEqual(parseBossTriage('APPROVE: solid catch, go ahead'), { decision: 'approved', note: 'solid catch, go ahead' });
+    assert.deepEqual(parseBossTriage('REJECT — duplicate of open task'), { decision: 'rejected', note: 'duplicate of open task' });
+    assert.equal(parseBossTriage('DEFER: after the sprint closes')?.decision, 'deferred');
+    assert.equal(parseBossTriage('ESCALATE: scope question for the owner'), null, 'ESCALATE leaves the request pending for the human');
+    assert.equal(parseBossTriage('I think we should approve this request.'), null, 'prose without a verdict line is not a decision');
+    assert.equal(parseBossRecommendation('RECOMMEND approve: low risk, matches the plan'), 'approve — low risk, matches the plan');
+    assert.equal(parseBossRecommendation('nothing structured'), null);
+    assert.ok(BOSS_DECIDABLE_CATEGORIES.has('hand_raise') && !BOSS_DECIDABLE_CATEGORIES.has('commit_approval'),
+      'the boss decides hand-raises only — authority categories stay with the human');
+    assert.ok(BOSS_TRIAGE_GUIDE.includes('ESCALATE'), 'the guide documents the escalation path');
   });
 
   await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
