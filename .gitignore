@@ -38,6 +38,13 @@ agent-os/sub-agents/*/lessons/
 .claude/spawn-requests/
 packages/lobby-server/agent-cards.json
 
+# ── Lobby durable state (runtime; never commit — a committed copy is restored over live data on
+#    every deploy, flushing keys/tasks/requests/KB). Set AGENT_OS_LOBBY_STORE_FILE to a persistent
+#    volume path in production. ──
+lobby-store-db.json
+packages/lobby-server/lobby-store-db.json
+**/lobby-store-db.json
+
 # ── Trained agent packs (user-local by default; opt-in to commit) ──
 agent-os/training/inbox/
 agent-os/training/reviewed/
