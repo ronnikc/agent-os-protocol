@@ -141,6 +141,33 @@ async function main(): Promise<void> {
     assert.equal(roster?.agents.length, 1);
   });
 
+  await check('IMPERSONATION: external bare-DID is denied, but a trusted internal (hosted) connection is admitted with the verified badge', async () => {
+    const store = new InMemoryLobbyStore();
+    const lobby = makeLobby('public');
+    await store.createLobby(lobby);
+    const DID = 'did:ccd:mainnet:3verifiedacct';
+    const verifyIdentity = async (ref: string) => ref === DID
+      ? { status: 'registry_verified' as const, ref: { did: DID, account: '3verifiedacct', registry: 'reg', network: 'mainnet' as const }, source: 'indexer' as const, checkedAt: new Date().toISOString() }
+      : { status: 'unverified' as const, source: 'none' as const, checkedAt: new Date().toISOString() };
+    const coord = new LobbyCoordinator(store, { verifyIdentity });
+
+    // An untrusted external WS client presenting only the bare DID (no session token) is denied —
+    // this is the impersonation protection that stops anyone from claiming a DID they don't own.
+    const extConn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default' };
+    const ext = await coord.handle(extConn, { type: 'lobby-register', display_name: 'ext', join_token: DID } as AgentToLobbyMessage);
+    assert.ok(find(ext.out, 'lobby-error'), 'external bare-DID registration is denied');
+    assert.ok(ext.close, 'connection is closed on denial');
+
+    // A trusted internal connection (a hosted agent on a virtual socket, spawned by the already
+    // authenticated LobbyOwner) presenting the same DID is admitted AND gets the verified badge.
+    const intConn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default', trusted: true };
+    const int = await coord.handle(intConn, { type: 'lobby-register', display_name: 'hosted', join_token: DID } as AgentToLobbyMessage);
+    assert.ok(find(int.out, 'lobby-registered'), 'trusted registration admitted');
+    const joined = find(int.out, 'lobby-agent-joined');
+    assert.equal(joined?.agent?.identity_status, 'registry_verified', 'roster reflects the verified identity');
+    assert.equal(joined?.agent?.identity_ref, DID, 'identity_ref bound on the roster record');
+  });
+
   await check('FLOOR CONTROL: a non-boss broadcast is rejected (anti echo-cascade)', async () => {
     const { coord, lobbyId } = await unitSetup();
     const { conn } = await register(coord, lobbyId, 'backend');
