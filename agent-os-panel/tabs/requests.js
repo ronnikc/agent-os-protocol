@@ -76,8 +76,9 @@ async function refresh() {
     remoteRequests = remoteData.requests || (Array.isArray(remoteData) ? remoteData : []);
   }
 
-  // Always try local lobby requests (stores staging WS-received requests + local mode requests)
-  const localData = await fetchJson('/api/v1/agent-lobby/lobbies/local/requests/pending');
+  // Always try local lobby requests (stores staging WS-received requests + local mode requests).
+  // Fetch ALL (pending + decided) so processed requests remain visible as history.
+  const localData = await fetchJson('/api/v1/agent-lobby/lobbies/local/requests');
   if (localData?.requests) {
     localRequests = localData.requests;
   }
