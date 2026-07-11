@@ -1,7 +1,7 @@
 /**
  * Tasks Tab — Kanban board (Queued → Active → Done → Failed)
  */
-import { state, fetchJson, postJson, patchJson, registerTab, onWsMessage, escapeHtml, truncate, showModal, closeModal, showAlert } from '../app.js';
+import { state, fetchJson, postJson, patchJson, registerTab, onWsMessage, escapeHtml, truncate, showModal, closeModal, showAlert, renderMarkdownSafe, agentName, refreshAgentNameMap } from '../app.js';
 
 let tasks = [];
 
@@ -38,7 +38,7 @@ function renderKanban() {
             <div class="title">${escapeHtml(t.title || 'Untitled')}</div>
             <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);margin:2px 0;">${escapeHtml(t.task_id || '')}</div>
             <div class="meta">
-              ${t.assigned_to ? `<span class="badge badge-info">${escapeHtml(t.assigned_to)}</span>` : ''}
+              ${t.assigned_to ? `<span class="badge badge-info">${escapeHtml(agentName(t.assigned_to))}</span>` : ''}
               ${t.priority && t.priority !== 'normal' ? `<span class="badge ${t.priority === 'critical' ? 'badge-danger' : t.priority === 'high' ? 'badge-warning' : 'badge-muted'}">${t.priority}</span>` : ''}
               ${t.category ? `<span style="color:var(--text-muted);font-size:10px">${escapeHtml(t.category)}</span>` : ''}
             </div>
@@ -72,7 +72,7 @@ function showTaskDetail(taskId) {
     ${t.result ? `
     <div class="form-group">
       <label>Result (agent report)</label>
-      <div style="font-size:12px;white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:10px;">${escapeHtml(t.result)}</div>
+      <div style="font-size:12px;max-height:320px;overflow:auto;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:12px;line-height:1.5;">${renderMarkdownSafe(t.result)}</div>
     </div>` : ''}
     ${t.progress ? `
     <div class="form-group">
@@ -80,8 +80,8 @@ function showTaskDetail(taskId) {
       <div style="font-size:12px;white-space:pre-wrap;">${escapeHtml(String(t.progress))}</div>
     </div>` : ''}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">
-      <div class="form-group"><label>Assigned To</label><div style="font-size:12px;">${escapeHtml(t.assigned_to || 'unassigned')}</div></div>
-      <div class="form-group"><label>Assigned By</label><div style="font-size:12px;">${escapeHtml(t.assigned_by || '?')}</div></div>
+      <div class="form-group"><label>Assigned To</label><div style="font-size:12px;">${escapeHtml(agentName(t.assigned_to) || 'unassigned')}</div></div>
+      <div class="form-group"><label>Assigned By</label><div style="font-size:12px;">${escapeHtml(agentName(t.assigned_by))}</div></div>
       <div class="form-group"><label>Priority</label><div style="font-size:12px;">${t.priority || 'normal'}</div></div>
       <div class="form-group"><label>Category</label><div style="font-size:12px;">${escapeHtml(t.category || 'general')}</div></div>
       <div class="form-group"><label>Created</label><div style="font-size:12px;">${escapeHtml(t.created_at || t.assigned_at || '?')}</div></div>
@@ -209,6 +209,7 @@ const KANBAN_TO_SWARM = { done: 'completed' };
 async function refresh() {
   const modeData = await fetchJson('/api/mode');
   lobbyMode = modeData?.mode || 'local';
+  if (lobbyMode === 'swarm') await refreshAgentNameMap();
 
   let data;
   if (lobbyMode === 'swarm') {

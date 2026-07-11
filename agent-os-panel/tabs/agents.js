@@ -70,9 +70,15 @@ function renderAgents() {
          <button class="btn btn-sm" data-action="revoke-id" data-slug="${a.slug}" title="Remove the persisted Agent ID">Revoke</button>`
       : `<button class="btn btn-primary btn-sm" data-action="create-id" data-slug="${a.slug}" title="Mint a new on-chain Agent ID (sponsored, gasless) and bind it to this agent">Create ID</button>
          <button class="btn btn-sm" data-action="set-id" data-slug="${a.slug}" title="Enter an existing Agent ID (DID) manually">Set ID</button>`;
+    const nick = (window.__agentNicknames || {})[a.slug];
+    const displayName = nick || a.name;
     return `<tr>
       <td><input type="checkbox" ${checked} data-slug="${a.slug}" /></td>
-      <td><strong>${escapeHtml(a.name)}</strong></td>
+      <td>
+        <strong>${escapeHtml(displayName)}</strong>
+        ${nick ? `<span style="font-size:10px;color:var(--text-muted);"> (${escapeHtml(a.slug)})</span>` : ''}
+        <button class="btn btn-sm" data-action="rename" data-slug="${a.slug}" title="Give this agent a nickname (persisted)" style="padding:0 5px;margin-left:4px;font-size:10px;">✎</button>
+      </td>
       <td class="scope" title="${escapeHtml(a.scope)}">${escapeHtml(a.scope)}</td>
       <td>${identityBadgeFor(a)}${didCell}</td>
       <td><span class="status-dot ${statusClass}"></span>${a.status}</td>
@@ -382,6 +388,32 @@ async function stopOne(slug) {
   setTimeout(refresh, 500);
 }
 
+async function renameAgent(slug) {
+  const agent = state.agents.find(a => a.slug === slug);
+  const current = (window.__agentNicknames || {})[slug] || '';
+  showModal(`
+    <h2>Nickname for ${escapeHtml(agent?.name || slug)}</h2>
+    <p style="font-size:13px;color:var(--color-text-soft);line-height:1.5;margin:12px 0 16px;">
+      Give this agent role a custom display name shown across the lobby, messages, and tasks. Persisted to this lobby and applied to running agents of this role immediately. Clear it to restore the default.
+    </p>
+    <div class="form-group" style="margin-bottom:16px;">
+      <input type="text" id="modal-nickname" value="${escapeHtml(current)}" placeholder="${escapeHtml(agent?.name || slug)}" style="width:100%;padding:8px 12px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:13px;" />
+    </div>
+    <div class="form-actions" style="margin:0;display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-save-nickname">Save</button>
+    </div>
+  `);
+  document.getElementById('btn-save-nickname')?.addEventListener('click', async () => {
+    const nickname = document.getElementById('modal-nickname')?.value?.trim() || '';
+    closeModal();
+    const res = await postJson('/api/lobby/remote/agent-nicknames', { role: slug, nickname });
+    if (res && !res.error) { window.__agentNicknames = res.nicknames || {}; }
+    else showAlert('Error', `Could not save nickname: ${res?.error || 'unknown error'}`);
+    setTimeout(refresh, 200);
+  });
+}
+
 async function setId(slug) {
   const current = state.agents.find(a => a.slug === slug)?.identity || '';
   showModal(`
@@ -528,6 +560,10 @@ async function refresh() {
     if (lobbyMode === 'swarm') {
       const token = localStorage.getItem('agent-os-lobby-token');
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      try {
+        const nk = await fetchJson('/api/lobby/remote/agent-nicknames', { headers });
+        window.__agentNicknames = (nk && !nk.error && nk.nicknames) || {};
+      } catch { window.__agentNicknames = window.__agentNicknames || {}; }
       const remoteData = await fetchJson('/api/lobby/remote/agents', { headers });
       const remoteRoster = remoteData?.agents || [];
 
@@ -579,6 +615,7 @@ function init() {
     if (btn.dataset.action === 'start') startOne(slug);
     if (btn.dataset.action === 'stop') stopOne(slug);
     if (btn.dataset.action === 'set-id') setId(slug);
+    if (btn.dataset.action === 'rename') renameAgent(slug);
     if (btn.dataset.action === 'create-id') createId(slug);
     if (btn.dataset.action === 'revoke-id') revokeId(slug);
   });

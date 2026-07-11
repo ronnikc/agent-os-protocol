@@ -56,6 +56,15 @@ function parseGithubUrl(url: string): { owner: string; repo: string } | null {
  * previously called parseGithubUrl directly and failed with "invalid GitHub repository URL" on the
  * bare form — the DID bind, agent-definition loading, and scheduled setup all broke that way.
  */
+/** Turn a raw GitHub error into an operator-friendly message; rate limits get a wait hint. */
+function githubErrorMessage(err: unknown): string {
+  const raw = String((err as Error)?.message ?? err);
+  if (/rate limit exceeded/i.test(raw) || /\b403\b/.test(raw) && /rate limit/i.test(raw)) {
+    return 'GitHub API rate limit reached for this installation. Wait a few minutes and retry — the panel now caches reads to avoid this.';
+  }
+  return raw;
+}
+
 function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
   if (!fullName) return null;
   const parsed = parseGithubUrl(fullName);
@@ -106,62 +115,74 @@ async function githubTokenForLobby(lobbyId: string, store: LobbyStore): Promise<
   try { return await getInstallationToken(integration.installation_id); } catch { return null; }
 }
 
-/**
- * Agent definitions for a lobby: the built-in catalog (this deployment's `agent-os/sub-agents/
- * agents`) MERGED with any definitions in the lobby's connected GitHub repo — repo wins per slug.
- * Merging matters: a user's own repo usually starts with zero (or one bootstrapped) definition
- * file, and returning repo-only results would shadow the entire built-in roster the moment a
- * single file exists there (e.g. after an Agent ID bind writes one).
- */
-async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<any[]> {
-  const bySlug = new Map<string, any>();
-
-  // Built-in catalog first (lowest precedence).
+// The built-in catalog is read from local disk ONCE per process — it never changes at runtime.
+let builtinCatalogCache: any[] | null = null;
+function builtinAgentCatalog(): any[] {
+  if (builtinCatalogCache) return builtinCatalogCache;
+  const defs: any[] = [];
   try {
     const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
     const localAgentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
     if (existsSync(localAgentsDir)) {
-      const files = readdirSync(localAgentsDir).filter(f => f.endsWith('.md'));
-      for (const file of files) {
-        try {
-          const content = readFileSync(join(localAgentsDir, file), 'utf-8');
-          const def = parseAgentDef(file, content);
-          bySlug.set(def.slug, def);
-        } catch {}
+      for (const file of readdirSync(localAgentsDir).filter(f => f.endsWith('.md'))) {
+        try { defs.push(parseAgentDef(file, readFileSync(join(localAgentsDir, file), 'utf-8'))); } catch {}
       }
     }
   } catch (err) {
-    console.warn('[Lobby Server] Failed to read agents from local fs:', err);
+    console.warn('[Lobby Server] Failed to read built-in agent catalog:', err);
   }
+  builtinCatalogCache = defs;
+  return defs;
+}
 
-  // Connected-repo definitions override per slug (the user's customizations + bound identities).
+// Per-lobby merged-definition cache. getAgentDefinitions previously read ~60 repo files on EVERY
+// call, and it is hit on every panel poll (/api/agents, /api/presets, gantt, spawn) — which
+// exhausted the GitHub App installation's API rate limit and left the panel blank for minutes.
+// Cache the merged result and serve it stale on error, so a repo read happens at most once per TTL.
+const agentDefsCache = new Map<string, { defs: any[]; at: number }>();
+const AGENT_DEFS_TTL_MS = 5 * 60_000;
+function invalidateAgentDefs(lobbyId: string) { agentDefsCache.delete(lobbyId); }
+
+/**
+ * Agent definitions for a lobby: the built-in catalog MERGED with any definitions in the connected
+ * GitHub repo (repo wins per slug). Cached per lobby; on a GitHub error (rate limit, transient) the
+ * last good result — or the built-in catalog — is returned rather than failing.
+ */
+async function getAgentDefinitions(lobbyId: string, store: LobbyStore, force = false): Promise<any[]> {
+  const cached = agentDefsCache.get(lobbyId);
+  if (!force && cached && Date.now() - cached.at < AGENT_DEFS_TTL_MS) return cached.defs;
+
+  const bySlug = new Map<string, any>();
+  for (const def of builtinAgentCatalog()) bySlug.set(def.slug, def);
+
   const integration = await store.getIntegration(lobbyId, 'github');
   if (integration && integration.repo_full_name) {
     const token = await githubTokenForLobby(lobbyId, store);
-    if (token) {
-      const parsed = repoRef(integration.repo_full_name);
-      if (parsed) {
+    const parsed = token ? repoRef(integration.repo_full_name) : null;
+    if (parsed) {
+      try {
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
         const branchName = integration.branch || 'main';
-        try {
-          const files = await client.readDir('agent-os/sub-agents/agents', branchName);
-          const mdFiles = files.filter((f: any) => f.name.endsWith('.md') && f.type === 'file');
-          for (const file of mdFiles) {
-            try {
-              const content = await client.readFile(file.path, branchName);
-              const def = parseAgentDef(file.name, content);
-              bySlug.set(def.slug, def);
-            } catch {}
-          }
-        } catch (err) {
-          console.warn('[Lobby Server] Failed to read agents from GitHub:', err);
+        const files = await client.readDir('agent-os/sub-agents/agents', branchName);
+        const mdFiles = files.filter((f: any) => f.name.endsWith('.md') && f.type === 'file');
+        for (const file of mdFiles) {
+          try {
+            const def = parseAgentDef(file.name, await client.readFile(file.path, branchName));
+            bySlug.set(def.slug, def);
+          } catch {}
         }
+      } catch (err) {
+        // Rate-limited or transient — keep whatever we have. If we had a prior good cache, prefer it.
+        console.warn('[Lobby Server] Failed to read agents from GitHub (serving cached/catalog):', (err as Error)?.message ?? err);
+        if (cached) return cached.defs;
       }
     }
   }
 
-  return [...bySlug.values()];
+  const defs = [...bySlug.values()];
+  agentDefsCache.set(lobbyId, { defs, at: Date.now() });
+  return defs;
 }
 
 export interface LobbyServerOptions {
@@ -1079,10 +1100,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           }
         }
 
+        // A user-chosen nickname for this role (persisted) wins over the default display name.
+        const nicknames = await store.getAgentNicknames(lobbyId);
+        const roleSlug = typeof body.agent_role === 'string' ? body.agent_role : '';
+        const defaultName = typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent';
+        const displayName = (roleSlug && nicknames[roleSlug]) || defaultName;
+
         try {
           const newId = await spawnHostedAgent({
             lobbyId,
-            name: typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent',
+            name: displayName,
             role: typeof body.agent_role === 'string' ? body.agent_role : undefined,
             apiKey: resolved.apiKey,
             providerId: providerIdFor(providerName),
@@ -1092,7 +1119,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             joinToken: agentRef ?? definitionIdentity ?? undefined,
           });
           await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
-          return json({ agent_id: newId, name: body.name ?? 'Hosted Agent', model, provider: providerName }, 201);
+          return json({ agent_id: newId, name: displayName, model, provider: providerName }, 201);
         } catch (e) {
           return json({ error: `failed to launch hosted agent: ${String((e as Error).message ?? e)}` }, 500);
         }
@@ -1103,6 +1130,34 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!stopped) return json({ error: 'hosted agent not found' }, 404);
         await recordEvent(lobbyId, 'hosted_agent_stopped', identityRef, { agent_id: agentId });
         return json({ stopped: agentId });
+      }
+    }
+
+    // GET / POST /api/v1/agent-lobby/lobbies/:id/agent-nicknames — per-role user-chosen names.
+    const nicknamesMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/agent-nicknames$/);
+    if (nicknamesMatch) {
+      const lobbyId = nicknamesMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (req.method === 'GET') return json({ nicknames: await store.getAgentNicknames(lobbyId) });
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        const role = typeof body.role === 'string' ? body.role.trim() : '';
+        const nickname = typeof body.nickname === 'string' ? body.nickname : '';
+        if (!role) return json({ error: 'role is required' }, 400);
+        const map = await store.setAgentNickname(lobbyId, role, nickname);
+        // Live rename: update any CONNECTED agents of this role so the roster reflects it now,
+        // without waiting for a relaunch. Broadcast the roster update.
+        const effective = map[role] || '';
+        for (const a of await store.roster(lobbyId)) {
+          if (a.agent_role === role && a.status !== 'disconnected') {
+            const newName = effective || a.display_name;
+            const updated = await store.updateAgent(lobbyId, a.agent_id, { display_name: newName }).catch(() => null);
+            if (updated) for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, { type: 'lobby-agent-updated', agent: updated } as LobbyToAgentMessage);
+          }
+        }
+        return json({ nicknames: map });
       }
     }
 
@@ -1247,6 +1302,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         }
         await client.commitFiles(toWrite, 'chore: set up Agent OS scheduled self-learning (config, prompts, agents)', branchName);
         repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        invalidateAgentDefs(lobbyId);
 
         await recordEvent(lobbyId, 'scheduled_tasks_configured', identityRef, { repo: integration.repo_full_name, branch: branchName });
         return json({ ok: true });
@@ -1451,12 +1507,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           branchName,
         );
         repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        invalidateAgentDefs(lobbyId);
         await recordEvent(lobbyId, 'repo_initialized', identityRef, {
           repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha,
         });
         return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha });
       } catch (e) {
-        return json({ error: `repository initialization failed: ${String((e as Error).message ?? e)}` }, 502);
+        return json({ error: `repository initialization failed: ${githubErrorMessage(e)}` }, 502);
       }
     }
 
@@ -1968,9 +2025,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         await client.writeFile(filePath, newContent, `chore: bind Agent ID identity ref to ${slug}`, branchName);
         // restartRequired: identity is presented at REGISTER time (join_token) — a running agent
         // keeps its old roster identity until it is relaunched with the new DID.
+        invalidateAgentDefs(lobbyId);
         return json({ ok: true, identity: body.identity.trim(), restartRequired: true });
       } catch (err: any) {
-        return json({ error: `failed to write to GitHub repository: ${err.message || err}` }, 500);
+        return json({ error: `failed to write to GitHub repository: ${githubErrorMessage(err)}` }, 500);
       }
     }
 
