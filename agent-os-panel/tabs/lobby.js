@@ -420,6 +420,7 @@ function renderLobby() {
                       <span style="color:var(--color-green); font-weight:600;">✓ Agent OS structure initialized</span> —
                       <code style="font-size:10px;">agent-os/</code> in <strong>${escapeHtml(lobbyGithub.repo)}</strong> holds the agent definitions (+ bound Agent IDs), skills, scheduled prompts, shared memories, and trained packs this lobby manages.
                     </div>
+                    <button class="btn btn-secondary btn-sm" id="btn-panel-github-init" style="width:100%;" title="Safe re-run: commits only files added in newer Agent OS versions (README, planning, …) — anything already in the repo is never touched">Re-run initialization (add new/missing files)</button>
                   ` : `
                     <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.18); color:var(--text-secondary); line-height:1.45;">
                       <span style="color:var(--color-yellow); font-weight:600;">Repository not initialized.</span>

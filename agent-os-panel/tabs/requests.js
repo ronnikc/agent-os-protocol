@@ -34,7 +34,7 @@ function renderRequests() {
             <span class="badge badge-warning">Pending</span>
           </div>
           ${r.description ? `<div style="font-size:12px;color:var(--text-secondary);margin-top:8px;white-space:pre-wrap;">${escapeHtml(r.description.slice(0, 400))}</div>` : ''}
-          ${r.context ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-family:var(--mono);">${escapeHtml(String(r.context).slice(0, 200))}</div>` : ''}
+          ${r.context ? `<div style="font-size:11px;color:var(--text-muted);margin-top:4px;font-family:var(--mono);">${escapeHtml((typeof r.context === 'object' ? Object.entries(r.context).map(([k, v]) => `${k}: ${v}`).join(' · ') : String(r.context)).slice(0, 200))}</div>` : ''}
           <div style="margin-top:10px;">
             <input type="text" id="request-notes-${r.request_id || r.id}" placeholder="Decision notes (optional)" style="width:100%;background:var(--bg-base);border:1px solid var(--border);color:var(--text-primary);padding:8px 10px;border-radius:4px;font-size:12px;margin-bottom:8px;" />
             <div style="display:flex;gap:8px;">

@@ -50,6 +50,21 @@ function parseGithubUrl(url: string): { owner: string; repo: string } | null {
   return { owner: match[1], repo: match[2] };
 }
 
+/**
+ * Owner/repo from an integration's repo_full_name, accepting BOTH stored forms: a github.com URL
+ * (KB configs) and the bare "owner/repo" the GitHub App integration stores. Individual endpoints
+ * previously called parseGithubUrl directly and failed with "invalid GitHub repository URL" on the
+ * bare form — the DID bind, agent-definition loading, and scheduled setup all broke that way.
+ */
+function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
+  if (!fullName) return null;
+  const parsed = parseGithubUrl(fullName);
+  if (parsed) return parsed;
+  return /^[^/\s]+\/[^/\s]+$/.test(fullName)
+    ? { owner: fullName.split('/')[0], repo: fullName.split('/')[1] }
+    : null;
+}
+
 function parseAgentDef(fileName: string, content: string) {
   const titleMatch = content.match(/^Title:\s*(.+)$/m);
   const scopeMatch = content.match(/^Scope:\s*(.+)$/m);
@@ -124,7 +139,7 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<
   if (integration && integration.repo_full_name) {
     const token = await githubTokenForLobby(lobbyId, store);
     if (token) {
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (parsed) {
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
         const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
@@ -296,8 +311,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let value = false;
     try {
       const token = await githubTokenForLobby(lobbyId, store);
-      const parsed = token ? parseGithubUrl(repoFullName) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoFullName)
-        ? { owner: repoFullName.split('/')[0], repo: repoFullName.split('/')[1] } : null) : null;
+      const parsed = token ? repoRef(repoFullName) : null;
       if (token && parsed) {
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
         const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
@@ -550,6 +564,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     const content = String(m.content ?? '').trim();
     if (!content) return;
+    // One pending hand per agent — 11 near-duplicate "ensure X" requests piled up in one live
+    // session because every boss broadcast triggered another observation turn. An unaddressed hand
+    // already says "this agent wants attention"; more are queue noise (LOBBY-PROTOCOL Rule 3:
+    // max one hand-raise per agent per topic).
+    try {
+      const pendingMine = (await store.listLobbyRequests(conn.lobbyId))
+        .some(r => r.status === 'pending' && r.agent_id === myId);
+      if (pendingMine) return;
+    } catch { /* best-effort — proceed */ }
     const prompt = `${OBSERVATION_GUIDE}\n\n[LOBBY BROADCAST] ${content}`;
     let verdict = '';
     try { verdict = await entry.runner.respondTo(prompt); } catch { return; }
@@ -583,9 +606,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (repoRefUrl) {
       const githubToken = await githubTokenForLobby(params.lobbyId, store);
       if (githubToken) {
-        const parsed = parseGithubUrl(repoRefUrl) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoRefUrl)
-          ? { owner: repoRefUrl.split('/')[0], repo: repoRefUrl.split('/')[1] }
-          : null);
+        const parsed = repoRef(repoRefUrl);
         if (parsed) {
           const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
           repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken);
@@ -603,8 +624,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
     // having any tools at all — both observed live. The preamble states exactly what exists here:
     // repository file tools when a repo is connected, and NOTHING that executes code.
+    const workingBranch = integration?.branch || 'main';
     const capabilities = repoClient
-      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits directly), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), and have no local workspace. Do file work through the repository tools and report exactly which files you read or wrote. NEVER claim to have run, built, compiled, or tested anything — if asked to, say you cannot execute commands and state what you CAN verify by reading files.`
+      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits DIRECTLY to the working branch "${workingBranch}"), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches — every write_file commit lands on "${workingBranch}". Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names or timestamps — if a task demands a branch or command execution, state that limitation as the blocker.`
       : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
     const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
     const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
@@ -1041,7 +1063,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) {
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
@@ -1097,7 +1119,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await ghToken(lobbyId);
       if (!token) return json({ error: 'GitHub installation token unavailable' }, 502);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'Invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -1313,8 +1335,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
-      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      const parsed = repoRef(integ.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
 
       try {
@@ -1356,8 +1377,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
-      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      const parsed = repoRef(integ.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
 
       try {
@@ -1804,7 +1824,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -2091,6 +2111,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
         }
+        // Reopen semantics: setting a task back to 'assigned' RE-DELIVERS it to the assignee —
+        // hosted agents execute on lobby-task-assigned, so without this a reopened task sat
+        // "assigned" forever with nobody told.
+        if (body.status === 'assigned' && updatedTask.assigned_to) {
+          send(agentConn.get(updatedTask.assigned_to), { type: 'lobby-task-assigned', task: updatedTask } as LobbyToAgentMessage);
+        }
         return json({ task: updatedTask });
       }
       const updated = await store.updateMarketplaceTask(lobbyId, taskId, body);
@@ -2172,8 +2198,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         repoLabel = `${integ.repo_full_name}@${integ.branch || 'main'}`;
         try {
           const token = await githubTokenForLobby(lobbyId, store);
-          const parsed = token ? (parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-            ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null)) : null;
+          const parsed = token ? (repoRef(integ.repo_full_name)) : null;
           if (token && parsed) {
             const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
             const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);

@@ -58,35 +58,40 @@ function renderKanban() {
 function showTaskDetail(taskId) {
   const t = tasks.find(t => t.task_id === taskId);
   if (!t) return;
+  const rawStatus = t._raw_status || t.status;
   showModal(`
     <h2>${escapeHtml(t.title)}</h2>
     <div class="form-group">
       <label>Status</label>
-      <div><span class="badge badge-info">${t.status}</span></div>
+      <div><span class="badge badge-info">${escapeHtml(rawStatus)}</span></div>
     </div>
     <div class="form-group">
       <label>Description</label>
       <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(t.description || '(none)')}</div>
     </div>
+    ${t.result ? `
     <div class="form-group">
-      <label>Assigned To</label>
-      <div>${escapeHtml(t.assigned_to || 'unassigned')}</div>
-    </div>
+      <label>Result (agent report)</label>
+      <div style="font-size:12px;white-space:pre-wrap;max-height:260px;overflow:auto;background:var(--bg-surface);border:1px solid var(--border);border-radius:6px;padding:10px;">${escapeHtml(t.result)}</div>
+    </div>` : ''}
+    ${t.progress ? `
     <div class="form-group">
-      <label>Priority</label>
-      <div>${t.priority || 'normal'}</div>
-    </div>
-    <div class="form-group">
-      <label>Category</label>
-      <div>${escapeHtml(t.category || 'general')}</div>
-    </div>
-    <div class="form-group">
-      <label>Created</label>
-      <div>${t.created_at || '?'}</div>
+      <label>Progress</label>
+      <div style="font-size:12px;white-space:pre-wrap;">${escapeHtml(String(t.progress))}</div>
+    </div>` : ''}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 16px;">
+      <div class="form-group"><label>Assigned To</label><div style="font-size:12px;">${escapeHtml(t.assigned_to || 'unassigned')}</div></div>
+      <div class="form-group"><label>Assigned By</label><div style="font-size:12px;">${escapeHtml(t.assigned_by || '?')}</div></div>
+      <div class="form-group"><label>Priority</label><div style="font-size:12px;">${t.priority || 'normal'}</div></div>
+      <div class="form-group"><label>Category</label><div style="font-size:12px;">${escapeHtml(t.category || 'general')}</div></div>
+      <div class="form-group"><label>Created</label><div style="font-size:12px;">${escapeHtml(t.created_at || t.assigned_at || '?')}</div></div>
+      <div class="form-group"><label>Task ID</label><div style="font-size:10px;font-family:var(--mono);">${escapeHtml(t.task_id)}</div></div>
     </div>
     ${t.dependencies?.length ? `<div class="form-group"><label>Dependencies</label><div>${t.dependencies.join(', ')}</div></div>` : ''}
     <div class="form-actions">
       <button class="btn btn-danger btn-sm" data-action="delete-modal" data-task-id="${t.task_id}">Delete</button>
+      ${['done', 'failed', 'completed', 'cancelled'].includes(rawStatus) || t.status === 'done' || t.status === 'failed' ? `
+        <button class="btn btn-secondary btn-sm" data-action="reopen-modal" data-task-id="${t.task_id}" title="Re-assigns the task — the assignee executes it again">Reopen & Re-run</button>` : ''}
       <span style="flex:1"></span>
       <button class="btn btn-secondary" onclick="document.getElementById('modal-overlay').style.display='none'">Close</button>
     </div>
@@ -99,6 +104,15 @@ function showTaskDetail(taskId) {
       closeModal();
       await refresh();
     }
+  });
+
+  document.querySelector('[data-action="reopen-modal"]')?.addEventListener('click', async () => {
+    const base = lobbyMode === 'swarm' ? '/api/lobby/remote/tasks' : '/api/tasks';
+    // In swarm mode 'assigned' re-delivers the task to the assignee (the server re-sends
+    // lobby-task-assigned); locally 'pending' re-queues the work item.
+    await patchJson(`${base}/${t.task_id}`, { status: lobbyMode === 'swarm' ? 'assigned' : 'pending' });
+    closeModal();
+    await refresh();
   });
 }
 
@@ -209,7 +223,7 @@ async function refresh() {
     if (lobbyMode === 'swarm') {
       // Coordination tasks (Boss-/panel-created, delivered to agents) — not the marketplace list.
       tasks = (data.coordination_tasks || []).filter(t => t && t.task_id)
-        .map(t => ({ ...t, status: SWARM_TO_KANBAN[t.status] || t.status }));
+        .map(t => ({ ...t, _raw_status: t.status, status: SWARM_TO_KANBAN[t.status] || t.status }));
     } else {
       tasks = (data.tasks || []).filter(t => t && t.task_id);
     }
@@ -229,10 +243,15 @@ function init() {
   // Create button
   document.getElementById('create-task-trigger')?.addEventListener('click', showCreateModal);
 
-  // Kanban event delegation
+  // Kanban event delegation. Clicking anywhere on a card (not just the small Detail button)
+  // opens the detail modal — reading what happened is the most common action.
   document.getElementById('tasks-kanban')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
-    if (!btn) return;
+    if (!btn) {
+      const card = e.target.closest('.kanban-card[data-task-id]');
+      if (card) showTaskDetail(card.dataset.taskId);
+      return;
+    }
 
     if (btn.dataset.action === 'advance') {
       const status = lobbyMode === 'swarm'

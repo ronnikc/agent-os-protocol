@@ -582,7 +582,8 @@ async function main(): Promise<void> {
     assert.ok(paths.includes('agent-os/training/packs/README.md'), 'scaffolds trained packs');
     assert.ok(!paths.includes(AGENT_OS_MANIFEST_PATH), 'the manifest is added by the endpoint, not the collector');
     const manifest = JSON.parse(buildManifest('did:ccd:mainnet:test'));
-    assert.equal(manifest.initialized_by, 'did:ccd:mainnet:test');
+    assert.ok(!JSON.stringify(manifest).includes('did:ccd:mainnet:test'), 'the raw wallet ref never lands in the (possibly public) repo');
+    assert.match(manifest.initialized_by_fingerprint, /^[0-9a-f]{12}$/, 'attribution is a short fingerprint');
     assert.ok(Array.isArray(manifest.components) && manifest.components.includes('agents'));
 
     // Batch commit: blobs → tree → commit → ref, ONE commit for N files.

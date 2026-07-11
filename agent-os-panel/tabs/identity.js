@@ -186,10 +186,8 @@ async function handlePrepareReg() {
     const isSwarm = lobbyMode === 'swarm';
     const steps = isSwarm ? [
       `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
-      `Open your Concordium wallet on ${network}.`,
-      `Click the "Mint Agent ID" button to initiate the sponsored, gasless transaction.`,
-      `Sign the card and submit the transaction in your wallet.`,
-      `Once submitted, the DID is automatically bound to your agent definition (committed to GitHub).`,
+      `Click "Mint Agent ID" and sign in your Concordium wallet (${network}) — the transaction is sponsored (gasless).`,
+      `Everything after the signature is automatic: card hosting, on-chain anchor, and the DID bind committed to your repository.`,
     ] : [
       `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
       `Open your Concordium wallet (or the registry MCP service) on ${network}.`,
@@ -389,8 +387,15 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
   drawProgressModal(stepStates);
 
   try {
-    const accounts = await window.concordium.requestAccounts();
-    const owner = accounts[0];
+    // The Concordium browser wallet exposes connect(); requestAccounts is not guaranteed on all
+    // versions — when it's absent the old call threw inside the progress modal and Mint looked
+    // dead. Use the same connection path as the (working) Agents-tab Create ID, with a fallback.
+    let owner;
+    if (typeof window.concordium.connect === 'function') {
+      owner = await window.concordium.connect();
+    } else if (typeof window.concordium.requestAccounts === 'function') {
+      owner = (await window.concordium.requestAccounts())[0];
+    }
     if (!owner) {
       throw new Error('Please connect your Concordium wallet account.');
     }
@@ -678,19 +683,18 @@ function render() {
           </div>
         ` : ''}
 
-        <!-- Linked DID Profile configuration -->
+        ${lobbyMode !== 'swarm' ? `
+        <!-- Linked DID Profile configuration (Local Mode only — hosted minting binds automatically) -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
           <h3 style="margin:0 0 4px 0;font-size:14px;font-weight:600;color:var(--text-primary);">4. Link Registry Reference (DID)</h3>
           <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px;">
-            ${lobbyMode === 'swarm'
-              ? '✓ Minting automatically commits the DID to your agent definition in GitHub. You can also manually override it below.'
-              : 'Once registered, bind your non-secret DID reference to this workspace.'}
+            Once registered, bind your non-secret DID reference to this workspace.
           </span>
           <div style="display:flex;gap:6px;">
             <input type="text" id="linked-did-input" value="${escapeHtml(linkedDid)}" placeholder="did:ccd:mainnet:..." style="flex:1;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;" />
             <button class="btn btn-secondary btn-sm" id="btn-link-did">Link Reference</button>
           </div>
-        </div>
+        </div>` : ''}
 
       </div>
 

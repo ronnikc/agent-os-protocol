@@ -15,6 +15,7 @@
 
 import { join } from 'node:path';
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 
 export interface SeedFile { path: string; content: string }
 
@@ -22,9 +23,15 @@ export interface SeedFile { path: string; content: string }
 export const AGENT_OS_MANIFEST_PATH = 'agent-os/.agent-os.json';
 
 export function buildManifest(initializedBy: string): string {
+  // PRIVACY: the manifest lands in the user's repo — which may be PUBLIC. Store only a short
+  // fingerprint of the initializing wallet ref, never the raw address/DID; the full attribution
+  // stays in the lobby's private event log. Nothing else the initializer seeds is sensitive:
+  // agent definitions/skills/prompts are public upstream content, and no tokens or provider keys
+  // are ever written to the repo.
+  const fingerprint = createHash('sha256').update(initializedBy).digest('hex').slice(0, 12);
   return JSON.stringify({
     initialized_at: new Date().toISOString(),
-    initialized_by: initializedBy,
+    initialized_by_fingerprint: fingerprint,
     components: ['agents', 'skills', 'scheduled-prompts', 'config', 'shared-memory', 'training-packs', 'planning', 'readme'],
   }, null, 2) + '\n';
 }
