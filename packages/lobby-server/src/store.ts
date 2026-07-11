@@ -10,8 +10,8 @@
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent, LobbyRequest } from '@agent-os/protocol-core';
 import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig, WalletChallenge } from './models.js';
-import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 
 // Where the durable lobby state lives. On a hosted deployment this MUST point at a path that
 // survives container recycling/redeploys (a mounted volume) — set AGENT_OS_LOBBY_STORE_FILE to an
@@ -186,6 +186,9 @@ export class InMemoryLobbyStore implements LobbyStore {
         requests: Array.from(this.requests.entries())
       };
 
+      // Ensure the store directory exists — AGENT_OS_LOBBY_STORE_FILE points at a persistent path
+      // outside the git checkout (e.g. the user's home), which may not exist on first write.
+      mkdirSync(dirname(STORE_FILE), { recursive: true });
       writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
       console.error('[Lobby Store] Failed to save store state to disk:', err);
@@ -193,9 +196,21 @@ export class InMemoryLobbyStore implements LobbyStore {
   }
 
   private loadSync() {
-    if (!existsSync(STORE_FILE)) return;
+    // Seamless migration: when the durable path (e.g. $HOME/.agent-os-lobby) has no store yet but a
+    // legacy in-checkout ./lobby-store-db.json exists, load from it once. The next save writes to the
+    // durable path, so state carries over the move without a manual copy or another wipe.
+    let source = STORE_FILE;
+    if (!existsSync(source)) {
+      const legacy = join(process.cwd(), 'lobby-store-db.json');
+      if (legacy !== STORE_FILE && existsSync(legacy)) {
+        source = legacy;
+        console.log(`[Lobby Store] Migrating state from legacy ${legacy} → ${STORE_FILE}`);
+      } else {
+        return;
+      }
+    }
     try {
-      const content = readFileSync(STORE_FILE, 'utf-8');
+      const content = readFileSync(source, 'utf-8');
       const data = JSON.parse(content);
       if (Array.isArray(data.lobbies)) {
         for (const item of data.lobbies) {
