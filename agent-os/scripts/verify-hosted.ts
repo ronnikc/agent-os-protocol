@@ -554,7 +554,7 @@ async function main(): Promise<void> {
       calledUrl = url;
       calledMethod = opts?.method || 'GET';
       calledBody = opts?.body || '';
-      if (url.endsWith('/contents/test.txt') && calledMethod === 'GET') {
+      if (url.includes('/contents/test.txt') && calledMethod === 'GET') {
         return new Response(JSON.stringify({ type: 'file', content: Buffer.from('hello').toString('base64'), sha: 'sha123' }), { status: 200 });
       }
       if (url.endsWith('/contents/test.txt') && calledMethod === 'PUT') {
@@ -571,7 +571,8 @@ async function main(): Promise<void> {
 
     const content = await client.readFile('test.txt');
     assert.equal(content, 'hello');
-    assert.equal(calledUrl, 'https://api.github.com/repos/owner/repo/contents/test.txt');
+    // reads default to the active branch (defaults to 'main'), appended as a ?ref= query
+    assert.equal(calledUrl, 'https://api.github.com/repos/owner/repo/contents/test.txt?ref=main');
 
     const commitSha = await client.writeFile('test.txt', 'new content', 'commit message');
     assert.equal(commitSha, 'commitsha456');
@@ -656,6 +657,34 @@ async function main(): Promise<void> {
     ], 'chore: init', 'main');
     assert.equal(sha2, 'c1', 'remaining files land as a batch commit after the bootstrap');
     assert.ok(emptyCalls.some(c => c.startsWith('PUT') && c.includes('/contents/first.md')), 'first file bootstraps the branch via the contents API');
+  });
+
+  await check('BRANCH/PR: activeBranch redirects writes; createBranch/aheadBy/PR primitives', async () => {
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const prFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      calls.push({ url, method, body: opts?.body ? JSON.parse(opts.body) : undefined });
+      if (url.includes('/git/ref/heads/main')) return new Response(JSON.stringify({ object: { sha: 'mainsha' } }), { status: 200 });
+      if (url.endsWith('/git/refs') && method === 'POST') return new Response('{}', { status: 201 });
+      if (url.includes('/contents/x.md') && method === 'GET') return new Response('{"message":"Not Found"}', { status: 404 });
+      if (url.includes('/contents/x.md') && method === 'PUT') return new Response(JSON.stringify({ commit: { sha: 'wsha' } }), { status: 201 });
+      if (url.includes('/compare/')) return new Response(JSON.stringify({ ahead_by: 2 }), { status: 200 });
+      if (url.endsWith('/pulls') && method === 'POST') return new Response(JSON.stringify({ html_url: 'https://github.com/o/r/pull/7' }), { status: 201 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', 't', prFetch, 'main');
+
+    await c.createBranch('agent-os/task/abc-work', 'main');
+    assert.ok(calls.some(x => x.url.endsWith('/git/refs') && x.body?.ref === 'refs/heads/agent-os/task/abc-work' && x.body?.sha === 'mainsha'), 'branch created off main tip');
+
+    // With activeBranch set, write_file (no explicit branch) commits to the task branch.
+    c.activeBranch = 'agent-os/task/abc-work';
+    await c.writeFile('x.md', 'hi', 'add x');
+    const put = calls.find(x => x.method === 'PUT' && x.url.includes('/contents/x.md'));
+    assert.equal(put?.body?.branch, 'agent-os/task/abc-work', 'the write targets the active task branch, not main');
+
+    assert.equal(await c.aheadBy('main', 'agent-os/task/abc-work'), 2, 'aheadBy reports commits on the task branch');
+    assert.equal(await c.createPullRequest('t', 'agent-os/task/abc-work', 'main', 'b'), 'https://github.com/o/r/pull/7');
   });
 
   // ── L. ApiRuntimeAdapter tool call loop ──

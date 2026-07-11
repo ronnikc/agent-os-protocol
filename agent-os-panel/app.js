@@ -38,9 +38,27 @@ export async function fetchJson(url, opts) {
   if (s && s.token) {
     token = s.token;
     lobbyId = s.lobbyId;
+  } else if (s && s.guest) {
+    // Guest: no token (reads only). lobbyId still flows so proxy routing resolves the public lobby.
+    lobbyId = s.lobbyId;
   } else {
     token = localStorage.getItem('agent-os-lobby-token');
     lobbyId = state.session?.lobbyId;
+  }
+
+  // Guest write-guard: a read-only guest cannot mutate the lobby. The server already denies these
+  // (no wallet token → authorizeLobbyManager fails), but we short-circuit with a friendly upgrade
+  // prompt instead of surfacing a raw 401 across every tab. Reads (GET) pass straight through.
+  if (s && s.guest && !s.token) {
+    const method = (finalOpts.method || 'GET').toUpperCase();
+    const isLobbyWrite = method !== 'GET' &&
+      (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/') ||
+       url.startsWith('/api/agents/') || url.startsWith('/api/tasks') || url.startsWith('/api/messages') ||
+       url.startsWith('/api/loops') || url.startsWith('/api/lobby/state'));
+    if (isLobbyWrite) {
+      promptGuestUpgrade();
+      return { error: 'guest_read_only', guest: true };
+    }
   }
 
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED && s && s.lobbyId) {
@@ -333,14 +351,24 @@ export async function patchJson(url, body) {
 
 /**
  * The wallet session shared by lobby-web (same origin) when the panel runs hosted at /panel.
- * Returns { token, identityRef, lobbyId } or null (local mode, or not signed in).
+ * Returns { token, identityRef, lobbyId } for a signed-in wallet, OR a guest session
+ * { lobbyId, guest: true } (no token) for read-only public exploration, OR null.
+ * A guest session carries a lobbyId so all read proxying works; it has no token, so the server
+ * denies every management write (authorizeLobbyManager) — guests are read-only by server enforcement.
  */
 export function hostedSession() {
   if (typeof window === 'undefined') return null;
   try {
     const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
-    return s && s.token && s.lobbyId ? s : null;
+    if (s && s.lobbyId && (s.token || s.guest)) return s;
+    return null;
   } catch { return null; }
+}
+
+/** True when the current hosted session is a read-only guest (no wallet, public lobbies only). */
+export function isGuest() {
+  const s = hostedSession();
+  return !!(s && s.guest && !s.token);
 }
 
 /** Call a lobby API (`/api/v1/agent-lobby<path>`) with the hosted wallet session token. */
@@ -703,9 +731,17 @@ export async function init() {
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
     document.body.classList.add('hosted-mode');
     const banner = document.createElement('div');
-    banner.textContent = 'Hosted Agent OS Panel — agents run server-side against your connected GitHub repo; identity, provider keys and the Knowledge Base are wallet-scoped.';
-    banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
+    if (isGuest()) {
+      document.body.classList.add('guest-mode');
+      banner.innerHTML = '👀 <strong>Guest mode (read-only)</strong> — exploring a public lobby. Connect your Concordium Wallet to own a lobby, spawn agents, connect a repo and issue Agent IDs. <a href="#" id="guest-banner-connect" style="color:#38bdf8;text-decoration:underline;">Connect Wallet</a>';
+      banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(255,179,0,0.12);border-bottom:1px solid rgba(255,179,0,0.3);color:#ffcf66;';
+    } else {
+      banner.textContent = 'Hosted Agent OS Panel — agents run server-side against your connected GitHub repo; identity, provider keys and the Knowledge Base are wallet-scoped.';
+      banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
+    }
     document.body.prepend(banner);
+    const guestConnect = document.getElementById('guest-banner-connect');
+    if (guestConnect) guestConnect.onclick = (e) => { e.preventDefault(); exitGuestToSignIn(); };
   }
 
   // Wire up tab buttons
@@ -891,6 +927,7 @@ export async function connectWallet({ silent = false } = {}) {
     }
   }
 }
+if (typeof window !== 'undefined') window.connectWallet = connectWallet;
 
 export async function signInToLobby() {
   const lobbySelect = document.getElementById('header-lobby-select');
@@ -995,16 +1032,19 @@ export async function loadLobbies() {
   try {
     const data = await fetchJson('/api/v1/agent-lobby/lobbies');
     if (data && data.lobbies) {
-      state.lobbies = data.lobbies;
-      
+      // Guests may only see/select PUBLIC lobbies — private lobbies require a Verified Agent ID.
+      const guest = isGuest();
+      state.lobbies = guest ? data.lobbies.filter(l => (l.visibility || 'public') === 'public') : data.lobbies;
+
       select.innerHTML = '';
       if (state.lobbies.length === 0) {
-        select.innerHTML = '<option value="">No Active Lobbies</option>';
+        select.innerHTML = `<option value="">${guest ? 'No public lobbies' : 'No Active Lobbies'}</option>`;
       } else {
         state.lobbies.forEach(l => {
           const opt = document.createElement('option');
           opt.value = l.lobby_id;
-          opt.textContent = l.name;
+          const isPrivate = (l.visibility || 'public') === 'private';
+          opt.textContent = isPrivate ? `🔒 ${l.name}` : l.name;
           if (state.session.lobbyId === l.lobby_id) {
             opt.selected = true;
           }
@@ -1099,21 +1139,29 @@ function renderAuthOverlay() {
           </svg>
         </div>
         
-        <h2 style="font-size:22px; font-weight:600; margin:0 0 12px 0; background:linear-gradient(90deg, #00E5D4, #318CFF); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Outfit', sans-serif;">Swarm Mode Connection Required</h2>
-        <p style="font-size:13px; color:#8da0bf; line-height:1.6; margin:0 0 28px 0;">To access the hosted Agent OS Panel, you must connect your Concordium Wallet and authenticate with a lobby.</p>
-        
+        <h2 style="font-size:22px; font-weight:600; margin:0 0 12px 0; background:linear-gradient(90deg, #00E5D4, #318CFF); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Outfit', sans-serif;">Welcome to Agent OS</h2>
+        <p style="font-size:13px; color:#8da0bf; line-height:1.6; margin:0 0 24px 0;">Connect your Concordium Wallet to own a lobby, connect agents &amp; repos, and issue Agent IDs — or continue as a guest to explore public lobbies read-only.</p>
+
         <!-- Lobby selector container in Auth overlay -->
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; background: rgba(16, 27, 49, 0.4); border: 1px solid var(--color-border); padding: 8px 12px; border-radius: 8px; justify-content: space-between;">
           <span style="font-size: 12px; color: var(--color-text-soft); font-weight: 500;">Select Lobby:</span>
           <select id="header-lobby-select" style="background:#0B1326; border:1px solid var(--color-border); color:var(--color-text); padding:4px 10px; border-radius:6px; font-size:12px; min-width: 180px;"></select>
         </div>
 
-        <div id="auth-status-container" style="margin-bottom:24px; text-align:left;">
+        <div id="auth-status-container" style="margin-bottom:20px; text-align:left;">
           <!-- Dynamic statuses will go here -->
         </div>
-        
-        <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
           <button class="btn btn-primary" id="btn-auth-action" style="padding:12px; border-radius:8px; font-size:14px; font-weight:600; width:100%; cursor:pointer; height:auto; line-height:1.2; text-transform:none; border:none; display:block;">Connect Wallet</button>
+          <button id="btn-auth-guest" style="padding:11px; border-radius:8px; font-size:13px; font-weight:500; width:100%; cursor:pointer; background:transparent; color:#c7d4ea; border:1px solid rgba(49,140,255,0.3);">Continue as Guest — explore public lobbies (read-only)</button>
+        </div>
+
+        <div style="margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); text-align:left;">
+          <p style="font-size:11px; color:#7c8db0; line-height:1.6; margin:0 0 8px 0;">
+            <span style="color:#ffb300;">🔒 Private lobbies</span> require a <strong style="color:#c7d4ea;">Verified Agent ID</strong> to join — only agents with a Concordium-anchored identity are admitted. Guests see public lobbies only.
+          </p>
+          <button id="btn-auth-create-id" style="background:none; border:none; padding:0; color:#38bdf8; font-size:12px; text-decoration:underline; cursor:pointer;">Don't have a wallet? Create a Concordium ID &amp; Wallet →</button>
         </div>
       </div>
     </div>
@@ -1122,7 +1170,85 @@ function renderAuthOverlay() {
   loadLobbies();
   updateAuthStatus();
   setInterval(updateAuthStatus, 1000);
+  const guestBtn = document.getElementById('btn-auth-guest');
+  if (guestBtn) guestBtn.onclick = continueAsGuest;
+  const createIdBtn = document.getElementById('btn-auth-create-id');
+  if (createIdBtn) createIdBtn.onclick = showCreateConcordiumIdInstructions;
 }
+
+/**
+ * Enter read-only guest mode: pick a PUBLIC lobby and store a token-less guest session, then reload
+ * so the panel boots against it. Private lobbies are never offered to guests (server also denies
+ * their WS join without a verified identity). Guests can browse roster/messages/tasks/memory but
+ * every management write is blocked (see the guest write-guard in fetchJson).
+ */
+export async function continueAsGuest() {
+  const statusEl = document.getElementById('auth-status-container');
+  const setStatus = (t) => { if (statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:#8da0bf;padding:4px 2px;">${t}</div>`; };
+  try {
+    setStatus('finding a public lobby…');
+    const data = await fetchJson('/api/v1/agent-lobby/lobbies');
+    const lobbies = (data && data.lobbies) || [];
+    const publicLobbies = lobbies.filter(l => (l.visibility || 'public') === 'public');
+    if (publicLobbies.length === 0) {
+      setStatus('no public lobbies are available to explore right now — connect a wallet to create one.');
+      return;
+    }
+    const chosen = publicLobbies[0];
+    localStorage.setItem('agentos.hosted.session', JSON.stringify({ lobbyId: chosen.lobby_id, guest: true }));
+    window.location.reload();
+  } catch (err) {
+    setStatus(`could not start guest mode: ${err.message || err}`);
+  }
+}
+window.continueAsGuest = continueAsGuest;
+
+/** Leave guest mode: drop the token-less guest session and reload into the full Connect+Sign-In flow. */
+export function exitGuestToSignIn() {
+  try { localStorage.removeItem('agentos.hosted.session'); } catch { /* storage unavailable */ }
+  window.location.reload();
+}
+window.exitGuestToSignIn = exitGuestToSignIn;
+
+/** Instructions modal: how to get a Concordium Wallet + ID and why it matters for Agent OS. */
+export function showCreateConcordiumIdInstructions() {
+  showHtmlAlert('Create a Concordium ID &amp; Wallet', `
+    <div style="text-align:left; font-size:13px; line-height:1.65; color:#cbd5e1;">
+      <p style="margin:0 0 14px 0;">Your Concordium <strong style="color:#f5f8ff;">wallet</strong> is how you <strong>own this lobby</strong> and connect your agents, repositories and Knowledge Base to <em>your</em> account. Your Concordium <strong style="color:#f5f8ff;">ID</strong> anchors real-world accountability to your wallet — privately — and is what lets you issue and co-sign verifiable <strong>Agent IDs</strong>.</p>
+      <ol style="margin:0 0 14px 0; padding-left:20px;">
+        <li style="margin-bottom:8px;"><strong>Install the wallet.</strong> Add the <a href="https://chromewebstore.google.com/detail/concordium-wallet/odfbpeocbbpdnneocdnlphceeapeglne" target="_blank" style="color:#38bdf8; text-decoration:underline;">Concordium Wallet for Web</a> (browser extension), or get the mobile wallet from the <a href="https://www.concordium.com/wallets" target="_blank" style="color:#38bdf8; text-decoration:underline;">official wallets page ↗</a>.</li>
+        <li style="margin-bottom:8px;"><strong>Create a Concordium ID.</strong> In the wallet, complete the one-time identity verification with an identity provider. This links your real identity to your account <em>privately</em> — the chain only ever sees cryptographic proofs, never your documents.</li>
+        <li style="margin-bottom:8px;"><strong>Create an account.</strong> Your account address (e.g. <code style="font-size:11px; color:#8da0bf;">3abc…xyz</code>) is what you'll use to sign in here.</li>
+        <li style="margin-bottom:0;"><strong>Come back and Connect Wallet.</strong> Signing in proves ownership, unlocks lobby management, and lets you mint Agent IDs.</li>
+      </ol>
+      <div style="background:rgba(255,179,0,0.08); border:1px solid rgba(255,179,0,0.2); border-radius:6px; padding:10px 12px; font-size:12px; color:#e5c07b;">
+        <strong>Trust chain:</strong> Human Owner (Concordium ID) ➔ Wallet Address ➔ Agent ID (DID). Only <strong>Verified ID</strong> agents may join <strong>private</strong> lobbies; public lobbies are open to guests read-only.
+      </div>
+      <div style="text-align:right; margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeModal()" style="padding:8px 16px;">Close</button>
+      </div>
+    </div>
+  `);
+}
+window.showCreateConcordiumIdInstructions = showCreateConcordiumIdInstructions;
+
+/** Nudge a guest to connect a wallet when they try to perform a management action. */
+let __guestUpgradeShownAt = 0;
+export function promptGuestUpgrade() {
+  const now = Date.now();
+  if (now - __guestUpgradeShownAt < 1500) return; // debounce bursts of blocked writes
+  __guestUpgradeShownAt = now;
+  showHtmlAlert('Connect a Wallet to Continue', `
+    <div style="text-align:left; font-size:13px; line-height:1.6; color:#cbd5e1;">
+      <p style="margin:0 0 12px 0;">You're exploring as a <strong style="color:#c7d4ea;">guest</strong> — this view is read-only. Managing a lobby (spawning agents, creating tasks, sending messages, issuing Agent IDs) requires a Concordium Wallet so actions are cryptographically owned by you.</p>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+        <button class="btn btn-secondary" onclick="showCreateConcordiumIdInstructions()" style="padding:8px 14px;">Create ID &amp; Wallet</button>
+        <button class="btn btn-primary" onclick="closeModal(); exitGuestToSignIn();" style="padding:8px 14px;">Connect Wallet</button>
+      </div>
+    </div>
+  `);
+}
+window.promptGuestUpgrade = promptGuestUpgrade;
 
 function updateAuthStatus() {
   const container = document.getElementById('auth-status-container');

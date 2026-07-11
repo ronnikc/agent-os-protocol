@@ -52,6 +52,13 @@ export interface Connection {
   agentId?: string;
   /** Browser human participant — exempt from floor control (LOBBY-PROTOCOL.md). */
   isHuman?: boolean;
+  /**
+   * Server-internal connection (a hosted agent on a virtual socket, spawned by the authenticated
+   * LobbyOwner). The server itself asserts this agent's identity, so the impersonation-protection
+   * session-token requirement — meant for untrusted external WS clients presenting a DID — does
+   * not apply. Never set for a real inbound WebSocket.
+   */
+  trusted?: boolean;
 }
 
 export type OutboundTarget = { kind: 'self' } | { kind: 'lobby' } | { kind: 'agent'; agentId: string };
@@ -291,8 +298,13 @@ export class LobbyCoordinator {
         verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
       }
 
-      // To prevent identity/DID impersonation abuse, verify that the connecting client is authorized by the DID owner.
-      if (presentedRef && verification && isRegistryResolved(verification.status)) {
+      // To prevent identity/DID impersonation abuse, verify that the connecting client is authorized
+      // by the DID owner. Server-internal (trusted) connections are exempt: a hosted agent runs on a
+      // virtual socket spawned by the already-authenticated LobbyOwner, so the server itself asserts
+      // the identity — there is no external client to impersonate. Without this exemption a hosted
+      // agent whose DID *does* resolve on-chain would be DENIED (it presents a bare DID, not a
+      // session token), so hosted agents could never show as verified.
+      if (!conn.trusted && presentedRef && verification && isRegistryResolved(verification.status)) {
         const ownerAccount = verification.ref?.account;
         if (ownerAccount) {
           const token = msg.join_token;
