@@ -1,0 +1,251 @@
+{
+  "lobbies": [
+    {
+      "id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+      "lobby": {
+        "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+        "org_id": "default",
+        "name": "Agent OS Lobby",
+        "status": "active",
+        "visibility": "public",
+        "connected_agent_ids": [],
+        "message_seq": 10,
+        "created_at": "2026-07-11T08:33:11.586Z",
+        "updated_at": "2026-07-11T08:33:12.248Z",
+        "created_by": "system"
+      },
+      "agents": [],
+      "messages": [
+        {
+          "message_id": "0d46231a-f4e8-4b79-9fd0-42d6c89e54ee",
+          "seq": 4,
+          "from_agent_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "to_agent_id": "all",
+          "message_type": "coordination",
+          "content": "roll call",
+          "created_at": "2026-07-11T08:33:11.622Z",
+          "delivered": false
+        },
+        {
+          "message_id": "477976fe-ef26-4f4c-aeaf-9439670ea710",
+          "seq": 7,
+          "from_agent_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "to_agent_id": "all",
+          "message_type": "chat",
+          "content": "lobby1 only",
+          "created_at": "2026-07-11T08:33:11.630Z",
+          "delivered": false
+        }
+      ],
+      "tasks": [],
+      "events": [
+        {
+          "event_id": "78aa7900-3ab2-4f4d-aae7-2c46d8937d7f",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 1,
+          "type": "agent_registered",
+          "actor_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "at": "2026-07-11T08:33:11.617Z",
+          "detail": {
+            "display_name": "A",
+            "policy": "none"
+          }
+        },
+        {
+          "event_id": "c0c31eec-0b69-4b8d-aeb4-d5b62094bdde",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 2,
+          "type": "agent_registered",
+          "actor_id": "ec7330dc-d5f3-4848-836d-36bf4035ab2f",
+          "at": "2026-07-11T08:33:11.621Z",
+          "detail": {
+            "display_name": "B",
+            "policy": "none"
+          }
+        },
+        {
+          "event_id": "026f61aa-013b-4046-8a61-882d1ded24c6",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 3,
+          "type": "boss_appointed",
+          "actor_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "at": "2026-07-11T08:33:11.622Z",
+          "detail": {
+            "boss": "70b15fb0-e3e1-4d6b-b833-04edc5324dac"
+          }
+        },
+        {
+          "event_id": "bac70892-6d19-4be6-a423-79b662ead7b6",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 5,
+          "type": "message_sent",
+          "actor_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "at": "2026-07-11T08:33:11.622Z",
+          "detail": {
+            "to": "all",
+            "broadcast": true
+          }
+        },
+        {
+          "event_id": "bc3b258e-7685-42fe-bd4c-9e0764d06b12",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 6,
+          "type": "message_rejected",
+          "actor_id": "ec7330dc-d5f3-4848-836d-36bf4035ab2f",
+          "at": "2026-07-11T08:33:11.623Z",
+          "detail": {
+            "reason": "non-boss broadcast"
+          }
+        },
+        {
+          "event_id": "2cd8ef53-8401-4341-b184-49fc030caa9a",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 8,
+          "type": "message_sent",
+          "actor_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "at": "2026-07-11T08:33:11.630Z",
+          "detail": {
+            "to": "all",
+            "broadcast": true
+          }
+        },
+        {
+          "event_id": "a7c51f1a-243c-4f93-852b-aa4886fa1074",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 9,
+          "type": "agent_left",
+          "actor_id": "ec7330dc-d5f3-4848-836d-36bf4035ab2f",
+          "at": "2026-07-11T08:33:12.247Z"
+        },
+        {
+          "event_id": "ece57c49-910f-43ee-b4d3-ec2e5eae9262",
+          "lobby_id": "d928cd6e-ab60-4715-b3e6-28ec3785a435",
+          "seq": 10,
+          "type": "agent_left",
+          "actor_id": "70b15fb0-e3e1-4d6b-b833-04edc5324dac",
+          "at": "2026-07-11T08:33:12.248Z"
+        }
+      ],
+      "seq": 10
+    },
+    {
+      "id": "07f9e440-a600-45f7-a5b5-97b982f33578",
+      "lobby": {
+        "lobby_id": "07f9e440-a600-45f7-a5b5-97b982f33578",
+        "org_id": "default",
+        "name": "lobby2",
+        "status": "active",
+        "visibility": "public",
+        "connected_agent_ids": [],
+        "message_seq": 2,
+        "created_at": "2026-07-11T08:33:11.627Z",
+        "updated_at": "2026-07-11T08:33:11.627Z",
+        "created_by": "system"
+      },
+      "agents": [],
+      "messages": [],
+      "tasks": [],
+      "events": [
+        {
+          "event_id": "436fad21-c4b9-41b5-80a4-37a1e6b62a0e",
+          "lobby_id": "07f9e440-a600-45f7-a5b5-97b982f33578",
+          "seq": 1,
+          "type": "agent_registered",
+          "actor_id": "fd407300-710b-403c-bcb1-0d6edb40d415",
+          "at": "2026-07-11T08:33:11.629Z",
+          "detail": {
+            "display_name": "C",
+            "policy": "none"
+          }
+        },
+        {
+          "event_id": "d2dfb5e3-a312-4370-8772-b60dcae4ffc0",
+          "lobby_id": "07f9e440-a600-45f7-a5b5-97b982f33578",
+          "seq": 2,
+          "type": "agent_left",
+          "actor_id": "fd407300-710b-403c-bcb1-0d6edb40d415",
+          "at": "2026-07-11T08:33:12.247Z"
+        }
+      ],
+      "seq": 2
+    },
+    {
+      "id": "3c7eb614-1a8e-4f0f-9016-8ec2195001db",
+      "lobby": {
+        "lobby_id": "3c7eb614-1a8e-4f0f-9016-8ec2195001db",
+        "org_id": "default",
+        "name": "test",
+        "status": "active",
+        "visibility": "private",
+        "join_policy": "registered",
+        "connected_agent_ids": [],
+        "message_seq": 1,
+        "created_at": "2026-07-11T08:33:13.576Z",
+        "updated_at": "2026-07-11T08:33:13.576Z",
+        "created_by": "system"
+      },
+      "agents": [],
+      "messages": [],
+      "tasks": [],
+      "events": [
+        {
+          "event_id": "4a1f4b57-9e4a-471a-8e0a-9bacbba90d83",
+          "lobby_id": "3c7eb614-1a8e-4f0f-9016-8ec2195001db",
+          "seq": 1,
+          "type": "join_denied",
+          "actor_id": "system",
+          "at": "2026-07-11T08:33:13.576Z",
+          "detail": {
+            "display_name": "candidate",
+            "policy": "registered",
+            "reason": "private lobby: identity is not registry-verified (status: failed)",
+            "status": "failed"
+          }
+        }
+      ],
+      "seq": 1
+    },
+    {
+      "id": "L5",
+      "lobby": {
+        "lobby_id": "L5",
+        "org_id": "default",
+        "name": "L",
+        "status": "active",
+        "connected_agent_ids": [],
+        "message_seq": 0,
+        "created_at": "",
+        "updated_at": "2026-07-11T08:33:18.473Z",
+        "created_by": "did:ccd:testnet:first"
+      },
+      "agents": [],
+      "messages": [],
+      "tasks": [],
+      "events": [],
+      "seq": 0
+    }
+  ],
+  "members": [
+    [
+      "mem_8c28af93-b72e-4fb9-820d-7f5366c4aa3b",
+      {
+        "id": "mem_8c28af93-b72e-4fb9-820d-7f5366c4aa3b",
+        "lobby_id": "L5",
+        "identity_ref": "did:ccd:testnet:first",
+        "role": "owner",
+        "status": "active"
+      }
+    ]
+  ],
+  "integrations": [],
+  "secrets": [],
+  "providerKeys": [],
+  "externalLinks": [],
+  "knowledgeBases": [],
+  "agentNicknames": [],
+  "syncJobs": [],
+  "marketplaceTasks": [],
+  "bids": [],
+  "issuers": [],
+  "requests": []
+}
