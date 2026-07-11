@@ -20,6 +20,25 @@ import { join, dirname } from 'node:path';
 // (a committed copy would be restored over live data on every deploy) — it is gitignored.
 const STORE_FILE = process.env.AGENT_OS_LOBBY_STORE_FILE?.trim() || join(process.cwd(), 'lobby-store-db.json');
 
+/**
+ * A hosted agent the owner started and wants running — persisted so the swarm is re-launched after
+ * a lobby restart/deploy (hosted agents live in-process and otherwise die on restart). Keyed per
+ * lobby by role (or name). Includes the model so it comes back on the same model it was running.
+ */
+export interface HostedAgentSpec {
+  lobby_id: string;
+  agent_role?: string;
+  name: string;
+  provider: string;
+  model: string;
+  base_url?: string;
+  agent_ref?: string | null;
+}
+
+export function hostedAgentSpecKey(lobbyId: string, roleOrName: string): string {
+  return `${lobbyId}::${roleOrName}`;
+}
+
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
   getLobby(lobbyId: string): Promise<LobbySession | undefined>;
@@ -79,6 +98,10 @@ export interface LobbyStore {
   // Per-lobby, per-role agent nicknames (user-chosen display names). Keyed by agent_role slug.
   getAgentNicknames(lobbyId: string): Promise<Record<string, string>>;
   setAgentNickname(lobbyId: string, role: string, nickname: string): Promise<Record<string, string>>;
+  putHostedAgentSpec(spec: HostedAgentSpec): Promise<void>;
+  listHostedAgentSpecs(lobbyId: string): Promise<HostedAgentSpec[]>;
+  listAllHostedAgentSpecs(): Promise<HostedAgentSpec[]>;
+  removeHostedAgentSpec(lobbyId: string, roleOrName: string): Promise<void>;
 
   upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob>;
   getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined>;
@@ -135,6 +158,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private externalLinks = new Map<string, ExternalIdentityLink>(); // linkId -> ExternalIdentityLink
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
   private agentNicknames = new Map<string, Record<string, string>>(); // lobbyId -> { role: nickname }
+  private hostedAgentSpecs = new Map<string, HostedAgentSpec>(); // `${lobbyId}::${role|name}` -> desired hosted agent
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
   private nonces = new Map<string, { nonce: string; lobbyId: string; expiresAt: number }>(); // identityRef -> nonce details
   
@@ -179,6 +203,7 @@ export class InMemoryLobbyStore implements LobbyStore {
         externalLinks: Array.from(this.externalLinks.entries()),
         knowledgeBases: Array.from(this.knowledgeBases.entries()),
         agentNicknames: Array.from(this.agentNicknames.entries()),
+        hostedAgentSpecs: Array.from(this.hostedAgentSpecs.entries()),
         syncJobs: Array.from(this.syncJobs.entries()),
         marketplaceTasks: Array.from(this.marketplaceTasks.entries()),
         bids: Array.from(this.bids.entries()),
@@ -231,6 +256,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       if (Array.isArray(data.externalLinks)) this.externalLinks = new Map(data.externalLinks);
       if (Array.isArray(data.knowledgeBases)) this.knowledgeBases = new Map(data.knowledgeBases);
       if (Array.isArray(data.agentNicknames)) this.agentNicknames = new Map(data.agentNicknames);
+      if (Array.isArray(data.hostedAgentSpecs)) this.hostedAgentSpecs = new Map(data.hostedAgentSpecs);
       if (Array.isArray(data.syncJobs)) this.syncJobs = new Map(data.syncJobs);
       if (Array.isArray(data.marketplaceTasks)) this.marketplaceTasks = new Map(data.marketplaceTasks);
       if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
@@ -486,6 +512,23 @@ export class InMemoryLobbyStore implements LobbyStore {
     this.agentNicknames.set(lobbyId, map);
     this.queueSave();
     return map;
+  }
+
+  async putHostedAgentSpec(spec: HostedAgentSpec): Promise<void> {
+    this.hostedAgentSpecs.set(hostedAgentSpecKey(spec.lobby_id, spec.agent_role || spec.name), spec);
+    this.queueSave();
+  }
+
+  async listHostedAgentSpecs(lobbyId: string): Promise<HostedAgentSpec[]> {
+    return [...this.hostedAgentSpecs.values()].filter((s) => s.lobby_id === lobbyId);
+  }
+
+  async listAllHostedAgentSpecs(): Promise<HostedAgentSpec[]> {
+    return [...this.hostedAgentSpecs.values()];
+  }
+
+  async removeHostedAgentSpec(lobbyId: string, roleOrName: string): Promise<void> {
+    if (this.hostedAgentSpecs.delete(hostedAgentSpecKey(lobbyId, roleOrName))) this.queueSave();
   }
 
   async getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined> {
