@@ -25,7 +25,7 @@ export function buildManifest(initializedBy: string): string {
   return JSON.stringify({
     initialized_at: new Date().toISOString(),
     initialized_by: initializedBy,
-    components: ['agents', 'skills', 'scheduled-prompts', 'config', 'shared-memory', 'training-packs'],
+    components: ['agents', 'skills', 'scheduled-prompts', 'config', 'shared-memory', 'training-packs', 'planning', 'readme'],
   }, null, 2) + '\n';
 }
 
@@ -36,6 +36,39 @@ const DEFAULT_CONFIG = JSON.stringify({
     { name: 'fix-sprint-executor', enabled: false, time_utc: '05:00' },
   ],
 }, null, 2) + '\n';
+
+const ROOT_README = `# Agent OS Managed Repository
+
+This repository is connected to a **hosted Agent OS lobby** via the Agent OS GitHub App. A swarm of
+AI agents coordinates here under a human LobbyOwner: agents read this repo, do file work through
+scoped repository tools, and land changes as commits and pull requests.
+
+Everything the lobby manages lives under [\`agent-os/\`](agent-os/):
+
+| Path | What it holds |
+|---|---|
+| \`agent-os/sub-agents/agents/\` | Agent definitions — the launchable roster; bound Agent IDs (\`Identity:\` lines) |
+| \`agent-os/sub-agents/skills/\` | Skills agents can invoke |
+| \`agent-os/scheduled/\` + \`agent-os/config.json\` | Scheduled self-learning tasks |
+| \`agent-os/shared-memory/\` | Shared memories written by the swarm |
+| \`agent-os/training/packs/\` | Locally trained agent packs promoted to the repo |
+| \`agent-os/planning.json\` | Phases → sprints plan (drives the Panel's Gantt view) |
+
+Learn more: [Agent OS Protocol](https://github.com/ronnikc/agent-os-protocol).
+`;
+
+const AGENT_OS_README = `# agent-os/
+
+The Agent OS structure for this repository — seeded by the hosted lobby's **Initialize** action and
+maintained by the swarm + the LobbyOwner. Files here are plain markdown/JSON: review, edit, and
+prune them like any other code. Custom edits are never overwritten by re-initialization.
+`;
+
+/**
+ * Phases → sprints plan consumed by the Panel's Gantt view. Starts empty by design; shape:
+ * { phases: [{ id, name, status: 'planned'|'active'|'complete', sprints: [{ id, name, status }] }] }
+ */
+const PLANNING_TEMPLATE = JSON.stringify({ phases: [] }, null, 2) + '\n';
 
 const SHARED_MEMORY_README = `# Shared Memory
 
@@ -94,6 +127,11 @@ export function collectAgentOsSeed(repoRoot: string): SeedFile[] {
   // Scaffolding for memories and locally trained packs.
   add('agent-os/shared-memory/README.md', SHARED_MEMORY_README);
   add('agent-os/training/packs/README.md', TRAINING_PACKS_README);
+
+  // Orientation READMEs (skip-if-exists protects real projects' own README) + planning scaffold.
+  add('README.md', ROOT_README);
+  add('agent-os/README.md', AGENT_OS_README);
+  add('agent-os/planning.json', PLANNING_TEMPLATE);
 
   return files;
 }

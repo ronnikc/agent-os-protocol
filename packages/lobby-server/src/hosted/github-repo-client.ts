@@ -120,17 +120,32 @@ export class GitHubRepoClient {
   async commitFiles(files: Array<{ path: string; content: string }>, message: string, branch = 'main'): Promise<string> {
     if (files.length === 0) throw new Error('commitFiles requires at least one file');
     let ref: any;
+    let remaining = files;
     try {
       ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`);
     } catch (err) {
       if (!GitHubRepoClient.isEmptyRepoError(err)) throw err;
-      const [first, ...rest] = files;
-      const firstSha = await this.writeFile(first.path, first.content, message, branch);
-      if (rest.length === 0) return firstSha;
-      return this.commitFiles(rest, message, branch);
+      // Bootstrap the branch with the first file via the contents API. A concurrent/previous
+      // attempt may have just created the branch — GitHub then answers 409 "reference already
+      // exists"; treat that as "branch is there now" rather than a failure.
+      try {
+        const firstSha = await this.writeFile(files[0].path, files[0].content, message, branch);
+        remaining = files.slice(1);
+        if (remaining.length === 0) return firstSha;
+      } catch (bootErr) {
+        if (!String((bootErr as Error)?.message ?? '').includes('reference already exists')) throw bootErr;
+      }
+      // The new ref is not instantly readable (GitHub replication) — the old code fell back to a
+      // second contents-API write here, which raced the branch creation and 409'd. Poll instead.
+      for (let attempt = 0; attempt < 6 && !ref; attempt++) {
+        try { ref = await this.request(`/git/ref/heads/${encodeURIComponent(branch)}`); } catch { /* not yet */ }
+        if (!ref) await new Promise(r => setTimeout(r, 400 * (attempt + 1)));
+      }
+      if (!ref) throw new Error(`branch "${branch}" not readable after bootstrap commit — retry initialization`);
     }
     const baseCommitSha = ref.object.sha;
     const baseCommit = await this.request(`/git/commits/${baseCommitSha}`);
+    files = remaining;
 
     const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
     const CHUNK = 10;

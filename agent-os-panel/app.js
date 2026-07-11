@@ -217,6 +217,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/upload${query}`;
         } else if (cleanPath === 'kb/jobs') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/jobs${query}`;
+        } else if (cleanPath === 'kb/sync') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/sync${query}`;
         } else if (cleanPath === 'provider-keys') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/provider-keys${query}`;
         } else if (cleanPath.startsWith('provider-keys/')) {
@@ -245,6 +247,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
         } else if (cleanPath === 'repo/initialize') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/initialize`;
+        } else if (cleanPath === 'repo/ui-assist') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/ui-assist`;
         } else if (cleanPath === 'create') {
           lobbyPath = `/api/v1/agent-lobby/lobbies`;
         } else if (cleanPath === 'status') {
@@ -1104,7 +1108,7 @@ function updateAuthStatus() {
   }
 }
 
-export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false) {
+export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false, bindError = '') {
   const { did, txHash, metadataUrl, anchor, anchorError, cardHash, signatureHex, network = 'mainnet' } = res;
   
   const storedBadge = metadataUrl
@@ -1149,9 +1153,10 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBou
           </div>
         ` : `
           <div style="margin-top:16px; padding:12px; background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
-            <strong style="color:#eab308; display:block; margin-bottom:4px;">⚠ GitHub Bind Skipped / Failed:</strong>
-            The Agent ID was minted successfully, but could not be auto-bound because <strong>no GitHub repository is connected</strong>. 
-            Please connect your GitHub repository in the <strong>Lobby</strong> tab, and then link this DID reference to your agent.
+            <strong style="color:#eab308; display:block; margin-bottom:4px;">⚠ GitHub Bind Failed:</strong>
+            The Agent ID was minted successfully, but binding it to the agent definition in your repository failed:
+            <div style="margin:6px 0; padding:6px 8px; background:rgba(0,0,0,0.25); border-radius:4px; font-family:monospace; font-size:11px; word-break:break-word;">${escapeHtml(bindError || 'no GitHub repository is connected')}</div>
+            Fix the cause (Lobby tab → GitHub Swarm Connection) and use <strong>Set ID</strong> on the agent to retry the bind with this DID.
           </div>
         `}
       ` : `

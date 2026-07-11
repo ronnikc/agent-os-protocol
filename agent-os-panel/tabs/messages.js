@@ -27,7 +27,14 @@ function renderMessages() {
     return;
   }
 
-  let html = messages.map(m => {
+  // Newest first — the freshest exchange is what the user is watching; chronological-ascending
+  // kept pushing it below the fold.
+  const ordered = [...messages].sort((a, b) => {
+    const ta = Date.parse(a?.created_at || a?.timestamp || 0) || 0;
+    const tb = Date.parse(b?.created_at || b?.timestamp || 0) || 0;
+    return tb - ta;
+  });
+  let html = ordered.map(m => {
     if (typeof m === 'string') return `<div class="feed-item">${escapeHtml(m)}</div>`;
     const time = formatTime(m.created_at || m.timestamp);
     const from = m.from_display_name || m.from || m.from_agent_id || '?';
@@ -45,7 +52,7 @@ function renderMessages() {
     </div>`;
   }).join('');
   feed.innerHTML = html;
-  feed.scrollTop = feed.scrollHeight;
+  feed.scrollTop = 0; // newest is at the top now
 }
 
 function renderFilterBar() {
