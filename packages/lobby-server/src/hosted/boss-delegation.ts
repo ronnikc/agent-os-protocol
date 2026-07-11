@@ -54,6 +54,49 @@ export function parseBossDelegations(reply: string): BossDirective[] {
   return out;
 }
 
+// ── Boss request triage ──
+// The Boss handles the Requests queue (boss-agent.md "Request Triage"): it DECIDES hand-raises
+// itself — they are floor-control coordination ("may I contribute?"), not authority actions — and
+// only RECOMMENDS on authority categories (commit approval, merge readiness, scope change, …),
+// which stay with the human LobbyOwner ("no autonomous approvals").
+
+export const BOSS_TRIAGE_GUIDE = [
+  '[REQUEST TRIAGE] A lobby request needs your triage. Reply with EXACTLY ONE line:',
+  '  • `APPROVE: <short note>` — the agent should go ahead / the input is welcome now.',
+  '  • `REJECT: <short note>` — not useful or out of scope; the note tells the agent why.',
+  '  • `DEFER: <short note>` — valid but not now; the note says when/what would change that.',
+  '  • `ESCALATE: <short note>` — you are unsure or it needs the LobbyOwner; it stays pending.',
+  'Judge against the roster, open tasks, and current priorities. Output only that one line.',
+].join('\n');
+
+export const BOSS_RECOMMEND_GUIDE = [
+  '[REQUEST RECOMMENDATION] A request that only the human LobbyOwner may decide needs your',
+  'recommendation. Reply with EXACTLY ONE line: `RECOMMEND <approve|reject|defer>: <short reason>`.',
+  'Output only that line.',
+].join('\n');
+
+/** Parse the Boss's triage verdict. Returns null when it escalated or answered off-format. */
+export function parseBossTriage(reply: string): { decision: 'approved' | 'rejected' | 'deferred'; note: string } | null {
+  const line = (reply ?? '').split(/\r?\n/).map(l => l.trim()).find(l => /^(APPROVE|REJECT|DEFER|ESCALATE)\b/i.test(l));
+  if (!line) return null;
+  const m = line.match(/^(APPROVE|REJECT|DEFER)\b[\s:.\-—–]*(.*)$/i);
+  if (!m) return null; // ESCALATE (or garbage) — leave pending for the human
+  const map: Record<string, 'approved' | 'rejected' | 'deferred'> = { approve: 'approved', reject: 'rejected', defer: 'deferred' };
+  return { decision: map[m[1].toLowerCase()], note: m[2].trim() };
+}
+
+/** Parse `RECOMMEND <verdict>: reason` from a Boss recommendation turn. */
+export function parseBossRecommendation(reply: string): string | null {
+  const line = (reply ?? '').split(/\r?\n/).map(l => l.trim()).find(l => /^RECOMMEND\b/i.test(l));
+  if (!line) return null;
+  const m = line.match(/^RECOMMEND\s+(approve|reject|defer)\b[\s:.\-—–]*(.*)$/i);
+  if (!m) return null;
+  return `${m[1].toLowerCase()}${m[2].trim() ? ` — ${m[2].trim()}` : ''}`;
+}
+
+/** Categories the Boss may DECIDE itself; everything else is human authority (recommend only). */
+export const BOSS_DECIDABLE_CATEGORIES = new Set(['hand_raise']);
+
 export interface RosterAgentLike {
   agent_id: string;
   display_name?: string;

@@ -34,7 +34,7 @@ import {
 } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
-import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
@@ -350,6 +350,19 @@ async function main(): Promise<void> {
     assert.ok(BOSS_DELEGATION_GUIDE.includes('[task]'), 'the guide documents the task directive syntax');
   });
 
+  await check('boss triage: decides hand-raises, escalation stays pending, recommendations parse', () => {
+    assert.deepEqual(parseBossTriage('APPROVE: solid catch, go ahead'), { decision: 'approved', note: 'solid catch, go ahead' });
+    assert.deepEqual(parseBossTriage('REJECT — duplicate of open task'), { decision: 'rejected', note: 'duplicate of open task' });
+    assert.equal(parseBossTriage('DEFER: after the sprint closes')?.decision, 'deferred');
+    assert.equal(parseBossTriage('ESCALATE: scope question for the owner'), null, 'ESCALATE leaves the request pending for the human');
+    assert.equal(parseBossTriage('I think we should approve this request.'), null, 'prose without a verdict line is not a decision');
+    assert.equal(parseBossRecommendation('RECOMMEND approve: low risk, matches the plan'), 'approve — low risk, matches the plan');
+    assert.equal(parseBossRecommendation('nothing structured'), null);
+    assert.ok(BOSS_DECIDABLE_CATEGORIES.has('hand_raise') && !BOSS_DECIDABLE_CATEGORIES.has('commit_approval'),
+      'the boss decides hand-raises only — authority categories stay with the human');
+    assert.ok(BOSS_TRIAGE_GUIDE.includes('ESCALATE'), 'the guide documents the escalation path');
+  });
+
   await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
     const on = { AGENT_OS_DEV_TRUST_WALLET_SIGNATURES: '1' } as NodeJS.ProcessEnv;
     const off = {} as NodeJS.ProcessEnv;
@@ -582,7 +595,8 @@ async function main(): Promise<void> {
     assert.ok(paths.includes('agent-os/training/packs/README.md'), 'scaffolds trained packs');
     assert.ok(!paths.includes(AGENT_OS_MANIFEST_PATH), 'the manifest is added by the endpoint, not the collector');
     const manifest = JSON.parse(buildManifest('did:ccd:mainnet:test'));
-    assert.equal(manifest.initialized_by, 'did:ccd:mainnet:test');
+    assert.ok(!JSON.stringify(manifest).includes('did:ccd:mainnet:test'), 'the raw wallet ref never lands in the (possibly public) repo');
+    assert.match(manifest.initialized_by_fingerprint, /^[0-9a-f]{12}$/, 'attribution is a short fingerprint');
     assert.ok(Array.isArray(manifest.components) && manifest.components.includes('agents'));
 
     // Batch commit: blobs → tree → commit → ref, ONE commit for N files.

@@ -36,7 +36,7 @@ import { authorizeLobbyManager, isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
-import { BOSS_DELEGATION_GUIDE, parseBossDelegations, resolveRosterAgent } from './hosted/boss-delegation.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
 import type { ProviderId } from '@agent-os/protocol-core';
@@ -48,6 +48,21 @@ function parseGithubUrl(url: string): { owner: string; repo: string } | null {
   const match = url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
+}
+
+/**
+ * Owner/repo from an integration's repo_full_name, accepting BOTH stored forms: a github.com URL
+ * (KB configs) and the bare "owner/repo" the GitHub App integration stores. Individual endpoints
+ * previously called parseGithubUrl directly and failed with "invalid GitHub repository URL" on the
+ * bare form — the DID bind, agent-definition loading, and scheduled setup all broke that way.
+ */
+function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
+  if (!fullName) return null;
+  const parsed = parseGithubUrl(fullName);
+  if (parsed) return parsed;
+  return /^[^/\s]+\/[^/\s]+$/.test(fullName)
+    ? { owner: fullName.split('/')[0], repo: fullName.split('/')[1] }
+    : null;
 }
 
 function parseAgentDef(fileName: string, content: string) {
@@ -124,7 +139,7 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<
   if (integration && integration.repo_full_name) {
     const token = await githubTokenForLobby(lobbyId, store);
     if (token) {
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (parsed) {
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
         const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
@@ -296,8 +311,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let value = false;
     try {
       const token = await githubTokenForLobby(lobbyId, store);
-      const parsed = token ? parseGithubUrl(repoFullName) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoFullName)
-        ? { owner: repoFullName.split('/')[0], repo: repoFullName.split('/')[1] } : null) : null;
+      const parsed = token ? repoRef(repoFullName) : null;
       if (token && parsed) {
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
         const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
@@ -329,8 +343,26 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const entry = hostedAgents.get(myId);
       if (entry) {
         try {
-          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.\n${BOSS_DELEGATION_GUIDE}`);
+          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, facilitate the lobby, and triage the Requests queue.\n${BOSS_DELEGATION_GUIDE}`);
         } catch { /* ignore errors from system injection */ }
+        // Backlog sweep: triage pending requests left over from before this Boss existed (bounded —
+        // a large stale queue must not turn the appointment into a long LLM loop).
+        try {
+          const pending = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending').slice(0, 5);
+          for (const r of pending) await bossTriageRequest(conn, myId, r);
+        } catch { /* sweep is best-effort */ }
+      }
+      return;
+    }
+
+    // A new request in the lobby — the Boss triages it (decides hand-raises, recommends on
+    // authority categories). Fire-and-forget so the creating flow isn't blocked.
+    if (msg?.type === 'lobby-request-created') {
+      const request = (msg as unknown as { request?: Record<string, any> }).request;
+      if (!request) return;
+      const lobbyForReq = await store.getLobby(conn.lobbyId);
+      if (lobbyForReq?.boss_agent_id === myId) {
+        void bossTriageRequest(conn, myId, request as any).catch(() => {});
       }
       return;
     }
@@ -550,6 +582,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     const content = String(m.content ?? '').trim();
     if (!content) return;
+    // One pending hand per agent — 11 near-duplicate "ensure X" requests piled up in one live
+    // session because every boss broadcast triggered another observation turn. An unaddressed hand
+    // already says "this agent wants attention"; more are queue noise (LOBBY-PROTOCOL Rule 3:
+    // max one hand-raise per agent per topic).
+    try {
+      const pendingMine = (await store.listLobbyRequests(conn.lobbyId))
+        .some(r => r.status === 'pending' && r.agent_id === myId);
+      if (pendingMine) return;
+    } catch { /* best-effort — proceed */ }
     const prompt = `${OBSERVATION_GUIDE}\n\n[LOBBY BROADCAST] ${content}`;
     let verdict = '';
     try { verdict = await entry.runner.respondTo(prompt); } catch { return; }
@@ -564,6 +605,86 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       context: { hand_category: intent.category, observed_from: m.from_agent_id ?? 'lobby' },
     } as AgentToLobbyMessage);
     dispatch(conn, reqRes.out);
+  }
+
+  /**
+   * Apply a decision to a lobby request and propagate it everywhere it matters: the store, the
+   * Requests-tab WS event, a system broadcast into the chat (the Boss runs a turn on it), and the
+   * "go ahead" direct message to the requester (whose reply routes to the Boss). Shared by the
+   * HTTP decide endpoint (human) and Boss triage. Returns 'not-found' | undefined | the request.
+   */
+  async function applyRequestDecision(lobbyId: string, requestId: string, decision: string, decidedBy: string, decisionNotes: string) {
+    const request = await store.getLobbyRequest(lobbyId, requestId);
+    if (!request) return 'not-found' as const;
+    const updated = await store.updateLobbyRequest(lobbyId, requestId, {
+      status: decision as any,
+      decided_by: decidedBy,
+      decision_notes: decisionNotes,
+      decided_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!updated) return undefined;
+
+    const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
+    for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, out);
+
+    const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
+    const by = decidedBy && decidedBy !== 'panel' ? ` by ${decidedBy}` : '';
+    const announce = async (to: string, content: string) => {
+      const seq = await store.nextSeq(lobbyId);
+      const message: LobbyMessage = {
+        message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
+        message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
+      };
+      await store.appendMessage(lobbyId, message);
+      const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
+    };
+    await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${updated.status}${by}${notes}`);
+    if (updated.agent_id && updated.agent_id !== 'anonymous') {
+      await announce(updated.agent_id, updated.status === 'approved'
+        ? `Your request "${updated.title}" was APPROVED${by}${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
+        : `Your request "${updated.title}" was ${String(updated.status).toUpperCase()}${by}${notes}.`);
+    }
+    return updated;
+  }
+
+  // Boss request triage (opt-out: AGENT_OS_BOSS_TRIAGE=off). The Boss DECIDES hand-raises itself
+  // (floor-control coordination) and only RECOMMENDS on authority categories — those stay pending
+  // for the LobbyOwner with the recommendation attached (boss-agent.md: "no autonomous approvals").
+  const BOSS_TRIAGE_ENABLED = (process.env.AGENT_OS_BOSS_TRIAGE ?? 'on') !== 'off';
+
+  async function bossTriageRequest(conn: Connection, bossId: string, request: { request_id?: string; category?: string; title?: string; description?: string; agent_display_name?: string; agent_id?: string; status?: string }): Promise<void> {
+    if (!BOSS_TRIAGE_ENABLED || !request?.request_id || request.status !== 'pending') return;
+    if (request.agent_id === bossId) return; // never triage your own request
+    const entry = hostedAgents.get(bossId);
+    if (!entry) return;
+    // Wait briefly for any in-flight turn; if still busy, leave it pending for the human.
+    for (let i = 0; i < 15 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+    if (entry.runner.busy) return;
+
+    const bossName = (await store.getAgent(conn.lobbyId, bossId))?.display_name || 'Boss';
+    const summary = `Request from ${request.agent_display_name ?? request.agent_id ?? 'unknown'} [${request.category ?? 'general'}]: ${request.title ?? ''}\n${request.description ?? ''}`;
+
+    if (BOSS_DECIDABLE_CATEGORIES.has(String(request.category))) {
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_TRIAGE_GUIDE}\n\n${summary}`); } catch { return; }
+      const triage = parseBossTriage(verdict);
+      if (!triage) return; // ESCALATE / off-format → stays pending for the LobbyOwner
+      await applyRequestDecision(conn.lobbyId, request.request_id, triage.decision, bossName, triage.note).catch(() => {});
+    } else {
+      // Authority category — attach a recommendation, keep it pending for the human.
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_RECOMMEND_GUIDE}\n\n${summary}`); } catch { return; }
+      const rec = parseBossRecommendation(verdict);
+      if (!rec) return;
+      await store.updateLobbyRequest(conn.lobbyId, request.request_id, {
+        decision_notes: `Boss recommendation: ${rec}`,
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      const reqOut: LobbyToAgentMessage = { type: 'lobby-request-updated' as any, request: await store.getLobbyRequest(conn.lobbyId, request.request_id) } as any;
+      for (const cid of lobbyConns.get(conn.lobbyId) ?? []) send(cid, reqOut);
+    }
   }
 
   // Launch a hosted agent: open an API-runtime session with the resolved key and register it into
@@ -583,9 +704,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (repoRefUrl) {
       const githubToken = await githubTokenForLobby(params.lobbyId, store);
       if (githubToken) {
-        const parsed = parseGithubUrl(repoRefUrl) ?? (/^[^/\s]+\/[^/\s]+$/.test(repoRefUrl)
-          ? { owner: repoRefUrl.split('/')[0], repo: repoRefUrl.split('/')[1] }
-          : null);
+        const parsed = repoRef(repoRefUrl);
         if (parsed) {
           const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
           repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken);
@@ -603,8 +722,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
     // having any tools at all — both observed live. The preamble states exactly what exists here:
     // repository file tools when a repo is connected, and NOTHING that executes code.
+    const workingBranch = integration?.branch || 'main';
     const capabilities = repoClient
-      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits directly), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), and have no local workspace. Do file work through the repository tools and report exactly which files you read or wrote. NEVER claim to have run, built, compiled, or tested anything — if asked to, say you cannot execute commands and state what you CAN verify by reading files.`
+      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits DIRECTLY to the working branch "${workingBranch}"), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches — every write_file commit lands on "${workingBranch}". Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names or timestamps — if a task demands a branch or command execution, state that limitation as the blocker.`
       : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
     const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
     const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
@@ -1041,7 +1161,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) {
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
@@ -1097,7 +1217,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await ghToken(lobbyId);
       if (!token) return json({ error: 'GitHub installation token unavailable' }, 502);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'Invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -1313,8 +1433,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
-      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      const parsed = repoRef(integ.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
 
       try {
@@ -1356,8 +1475,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
-      const parsed = parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-        ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null);
+      const parsed = repoRef(integ.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
 
       try {
@@ -1804,7 +1922,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await githubTokenForLobby(lobbyId, store);
       if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -2091,6 +2209,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
         }
+        // Reopen semantics: setting a task back to 'assigned' RE-DELIVERS it to the assignee —
+        // hosted agents execute on lobby-task-assigned, so without this a reopened task sat
+        // "assigned" forever with nobody told.
+        if (body.status === 'assigned' && updatedTask.assigned_to) {
+          send(agentConn.get(updatedTask.assigned_to), { type: 'lobby-task-assigned', task: updatedTask } as LobbyToAgentMessage);
+        }
         return json({ task: updatedTask });
       }
       const updated = await store.updateMarketplaceTask(lobbyId, taskId, body);
@@ -2172,8 +2296,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         repoLabel = `${integ.repo_full_name}@${integ.branch || 'main'}`;
         try {
           const token = await githubTokenForLobby(lobbyId, store);
-          const parsed = token ? (parseGithubUrl(integ.repo_full_name) ?? (/^[^/\s]+\/[^/\s]+$/.test(integ.repo_full_name)
-            ? { owner: integ.repo_full_name.split('/')[0], repo: integ.repo_full_name.split('/')[1] } : null)) : null;
+          const parsed = token ? (repoRef(integ.repo_full_name)) : null;
           if (token && parsed) {
             const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
             const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
@@ -2229,51 +2352,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = decideRequestMatch[1];
       const requestId = decideRequestMatch[2];
       const body = await readBody(req);
-      const request = await store.getLobbyRequest(lobbyId, requestId);
-      if (!request) return json({ error: 'request not found' }, 404);
-
-      const updated = await store.updateLobbyRequest(lobbyId, requestId, {
-        status: body.decision || 'approved',
-        decided_by: body.decided_by || 'panel',
-        decision_notes: body.decision_notes || '',
-        decided_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
+      const updated = await applyRequestDecision(lobbyId, requestId, body.decision || 'approved', body.decided_by || 'panel', body.decision_notes || '');
+      if (updated === 'not-found') return json({ error: 'request not found' }, 404);
       if (!updated) return json({ error: 'failed to update request' }, 500);
-
-      // Broadcast the decision to the lobby WebSocket
-      const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
-      for (const cid of lobbyConns.get(lobbyId) ?? []) {
-        send(cid, out);
-      }
-
-      // Surface the decision in the lobby itself — without this the decision only reaches the
-      // Requests tab: the Boss and the requesting agent never learn the outcome (hosted agents
-      // ignore lobby-request-decided), so an approved hand-raise went nowhere. Two messages:
-      //  1. a system broadcast into the chat (humans + the Boss see the outcome; the Boss runs a
-      //     turn on broadcasts, so it becomes aware and can coordinate follow-up);
-      //  2. a direct system message to the requesting agent — on approval it's the "go ahead":
-      //     the agent runs a turn and its reply routes to the Boss (see onHostedInbound).
-      const decision = String(updated.status);
-      const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
-      const announce = async (to: string, content: string) => {
-        const seq = await store.nextSeq(lobbyId);
-        const message: LobbyMessage = {
-          message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
-          message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
-        };
-        await store.appendMessage(lobbyId, message);
-        const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
-        for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
-      };
-      await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${decision}${notes}`);
-      if (updated.agent_id && updated.agent_id !== 'anonymous') {
-        await announce(updated.agent_id, decision === 'approved'
-          ? `Your request "${updated.title}" was APPROVED${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
-          : `Your request "${updated.title}" was ${decision.toUpperCase()}${notes}.`);
-      }
-
       return json({ ok: true, request: updated });
     }
 
