@@ -38,11 +38,34 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
 }
 
 /**
- * Authorize a wallet to manage a lobby, adopting an UNOWNED (legacy / bootstrap `system`) lobby for
- * the caller on their first management action. This is the deliberate, authenticated write path used
- * by the management HTTP endpoints — kept OUT of `isLobbyManager` so that predicate stays pure and
- * testable. Claiming an unowned lobby is first-writer-wins and safe: every later management action
- * requires proving the same wallet, so claiming a lobby you don't control only locks you out.
+ * Bind an UNOWNED lobby's owner to `identityRef`. No-op (returns false) if the lobby is already
+ * owned or unknown. This is the single ownership-adoption primitive, used at wallet SIGN-IN so the
+ * first wallet to authenticate to a public lobby becomes its owner — after which management is
+ * locked to that wallet and no later joiner can claim it. First-writer-wins and safe: claiming a
+ * lobby only ever binds it to the claiming wallet.
+ */
+export async function claimLobbyOwnership(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
+  if (!identityRef) return false;
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) return false;
+  const owner = lobby.created_by;
+  if (owner && owner !== 'system' && owner !== 'web-user') return false; // already owned — do not reassign
+  await store.updateLobby(lobbyId, { created_by: identityRef });
+  await store.addMember({
+    id: `mem_${randomUUID()}`,
+    lobby_id: lobbyId,
+    identity_ref: identityRef,
+    role: 'owner',
+    status: 'active',
+  });
+  return true;
+}
+
+/**
+ * Authorize a wallet to manage a lobby. Ownership is normally bound at sign-in (`claimLobbyOwnership`),
+ * so by the time any management action runs the lobby is already owned. As a backstop, an UNOWNED
+ * lobby is still adopted for the caller here — kept OUT of `isLobbyManager` so that predicate stays
+ * pure. Once owned, only the bound owner (or an active admin member) passes.
  */
 export async function authorizeLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
   if (!identityRef) return false;
@@ -51,14 +74,7 @@ export async function authorizeLobbyManager(store: LobbyStore, lobbyId: string, 
 
   const owner = lobby.created_by;
   if (!owner || owner === 'system' || owner === 'web-user') {
-    await store.updateLobby(lobbyId, { created_by: identityRef });
-    await store.addMember({
-      id: `mem_${randomUUID()}`,
-      lobby_id: lobbyId,
-      identity_ref: identityRef,
-      role: 'owner',
-      status: 'active',
-    });
+    await claimLobbyOwnership(store, lobbyId, identityRef);
     return true;
   }
   return isLobbyManager(store, lobbyId, identityRef);
