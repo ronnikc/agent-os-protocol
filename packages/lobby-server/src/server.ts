@@ -806,7 +806,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     await runner.start();
 
     const connId = `hosted-${randomUUID()}`;
-    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default' };
+    // trusted: this is a server-spawned agent on a virtual socket. The LobbyOwner already
+    // authenticated to spawn it, so the coordinator may accept the bound DID it presents without an
+    // external-client impersonation session token (see coordinator register path).
+    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default', trusted: true };
     const virtualSocket = {
       readyState: WebSocket.OPEN,
       send: (data: string) => { void onHostedInbound(conn, data); },
