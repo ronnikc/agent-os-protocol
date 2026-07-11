@@ -15,6 +15,14 @@
 // website serves the static SPA (apps/website) on 127.0.0.1:4802; Apache proxies
 // to it (configured directly on the server).
 
+const { homedir } = require('os');
+const path = require('path');
+
+// Durable lobby state (lobbies, provider keys, tasks, requests, KB, integrations, nicknames) lives
+// OUTSIDE the git checkout so `git reset --hard origin/main` on each deploy cannot touch it. The
+// checkout root would be reset every deploy; the user's home persists. The store creates this dir.
+const LOBBY_STORE_FILE = path.join(homedir(), '.agent-os-lobby', 'lobby-store-db.json');
+
 module.exports = {
   apps: [
     {
@@ -27,6 +35,9 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         AGENT_OS_LOBBY_PORT: '4730',
+        // Persistent store path — survives deploys (git reset --hard) because it is in $HOME,
+        // not the checkout. Override by exporting AGENT_OS_LOBBY_STORE_FILE before pm2 start.
+        AGENT_OS_LOBBY_STORE_FILE: process.env.AGENT_OS_LOBBY_STORE_FILE || LOBBY_STORE_FILE,
         // Optional read-only Concordium indexer; leave unset to disable identity checks.
         // AGENT_OS_CONCORDIUM_INDEXER_URL: '',
       },

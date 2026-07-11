@@ -267,6 +267,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/initialize`;
         } else if (cleanPath === 'repo/ui-assist') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/ui-assist`;
+        } else if (cleanPath === 'repo/scaffold-vercel') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/scaffold-vercel`;
         } else if (cleanPath === 'create') {
           lobbyPath = `/api/v1/agent-lobby/lobbies`;
         } else if (cleanPath === 'status') {
