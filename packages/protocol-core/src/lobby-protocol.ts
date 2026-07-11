@@ -357,6 +357,10 @@ export interface LobbyTask {
   result_pr_url?: string;
   /** The per-task branch the PR was opened from (used to read that PR's CI check results). */
   result_branch?: string;
+  /** Outcome of the PR's CI checks after the build/test feedback loop. */
+  result_ci_status?: 'passing' | 'failing' | 'pending' | 'none';
+  /** Set once the self-learning pass has recorded a memory for this task's merged PR (idempotency). */
+  result_memory_written?: boolean;
   /** Files that were changed. */
   result_files?: string[];
   /** One-line progress status. */

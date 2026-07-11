@@ -744,6 +744,51 @@ async function main(): Promise<void> {
     assert.equal(s.status, 'none'); assert.equal(s.total, 0);
   });
 
+  await check('MERGE MEMORY: getPullRequest reports merge state; appendToFile creates then appends', async () => {
+    let putBody: any;
+    const store: Record<string, string> = {};
+    const fetchFn = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      if (url.endsWith('/pulls/7') && method === 'GET')
+        return new Response(JSON.stringify({ merged: true, state: 'closed', merge_commit_sha: 'abc123def456', merged_at: '2026-07-11T13:00:00Z' }), { status: 200 });
+      if (url.includes('/contents/agent-os/shared-memory/facts.jsonl') && method === 'GET') {
+        return store['facts'] !== undefined
+          ? new Response(JSON.stringify({ type: 'file', content: Buffer.from(store['facts']).toString('base64'), sha: 's' }), { status: 200 })
+          : new Response('{"message":"Not Found"}', { status: 404 });
+      }
+      if (url.includes('/contents/agent-os/shared-memory/facts.jsonl') && method === 'PUT') {
+        putBody = JSON.parse(opts.body); store['facts'] = Buffer.from(putBody.content, 'base64').toString('utf8');
+        return new Response(JSON.stringify({ commit: { sha: 'c' } }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', 't', fetchFn, 'main');
+
+    const pr = await c.getPullRequest(7);
+    assert.equal(pr.merged, true); assert.equal(pr.merge_commit_sha, 'abc123def456');
+
+    await c.appendToFile('agent-os/shared-memory/facts.jsonl', '{"a":1}\n', 'm');
+    assert.equal(store['facts'], '{"a":1}\n', 'creates the file when absent');
+    await c.appendToFile('agent-os/shared-memory/facts.jsonl', '{"b":2}\n', 'm');
+    assert.equal(store['facts'], '{"a":1}\n{"b":2}\n', 'appends to existing content');
+  });
+
+  await check('HOSTED AGENT SPECS: persisted desired-running set (with model), keyed per role', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-5.4' });
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'boss', name: 'Boss', provider: 'anthropic', model: 'claude-opus-4-8' });
+    await store.putHostedAgentSpec({ lobby_id: 'L2', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-4o' });
+    const l = await store.listHostedAgentSpecs('L');
+    assert.equal(l.length, 2, 'scoped per lobby');
+    assert.equal(l.find(s => s.agent_role === 'api-agent')?.model, 'gpt-5.4', 'model is persisted');
+    assert.equal((await store.listAllHostedAgentSpecs()).length, 3, 'listAll spans lobbies');
+    // Re-put same role replaces (no duplicate); remove drops it.
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-5.5' });
+    assert.equal((await store.listHostedAgentSpecs('L')).find(s => s.agent_role === 'api-agent')?.model, 'gpt-5.5', 're-put updates model');
+    await store.removeHostedAgentSpec('L', 'api-agent');
+    assert.equal((await store.listHostedAgentSpecs('L')).length, 1, 'remove drops the spec');
+  });
+
   // ── L. ApiRuntimeAdapter tool call loop ──
   await check('ApiRuntimeAdapter executes repository tools inside loop', async () => {
     const mockRepoClient = {

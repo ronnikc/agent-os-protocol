@@ -248,6 +248,22 @@ export class GitHubRepoClient {
     return lines.join('\n\n').slice(0, maxChars);
   }
 
+  /** Fetch a PR's merge state — used to trigger the self-learning pass when a task PR merges. */
+  async getPullRequest(number: number): Promise<{ merged: boolean; state: string; merge_commit_sha: string | null; merged_at: string | null }> {
+    const pr = await this.request(`/pulls/${number}`);
+    return {
+      merged: !!pr.merged, state: pr.state ?? 'unknown',
+      merge_commit_sha: pr.merge_commit_sha ?? null, merged_at: pr.merged_at ?? null,
+    };
+  }
+
+  /** Append `addition` to a text file (create it if absent), committing to `branch`/activeBranch. */
+  async appendToFile(path: string, addition: string, message: string, branch?: string): Promise<string> {
+    let existing = '';
+    try { existing = await this.readFile(path, branch); } catch { /* new file */ }
+    return this.writeFile(path, existing + addition, message, branch);
+  }
+
   /** Create a new Pull Request. Returns the HTML URL of the PR. */
   async createPullRequest(title: string, head: string, base: string, body?: string): Promise<string> {
     const payload = { title, head, base, body };

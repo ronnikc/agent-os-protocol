@@ -20,8 +20,8 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType } from '@agent-os/protocol-core';
-import { InMemoryLobbyStore, type LobbyStore } from './store.js';
+import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
+import { InMemoryLobbyStore, type LobbyStore, type HostedAgentSpec } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
@@ -274,6 +274,66 @@ async function persistNicknamesToRepo(lobbyId: string, store: LobbyStore, map: R
     await client.writeFile(NICKNAMES_REPO_PATH, JSON.stringify(map, null, 2) + '\n', 'chore: update agent nicknames', integration.branch || 'main');
   } catch (e) {
     console.warn('[Lobby Server] Failed to mirror nicknames to repo:', (e as Error)?.message ?? e);
+  }
+}
+
+/** Extract the PR number from a GitHub PR html_url (…/pull/N), or null. */
+function prNumberFromUrl(url: string | undefined): number | null {
+  const m = (url ?? '').match(/\/pull\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+/** A short, filesystem-safe slug for a memory filename. */
+function memSlug(s: string): string {
+  return (s || 'task').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'task';
+}
+
+/**
+ * Self-learning on merge: record a durable memory of a merged task-PR into the connected repo's
+ * shared-memory, plus a structured fact line. This is the hosted equivalent of the local post-merge
+ * self-learning pass — every merged deliverable leaves a memory the swarm (and owner) can revisit.
+ * Deterministic and idempotent (guarded by result_memory_written); commits to the working branch.
+ */
+async function recordTaskMergeMemory(
+  store: LobbyStore, lobbyId: string, task: LobbyTask, agentName: string,
+  merge: { merge_commit_sha: string | null; merged_at: string | null },
+): Promise<boolean> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return false;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return false;
+  const branch = integration.branch || 'main';
+  const when = merge.merged_at || new Date().toISOString();
+  const date = when.slice(0, 10);
+  const files = Array.isArray((task as any).result_files) && (task as any).result_files.length
+    ? (task as any).result_files.map((f: string) => `- ${f}`).join('\n')
+    : '- (see the PR diff)';
+  const memPath = `agent-os/shared-memory/${date}-${memSlug(task.title || task.task_id)}-${String(task.task_id).slice(0, 8)}.md`;
+  const memBody = [
+    `# Memory — ${task.title || task.task_id}`, '',
+    `- **Task:** ${task.title || '(untitled)'} (\`${task.task_id}\`)`,
+    `- **Agent:** ${agentName}`,
+    `- **Merged PR:** ${task.result_pr_url || '(unknown)'}${merge.merge_commit_sha ? ` (\`${merge.merge_commit_sha.slice(0, 10)}\`)` : ''}`,
+    `- **CI:** ${task.result_ci_status || 'n/a'}`,
+    `- **Merged:** ${when}`, '',
+    '## Objective', '', (task.description || '(none)'), '',
+    '## What was done', '', (task.result || '(no agent report captured)'), '',
+    '## Files', '', files, '',
+  ].join('\n');
+  const fact = JSON.stringify({
+    type: 'task_merged', task_id: task.task_id, title: task.title || null,
+    agent: agentName, pr: task.result_pr_url || null, ci: task.result_ci_status || null, at: when,
+  }) + '\n';
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, branch);
+    await client.writeFile(memPath, memBody, `memory: record merged task "${(task.title || task.task_id).slice(0, 60)}"`, branch);
+    await client.appendToFile('agent-os/shared-memory/facts.jsonl', fact, 'memory: append task-merge fact', branch);
+    return true;
+  } catch (e) {
+    console.warn('[Lobby Server] self-learning memory write failed:', (e as Error)?.message ?? e);
+    return false;
   }
 }
 
@@ -584,10 +644,54 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         }
       }
 
-      const resultWithPr = prUrl ? `${result}\n\n🔀 Pull Request opened for review: ${prUrl}` : result;
-      // Persist the PR URL + task branch so the panel can link the PR and read its CI check results.
+      // ── Phase 2b: CI feedback loop ── When CI is configured, wait for the task PR's checks; on a
+      // red run, hand the failing logs back to the agent to fix and re-push to the SAME branch (which
+      // updates the PR), bounded to a couple of iterations. Turns "I can't run tests" into an
+      // actionable fix. Entirely best-effort — it never prevents the task from finishing.
+      let ciStatus: 'passing' | 'failing' | 'pending' | 'none' = 'none';
+      if (prUrl && prMode && entry.repoClient && taskBranch !== workingBranch) {
+        const rc = entry.repoClient;
+        const waitForChecks = async (): Promise<{ done: boolean; conclusion: string | null; none: boolean }> => {
+          for (let i = 0; i < 6; i++) {
+            const s = await rc.getCheckRunsForRef(taskBranch).catch(() => ({ status: 'none', conclusion: null, total: 0 }));
+            if (s.total === 0) { if (i >= 2) return { done: false, conclusion: null, none: true }; }
+            else if (s.status === 'completed') return { done: true, conclusion: s.conclusion, none: false };
+            await new Promise(r => setTimeout(r, Math.min(15_000, 6_000 * (i + 1))));
+          }
+          return { done: false, conclusion: null, none: false };
+        };
+        try {
+          let check = await waitForChecks();
+          let fixes = 0;
+          while (check.conclusion === 'failure' && fixes < 2) {
+            fixes++;
+            const logs = await rc.getFailingCheckLogs(taskBranch).catch(() => '');
+            rc.activeBranch = taskBranch; // the fix turn's write_file commits update the PR branch
+            try {
+              await entry.runner.respondTo(
+                `[CI FAILED] The Pull Request for this task failed its checks on GitHub. Fix the cause and write the corrected files with write_file — they commit to the same task branch and update the PR. Do NOT open a new PR. Failing checks:\n\n${logs || '(no log summary captured — inspect the workflow)'}\n\nReport exactly what you changed.`,
+              ).catch(() => {});
+            } finally {
+              rc.activeBranch = workingBranch;
+            }
+            check = await waitForChecks();
+          }
+          ciStatus = check.conclusion === 'success' ? 'passing'
+            : check.conclusion === 'failure' ? 'failing'
+            : check.none ? 'none' : 'pending';
+        } catch (e) {
+          console.warn('[Lobby Server] CI feedback loop error:', (e as Error)?.message ?? e);
+        }
+      }
+
+      const ciNote = ciStatus === 'passing' ? '\n\n✅ CI passed on the PR.'
+        : ciStatus === 'failing' ? '\n\n❌ CI is still failing after fixes — needs a human.'
+        : ciStatus === 'pending' ? '\n\n⏳ CI was still running when the task finished.'
+        : '';
+      const resultWithPr = (prUrl ? `${result}\n\n🔀 Pull Request opened for review: ${prUrl}` : result) + ciNote;
+      // Persist the PR URL + task branch + CI status so the panel can link the PR and show CI state.
       const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
-      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: taskBranch } as any).catch(() => {});
+      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: taskBranch, result_ci_status: ciStatus } as any).catch(() => {});
       await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
 
       // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
@@ -1008,6 +1112,38 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     return true;
   }
 
+  // Re-launch a hosted agent from its persisted spec (used to restore the swarm after a
+  // restart/deploy). Resolves the provider key, model, system prompt and bound DID exactly like the
+  // manual launch. Returns the new agent id, or null when it can't run (e.g. provider key missing).
+  async function launchHostedAgentFromSpec(spec: HostedAgentSpec): Promise<string | null> {
+    const providerName = spec.provider || 'anthropic';
+    const agentRef = spec.agent_ref || null;
+    const resolved = await resolveProviderKey(store, spec.lobby_id, providerName, agentRef);
+    if (!resolved) {
+      console.warn(`[lobby-server] cannot re-launch hosted agent "${spec.agent_role || spec.name}" — no "${providerName}" provider key`);
+      return null;
+    }
+    const model = spec.model || resolved.model || 'claude-opus-4-8';
+    let systemPrompt: string | undefined;
+    let definitionIdentity: string | undefined;
+    if (spec.agent_role) {
+      try {
+        const defs = await getAgentDefinitions(spec.lobby_id, store);
+        const def = defs.find(d => d.slug === spec.agent_role);
+        if (def?.system_prompt) systemPrompt = def.system_prompt;
+        if (def?.identity && /^did:/i.test(def.identity)) definitionIdentity = def.identity;
+      } catch { /* fall through to catalog default */ }
+      if (!definitionIdentity) definitionIdentity = (await getBoundAgentIdentity(spec.lobby_id, store, spec.agent_role)) ?? undefined;
+    }
+    const nicknames = await readAgentNicknames(spec.lobby_id, store);
+    const displayName = (spec.agent_role && nicknames[spec.agent_role]) || spec.name || 'Hosted Agent';
+    return spawnHostedAgent({
+      lobbyId: spec.lobby_id, name: displayName, role: spec.agent_role,
+      apiKey: resolved.apiKey, providerId: providerIdFor(providerName), model,
+      baseUrl: resolved.baseUrl, systemPrompt, joinToken: agentRef ?? definitionIdentity ?? undefined,
+    });
+  }
+
   // ── HTTP control plane ──
   const httpServer = createServer((req, res) => {
     handleHttp(req, res).catch((err) => {
@@ -1317,6 +1453,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             systemPrompt,
             joinToken: agentRef ?? definitionIdentity ?? undefined,
           });
+          // Remember this agent as desired-running so it's re-launched (on the same model) after a
+          // lobby restart/deploy — hosted agents live in-process and otherwise die on restart.
+          await store.putHostedAgentSpec({
+            lobby_id: lobbyId,
+            agent_role: typeof body.agent_role === 'string' ? body.agent_role : undefined,
+            name: displayName, provider: providerName, model, base_url: resolved.baseUrl, agent_ref: agentRef,
+          }).catch(() => {});
           await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
           return json({ agent_id: newId, name: displayName, model, provider: providerName }, 201);
         } catch (e) {
@@ -1325,8 +1468,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       // DELETE .../hosted-agents/:agentId — stop a hosted agent.
       if (req.method === 'DELETE' && agentId) {
+        // A deliberate stop clears the desired-running spec so it is NOT re-launched on restart.
+        const agentRec = await store.getAgent(lobbyId, agentId).catch(() => null);
         const stopped = await stopHostedAgent(agentId);
         if (!stopped) return json({ error: 'hosted agent not found' }, 404);
+        if (agentRec) await store.removeHostedAgentSpec(lobbyId, agentRec.agent_role || agentRec.display_name).catch(() => {});
         await recordEvent(lobbyId, 'hosted_agent_stopped', identityRef, { agent_id: agentId });
         return json({ stopped: agentId });
       }
@@ -3110,6 +3256,28 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   if (autoDefault) await ensureDefaultLobby();
 
+  // ── Re-launch hosted agents that were running before this restart/deploy ──
+  // Hosted agents run in-process, so a restart (pm2 reload on deploy) stops them all. Their desired
+  // state is persisted (store.putHostedAgentSpec on launch); re-launch each on the same model. Runs
+  // after the store is loaded and the coordinator is wired; best-effort per agent.
+  void (async () => {
+    try {
+      const specs = await store.listAllHostedAgentSpecs();
+      if (specs.length === 0) return;
+      console.log(`[lobby-server] re-launching ${specs.length} hosted agent(s) from persisted specs`);
+      for (const spec of specs) {
+        try {
+          const id = await launchHostedAgentFromSpec(spec);
+          if (id) console.log(`[lobby-server] re-launched "${spec.agent_role || spec.name}" (${spec.model}) → ${id}`);
+        } catch (e) {
+          console.warn(`[lobby-server] failed to re-launch "${spec.agent_role || spec.name}":`, (e as Error)?.message ?? e);
+        }
+      }
+    } catch (e) {
+      console.warn('[lobby-server] hosted-agent re-launch sweep failed:', (e as Error)?.message ?? e);
+    }
+  })();
+
   // ── Stale-heartbeat sweeper ──
   const sweeper = setInterval(() => {
     void (async () => {
@@ -3140,6 +3308,49 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }, SWEEP_MS);
   if (typeof sweeper.unref === 'function') sweeper.unref();
 
+  // ── Self-learning: memory on task-PR merge ── Webhooks aren't wired, so poll the PRs the lobby
+  // opened for merges and record a memory for each newly-merged task. Idempotent per task
+  // (result_memory_written). Runs every 2 min, bounded per pass to protect the GitHub rate limit.
+  const memorySweep = setInterval(() => {
+    void (async () => {
+      try {
+        let budget = 8; // cap PR lookups per pass
+        for (const lobby of await store.listLobbies()) {
+          const integ = await store.getIntegration(lobby.lobby_id, 'github');
+          if (!integ || integ.status !== 'active' || !integ.repo_full_name) continue;
+          const token = await githubTokenForLobby(lobby.lobby_id, store);
+          const parsed = token ? repoRef(integ.repo_full_name) : null;
+          if (!parsed) continue;
+          const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+          const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, integ.branch || 'main');
+          const tasks = (await store.listTasks(lobby.lobby_id).catch(() => [] as LobbyTask[]))
+            .filter(t => t.result_pr_url && !t.result_memory_written);
+          for (const t of tasks) {
+            if (budget-- <= 0) return;
+            const num = prNumberFromUrl(t.result_pr_url);
+            if (!num) continue;
+            const pr = await client.getPullRequest(num).catch(() => null);
+            if (!pr) continue;
+            if (pr.merged) {
+              const agentDisplay = (await store.getAgent(lobby.lobby_id, t.assigned_to || '').catch(() => null))?.display_name || t.assigned_to || 'agent';
+              const ok = await recordTaskMergeMemory(store, lobby.lobby_id, t, agentDisplay, pr);
+              if (ok) {
+                await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
+                await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', { task_id: t.task_id, pr: t.result_pr_url });
+              }
+            } else if (pr.state === 'closed') {
+              // Closed unmerged — nothing to learn; mark so we stop polling it.
+              await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[lobby-server] memory sweep failed:', (e as Error)?.message ?? e);
+      }
+    })();
+  }, 120_000);
+  if (typeof memorySweep.unref === 'function') memorySweep.unref();
+
   const port = options.port ?? DEFAULT_PORT;
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
 
@@ -3150,6 +3361,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweeper);
+        clearInterval(memorySweep);
         for (const s of sockets.values()) s.terminate();
         wss.close(() => httpServer.close(() => resolve()));
       }),
