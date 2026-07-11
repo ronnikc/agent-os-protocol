@@ -355,6 +355,8 @@ export interface LobbyTask {
   result?: string;
   /** URL of the Pull Request opened for this task's changes (branch/PR workflow). */
   result_pr_url?: string;
+  /** The per-task branch the PR was opened from (used to read that PR's CI check results). */
+  result_branch?: string;
   /** Files that were changed. */
   result_files?: string[];
   /** One-line progress status. */

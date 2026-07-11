@@ -56,6 +56,29 @@ function renderKanban() {
   }).join('');
 }
 
+async function loadTaskCiStatus(branch) {
+  const el = document.getElementById('task-ci-status');
+  if (!el) return;
+  const data = await fetchJson(`/api/lobby/remote/repo/checks?ref=${encodeURIComponent(branch)}`);
+  if (!el.isConnected) return; // modal closed while loading
+  if (!data || data.error) { el.innerHTML = `<span style="color:var(--text-muted);">CI status unavailable${data?.error ? ` — ${escapeHtml(data.error)}` : ''}</span>`; return; }
+  if (data.status === 'none' || data.total === 0) {
+    el.innerHTML = `<span style="color:var(--text-muted);">No CI runs for this branch yet. Set up CI in the Lobby tab, then agents' PRs get built &amp; tested here.</span>`;
+    return;
+  }
+  const badge = data.conclusion === 'success'
+    ? '<span class="badge badge-success">✓ CI passed</span>'
+    : data.conclusion === 'failure'
+      ? '<span class="badge badge-danger">✗ CI failed</span>'
+      : '<span class="badge badge-warning">● CI running</span>';
+  const runs = (data.runs || []).map(r => {
+    const icon = r.conclusion === 'success' ? '✓' : (r.conclusion && r.conclusion !== 'neutral' && r.conclusion !== 'skipped') ? '✗' : '●';
+    const link = r.html_url ? `<a href="${escapeHtml(r.html_url)}" target="_blank" style="color:var(--color-cyan);text-decoration:none;">${escapeHtml(r.name)} ↗</a>` : escapeHtml(r.name);
+    return `<div style="font-size:11px;margin-top:2px;">${icon} ${link} <span style="color:var(--text-muted);">(${escapeHtml(r.conclusion || r.status)})</span></div>`;
+  }).join('');
+  el.innerHTML = `${badge}<div style="margin-top:4px;">${runs}</div>`;
+}
+
 function showTaskDetail(taskId) {
   const t = tasks.find(t => t.task_id === taskId);
   if (!t) return;
@@ -74,6 +97,11 @@ function showTaskDetail(taskId) {
     <div class="form-group">
       <label>Pull Request</label>
       <a href="${escapeHtml(t.result_pr_url)}" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none;">🔀 Review this task's changes on GitHub ↗</a>
+    </div>` : ''}
+    ${t.result_branch ? `
+    <div class="form-group">
+      <label>CI (build &amp; test)</label>
+      <div id="task-ci-status" style="font-size:12px;color:var(--text-muted);">Checking…</div>
     </div>` : ''}
     ${t.result ? `
     <div class="form-group">
@@ -102,6 +130,9 @@ function showTaskDetail(taskId) {
       <button class="btn btn-secondary" onclick="document.getElementById('modal-overlay').style.display='none'">Close</button>
     </div>
   `);
+
+  // Load CI check status for the task's PR branch (build/test run on GitHub's runners).
+  if (t.result_branch) loadTaskCiStatus(t.result_branch);
 
   document.querySelector('[data-action="delete-modal"]')?.addEventListener('click', async () => {
     if (confirm('Delete this task?')) {
