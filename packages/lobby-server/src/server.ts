@@ -32,7 +32,7 @@ import { saveIntegrationSecret, getDecryptedSecret } from './integrations/github
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
-import { authorizeLobbyManager, isLobbyManager } from './auth/lobbyAuthz.js';
+import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
@@ -1092,6 +1092,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await verifyProofAndIssueToken(identityRef, signature, publicKey, lobbyId, store);
       if (!token) return json({ error: 'invalid or expired proof' }, 401);
+      // First wallet to sign in to an unowned lobby owns it (see wallet-signin path above).
+      if (await claimLobbyOwnership(store, lobbyId, identityRef)) {
+        await recordEvent(lobbyId, 'lobby_owner_bound', identityRef, { via: 'proof-signin' });
+      }
       return json({ token, expires_at: Date.now() + 15 * 60 * 1000 });
     }
 
@@ -1134,6 +1138,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         challengeId, account, signature: body.signature, origin: requestOrigin(), sessionId,
       });
       if (!result) return json({ error: 'invalid or expired challenge' }, 401);
+      // Bind ownership at sign-in: the first wallet to authenticate to an unowned (public) lobby
+      // becomes its owner, so no later joiner can silently claim it. No-op once owned.
+      if (await claimLobbyOwnership(store, result.lobbyId, result.identityRef)) {
+        await recordEvent(result.lobbyId, 'lobby_owner_bound', result.identityRef, { via: 'wallet-signin' });
+      }
       return json({ token: result.token, identity_ref: result.identityRef, expires_at: Date.now() + 15 * 60 * 1000 });
     }
 
