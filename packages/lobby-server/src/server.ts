@@ -229,6 +229,54 @@ async function getBoundAgentIdentity(lobbyId: string, store: LobbyStore, slug: s
   }
 }
 
+/** Path in the connected repo where per-role nicknames are mirrored (survives deploys like DIDs). */
+const NICKNAMES_REPO_PATH = 'agent-os/nicknames.json';
+
+/**
+ * Per-role nicknames, hydrated from the connected repo when the (possibly ephemeral) store has none.
+ * Nicknames are a user setting; persisting them in the repo — like agent DIDs — lets them survive a
+ * container recycle even without a durable store. On a store miss we read `agent-os/nicknames.json`
+ * and seed the store so later reads are cheap.
+ */
+async function readAgentNicknames(lobbyId: string, store: LobbyStore): Promise<Record<string, string>> {
+  const local = await store.getAgentNicknames(lobbyId);
+  if (Object.keys(local).length > 0) return local;
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return local;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return local;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    const content = await client.readFile(NICKNAMES_REPO_PATH, integration.branch || 'main');
+    const map = JSON.parse(content);
+    if (map && typeof map === 'object') {
+      for (const [role, nick] of Object.entries(map)) {
+        if (typeof nick === 'string' && nick) await store.setAgentNickname(lobbyId, role, nick);
+      }
+      return await store.getAgentNicknames(lobbyId);
+    }
+  } catch { /* no nicknames.json yet, or transient read error */ }
+  return local;
+}
+
+/** Mirror the full nickname map into the connected repo (best-effort; never fails the caller). */
+async function persistNicknamesToRepo(lobbyId: string, store: LobbyStore, map: Record<string, string>): Promise<void> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    await client.writeFile(NICKNAMES_REPO_PATH, JSON.stringify(map, null, 2) + '\n', 'chore: update agent nicknames', integration.branch || 'main');
+  } catch (e) {
+    console.warn('[Lobby Server] Failed to mirror nicknames to repo:', (e as Error)?.message ?? e);
+  }
+}
+
 export interface LobbyServerOptions {
   port?: number;
   store?: LobbyStore;
@@ -1252,7 +1300,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         }
 
         // A user-chosen nickname for this role (persisted) wins over the default display name.
-        const nicknames = await store.getAgentNicknames(lobbyId);
+        const nicknames = await readAgentNicknames(lobbyId, store);
         const roleSlug = typeof body.agent_role === 'string' ? body.agent_role : '';
         const defaultName = typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent';
         const displayName = (roleSlug && nicknames[roleSlug]) || defaultName;
@@ -1291,13 +1339,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
       if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
-      if (req.method === 'GET') return json({ nicknames: await store.getAgentNicknames(lobbyId) });
+      if (req.method === 'GET') return json({ nicknames: await readAgentNicknames(lobbyId, store) });
       if (req.method === 'POST') {
         const body = await readBody(req);
         const role = typeof body.role === 'string' ? body.role.trim() : '';
         const nickname = typeof body.nickname === 'string' ? body.nickname : '';
         if (!role) return json({ error: 'role is required' }, 400);
         const map = await store.setAgentNickname(lobbyId, role, nickname);
+        void persistNicknamesToRepo(lobbyId, store, map); // mirror to the repo so it survives deploys
         // Live rename: update any CONNECTED agents of this role so the roster reflects it now,
         // without waiting for a relaunch. Broadcast the roster update.
         const effective = map[role] || '';
@@ -2555,6 +2604,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const requests = await store.listLobbyRequests(lobbyId);
       const pending = requests.filter((r) => r.status === 'pending');
       return json({ requests: pending });
+    }
+
+    // GET /api/v1/agent-lobby/lobbies/:id/requests — ALL requests (pending + decided), newest first.
+    // The Requests tab shows a decided/history section like Tasks; the pending-only feed hid every
+    // request the moment the Boss approved/denied it, so processed hand-raises vanished.
+    const allRequestsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/requests$/);
+    if (allRequestsMatch && req.method === 'GET') {
+      const lobbyId = allRequestsMatch[1];
+      const requests = (await store.listLobbyRequests(lobbyId))
+        .slice()
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
+      return json({ requests });
     }
 
     // POST /api/v1/agent-lobby/lobbies/:id/requests/:requestId/decide
