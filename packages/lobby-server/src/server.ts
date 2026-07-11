@@ -178,7 +178,13 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore, force = f
           try {
             const def = parseAgentDef(file.name, await client.readFile(file.path, branchName));
             bySlug.set(def.slug, def);
-          } catch {}
+          } catch {
+            // A per-file read/parse failure (rate limit mid-listing) yields a PARTIAL result missing
+            // that agent's repo definition — and its bound Agent ID. Caching a partial as the 5-min
+            // truth is exactly what showed a connected repo's agents WITHOUT their DIDs: readDir
+            // succeeded but the readFiles failed and were swallowed. Mark not-ok so it retries soon.
+            repoReadOk = false;
+          }
         }
       } catch (err) {
         // Rate-limited or transient. Prefer a prior GOOD cache (keeps repo identities); otherwise
@@ -1062,6 +1068,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         });
       }
       await saveIntegrationSecret(integration!.id, 'installation_token', instToken, store, 3300);
+      invalidateAgentDefs(lobbyId); // a repo just became (re)connected — re-read its agent DIDs
       await recordEvent(lobbyId, 'github_connected', identityRef, { account, repos: repos.length, via: 'auto-detect' });
       return { connected: true, account, repo: integration!.repo_full_name, branch: integration!.branch, repos };
     };
@@ -1599,6 +1606,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (req.method === 'POST') {
         if (!integ) return json({ error: 'GitHub is not connected' }, 400);
         repoInitializedCache.delete(lobbyId); // repo/branch may change — re-check the manifest
+        invalidateAgentDefs(lobbyId);         // and re-read agent definitions (their bound DIDs) from the new repo
         const body = await readBody(req);
         const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
         if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return json({ error: 'repo must be "owner/repo"' }, 400);
@@ -1610,6 +1618,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (req.method === 'DELETE') {
         if (integ) await store.updateIntegration(lobbyId, integ.id, { status: 'revoked', updated_at: new Date().toISOString() });
         repoInitializedCache.delete(lobbyId);
+        invalidateAgentDefs(lobbyId);
         await recordEvent(lobbyId, 'github_disconnected', identityRef, {});
         return json({ connected: false });
       }
