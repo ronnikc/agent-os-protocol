@@ -40,6 +40,7 @@ function renderKanban() {
             <div class="meta">
               ${t.assigned_to ? `<span class="badge badge-info">${escapeHtml(agentName(t.assigned_to))}</span>` : ''}
               ${t.result_pr_url ? `<a href="${escapeHtml(t.result_pr_url)}" target="_blank" class="badge badge-success" title="Pull Request opened for review" onclick="event.stopPropagation()">🔀 PR</a>` : ''}
+              ${t.result_ci_status && t.result_ci_status !== 'none' ? `<span class="badge ${t.result_ci_status === 'passing' ? 'badge-success' : t.result_ci_status === 'failing' ? 'badge-danger' : 'badge-warning'}" title="CI ${escapeHtml(t.result_ci_status)}">${t.result_ci_status === 'passing' ? '✓ CI' : t.result_ci_status === 'failing' ? '✗ CI' : '● CI'}</span>` : ''}
               ${t.priority && t.priority !== 'normal' ? `<span class="badge ${t.priority === 'critical' ? 'badge-danger' : t.priority === 'high' ? 'badge-warning' : 'badge-muted'}">${t.priority}</span>` : ''}
               ${t.category ? `<span style="color:var(--text-muted);font-size:10px">${escapeHtml(t.category)}</span>` : ''}
             </div>
