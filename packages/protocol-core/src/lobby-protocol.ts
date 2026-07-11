@@ -353,6 +353,8 @@ export interface LobbyTask {
   completed_at?: string;
   /** Markdown summary of what was done. */
   result?: string;
+  /** URL of the Pull Request opened for this task's changes (branch/PR workflow). */
+  result_pr_url?: string;
   /** Files that were changed. */
   result_files?: string[];
   /** One-line progress status. */

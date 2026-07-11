@@ -6,12 +6,23 @@
  * installation token from the lobby's GitHub integration. No external Octokit dependency.
  */
 export class GitHubRepoClient {
+  /**
+   * The branch reads default to and writes commit to when a caller doesn't pass one explicitly.
+   * The agent's repo tools (read_file/write_file) pass no branch, so this is how the branch/PR
+   * workflow redirects a task's writes onto a per-task branch: set activeBranch for the task, run
+   * the agent, then reset. Defaults to the connected working branch.
+   */
+  public activeBranch: string;
+
   constructor(
     public readonly owner: string,
     public readonly repo: string,
     private readonly token: string,
-    private readonly fetchFn: typeof fetch = globalThis.fetch
-  ) {}
+    private readonly fetchFn: typeof fetch = globalThis.fetch,
+    activeBranch = 'main',
+  ) {
+    this.activeBranch = activeBranch;
+  }
 
   private async request(path: string, options: RequestInit = {}): Promise<any> {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
@@ -32,9 +43,10 @@ export class GitHubRepoClient {
     return res.json();
   }
 
-  /** Read a file from the repository, decoding the base64 content. */
+  /** Read a file from the repository, decoding the base64 content. Defaults to `activeBranch`. */
   async readFile(path: string, ref?: string): Promise<string> {
-    const pathWithQuery = ref ? `/contents/${path}?ref=${ref}` : `/contents/${path}`;
+    const useRef = ref ?? this.activeBranch;
+    const pathWithQuery = useRef ? `/contents/${path}?ref=${encodeURIComponent(useRef)}` : `/contents/${path}`;
     const data = await this.request(pathWithQuery);
     if (data.type !== 'file') {
       throw new Error(`Path ${path} is not a file`);
@@ -42,9 +54,10 @@ export class GitHubRepoClient {
     return Buffer.from(data.content, 'base64').toString('utf8');
   }
 
-  /** Read contents of a directory, returning details for each item. */
+  /** Read contents of a directory, returning details for each item. Defaults to `activeBranch`. */
   async readDir(path: string, ref?: string): Promise<any[]> {
-    const pathWithQuery = ref ? `/contents/${path}?ref=${ref}` : `/contents/${path}`;
+    const useRef = ref ?? this.activeBranch;
+    const pathWithQuery = useRef ? `/contents/${path}?ref=${encodeURIComponent(useRef)}` : `/contents/${path}`;
     const data = await this.request(pathWithQuery);
     if (!Array.isArray(data)) {
       return [];
@@ -52,11 +65,15 @@ export class GitHubRepoClient {
     return data;
   }
 
-  /** Create or update a file in the repository, automatically resolving the current file SHA if it exists. */
+  /**
+   * Create or update a file and commit it, resolving the current file SHA if it exists. Commits to
+   * `branch` when given, else `activeBranch` (the branch/PR workflow sets activeBranch per task).
+   */
   async writeFile(path: string, content: string, message: string, branch?: string): Promise<string> {
+    const target = branch ?? this.activeBranch;
     let sha: string | undefined;
     try {
-      const pathWithQuery = branch ? `/contents/${path}?ref=${branch}` : `/contents/${path}`;
+      const pathWithQuery = target ? `/contents/${path}?ref=${encodeURIComponent(target)}` : `/contents/${path}`;
       const existing = await this.request(pathWithQuery);
       if (existing && existing.sha) {
         sha = existing.sha;
@@ -72,7 +89,7 @@ export class GitHubRepoClient {
       message,
       content: Buffer.from(content, 'utf8').toString('base64'),
       ...(sha ? { sha } : {}),
-      ...(branch ? { branch } : {}),
+      ...(target ? { branch: target } : {}),
     };
 
     const res = await this.request(`/contents/${path}`, {
@@ -172,6 +189,30 @@ export class GitHubRepoClient {
       body: JSON.stringify({ sha: commit.sha }),
     });
     return commit.sha;
+  }
+
+  /** Create `newBranch` pointing at the tip of `fromBranch`. Idempotent-ish: existing ref is fine. */
+  async createBranch(newBranch: string, fromBranch: string): Promise<void> {
+    const ref = await this.request(`/git/ref/heads/${encodeURIComponent(fromBranch)}`);
+    try {
+      await this.request('/git/refs', {
+        method: 'POST',
+        body: JSON.stringify({ ref: `refs/heads/${newBranch}`, sha: ref.object.sha }),
+      });
+    } catch (err) {
+      if (!String((err as Error)?.message ?? '').includes('reference already exists')) throw err;
+    }
+  }
+
+  /** How many commits `branch` is ahead of `base` — used to skip empty PRs. */
+  async aheadBy(base: string, branch: string): Promise<number> {
+    const cmp = await this.request(`/compare/${encodeURIComponent(base)}...${encodeURIComponent(branch)}`);
+    return typeof cmp.ahead_by === 'number' ? cmp.ahead_by : 0;
+  }
+
+  /** Delete a branch ref (used to clean up a task branch the agent never wrote to). */
+  async deleteBranch(branch: string): Promise<void> {
+    try { await this.request(`/git/refs/heads/${encodeURIComponent(branch)}`, { method: 'DELETE' }); } catch { /* best effort */ }
   }
 
   /** Create a new Pull Request. Returns the HTML URL of the PR. */

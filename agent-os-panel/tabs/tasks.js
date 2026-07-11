@@ -39,6 +39,7 @@ function renderKanban() {
             <div style="font-size:10px;color:var(--text-muted);font-family:var(--mono);margin:2px 0;">${escapeHtml(t.task_id || '')}</div>
             <div class="meta">
               ${t.assigned_to ? `<span class="badge badge-info">${escapeHtml(agentName(t.assigned_to))}</span>` : ''}
+              ${t.result_pr_url ? `<a href="${escapeHtml(t.result_pr_url)}" target="_blank" class="badge badge-success" title="Pull Request opened for review" onclick="event.stopPropagation()">🔀 PR</a>` : ''}
               ${t.priority && t.priority !== 'normal' ? `<span class="badge ${t.priority === 'critical' ? 'badge-danger' : t.priority === 'high' ? 'badge-warning' : 'badge-muted'}">${t.priority}</span>` : ''}
               ${t.category ? `<span style="color:var(--text-muted);font-size:10px">${escapeHtml(t.category)}</span>` : ''}
             </div>
@@ -69,6 +70,11 @@ function showTaskDetail(taskId) {
       <label>Description</label>
       <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(t.description || '(none)')}</div>
     </div>
+    ${t.result_pr_url ? `
+    <div class="form-group">
+      <label>Pull Request</label>
+      <a href="${escapeHtml(t.result_pr_url)}" target="_blank" class="btn btn-primary btn-sm" style="text-decoration:none;">🔀 Review this task's changes on GitHub ↗</a>
+    </div>` : ''}
     ${t.result ? `
     <div class="form-group">
       <label>Result (agent report)</label>

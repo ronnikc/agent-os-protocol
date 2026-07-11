@@ -305,7 +305,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
-  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout }>();
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: any; workingBranch?: string }>();
   // Per-agent throttle for broadcast observation (see observeBroadcast) — bounds LLM cost so a
   // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
   const lastObservation = new Map<string, number>();
@@ -408,14 +408,62 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       // Wait (bounded) for any in-flight chat turn to finish — respondTo drops overlapping calls,
       // and a dropped task turn would spuriously fail the task.
       for (let i = 0; i < 60 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+
+      // ── Branch/PR workflow ── In PR mode (default), the agent's writes for THIS task go to a
+      // dedicated branch off the working branch, and on completion we open a PR for the LobbyOwner
+      // to review — so agent changes are reviewable diffs, never silent commits to main. Direct
+      // mode (AGENT_OS_AGENT_WRITES=direct) keeps writing straight to the working branch.
+      const workingBranch = entry.workingBranch || 'main';
+      const prMode = AGENT_WRITES_MODE === 'pr' && !!entry.repoClient;
+      const taskBranch = prMode
+        ? `agent-os/task/${String(task.task_id).slice(0, 8)}-${(task.title ?? 'work').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32)}`
+        : workingBranch;
+      let writeGuidance = 'writes commit directly to the working branch';
+      if (prMode) {
+        try {
+          await entry.repoClient.createBranch(taskBranch, workingBranch);
+          entry.repoClient.activeBranch = taskBranch; // redirect this task's writes
+          writeGuidance = `write_file commits go to the task branch "${taskBranch}" and are opened as a Pull Request for human review when you finish — you cannot merge`;
+        } catch (e) {
+          console.warn('[Lobby Server] Failed to create task branch, falling back to direct writes:', (e as Error)?.message ?? e);
+        }
+      }
+
       let result = '';
       try {
         result = await entry.runner.respondTo(
-          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files/create_pr) — writes commit directly. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests) or you have no repository tools, say so plainly as the blocker — do NOT fabricate work you did not do.`,
+          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files) — ${writeGuidance}. Do NOT call create_pr yourself; the lobby opens the PR for you. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests), say so plainly as the blocker — do NOT fabricate work you did not do.`,
         );
       } catch { /* fall through to failed */ }
       const failed = !result || result.startsWith('⚠');
-      await upd(failed ? 'failed' : 'completed', result || 'no result produced').catch(() => {});
+
+      // Open a PR if the agent actually committed to the task branch; clean up empty branches.
+      let prUrl = '';
+      if (prMode && entry.repoClient && taskBranch !== workingBranch) {
+        try {
+          const ahead = await entry.repoClient.aheadBy(workingBranch, taskBranch);
+          if (ahead > 0) {
+            prUrl = await entry.repoClient.createPullRequest(
+              `[agent] ${task.title ?? task.task_id}`.slice(0, 120),
+              taskBranch, workingBranch,
+              `Automated changes for lobby task **${task.title ?? task.task_id}** by ${(await store.getAgent(conn.lobbyId, myId))?.display_name || myId}.\n\n${(result || '').slice(0, 3000)}\n\n_Review and merge — the agent cannot merge._`,
+            );
+          } else {
+            await entry.repoClient.deleteBranch(taskBranch); // agent wrote nothing
+          }
+        } catch (e) {
+          console.warn('[Lobby Server] PR creation failed:', (e as Error)?.message ?? e);
+        } finally {
+          entry.repoClient.activeBranch = workingBranch; // always restore
+        }
+      }
+
+      const resultWithPr = prUrl ? `${result}\n\n🔀 Pull Request opened for review: ${prUrl}` : result;
+      // Persist the PR URL on the task so the panel can link it.
+      const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
+      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl } as any).catch(() => {});
+      await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
+
       // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
       // reply in message history, and the Boss is CC'd so coordination continues.
       const lobbyNow = await store.getLobby(conn.lobbyId);
@@ -425,7 +473,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       for (const to of recipients) {
         const r = await coordinator.handle(conn, {
           type: 'lobby-message', to_agent_id: to, message_type: 'handoff',
-          content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}] ${(result || '').slice(0, 2000)}`,
+          content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}]${prUrl ? ` (PR: ${prUrl})` : ''} ${(result || '').slice(0, 2000)}`,
         } as AgentToLobbyMessage);
         dispatch(conn, r.out);
       }
@@ -674,6 +722,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // (floor-control coordination) and only RECOMMENDS on authority categories — those stay pending
   // for the LobbyOwner with the recommendation attached (boss-agent.md: "no autonomous approvals").
   const BOSS_TRIAGE_ENABLED = (process.env.AGENT_OS_BOSS_TRIAGE ?? 'on') !== 'off';
+  // How hosted agents land task changes: 'pr' (default) = per-task branch + Pull Request for human
+  // review; 'direct' = commit straight to the working branch (the pre-PR-workflow behavior).
+  const AGENT_WRITES_MODE = (process.env.AGENT_OS_AGENT_WRITES ?? 'pr').toLowerCase() === 'direct' ? 'direct' : 'pr';
 
   async function bossTriageRequest(conn: Connection, bossId: string, request: { request_id?: string; category?: string; title?: string; description?: string; agent_display_name?: string; agent_id?: string; status?: string }): Promise<void> {
     if (!BOSS_TRIAGE_ENABLED || !request?.request_id || request.status !== 'pending') return;
@@ -728,7 +779,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const parsed = repoRef(repoRefUrl);
         if (parsed) {
           const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-          repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken);
+          repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken, undefined, integration?.branch || 'main');
         }
       }
     }
@@ -744,15 +795,21 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // having any tools at all — both observed live. The preamble states exactly what exists here:
     // repository file tools when a repo is connected, and NOTHING that executes code.
     const workingBranch = integration?.branch || 'main';
+    const writeDest = AGENT_WRITES_MODE === 'pr'
+      ? `write_file commits go to a per-task branch the lobby manages and are opened as a Pull Request for the LobbyOwner to review (you never merge, and never call create_pr yourself)`
+      : `write_file commits go DIRECTLY to the working branch "${workingBranch}"`;
     const capabilities = repoClient
-      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file (commits DIRECTLY to the working branch "${workingBranch}"), list_files, create_pr. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches — every write_file commit lands on "${workingBranch}". Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names or timestamps — if a task demands a branch or command execution, state that limitation as the blocker.`
+      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file, list_files. ${writeDest}. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches yourself. Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names, commit SHAs, or timestamps — if a task demands command execution, state that limitation as the blocker.`
       : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
     const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
     const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
     await runner.start();
 
     const connId = `hosted-${randomUUID()}`;
-    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default' };
+    // trusted: this is a server-spawned agent on a virtual socket. The LobbyOwner already
+    // authenticated to spawn it, so the coordinator may accept the bound DID it presents without an
+    // external-client impersonation session token (see coordinator register path).
+    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default', trusted: true };
     const virtualSocket = {
       readyState: WebSocket.OPEN,
       send: (data: string) => { void onHostedInbound(conn, data); },
@@ -806,7 +863,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }, Math.max(Math.floor(STALE_MS / 3), 15_000)); // heartbeat at 1/3 of stale threshold, min 15s
     if (typeof heartbeatInterval.unref === 'function') heartbeatInterval.unref();
 
-    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval });
+    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, workingBranch: integration?.branch || 'main' });
     return agentId;
   }
 
