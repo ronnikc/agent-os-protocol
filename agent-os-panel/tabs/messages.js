@@ -1,21 +1,17 @@
 /**
  * Messages Tab — Enhanced message bus viewer with filtering, threading, send
  */
-import { state, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate } from '../app.js';
+import { state, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate, renderMarkdownSafe, agentName, refreshAgentNameMap } from '../app.js';
 
 let messages = [];
 let wsMessages = []; // lobby messages received via WebSocket (persist across refresh)
 let lastSource = '';
 let filters = { agent: '', type: '', limit: 50 };
 
-// Render markdown content using marked (same library as UI Assist lobby)
+// Chat-grade markdown (shared with UI Assist / Tasks) — replaces the old marked-or-escape path,
+// which rendered raw markdown when `marked` wasn't loaded (the smoother UI Assist rendering).
 function renderMessageContent(content) {
-  if (!content) return '';
-  if (typeof marked !== 'undefined' && marked.parse) {
-    return marked.parse(content, { breaks: true });
-  }
-  // Fallback: escape HTML and convert newlines to <br>
-  return escapeHtml(content).replace(/\n/g, '<br>');
+  return renderMarkdownSafe(content);
 }
 
 function renderMessages() {
@@ -37,8 +33,9 @@ function renderMessages() {
   let html = ordered.map(m => {
     if (typeof m === 'string') return `<div class="feed-item">${escapeHtml(m)}</div>`;
     const time = formatTime(m.created_at || m.timestamp);
-    const from = m.from_display_name || m.from || m.from_agent_id || '?';
-    const to = m.to_display_name || (m.to_agent_id === 'all' ? '*' : m.to_agent_id) || m.to || '*';
+    // Resolve raw agent ids to names (boss/agents showed long uuids in the log otherwise).
+    const from = m.from_display_name || (m.from_agent_id ? agentName(m.from_agent_id) : (m.from || '?'));
+    const to = m.to_display_name || (m.to_agent_id ? agentName(m.to_agent_id) : (m.to || '*'));
     const type = m.message_type || m.type || 'finding';
     const typeClass = `feed-type-${type}`;
     const isLobby = m.source === 'staging' || m.source === 'lobby' || m.from_agent_id;
@@ -83,6 +80,7 @@ let lobbyMode = 'local';
 async function refresh() {
   const modeData = await fetchJson('/api/mode');
   lobbyMode = modeData?.mode || 'local';
+  if (lobbyMode === 'swarm') await refreshAgentNameMap();
 
   const params = new URLSearchParams();
   if (filters.agent) params.set('agent', filters.agent);

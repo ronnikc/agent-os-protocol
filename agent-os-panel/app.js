@@ -270,6 +270,8 @@ export async function fetchJson(url, opts) {
         } else if (cleanPath.startsWith('providers/') && cleanPath.endsWith('/models')) {
           const provider = cleanPath.split('/')[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/providers/${provider}/models`;
+        } else if (cleanPath === 'agent-nicknames') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-nicknames`;
         } else if (cleanPath === 'agent-definitions') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
         } else if (cleanPath === 'gantt/phases') {
@@ -401,6 +403,62 @@ export async function getRelayWsUrl() {
 
 export function truncate(s, n = 120) {
   return s && s.length > n ? s.slice(0, n) + '...' : (s || '');
+}
+
+// ── Agent name resolution (shared) ──
+// Maps an agent_id (or 'system'/'LobbyOwner'/'WebUser') to a human name for Messages/Tasks, so the
+// UI never shows a raw uuid. Backed by the live lobby roster, refreshed on demand and cached.
+let _agentNameMap = {};
+let _agentNameMapAt = 0;
+export async function refreshAgentNameMap(force = false) {
+  if (!force && Date.now() - _agentNameMapAt < 8000) return _agentNameMap;
+  const map = {};
+  try {
+    const data = await fetchJson('/api/lobby/remote/agents');
+    for (const a of (data?.agents || [])) if (a.agent_id) map[a.agent_id] = a.display_name || a.agent_role || a.agent_id;
+  } catch {}
+  _agentNameMap = map;
+  _agentNameMapAt = Date.now();
+  return map;
+}
+export function agentName(id) {
+  if (!id) return '?';
+  if (id === 'system') return 'System';
+  if (id === 'all' || id === '*' || id === 'broadcast') return 'everyone';
+  if (id === 'LobbyOwner') return 'LobbyOwner';
+  if (id === 'WebUser') return 'WebUser';
+  const n = _agentNameMap[id];
+  if (n) return n;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) + '…' : id;
+}
+
+// ── Shared markdown renderer (chat-grade) ──
+// A compact, safe markdown → HTML renderer used by Messages and the Tasks report so both match the
+// UI Assist quality. Escapes first, then applies a limited, well-tested set of transforms.
+export function renderMarkdownSafe(content) {
+  if (!content) return '';
+  let html = escapeHtml(String(content));
+  const codeBlocks = [];
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _l, code) => {
+    codeBlocks.push(`<pre style="background:var(--bg-base);padding:8px;border-radius:4px;font-size:11px;margin:6px 0;overflow-x:auto;white-space:pre;"><code>${code}</code></pre>`);
+    return `%%CB${codeBlocks.length - 1}%%`;
+  });
+  html = html
+    .replace(/^#### (.+)$/gm, '<div style="font-size:13px;font-weight:700;margin:8px 0 3px;">$1</div>')
+    .replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;">$1</div>')
+    .replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;">$1</div>')
+    .replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:12px 0 4px;">$1</div>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:var(--bg-base);padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>')
+    .replace(/^\s*[-*] (.+)$/gm, '<div style="margin-left:16px;">• $1</div>')
+    .replace(/^\s*(\d+)\. (.+)$/gm, '<div style="margin-left:16px;">$1. $2</div>')
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent,#38bdf8);">$1</a>')
+    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">')
+    .replace(/\n/g, '<br>');
+  html = html.replace(/%%CB(\d+)%%/g, (_, i) => `</p>${codeBlocks[+i]}<p>`).replace(/<br>(<(?:pre|div|hr))/g, '$1');
+  return html;
 }
 
 // ── WebSocket ──
@@ -717,7 +775,7 @@ export async function init() {
       updateStatusBar();
     };
     refreshGithubStatus();
-    setInterval(refreshGithubStatus, 30000);
+    setInterval(refreshGithubStatus, 60000); // 60s — the status call touches the GitHub API; keep it light
     // The pill is re-rendered on every status-bar update; delegate the click once.
     document.getElementById('status-bar')?.addEventListener('click', (e) => {
       if (e.target.closest('#status-repo-pill')) switchTab('lobby');

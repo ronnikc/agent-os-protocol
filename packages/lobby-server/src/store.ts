@@ -71,6 +71,10 @@ export interface LobbyStore {
   upsertKnowledgeBase(kb: KnowledgeBase): Promise<KnowledgeBase>;
   getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined>;
 
+  // Per-lobby, per-role agent nicknames (user-chosen display names). Keyed by agent_role slug.
+  getAgentNicknames(lobbyId: string): Promise<Record<string, string>>;
+  setAgentNickname(lobbyId: string, role: string, nickname: string): Promise<Record<string, string>>;
+
   upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob>;
   getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined>;
   listKnowledgeSyncJobs(lobbyId: string): Promise<KnowledgeSyncJob[]>;
@@ -125,6 +129,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private providerKeys = new Map<string, ProviderKeyConfig>(); // id -> ProviderKeyConfig
   private externalLinks = new Map<string, ExternalIdentityLink>(); // linkId -> ExternalIdentityLink
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
+  private agentNicknames = new Map<string, Record<string, string>>(); // lobbyId -> { role: nickname }
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
   private nonces = new Map<string, { nonce: string; lobbyId: string; expiresAt: number }>(); // identityRef -> nonce details
   
@@ -168,6 +173,7 @@ export class InMemoryLobbyStore implements LobbyStore {
         providerKeys: Array.from(this.providerKeys.entries()),
         externalLinks: Array.from(this.externalLinks.entries()),
         knowledgeBases: Array.from(this.knowledgeBases.entries()),
+        agentNicknames: Array.from(this.agentNicknames.entries()),
         syncJobs: Array.from(this.syncJobs.entries()),
         marketplaceTasks: Array.from(this.marketplaceTasks.entries()),
         bids: Array.from(this.bids.entries()),
@@ -204,6 +210,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       if (Array.isArray(data.providerKeys)) this.providerKeys = new Map(data.providerKeys);
       if (Array.isArray(data.externalLinks)) this.externalLinks = new Map(data.externalLinks);
       if (Array.isArray(data.knowledgeBases)) this.knowledgeBases = new Map(data.knowledgeBases);
+      if (Array.isArray(data.agentNicknames)) this.agentNicknames = new Map(data.agentNicknames);
       if (Array.isArray(data.syncJobs)) this.syncJobs = new Map(data.syncJobs);
       if (Array.isArray(data.marketplaceTasks)) this.marketplaceTasks = new Map(data.marketplaceTasks);
       if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
@@ -446,6 +453,19 @@ export class InMemoryLobbyStore implements LobbyStore {
     this.knowledgeBases.set(kb.lobby_id, kb);
     this.queueSave();
     return kb;
+  }
+
+  async getAgentNicknames(lobbyId: string): Promise<Record<string, string>> {
+    return this.agentNicknames.get(lobbyId) ?? {};
+  }
+
+  async setAgentNickname(lobbyId: string, role: string, nickname: string): Promise<Record<string, string>> {
+    const map = { ...(this.agentNicknames.get(lobbyId) ?? {}) };
+    const clean = nickname.trim();
+    if (clean) map[role] = clean.slice(0, 60); else delete map[role];
+    this.agentNicknames.set(lobbyId, map);
+    this.queueSave();
+    return map;
   }
 
   async getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined> {
