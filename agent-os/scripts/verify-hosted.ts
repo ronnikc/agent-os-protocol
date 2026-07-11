@@ -600,7 +600,7 @@ async function main(): Promise<void> {
     assert.match(manifest.initialized_by_fingerprint, /^[0-9a-f]{12}$/, 'attribution is a short fingerprint');
     assert.ok(Array.isArray(manifest.components) && manifest.components.includes('agents'));
 
-    // Batch commit: blobs → tree → commit → ref, ONE commit for N files.
+    // Batch commit: tree (content inlined) → commit → ref, ONE commit for N files, NO blob POSTs.
     const calls: Array<{ url: string; method: string; body?: any }> = [];
     const gitFetch = (async (url: string, opts?: any) => {
       const method = opts?.method || 'GET';
@@ -628,6 +628,12 @@ async function main(): Promise<void> {
     assert.deepEqual(commitCalls[0].body.parents, ['base']);
     const refPatch = calls.find(c => c.method === 'PATCH' && c.url.includes('/git/refs/heads/'));
     assert.equal(refPatch?.body.sha, 'newcommit', 'branch ref advanced to the batch commit');
+    // Rate-limit fix: content is inlined in the tree, so there are NO per-file blob POSTs.
+    assert.equal(calls.filter(c => c.url.endsWith('/git/blobs')).length, 0, 'no per-file blob POSTs — content inlined in the tree');
+    const treePost = calls.find(c => c.url.endsWith('/git/trees') && c.method === 'POST');
+    assert.equal(treePost?.body.tree.length, 2, 'both files land in one tree call');
+    assert.equal(treePost?.body.tree[0].content, 'A', 'file content is inlined in the tree entry');
+    assert.ok(!('sha' in treePost!.body.tree[0]), 'tree entry carries content, not a blob sha');
 
     // EMPTY repository (no commits): the ref lookup 409s — bootstrap via the contents API (which
     // creates the branch), then batch the remainder. A fresh test repo is the first-connect case.

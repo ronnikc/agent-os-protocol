@@ -164,17 +164,12 @@ export class GitHubRepoClient {
     const baseCommit = await this.request(`/git/commits/${baseCommitSha}`);
     files = remaining;
 
-    const treeItems: Array<{ path: string; mode: string; type: string; sha: string }> = [];
-    const CHUNK = 10;
-    for (let i = 0; i < files.length; i += CHUNK) {
-      const chunk = files.slice(i, i + CHUNK);
-      const blobs = await Promise.all(chunk.map(f =>
-        this.request('/git/blobs', {
-          method: 'POST',
-          body: JSON.stringify({ content: Buffer.from(f.content, 'utf8').toString('base64'), encoding: 'base64' }),
-        })));
-      chunk.forEach((f, j) => treeItems.push({ path: f.path, mode: '100644', type: 'blob', sha: blobs[j].sha }));
-    }
+    // Inline each file's UTF-8 content directly in the tree entries. GitHub creates the blob for
+    // every entry with a `content` field implicitly, so N files cost ONE tree call instead of N
+    // separate blob POSTs — initializing ~140 seed files went from ~140 API calls to ~1, which is
+    // what kept re-initialization from exhausting the installation's hourly rate limit. All seed
+    // files are text; a binary path would need the blob route, but the seeder writes none.
+    const treeItems = files.map(f => ({ path: f.path, mode: '100644', type: 'blob', content: f.content }));
 
     const tree = await this.request('/git/trees', {
       method: 'POST',

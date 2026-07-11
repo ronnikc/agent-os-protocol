@@ -139,8 +139,11 @@ function builtinAgentCatalog(): any[] {
 // call, and it is hit on every panel poll (/api/agents, /api/presets, gantt, spawn) — which
 // exhausted the GitHub App installation's API rate limit and left the panel blank for minutes.
 // Cache the merged result and serve it stale on error, so a repo read happens at most once per TTL.
-const agentDefsCache = new Map<string, { defs: any[]; at: number }>();
+const agentDefsCache = new Map<string, { defs: any[]; at: number; ok: boolean }>();
 const AGENT_DEFS_TTL_MS = 5 * 60_000;
+// A failed/partial read is cached only briefly so it recovers fast, without retrying on every poll
+// (which would pile onto the very rate limit that caused the failure).
+const AGENT_DEFS_FAIL_TTL_MS = 20_000;
 function invalidateAgentDefs(lobbyId: string) { agentDefsCache.delete(lobbyId); }
 
 /**
@@ -150,12 +153,17 @@ function invalidateAgentDefs(lobbyId: string) { agentDefsCache.delete(lobbyId); 
  */
 async function getAgentDefinitions(lobbyId: string, store: LobbyStore, force = false): Promise<any[]> {
   const cached = agentDefsCache.get(lobbyId);
-  if (!force && cached && Date.now() - cached.at < AGENT_DEFS_TTL_MS) return cached.defs;
+  if (!force && cached && Date.now() - cached.at < (cached.ok ? AGENT_DEFS_TTL_MS : AGENT_DEFS_FAIL_TTL_MS)) return cached.defs;
 
   const bySlug = new Map<string, any>();
   for (const def of builtinAgentCatalog()) bySlug.set(def.slug, def);
 
   const integration = await store.getIntegration(lobbyId, 'github');
+  // Track whether we actually read the connected repo. A FAILED read must NOT be cached as if it
+  // were the truth: doing so pins the identity-less built-in catalog for the whole TTL, which is
+  // exactly what made freshly-restarted agents lose the Agent IDs bound in their repo definitions
+  // (a single cold/rate-limited read right after a deploy poisoned every poll and spawn for 5 min).
+  let repoReadOk = true;
   if (integration && integration.repo_full_name) {
     const token = await githubTokenForLobby(lobbyId, store);
     const parsed = token ? repoRef(integration.repo_full_name) : null;
@@ -173,16 +181,46 @@ async function getAgentDefinitions(lobbyId: string, store: LobbyStore, force = f
           } catch {}
         }
       } catch (err) {
-        // Rate-limited or transient — keep whatever we have. If we had a prior good cache, prefer it.
+        // Rate-limited or transient. Prefer a prior GOOD cache (keeps repo identities); otherwise
+        // serve the built-in catalog but mark it not-ok so it is retried after the short fail TTL.
+        repoReadOk = false;
         console.warn('[Lobby Server] Failed to read agents from GitHub (serving cached/catalog):', (err as Error)?.message ?? err);
-        if (cached) return cached.defs;
+        if (cached && cached.ok) return cached.defs;
       }
+    } else {
+      // No token / unparseable repo — a transient auth state, not an authoritative "no repo".
+      repoReadOk = false;
     }
   }
 
   const defs = [...bySlug.values()];
-  agentDefsCache.set(lobbyId, { defs, at: Date.now() });
+  agentDefsCache.set(lobbyId, { defs, at: Date.now(), ok: repoReadOk });
   return defs;
+}
+
+/**
+ * The Agent ID (DID) persisted in an agent's own definition file, read authoritatively (one file,
+ * live from the connected repo) — NOT via the merged/cached catalog. The catalog can be stale or a
+ * built-in fallback that has no identities, so the branch/PR reuse path reads the single source of
+ * truth directly. Returns the `did:…` string or null.
+ */
+async function getBoundAgentIdentity(lobbyId: string, store: LobbyStore, slug: string): Promise<string | null> {
+  if (!slug) return null;
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return null;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return null;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    const branchName = integration.branch || 'main';
+    const content = await client.readFile(`agent-os/sub-agents/agents/${slug}.md`, branchName);
+    const did = content.match(/^Identity:\s*(.+)$/m)?.[1]?.trim();
+    return did && /^did:/i.test(did) ? did : null;
+  } catch {
+    return null; // file missing (never bound) or transient read error
+  }
 }
 
 export interface LobbyServerOptions {
@@ -321,15 +359,22 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const BOSS_AUTO_TASK_BUDGET = 3;
   // Cached "is the Agent OS structure initialized in the connected repo?" per lobby — the GitHub
   // status endpoint is polled every ~10s and the answer costs an API read of the manifest file.
-  const repoInitializedCache = new Map<string, { value: boolean; at: number }>();
+  // `ok:true` marks an AUTHORITATIVE answer (manifest read succeeded, or a real 404 = not there).
+  // `ok:false` is a best-effort guess after a transient error (rate limit / 5xx) — retried sooner.
+  const repoInitializedCache = new Map<string, { value: boolean; at: number; ok: boolean }>();
   const REPO_INIT_CACHE_MS = 60_000;
+  const REPO_INIT_FAIL_CACHE_MS = 20_000;
 
-  /** Whether the connected repo carries the Agent OS manifest (cached; see repoInitializedCache). */
+  /**
+   * Whether the connected repo carries the Agent OS manifest (cached; see repoInitializedCache).
+   * A rate-limit / transient error must NOT flip an already-initialized repo to "not initialized":
+   * only a genuine 404 (manifest absent) is an authoritative false. Otherwise the last known answer
+   * is preserved — this is what made a freshly-deployed lobby wrongly report "not initialized".
+   */
   async function isRepoInitialized(lobbyId: string, repoFullName: string | undefined, branch: string | undefined): Promise<boolean> {
     if (!repoFullName) return false;
     const cached = repoInitializedCache.get(lobbyId);
-    if (cached && Date.now() - cached.at < REPO_INIT_CACHE_MS) return cached.value;
-    let value = false;
+    if (cached && Date.now() - cached.at < (cached.ok ? REPO_INIT_CACHE_MS : REPO_INIT_FAIL_CACHE_MS)) return cached.value;
     try {
       const token = await githubTokenForLobby(lobbyId, store);
       const parsed = token ? repoRef(repoFullName) : null;
@@ -337,11 +382,38 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
         const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
         await client.readFile(AGENT_OS_MANIFEST_PATH, branch || 'main');
-        value = true;
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now(), ok: true });
+        return true;
       }
-    } catch { value = false; }
-    repoInitializedCache.set(lobbyId, { value, at: Date.now() });
-    return value;
+      // No token / unparseable repo — a transient auth state, not an authoritative "no manifest".
+      if (cached) return cached.value;
+      return false;
+    } catch (err) {
+      const msg = String((err as Error)?.message ?? err);
+      if (/\b404\b/.test(msg)) {
+        // Manifest genuinely absent — the repo is not initialized. Authoritative.
+        repoInitializedCache.set(lobbyId, { value: false, at: Date.now(), ok: true });
+        return false;
+      }
+      // Rate limit / 5xx / network: never downgrade a known-initialized repo. Keep the last answer;
+      // if we have none, guess false but only briefly so the next poll recovers quickly.
+      if (cached) return cached.value;
+      repoInitializedCache.set(lobbyId, { value: false, at: Date.now(), ok: false });
+      return false;
+    }
+  }
+
+  // The GitHub status endpoint is polled continuously and re-listed the installation's repos on
+  // every poll — a wasted API call, since the repo set rarely changes. Cache it per lobby so polling
+  // costs one list call per minute, not one every ~10s (this fed the rate-limit exhaustion).
+  const installRepoCache = new Map<string, { repos: unknown[]; at: number }>();
+  const INSTALL_REPO_CACHE_MS = 60_000;
+  async function cachedInstallationRepos(lobbyId: string, token: string): Promise<unknown[]> {
+    const c = installRepoCache.get(lobbyId);
+    if (c && Date.now() - c.at < INSTALL_REPO_CACHE_MS) return c.repos;
+    const repos = await listInstallationRepos(token);
+    installRepoCache.set(lobbyId, { repos, at: Date.now() });
+    return repos;
   }
 
   const providerIdFor = (name: string): ProviderId => {
@@ -1155,6 +1227,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           } catch (e) {
             console.warn('[Lobby Server] Failed to resolve definition for hosted agent:', e);
           }
+          // Authoritative fallback: read the agent's own definition file directly. The merged
+          // catalog above can be a stale/cached or built-in (identity-less) result, which is why a
+          // restarted agent could fail to re-present the Agent ID bound in its repo definition.
+          if (!definitionIdentity) {
+            definitionIdentity = (await getBoundAgentIdentity(lobbyId, store, body.agent_role)) ?? undefined;
+          }
         }
 
         // A user-chosen nickname for this role (persisted) wins over the default display name.
@@ -1505,7 +1583,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         }
         let repos: unknown[] = [];
         const token = await ghToken(lobbyId);
-        if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
+        if (token) { try { repos = await cachedInstallationRepos(lobbyId, token); } catch { /* token stale */ } }
         const initialized = await isRepoInitialized(lobbyId, integ.repo_full_name, integ.branch);
         return json({ connected: true, account: integ.external_account_name, repo: integ.repo_full_name, branch: integ.branch, repos, initialized });
       }
