@@ -32,7 +32,7 @@ import {
 import {
   generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, verifySignature,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
-import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
+import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager, claimLobbyOwnership } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
@@ -270,6 +270,22 @@ async function main(): Promise<void> {
     // Unknown lobby and empty ref stay denied.
     assert.equal(await authorizeLobbyManager(store, 'nope', 'did:ccd:testnet:first'), false);
     assert.equal(await authorizeLobbyManager(store, 'L5', ''), false);
+  });
+
+  await check('claimLobbyOwnership binds an unowned lobby to the first signer, then never reassigns', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L6', 'system')); // unowned public lobby
+    // First wallet to SIGN IN claims ownership...
+    assert.equal(await claimLobbyOwnership(store, 'L6', 'did:ccd:testnet:first'), true);
+    assert.equal(await isLobbyManager(store, 'L6', 'did:ccd:testnet:first'), true, 'first signer is now owner');
+    // ...a later signer never reassigns ownership and cannot manage.
+    assert.equal(await claimLobbyOwnership(store, 'L6', 'did:ccd:testnet:second'), false, 'no re-claim once owned');
+    assert.equal(await isLobbyManager(store, 'L6', 'did:ccd:testnet:second'), false, 'later joiner is not a manager');
+    // Already-owned lobby is never claimable; unknown lobby / empty ref are no-ops.
+    await store.createLobby(mkLobby('L7', 'did:ccd:testnet:owner'));
+    assert.equal(await claimLobbyOwnership(store, 'L7', 'did:ccd:testnet:intruder'), false);
+    assert.equal(await claimLobbyOwnership(store, 'nope', 'did:ccd:testnet:first'), false);
+    assert.equal(await claimLobbyOwnership(store, 'L6', ''), false);
   });
 
   await check('agent observation: parses a RAISE verdict into a hand-raise intent; PASS yields none', () => {
