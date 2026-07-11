@@ -13,7 +13,12 @@ import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalI
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 
-const STORE_FILE = join(process.cwd(), 'lobby-store-db.json');
+// Where the durable lobby state lives. On a hosted deployment this MUST point at a path that
+// survives container recycling/redeploys (a mounted volume) — set AGENT_OS_LOBBY_STORE_FILE to an
+// absolute path on that volume. The default (cwd) is for local dev only; it is per-container and is
+// lost when the container is replaced. The file is runtime state and must never be committed to git
+// (a committed copy would be restored over live data on every deploy) — it is gitignored.
+const STORE_FILE = process.env.AGENT_OS_LOBBY_STORE_FILE?.trim() || join(process.cwd(), 'lobby-store-db.json');
 
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
