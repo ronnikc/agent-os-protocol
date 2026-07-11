@@ -210,6 +210,44 @@ export class GitHubRepoClient {
     try { await this.request(`/git/refs/heads/${encodeURIComponent(branch)}`, { method: 'DELETE' }); } catch { /* best effort */ }
   }
 
+  /**
+   * CI check-run summary for a ref (branch or SHA): the overall status/conclusion plus per-run
+   * detail. `status` is 'completed' only when every run has finished; `conclusion` is 'success' when
+   * all completed runs succeeded, 'failure' if any failed, else null (still running / none yet).
+   */
+  async getCheckRunsForRef(ref: string): Promise<{
+    status: 'queued' | 'in_progress' | 'completed' | 'none';
+    conclusion: 'success' | 'failure' | null;
+    total: number;
+    runs: Array<{ name: string; status: string; conclusion: string | null; html_url: string | null }>;
+  }> {
+    const data = await this.request(`/commits/${encodeURIComponent(ref)}/check-runs`);
+    const runs = (data.check_runs ?? []).map((r: any) => ({
+      name: r.name, status: r.status, conclusion: r.conclusion ?? null, html_url: r.html_url ?? null,
+    }));
+    if (runs.length === 0) return { status: 'none', conclusion: null, total: 0, runs };
+    const allDone = runs.every((r: any) => r.status === 'completed');
+    const anyFailed = runs.some((r: any) => r.conclusion && !['success', 'neutral', 'skipped'].includes(r.conclusion));
+    return {
+      status: allDone ? 'completed' : (runs.some((r: any) => r.status === 'in_progress') ? 'in_progress' : 'queued'),
+      conclusion: allDone ? (anyFailed ? 'failure' : 'success') : null,
+      total: runs.length,
+      runs,
+    };
+  }
+
+  /** The failing job/step logs for a ref's check runs — fed back to an agent to fix a red CI run. */
+  async getFailingCheckLogs(ref: string, maxChars = 4000): Promise<string> {
+    const data = await this.request(`/commits/${encodeURIComponent(ref)}/check-runs`);
+    const failed = (data.check_runs ?? []).filter((r: any) => r.conclusion && !['success', 'neutral', 'skipped'].includes(r.conclusion));
+    if (failed.length === 0) return '';
+    const lines = failed.map((r: any) => {
+      const summary = r.output?.summary || r.output?.text || r.output?.title || '(no output captured)';
+      return `### ${r.name} — ${r.conclusion}\n${String(summary).slice(0, 1500)}`;
+    });
+    return lines.join('\n\n').slice(0, maxChars);
+  }
+
   /** Create a new Pull Request. Returns the HTML URL of the PR. */
   async createPullRequest(title: string, head: string, base: string, body?: string): Promise<string> {
     const payload = { title, head, base, body };

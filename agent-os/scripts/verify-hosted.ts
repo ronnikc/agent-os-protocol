@@ -709,6 +709,41 @@ async function main(): Promise<void> {
     assert.equal(await c.createPullRequest('t', 'agent-os/task/abc-work', 'main', 'b'), 'https://github.com/o/r/pull/7');
   });
 
+  await check('CI CHECKS: getCheckRunsForRef summarizes pass/fail/running; failing logs feed back', async () => {
+    const mk = (runs: any[]) => (async () =>
+      new Response(JSON.stringify({ check_runs: runs }), { status: 200 })) as unknown as typeof fetch;
+
+    // All green → completed/success.
+    let c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'completed', conclusion: 'success', html_url: 'h1' },
+    ]));
+    let s = await c.getCheckRunsForRef('agent-os/task/x');
+    assert.equal(s.status, 'completed'); assert.equal(s.conclusion, 'success'); assert.equal(s.total, 1);
+
+    // One failure → completed/failure, and the failing logs are extracted for the agent.
+    c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'completed', conclusion: 'failure', html_url: 'h', output: { summary: 'test X failed at line 42' } },
+      { name: 'lint', status: 'completed', conclusion: 'success' },
+    ]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.conclusion, 'failure', 'any failed run fails the summary');
+    const logs = await c.getFailingCheckLogs('ref');
+    assert.ok(logs.includes('test X failed at line 42'), 'failing job summary is captured for feedback');
+    assert.ok(!logs.includes('lint'), 'only failing runs are included');
+
+    // Still running → in_progress/null.
+    c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'in_progress', conclusion: null },
+    ]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.status, 'in_progress'); assert.equal(s.conclusion, null);
+
+    // No runs yet → none.
+    c = new GitHubRepoClient('o', 'r', 't', mk([]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.status, 'none'); assert.equal(s.total, 0);
+  });
+
   // ── L. ApiRuntimeAdapter tool call loop ──
   await check('ApiRuntimeAdapter executes repository tools inside loop', async () => {
     const mockRepoClient = {
