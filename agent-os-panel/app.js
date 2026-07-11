@@ -281,7 +281,9 @@ export async function fetchJson(url, opts) {
         } else if (cleanPath === 'tasks') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks${query}`;
         } else if (cleanPath === 'requests') {
-          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/pending`;
+          // ALL requests (pending + decided) so the Requests tab shows processed ones as history,
+          // not just the pending queue — matches how Tasks show completed items.
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests`;
         } else if (cleanPath.startsWith('requests/') && cleanPath.endsWith('/decide')) {
           const requestId = cleanPath.split('/')[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/${requestId}/decide`;
