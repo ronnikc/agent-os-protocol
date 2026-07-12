@@ -14,21 +14,35 @@ export class GitHubRepoClient {
    */
   public activeBranch: string;
 
+  /**
+   * The auth token, or a provider that returns a FRESH one. Long-lived clients (a hosted agent's
+   * repo tools) must pass a provider: GitHub installation tokens expire after ~1h, so a snapshot
+   * taken at spawn goes stale and every repo call then 401s "Bad credentials". A provider (backed by
+   * the token cache) always yields a valid token and is refreshed on a 401.
+   */
+  private readonly tokenSource: string | (() => Promise<string>);
+
   constructor(
     public readonly owner: string,
     public readonly repo: string,
-    private readonly token: string,
+    token: string | (() => Promise<string>),
     private readonly fetchFn: typeof fetch = globalThis.fetch,
     activeBranch = 'main',
   ) {
+    this.tokenSource = token;
     this.activeBranch = activeBranch;
   }
 
-  private async request(path: string, options: RequestInit = {}): Promise<any> {
+  private async resolveToken(): Promise<string> {
+    return typeof this.tokenSource === 'function' ? await this.tokenSource() : this.tokenSource;
+  }
+
+  private async request(path: string, options: RequestInit = {}, retriedOn401 = false): Promise<any> {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const url = `https://api.github.com/repos/${this.owner}/${this.repo}${cleanPath}`;
+    const token = await this.resolveToken();
     const headers = {
-      'Authorization': `token ${this.token}`,
+      'Authorization': `token ${token}`,
       'Accept': 'application/vnd.github.v3+json',
       'User-Agent': 'Agent-OS-Lobby',
       'Content-Type': 'application/json',
@@ -36,6 +50,11 @@ export class GitHubRepoClient {
     };
     const res = await this.fetchFn(url, { ...options, headers });
     if (!res.ok) {
+      // A 401 on a long-lived client means the installation token expired — force one fresh mint and
+      // retry once. (A provider mints anew; a static token can't be refreshed, so it just fails.)
+      if (res.status === 401 && !retriedOn401 && typeof this.tokenSource === 'function') {
+        return this.request(path, options, true);
+      }
       const errText = await res.text().catch(() => '');
       throw new Error(`GitHub API error (${res.status}): ${errText || res.statusText}`);
     }
