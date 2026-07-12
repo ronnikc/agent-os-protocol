@@ -62,7 +62,17 @@ async function loadTaskCiStatus(branch) {
   if (!el) return;
   const data = await fetchJson(`/api/lobby/remote/repo/checks?ref=${encodeURIComponent(branch)}`);
   if (!el.isConnected) return; // modal closed while loading
-  if (!data || data.error) { el.innerHTML = `<span style="color:var(--text-muted);">CI status unavailable${data?.error ? ` — ${escapeHtml(data.error)}` : ''}</span>`; return; }
+  if (!data || data.error) {
+    const err = String(data?.error || '');
+    // 403 "Resource not accessible by integration" = the GitHub App lacks the Checks/Actions read
+    // permission (older installs predate it). Point the owner at the fix instead of a raw error.
+    if (/not accessible by integration/i.test(err) || /\b403\b/.test(err)) {
+      el.innerHTML = `<span style="color:var(--color-warning,#eab308);">⚠ Your GitHub App can't read CI yet — it needs the <strong>Checks</strong> &amp; <strong>Actions</strong> (read) permissions. Open your app at <a href="https://github.com/settings/installations" target="_blank" style="color:var(--color-cyan);">GitHub → Installed apps</a>, add those permissions, and accept the update. New apps get them automatically.</span>`;
+    } else {
+      el.innerHTML = `<span style="color:var(--text-muted);">CI status unavailable${err ? ` — ${escapeHtml(err)}` : ''}</span>`;
+    }
+    return;
+  }
   if (data.status === 'none' || data.total === 0) {
     el.innerHTML = `<span style="color:var(--text-muted);">No CI runs for this branch yet. Set up CI in the Lobby tab, then agents' PRs get built &amp; tested here.</span>`;
     return;
