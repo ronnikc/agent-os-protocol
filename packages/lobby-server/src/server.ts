@@ -29,6 +29,7 @@ import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.j
 import { githubAppConfig, getInstallationToken, installUrl, listAppInstallations } from './integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
+import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
@@ -2024,6 +2025,53 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // /lobbies/:id/integrations/(discord|telegram|supabase) — owner-connected chat/data integrations.
+    // The LobbyOwner brings their OWN bot token / project key; the lobby seals it per-lobby and never
+    // shares it. GET returns connected status with a masked hint only (never the secret); POST connects
+    // (or reconnects, revoking the prior credential); DELETE revokes. Owner-gated like every manage op.
+    const ownerIntegMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/(discord|telegram|supabase)$/);
+    if (ownerIntegMatch) {
+      const lobbyId = ownerIntegMatch[1];
+      const provider = ownerIntegMatch[2] as OwnerConnectedProvider;
+      const secretType = provider === 'supabase' ? 'access_token' as const : 'bot_token' as const;
+      if (req.method === 'GET') {
+        // Status is owner-only too — a masked hint still confirms a credential is set.
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        return json(await ownerIntegrationStatus(lobbyId, provider, store, secretType));
+      }
+      if (req.method === 'POST') {
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        const body = await readBody(req).catch(() => ({} as any));
+        // Discord/Telegram: a bot token (+ channel/chat id). Supabase: a service key (+ project URL/ref).
+        const secret = String(body?.secret ?? body?.bot_token ?? body?.service_key ?? '').trim();
+        if (!secret) return json({ error: `a ${provider === 'supabase' ? 'service key' : 'bot token'} is required` }, 400);
+        const externalId = body?.external_id != null ? String(body.external_id).trim() : undefined;
+        const externalName = body?.name != null ? String(body.name).trim() : undefined;
+        // Supabase keeps the (non-secret) project URL in scopes so the UI + scaffold can read it back.
+        const scopes = provider === 'supabase' && body?.project_url ? [`url:${String(body.project_url).trim()}`] : undefined;
+        try {
+          const integ = await connectOwnerIntegration({ lobbyId, identityRef, provider, secret, secretType, externalId, externalName, scopes }, store);
+          await recordEvent(lobbyId, `${provider}_connected`, identityRef, { external_id: externalId, name: externalName });
+          return json({ ok: true, connected: true, provider, account: integ.external_account_name, external_id: integ.external_account_id, scopes: integ.scopes });
+        } catch (e) {
+          return json({ error: `${provider} connect failed: ${(e as Error)?.message ?? e}` }, 502);
+        }
+      }
+      if (req.method === 'DELETE') {
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        const revoked = await revokeOwnerIntegration(lobbyId, provider, store);
+        if (revoked) await recordEvent(lobbyId, `${provider}_revoked`, identityRef, {});
+        return json({ ok: true, connected: false, revoked });
+      }
+      return json({ error: 'method not allowed' }, 405);
+    }
+
     // POST /lobbies/:id/repo/scaffold-vercel — write the Vercel deploy setup + scripts into the repo.
     // Agent OS only FACILITATES: it scaffolds vercel.json + a GitHub Actions deploy workflow + an
     // owner setup doc. The deploy runs on the OWNER's Vercel, from the OWNER's repo — the lobby never
@@ -2209,6 +2257,87 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), commit_sha: commitSha });
       } catch (e) {
         return json({ error: `CI scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // POST /lobbies/:id/repo/scaffold-supabase — write a supabase/ migrations folder + owner setup doc
+    // into the repo. Agent OS only FACILITATES: migrations run against the OWNER's own Supabase project,
+    // and the service key stays sealed per-lobby (never committed). Requires the owner to have connected
+    // Supabase first. Idempotent (skip-if-exists), one commit.
+    const supabaseScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-supabase$/);
+    if (supabaseScaffoldMatch && req.method === 'POST') {
+      const lobbyId = supabaseScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const sb = await store.getIntegration(lobbyId, 'supabase');
+      if (!sb || sb.status !== 'active') return json({ error: 'connect your Supabase project in the Apps tab first' }, 400);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+      const projectUrl = (sb.scopes || []).find(s => s.startsWith('url:'))?.slice(4) || 'https://<your-project-ref>.supabase.co';
+
+      const configToml = [
+        '# Supabase CLI project config (owner-managed). See https://supabase.com/docs/guides/cli/config',
+        'project_id = "agent-os-lobby"',
+        '',
+        '[db]',
+        'major_version = 15',
+        '',
+      ].join('\n');
+      const seedMigration = [
+        '-- Initial migration scaffolded by Agent OS.',
+        '-- Runs against YOUR Supabase project; edit or add files under supabase/migrations/.',
+        '-- Example: a table the swarm can build on.',
+        'create table if not exists public.agent_os_notes (',
+        '  id uuid primary key default gen_random_uuid(),',
+        '  body text not null,',
+        '  created_at timestamptz not null default now()',
+        ');',
+        '',
+      ].join('\n');
+      const setupDoc = [
+        '# Supabase — setup', '',
+        'Agent OS scaffolds the migrations layout; the database is **your own** Supabase project. Your',
+        'service key is sealed per-lobby by Agent OS and is **never committed** to this repo.', '',
+        '## One-time setup', '',
+        '1. Your project URL is `' + projectUrl + '` (connected in the Apps tab).',
+        '2. Install the Supabase CLI: `npm install -D supabase` (or use `npx supabase`).',
+        '3. Link the CLI to your project: `npx supabase link --project-ref <your-project-ref>`.',
+        '4. Apply migrations: `npx supabase db push` (uses your local Supabase session).', '',
+        '## Applying migrations from CI (optional)', '',
+        'If you want CI to apply migrations, add your **`SUPABASE_ACCESS_TOKEN`** and **`SUPABASE_DB_PASSWORD`**',
+        'as GitHub Actions secrets (Settings → Secrets and variables → Actions) and run `supabase db push`',
+        'in a workflow. Agent OS never stores or commits these — they stay in your repo secrets.', '',
+        '## Layout', '',
+        '- `supabase/config.toml` — CLI project config.',
+        '- `supabase/migrations/*.sql` — ordered migrations; the swarm adds to these as it builds.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const toWrite = [
+          { path: 'supabase/config.toml', content: configToml },
+          { path: `supabase/migrations/${ts}_init.sql`, content: seedMigration },
+          { path: 'agent-os/SUPABASE-SETUP.md', content: setupDoc },
+        ].filter(f => !existing.has(f.path) && !(f.path.startsWith('supabase/migrations/') && [...existing].some(p => p.startsWith('supabase/migrations/'))));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'Supabase scaffold already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: scaffold Supabase migrations + setup', branchName);
+        await recordEvent(lobbyId, 'supabase_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `Supabase scaffold failed: ${githubErrorMessage(e)}` }, 502);
       }
     }
 

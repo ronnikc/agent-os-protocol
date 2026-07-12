@@ -50,7 +50,7 @@ export function decryptSecret(ciphertext: string, ivHex: string, tagHex: string)
 /** Retrieve and decrypt an integration secret. Logs are redacted. */
 export async function getDecryptedSecret(
   lobbyId: string,
-  provider: 'slack' | 'github' | 'google_drive',
+  provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase',
   secretType: string,
   store: LobbyStore
 ): Promise<string | null> {
