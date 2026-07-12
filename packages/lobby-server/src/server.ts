@@ -297,6 +297,7 @@ function memSlug(s: string): string {
 async function recordTaskMergeMemory(
   store: LobbyStore, lobbyId: string, task: LobbyTask, agentName: string,
   merge: { merge_commit_sha: string | null; merged_at: string | null },
+  lessons?: string | null,
 ): Promise<boolean> {
   const integration = await store.getIntegration(lobbyId, 'github');
   if (!integration || !integration.repo_full_name) return false;
@@ -319,6 +320,7 @@ async function recordTaskMergeMemory(
     `- **Merged:** ${when}`, '',
     '## Objective', '', (task.description || '(none)'), '',
     '## What was done', '', (task.result || '(no agent report captured)'), '',
+    ...(lessons ? ['## Lessons (AI reflection)', '', lessons.trim(), ''] : []),
     '## Files', '', files, '',
   ].join('\n');
   const fact = JSON.stringify({
@@ -330,6 +332,12 @@ async function recordTaskMergeMemory(
     const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, branch);
     await client.writeFile(memPath, memBody, `memory: record merged task "${(task.title || task.task_id).slice(0, 60)}"`, branch);
     await client.appendToFile('agent-os/shared-memory/facts.jsonl', fact, 'memory: append task-merge fact', branch);
+    // Roll AI-distilled lessons into a running LESSONS.md so the durable, reusable knowledge
+    // accumulates in one place (a lightweight "skills" ledger the team and swarm can revisit).
+    if (lessons && lessons.trim()) {
+      const entry = `\n## ${task.title || task.task_id} — ${date}\n_[memory](${memPath.split('/').pop()}) · ${task.result_pr_url || ''}_\n\n${lessons.trim()}\n`;
+      await client.appendToFile('agent-os/shared-memory/LESSONS.md', entry, 'memory: append distilled lessons', branch);
+    }
     return true;
   } catch (e) {
     console.warn('[Lobby Server] self-learning memory write failed:', (e as Error)?.message ?? e);
@@ -1148,6 +1156,42 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       apiKey: resolved.apiKey, providerId: providerIdFor(providerName), model,
       baseUrl: resolved.baseUrl, systemPrompt, joinToken: agentRef ?? definitionIdentity ?? undefined,
     });
+  }
+
+  // Self-learning reflection: one LLM turn (no tools) that distills durable lessons from a merged
+  // task — what worked, gotchas, decisions, reusable patterns/skills — for the shared-memory ledger.
+  // Best-effort: uses the lobby's own provider key; returns null if none is set or on any error.
+  async function reflectOnMergedTask(lobbyId: string, task: LobbyTask): Promise<string | null> {
+    try {
+      const keys = await listProviderKeys(store, lobbyId);
+      const key = keys.find(k => k.scope === 'lobby') || keys[0];
+      if (!key) return null;
+      const resolved = await resolveProviderKey(store, lobbyId, key.provider, null);
+      if (!resolved) return null;
+      const adapter = createApiRuntimeAdapter({
+        provider: { id: providerIdFor(key.provider), model: resolved.model || 'claude-opus-4-8', baseUrl: resolved.baseUrl },
+        apiKey: resolved.apiKey, fetchFn: options.apiRuntimeFetch,
+      });
+      const runner = new HostedAgentRunner(adapter, {
+        systemPrompt: 'You are a senior engineer writing a terse post-merge retrospective for the team\'s shared memory. From the task and the agent\'s report, extract DURABLE, reusable lessons only: what worked, gotchas/pitfalls, key decisions and why, and reusable patterns or skills worth keeping. Bullet points, specific, no fluff, max ~180 words. Output GitHub markdown only — no preamble.',
+      });
+      await runner.start();
+      try {
+        const out = await runner.respondTo(
+          `A task's Pull Request just merged. Reflect and extract durable lessons.\n\n` +
+          `TASK: ${task.title ?? '(untitled)'}\n${task.description ?? ''}\n\n` +
+          `AGENT REPORT:\n${(task.result ?? '(none)').slice(0, 4000)}\n\n` +
+          `FILES: ${(Array.isArray((task as any).result_files) ? (task as any).result_files.join(', ') : '(see PR)')}\n` +
+          `CI: ${task.result_ci_status ?? 'n/a'}`,
+        );
+        return out && !out.startsWith('⚠') ? out : null;
+      } finally {
+        await runner.stop();
+      }
+    } catch (e) {
+      console.warn('[lobby-server] merge reflection failed:', (e as Error)?.message ?? e);
+      return null;
+    }
   }
 
   // ── HTTP control plane ──
@@ -3339,7 +3383,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             if (!pr) continue;
             if (pr.merged) {
               const agentDisplay = (await store.getAgent(lobby.lobby_id, t.assigned_to || '').catch(() => null))?.display_name || t.assigned_to || 'agent';
-              const ok = await recordTaskMergeMemory(store, lobby.lobby_id, t, agentDisplay, pr);
+              // Distill durable lessons with one LLM turn (best-effort — null if no provider key).
+              const lessons = await reflectOnMergedTask(lobby.lobby_id, t).catch(() => null);
+              const ok = await recordTaskMergeMemory(store, lobby.lobby_id, t, agentDisplay, pr, lessons);
               if (ok) {
                 await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
                 await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', { task_id: t.task_id, pr: t.result_pr_url });
