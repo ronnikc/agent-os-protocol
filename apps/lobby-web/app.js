@@ -388,7 +388,7 @@ function renderRoster() {
         
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Agent ID:</span></div>
-          <div class="agent-meta-val" title="${escapeHtml(agent.agent_id)}">${idHtml}</div>
+          <div class="agent-meta-val" style="cursor:pointer;" title="View agent card" data-agent-card="${escapeHtml(agent.agent_id)}">${idHtml}</div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
