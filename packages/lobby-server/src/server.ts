@@ -1004,13 +1004,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const integration = await store.getIntegration(params.lobbyId, 'github');
     const repoRefUrl = (kb && kb.repository_url) || (integration?.status === 'active' && integration.repo_full_name) || '';
     if (repoRefUrl) {
-      const githubToken = await githubTokenForLobby(params.lobbyId, store);
-      if (githubToken) {
-        const parsed = repoRef(repoRefUrl);
-        if (parsed) {
-          const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-          repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, githubToken, undefined, integration?.branch || 'main');
-        }
+      const parsed = repoRef(repoRefUrl);
+      // Only wire repo tools if a token can be minted now, but pass a PROVIDER (not a snapshot) so
+      // every later repo call re-mints a fresh installation token. A snapshot expires after ~1h and
+      // then the agent's list_files/read_file/write_file all 401 "Bad credentials" — observed live.
+      const initialToken = parsed ? await githubTokenForLobby(params.lobbyId, store) : null;
+      if (parsed && initialToken) {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const tokenProvider = async () => {
+          const t = await githubTokenForLobby(params.lobbyId, store);
+          if (!t) throw new Error('GitHub installation token unavailable — reconnect the GitHub App');
+          return t;
+        };
+        repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, tokenProvider, undefined, integration?.branch || 'main');
       }
     }
 
