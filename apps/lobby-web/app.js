@@ -199,6 +199,53 @@ window.closeStyledModal = function() {
   if (overlay) overlay.style.display = 'none';
 };
 
+// Agent card modal — opened from an agent's Identity badge. Shows the roster info plus the bound
+// Agent ID (DID) with a Concordium explorer link, so the verified/ID-set status is inspectable.
+window.showAgentCard = function(agentId) {
+  const agent = (state.agents || []).find(a => a.agent_id === agentId);
+  const overlay = document.getElementById('styled-modal-overlay');
+  const titleEl = document.getElementById('styled-modal-title');
+  const msgEl = document.getElementById('styled-modal-message');
+  const buttonsEl = document.getElementById('styled-modal-buttons');
+  if (!agent || !overlay) return;
+
+  const isVerified = ['verified', 'registry_verified', 'human_linked', 'org_linked'].includes(agent.identity_status);
+  const hasDid = !!agent.identity_ref;
+  const statusLabel = isVerified ? `Verified · ${agent.identity_status}` : hasDid ? 'ID set — verifies on-chain when resolvable' : 'Unverified — no Agent ID bound';
+  const statusColor = isVerified ? 'var(--color-green)' : hasDid ? 'var(--color-cyan)' : 'var(--color-text-soft)';
+  const did = agent.identity_ref || '';
+  let didHtml = '<span style="color:var(--color-text-soft);">none</span>';
+  if (did) {
+    const parts = did.split(':'); // did:ccd:<network>:<account>
+    const net = parts[2] || 'mainnet';
+    const acct = parts[3] || '';
+    const link = acct ? `https://ccdexplorer.io/${net}/account/${encodeURIComponent(acct)}` : '';
+    didHtml = link
+      ? `<a href="${link}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;word-break:break-all;">${escapeHtml(did)} ↗</a>`
+      : `<span style="word-break:break-all;">${escapeHtml(did)}</span>`;
+  }
+  const row = (k, v) => `<div style="display:flex;gap:8px;margin-bottom:6px;"><span style="min-width:96px;color:var(--color-text-soft);">${k}</span><span style="flex:1;">${v}</span></div>`;
+
+  titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${statusColor}22;color:${statusColor};font-size:16px;margin-right:8px;">${isVerified ? '✓' : hasDid ? '◆' : '○'}</span>Agent Card`;
+  titleEl.style.color = statusColor;
+  msgEl.innerHTML = `
+    <div style="text-align:left;font-size:13px;line-height:1.5;">
+      ${row('Name', `<strong>${escapeHtml(agent.display_name)}</strong>${agent.is_boss ? ' <span class="boss-badge">★ BOSS</span>' : ''}`)}
+      ${row('Role', escapeHtml(agent.agent_role || 'Generalist'))}
+      ${row('Status', escapeHtml(agent.status || 'idle'))}
+      ${row('Identity', `<span style="color:${statusColor};font-weight:600;">${escapeHtml(statusLabel)}</span>`)}
+      ${row('Agent ID', didHtml)}
+      ${row('Runtime', escapeHtml(agent.runtime || '—'))}
+      ${row('Model', escapeHtml(agent.model || '—'))}
+      <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:var(--color-text-soft);line-height:1.5;">
+        A Concordium Agent ID cryptographically links this agent to an accountable human or org. Only Verified ID agents may join private lobbies.
+      </div>
+    </div>`;
+  buttonsEl.innerHTML = `<button class="btn btn-primary btn-sm" style="min-width:100px;" onclick="closeStyledModal()">Close</button>`;
+  overlay.style.display = 'flex';
+  overlay.querySelector('.styled-modal-card').style.animation = 'modalSlideIn 0.2s ease-out';
+};
+
 // Close modal on ESC key
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') closeStyledModal();
@@ -310,8 +357,14 @@ function renderRoster() {
   if (countEl) countEl.textContent = `${state.agents.length} agent${state.agents.length === 1 ? '' : 's'}`;
   container.innerHTML = state.agents.map(agent => {
     const isWorking = agent.status === 'working' || agent.status === 'busy';
-    // Verified statuses from the identity ladder (registry_verified / human_linked / org_linked)
+    // Verified statuses from the identity ladder (registry_verified / human_linked / org_linked).
     const isVerified = ['verified', 'registry_verified', 'human_linked', 'org_linked'].includes(agent.identity_status);
+    // A bound Agent ID (DID) that isn't live-verified still means the agent HAS an issued identity —
+    // show "ID set" (not the misleading "unverified") when on-chain verification isn't available
+    // (e.g. no indexer configured). This is why some verified agents read "unverified" here.
+    const hasDid = !!agent.identity_ref;
+    const idLabel = isVerified ? `✓ ${agent.identity_status}` : hasDid ? 'ID set' : 'unverified';
+    const idColor = isVerified ? 'var(--color-green)' : hasDid ? 'var(--color-cyan)' : 'var(--color-text-soft)';
     const explorerLink = getExplorerLink(agent.agent_id);
     const idHtml = explorerLink
       ? `<a href="${escapeHtml(explorerLink)}" target="_blank" style="color:var(--color-cyan); text-decoration:underline;">${escapeHtml(agent.agent_id.slice(0, 8))}...</a>`
@@ -332,7 +385,7 @@ function renderRoster() {
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
-          <div class="agent-meta-val" style="color: ${isVerified ? 'var(--color-green)' : 'var(--color-text-soft)'}">${escapeHtml(agent.identity_status || 'unverified')}</div>
+          <div class="agent-meta-val" style="color: ${idColor}; cursor:pointer; text-decoration:underline dotted;" title="View agent card" onclick="showAgentCard('${escapeHtml(agent.agent_id)}')">${escapeHtml(idLabel)} ↗</div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Runtime:</span></div>
