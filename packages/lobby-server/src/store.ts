@@ -84,7 +84,7 @@ export interface LobbyStore {
   updateMember(lobbyId: string, memberId: string, patch: Partial<LobbyMember>): Promise<LobbyMember | undefined>;
 
   addIntegration(integration: LobbyIntegration): Promise<LobbyIntegration>;
-  getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined>;
+  getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase'): Promise<LobbyIntegration | undefined>;
   listIntegrations(lobbyId: string): Promise<LobbyIntegration[]>;
   updateIntegration(lobbyId: string, integrationId: string, patch: Partial<LobbyIntegration>): Promise<LobbyIntegration | undefined>;
 
@@ -430,7 +430,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     return integration;
   }
 
-  async getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined> {
+  async getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase'): Promise<LobbyIntegration | undefined> {
     return [...this.integrations.values()].find((i) => i.lobby_id === lobbyId && i.provider === provider && i.status === 'active');
   }
 

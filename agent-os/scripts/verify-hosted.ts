@@ -38,6 +38,7 @@ import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, pa
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
+import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, maskSecret } from '../../packages/lobby-server/src/integrations/ownerConnectedApp.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
@@ -832,6 +833,36 @@ async function main(): Promise<void> {
     await store.setLobbySession(L, { branch: `agent-os/session/${L}-def`, pr_url: '', pr_number: null });
     assert.equal((await store.getLobbySession(L))?.branch, `agent-os/session/${L}-def`, 'new session replaces the merged one');
     assert.equal((await store.getLobbySession(L))?.pr_number, null, 'fresh session has no PR yet');
+  });
+
+  await check('OWNER INTEGRATIONS: Discord/Telegram/Supabase seal the credential; status is masked-only; revoke works', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `OI-${Date.now().toString(36)}`;
+    // Not connected before any connect.
+    assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord not connected initially');
+    // Connect Discord with a bot token — sealed, never returned in the clear.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'discord-bot-SECRETxyz9', externalId: '12345', externalName: 'My Server' }, store);
+    const ds = await ownerIntegrationStatus(L, 'discord', store);
+    assert.equal(ds.connected, true, 'discord connected after connect');
+    assert.equal(ds.account, 'My Server', 'friendly name surfaced');
+    assert.equal(ds.external_id, '12345', 'channel id surfaced');
+    assert.ok(ds.secret_hint && ds.secret_hint.startsWith('••••'), 'only a masked hint is returned');
+    assert.ok(!JSON.stringify(ds).includes('discord-bot-SECRETxyz9'), 'raw bot token never leaves the vault');
+    assert.equal(ds.secret_hint, maskSecret('discord-bot-SECRETxyz9'), 'hint is the last-4 mask');
+    // Reconnect revokes the prior integration (no stale sealed token) and re-seals the new one.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'new-token-aaaa', externalName: 'My Server' }, store);
+    const active = (await store.listIntegrations(L)).filter(i => i.provider === 'discord' && i.status === 'active');
+    assert.equal(active.length, 1, 'reconnect leaves exactly one active discord integration');
+    // Supabase uses a service key classified as access_token — status reads it back masked.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'supabase', secret: 'sb-service-key-zzzz', secretType: 'access_token', scopes: ['url:https://proj.supabase.co'] }, store);
+    const ss = await ownerIntegrationStatus(L, 'supabase', store, 'access_token');
+    assert.equal(ss.connected, true, 'supabase connected');
+    assert.deepEqual(ss.scopes, ['url:https://proj.supabase.co'], 'project url carried in scopes, not as a secret');
+    assert.ok(ss.secret_hint?.startsWith('••••'), 'supabase key masked');
+    // Revoke drops it from the connected view.
+    assert.equal(await revokeOwnerIntegration(L, 'discord', store), true, 'revoke returns true when it revoked');
+    assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord disconnected after revoke');
+    assert.equal(await revokeOwnerIntegration(L, 'telegram', store), false, 'revoke of a never-connected provider is a no-op');
   });
 
   // ── L. ApiRuntimeAdapter tool call loop ──
