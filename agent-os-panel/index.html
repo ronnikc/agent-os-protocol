@@ -87,6 +87,7 @@
 <div class="tab-bar">
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="lobby">Lobby</button>
+  <button data-tab="apps">Apps</button>
   <button data-tab="messages">Messages</button>
   <button data-tab="tasks">Tasks</button>
   <button data-tab="requests">Requests</button>
@@ -138,6 +139,16 @@
   <!-- Lobby Tab (agent roster + controls only, no sub-tabs) -->
   <div id="tab-lobby" class="tab-pane">
     <div class="scroll-panel" id="lobby-content"></div>
+  </div>
+
+  <!-- Apps Tab -->
+  <div id="tab-apps" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Apps</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Deploy, CI &amp; chat integrations for your connected repo · owner-connected (BYO credentials)</span>
+    </div>
+    <div id="apps-content" style="flex:1;overflow:auto;padding:12px;"></div>
   </div>
 
   <!-- Messages Tab -->
@@ -282,6 +293,7 @@ import { init } from './app.js';
 import './tabs/agents.js';
 import './tabs/scheduled.js';
 import './tabs/lobby.js';
+import './tabs/apps.js';
 import './tabs/messages.js';
 import './tabs/tasks.js';
 import './tabs/requests.js';

@@ -430,17 +430,9 @@ function renderLobby() {
                   `) : ''}
 
                   ${lobbyGithub.repo ? `
-                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(49,140,255,0.05); border:1px solid rgba(49,140,255,0.15); color:var(--text-secondary); line-height:1.45; margin-top:4px;">
-                      <span style="color:var(--color-cyan); font-weight:600;">▲ Deploy to Vercel</span> —
-                      scaffold <code style="font-size:10px;">vercel.json</code> + a GitHub Actions deploy workflow into <strong>${escapeHtml(lobbyGithub.repo)}</strong>. Deploys run on <strong>your own</strong> Vercel from your repo; Agent OS never holds your Vercel token (it lives in your repo's Actions secrets).
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(120,140,180,0.06); border:1px solid var(--color-border); color:var(--text-secondary); line-height:1.45; margin-top:4px;">
+                      Deploy (Vercel), CI (build &amp; test), and chat apps (Slack, Discord, Telegram) moved to the <strong>Apps</strong> tab.
                     </div>
-                    <button class="btn btn-secondary btn-sm" id="btn-panel-vercel-scaffold" style="width:100%;" title="Writes vercel.json, .github/workflows/deploy-vercel.yml, and agent-os/VERCEL-SETUP.md (skip-if-exists)">Set up Vercel deploy in ${escapeHtml(lobbyGithub.repo)}</button>
-
-                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(53,242,138,0.05); border:1px solid rgba(53,242,138,0.15); color:var(--text-secondary); line-height:1.45; margin-top:4px;">
-                      <span style="color:var(--color-green); font-weight:600;">✓ CI — build &amp; test</span> —
-                      scaffold a GitHub Actions workflow so every push and PR (including the agents' <code style="font-size:10px;">agent-os/task/*</code> branches) runs install → lint → build → test on GitHub's runners. The lobby reads the results back to guide the agents — no shell on this host.
-                    </div>
-                    <button class="btn btn-secondary btn-sm" id="btn-panel-ci-scaffold" style="width:100%;" title="Writes .github/workflows/ci.yml and agent-os/CI.md (skip-if-exists)">Set up CI (build &amp; test) in ${escapeHtml(lobbyGithub.repo)}</button>
                   ` : ''}
 
                   <div style="display:flex; gap:6px; margin-top:4px;">
@@ -598,54 +590,6 @@ function renderLobby() {
       } else {
         if (btn) { btn.disabled = false; btn.textContent = 'Initialize Agent OS structure'; }
         showAlert('Initialization Failed', res?.error || 'Unknown error');
-      }
-    });
-
-    document.getElementById('btn-panel-vercel-scaffold')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-panel-vercel-scaffold');
-      const original = btn?.textContent;
-      if (btn) { btn.disabled = true; btn.textContent = 'Scaffolding Vercel deploy…'; }
-      const res = await fetchJson('/api/lobby/remote/repo/scaffold-vercel', { method: 'POST' });
-      if (res && res.ok) {
-        const secrets = (res.required_secrets || []).map(s => `<code>${s}</code>`).join(', ');
-        const filesNote = res.files_committed
-          ? `Committed ${res.files_committed} file(s) to ${res.repo}@${res.branch}: <code>vercel.json</code>, <code>.github/workflows/deploy-vercel.yml</code>, <code>agent-os/VERCEL-SETUP.md</code>.`
-          : `The Vercel deploy scaffold is already present in ${res.repo}@${res.branch}.`;
-        showHtmlAlert('Vercel Deploy Scaffolded', `
-          <div style="text-align:left; font-size:13px; line-height:1.6;">
-            <p>${filesNote}</p>
-            <p style="margin-top:10px;">Deploys run on <strong>your own</strong> Vercel, from your repo. Add these three <strong>GitHub Actions secrets</strong> in your repository (Settings → Secrets and variables → Actions) — from your Vercel account:</p>
-            <p style="margin:8px 0;">${secrets}</p>
-            <p style="font-size:12px; color:var(--text-muted);">Full steps are in <code>agent-os/VERCEL-SETUP.md</code>. Push to your working branch → production deploy; open a PR → preview deploy. Agent OS never stores your Vercel token.</p>
-          </div>
-        `);
-        refresh();
-      } else {
-        if (btn) { btn.disabled = false; btn.textContent = original || 'Set up Vercel deploy'; }
-        showAlert('Vercel Scaffold Failed', res?.error || 'Unknown error');
-      }
-    });
-
-    document.getElementById('btn-panel-ci-scaffold')?.addEventListener('click', async () => {
-      const btn = document.getElementById('btn-panel-ci-scaffold');
-      const original = btn?.textContent;
-      if (btn) { btn.disabled = true; btn.textContent = 'Scaffolding CI…'; }
-      const res = await fetchJson('/api/lobby/remote/repo/scaffold-ci', { method: 'POST' });
-      if (res && res.ok) {
-        const filesNote = res.files_committed
-          ? `Committed ${res.files_committed} file(s) to ${res.repo}@${res.branch}: <code>.github/workflows/ci.yml</code>, <code>agent-os/CI.md</code>.`
-          : `CI is already set up in ${res.repo}@${res.branch}.`;
-        showHtmlAlert('CI Scaffolded', `
-          <div style="text-align:left; font-size:13px; line-height:1.6;">
-            <p>${filesNote}</p>
-            <p style="margin-top:10px;">Every push and pull request — including the agents' <code>agent-os/task/*</code> branches — now runs <strong>install → lint → build → test</strong> on GitHub's runners. Steps use <code>--if-present</code>, so a repo without those scripts still passes until you add them.</p>
-            <p style="font-size:12px; color:var(--text-muted);">Details in <code>agent-os/CI.md</code>. The lobby reads these check results back so agents can fix a red run.</p>
-          </div>
-        `);
-        refresh();
-      } else {
-        if (btn) { btn.disabled = false; btn.textContent = original || 'Set up CI (build & test)'; }
-        showAlert('CI Scaffold Failed', res?.error || 'Unknown error');
       }
     });
 
