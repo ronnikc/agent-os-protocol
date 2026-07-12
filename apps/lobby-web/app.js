@@ -243,8 +243,15 @@ window.showAgentCard = function(agentId) {
     </div>`;
   buttonsEl.innerHTML = `<button class="btn btn-primary btn-sm" style="min-width:100px;" onclick="closeStyledModal()">Close</button>`;
   overlay.style.display = 'flex';
-  overlay.querySelector('.styled-modal-card').style.animation = 'modalSlideIn 0.2s ease-out';
+  const card = overlay.querySelector('.styled-modal-card');
+  if (card) card.style.animation = 'modalSlideIn 0.2s ease-out';
 };
+
+// Delegated click for the roster's Identity badge — survives re-renders and needs no inline handler.
+document.addEventListener('click', (e) => {
+  const el = e.target.closest && e.target.closest('[data-agent-card]');
+  if (el) window.showAgentCard(el.getAttribute('data-agent-card'));
+});
 
 // Close modal on ESC key
 document.addEventListener('keydown', (e) => {
@@ -385,7 +392,7 @@ function renderRoster() {
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
-          <div class="agent-meta-val" style="color: ${idColor}; cursor:pointer; text-decoration:underline dotted;" title="View agent card" onclick="showAgentCard('${escapeHtml(agent.agent_id)}')">${escapeHtml(idLabel)} ↗</div>
+          <div class="agent-meta-val" style="color: ${idColor}; cursor:pointer; text-decoration:underline dotted;" title="View agent card" data-agent-card="${escapeHtml(agent.agent_id)}">${escapeHtml(idLabel)} ↗</div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Runtime:</span></div>
