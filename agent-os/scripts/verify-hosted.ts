@@ -816,6 +816,24 @@ async function main(): Promise<void> {
     assert.equal((await store.listHostedAgentSpecs('L')).length, 1, 'remove drops the spec');
   });
 
+  await check('WORK SESSION: shared session branch/PR persisted per lobby (one PR per session)', async () => {
+    const store = new InMemoryLobbyStore();
+    // Unique ids so the assertion doesn't collide with (or depend on) the shared persisted store file.
+    const L = `WS-${Date.now().toString(36)}`, L2 = `${L}-other`;
+    assert.equal(await store.getLobbySession(L), undefined, 'no session before any task');
+    // First substantive task opens the session PR — recorded so later tasks reuse it.
+    await store.setLobbySession(L, { branch: `agent-os/session/${L}-abc`, pr_url: 'https://github.com/o/r/pull/9', pr_number: 9 });
+    const s = await store.getLobbySession(L);
+    assert.equal(s?.branch, `agent-os/session/${L}-abc`, 'session branch persisted');
+    assert.equal(s?.pr_number, 9, 'session PR number persisted so the sweep can watch it for merge');
+    // Scoped per lobby — one lobby's session never leaks into another's.
+    assert.equal(await store.getLobbySession(L2), undefined, 'session is scoped per lobby');
+    // A new session (after the previous PR merges) overwrites the record.
+    await store.setLobbySession(L, { branch: `agent-os/session/${L}-def`, pr_url: '', pr_number: null });
+    assert.equal((await store.getLobbySession(L))?.branch, `agent-os/session/${L}-def`, 'new session replaces the merged one');
+    assert.equal((await store.getLobbySession(L))?.pr_number, null, 'fresh session has no PR yet');
+  });
+
   // ── L. ApiRuntimeAdapter tool call loop ──
   await check('ApiRuntimeAdapter executes repository tools inside loop', async () => {
     const mockRepoClient = {

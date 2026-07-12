@@ -57,7 +57,7 @@ async function render() {
   });
   const ci = card({
     accent: 'var(--color-green)', badge: liveBadge, title: '✓ GitHub CI — build &amp; test',
-    body: `Scaffold a GitHub Actions workflow so every push and PR — including the agents' <code>agent-os/task/*</code> branches — runs install → lint → build → test on GitHub's runners. The lobby reads the results back to guide the agents (no shell on this host).`,
+    body: `Scaffold a GitHub Actions workflow so every push and PR — including the agents' <code>agent-os/session/*</code> work-session branch — runs install → lint → build → test on GitHub's runners. The lobby reads the results back to guide the agents (no shell on this host).`,
     actions: repo ? `<button class="btn btn-secondary btn-sm" id="btn-app-ci">Set up CI (build &amp; test)</button>` : needsRepo,
     foot: 'Steps use <code>--if-present</code>, so a repo without those scripts still passes until you add them.',
   });
@@ -129,7 +129,7 @@ async function scaffold(endpoint, label, el) {
       showHtmlAlert('CI Scaffolded', `
         <div style="text-align:left; font-size:13px; line-height:1.6;">
           <p>${filesNote}</p>
-          <p style="margin-top:10px;">Every push and pull request — including the agents' <code>agent-os/task/*</code> branches — now runs <strong>install → lint → build → test</strong> on GitHub's runners.</p>
+          <p style="margin-top:10px;">Every push and pull request — including the agents' <code>agent-os/session/*</code> work-session branch — now runs <strong>install → lint → build → test</strong> on GitHub's runners.</p>
           <p style="font-size:12px; color:var(--text-muted);">Details in <code>agent-os/CI.md</code>; the lobby reads these results back so agents can fix a red run.</p>
         </div>`);
     }
