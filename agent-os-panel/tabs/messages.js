@@ -41,11 +41,15 @@ function renderMessages() {
     const isLobby = m.source === 'staging' || m.source === 'lobby' || m.from_agent_id;
     const stagingBadge = isLobby ? '<span style="color:var(--success);font-size:10px;margin-left:4px;">[lobby]</span>' : '';
     const content = renderMessageContent(m.content || '');
+    // Header line, then the message content on its OWN block so multi-paragraph markdown (headings,
+    // lists, code) renders with real structure instead of being crammed inline after "from→to:".
     return `<div class="feed-item" style="white-space:normal;">
-      <span class="feed-time">${time}</span>
-      <span class="feed-type ${typeClass}">[${type}]</span>
-      <strong>${escapeHtml(from)}</strong>&rarr;${escapeHtml(to)}:
-      <span class="feed-content">${content}</span>${stagingBadge}
+      <div class="feed-head">
+        <span class="feed-time">${time}</span>
+        <span class="feed-type ${typeClass}">[${type}]</span>
+        <strong>${escapeHtml(from)}</strong>&rarr;${escapeHtml(to)}${stagingBadge}
+      </div>
+      <div class="feed-content markdown-body">${content}</div>
     </div>`;
   }).join('');
   feed.innerHTML = html;

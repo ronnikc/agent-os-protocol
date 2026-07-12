@@ -458,9 +458,29 @@ body {
   line-height: 1.6;
 }
 .feed-item {
-  padding: 6px 0;
+  padding: 8px 0;
   border-bottom: 1px solid rgba(34, 52, 82, 0.2);
 }
+.feed-head { margin-bottom: 4px; }
+/* Agent message body: its own block so multi-paragraph markdown reads cleanly (like the lobby web). */
+.feed-content.markdown-body {
+  display: block;
+  padding: 8px 10px;
+  background: rgba(16, 27, 49, 0.35);
+  border: 1px solid var(--color-border, rgba(34, 52, 82, 0.4));
+  border-radius: 6px;
+  line-height: 1.55;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.feed-content.markdown-body > :first-child { margin-top: 0; }
+.feed-content.markdown-body > :last-child { margin-bottom: 0; }
+.feed-content.markdown-body p { margin: 6px 0; }
+.feed-content.markdown-body ul, .feed-content.markdown-body ol { margin: 6px 0; padding-left: 20px; }
+.feed-content.markdown-body li { margin: 2px 0; }
+.feed-content.markdown-body code { background: var(--bg-base, #0b1326); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.feed-content.markdown-body pre { margin: 6px 0; }
+.feed-content.markdown-body a { color: var(--color-cyan); }
 .feed-time {
   color: var(--color-text-soft);
   margin-right: 8px;

@@ -744,6 +744,33 @@ async function main(): Promise<void> {
     assert.equal(s.status, 'none'); assert.equal(s.total, 0);
   });
 
+  await check('TOKEN PROVIDER: repo client mints a fresh token per call and refreshes once on 401', async () => {
+    let minted = 0;
+    const provider = async () => { minted++; return `tok-${minted}`; };
+    let seenAuth: string[] = [];
+    let failFirst = true;
+    const fetchFn = (async (url: string, opts?: any) => {
+      seenAuth.push((opts?.headers?.Authorization) || '');
+      if (url.includes('/contents/a.txt')) {
+        if (failFirst) { failFirst = false; return new Response('bad creds', { status: 401 }); }
+        return new Response(JSON.stringify({ type: 'file', content: Buffer.from('hi').toString('base64') }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', provider, fetchFn, 'main');
+    const out = await c.readFile('a.txt');
+    assert.equal(out, 'hi', 'succeeds after the 401 refresh retry');
+    assert.equal(minted >= 2, true, 'token provider was called again to refresh on 401');
+    assert.equal(seenAuth[1], 'token tok-2', 'the retry used a freshly-minted token');
+
+    // A static token cannot refresh — a 401 surfaces as an error, no infinite retry.
+    let hits = 0;
+    const staticFetch = (async () => { hits++; return new Response('bad creds', { status: 401 }); }) as unknown as typeof fetch;
+    const s = new GitHubRepoClient('o', 'r', 'static-tok', staticFetch, 'main');
+    await assert.rejects(() => s.readFile('a.txt'), /401/);
+    assert.equal(hits, 1, 'static token does not retry on 401');
+  });
+
   await check('MERGE MEMORY: getPullRequest reports merge state; appendToFile creates then appends', async () => {
     let putBody: any;
     const store: Record<string, string> = {};
