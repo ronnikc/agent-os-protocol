@@ -3314,6 +3314,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     try {
       const specs = await store.listAllHostedAgentSpecs();
       if (specs.length === 0) return;
+      // The persisted boss_agent_id points at the PRE-restart (now-reaped) agent id — floor control
+      // would be dead. Clear the seat per lobby so the re-launched boss-role agent re-appoints itself
+      // (spawnHostedAgent auto-appoints only when the seat is empty). This is why the boss assignment
+      // was "forgotten after deploy".
+      for (const lobbyId of new Set(specs.map(s => s.lobby_id))) {
+        await store.updateLobby(lobbyId, { boss_agent_id: '' as any }).catch(() => {});
+      }
       console.log(`[lobby-server] re-launching ${specs.length} hosted agent(s) from persisted specs`);
       for (const spec of specs) {
         try {
