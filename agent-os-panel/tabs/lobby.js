@@ -542,7 +542,10 @@ function renderLobby() {
         default_permissions: {
           contents: "write",
           pull_requests: "write",
-          metadata: "read"
+          metadata: "read",
+          // Read CI results on task PRs: check runs need `checks`, Actions runs/logs need `actions`.
+          checks: "read",
+          actions: "read"
         },
         default_events: []
       };
