@@ -226,7 +226,7 @@ window.showAgentCard = function(agentId) {
   }
   const row = (k, v) => `<div style="display:flex;gap:8px;margin-bottom:6px;"><span style="min-width:96px;color:var(--color-text-soft);">${k}</span><span style="flex:1;">${v}</span></div>`;
 
-  titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${statusColor}22;color:${statusColor};font-size:16px;margin-right:8px;">${isVerified ? '✓' : hasDid ? '◆' : '○'}</span>Agent Card`;
+  titleEl.innerHTML = `<span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:${statusColor}22;color:${statusColor};font-size:16px;margin-right:8px;">${isVerified ? '✓' : hasDid ? '◆' : '○'}</span>Agent ID Card`;
   titleEl.style.color = statusColor;
   msgEl.innerHTML = `
     <div style="text-align:left;font-size:13px;line-height:1.5;">
@@ -247,10 +247,21 @@ window.showAgentCard = function(agentId) {
   if (card) card.style.animation = 'modalSlideIn 0.2s ease-out';
 };
 
-// Delegated click for the roster's Identity badge — survives re-renders and needs no inline handler.
+// Delegated activation for the roster's "Agent ID Card" trigger — survives re-renders and needs no
+// inline handler. Handles both click and keyboard (Enter/Space) so the role="button" link is
+// accessible, and opens the in-page modal (never an external link / new tab).
+function openAgentCardFrom(target) {
+  const el = target && target.closest && target.closest('[data-agent-card]');
+  if (el) { window.showAgentCard(el.getAttribute('data-agent-card')); return true; }
+  return false;
+}
 document.addEventListener('click', (e) => {
-  const el = e.target.closest && e.target.closest('[data-agent-card]');
-  if (el) window.showAgentCard(el.getAttribute('data-agent-card'));
+  if (openAgentCardFrom(e.target)) e.preventDefault();
+});
+document.addEventListener('keydown', (e) => {
+  if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.matches && e.target.matches('[data-agent-card]')) {
+    if (openAgentCardFrom(e.target)) e.preventDefault();
+  }
 });
 
 // Close modal on ESC key
@@ -392,7 +403,10 @@ function renderRoster() {
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
-          <div class="agent-meta-val" style="color: ${idColor}; cursor:pointer; text-decoration:underline dotted;" title="View agent card" data-agent-card="${escapeHtml(agent.agent_id)}">${escapeHtml(idLabel)} ↗</div>
+          <div class="agent-meta-val" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+            <span style="color: ${idColor}; font-weight:600;">${escapeHtml(idLabel)}</span>
+            <a role="button" tabindex="0" class="agent-card-link" title="Open the Agent ID Card" data-agent-card="${escapeHtml(agent.agent_id)}" style="color:var(--color-cyan); cursor:pointer; text-decoration:underline; font-size:12px;">Agent ID Card</a>
+          </div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Runtime:</span></div>
