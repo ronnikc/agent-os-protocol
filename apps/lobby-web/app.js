@@ -215,14 +215,16 @@ window.showAgentCard = function(agentId) {
   const statusColor = isVerified ? 'var(--color-green)' : hasDid ? 'var(--color-cyan)' : 'var(--color-text-soft)';
   const did = agent.identity_ref || '';
   let didHtml = '<span style="color:var(--color-text-soft);">none</span>';
+  let explorerHtml = '';
   if (did) {
-    const parts = did.split(':'); // did:ccd:<network>:<account>
-    const net = parts[2] || 'mainnet';
-    const acct = parts[3] || '';
-    const link = acct ? `https://ccdexplorer.io/${net}/account/${encodeURIComponent(acct)}` : '';
+    // Reuse the SAME resolver the ID-creation flow uses (getExplorerLink) so the CCDExplorer link is
+    // always valid — an agent DID is often did:ccd:<net>:agent-XXXX or a token index, NOT an account
+    // address, and the old hand-built `/account/<sub-id>` URL pointed at a non-existent page.
+    const link = getExplorerLink(did);
     didHtml = link
-      ? `<a href="${link}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;word-break:break-all;">${escapeHtml(did)} ↗</a>`
+      ? `<a href="${escapeHtml(link)}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;word-break:break-all;">${escapeHtml(did)} ↗</a>`
       : `<span style="word-break:break-all;">${escapeHtml(did)}</span>`;
+    if (link) explorerHtml = `<a href="${escapeHtml(link)}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;">View on CCDExplorer ↗</a>`;
   }
   const row = (k, v) => `<div style="display:flex;gap:8px;margin-bottom:6px;"><span style="min-width:96px;color:var(--color-text-soft);">${k}</span><span style="flex:1;">${v}</span></div>`;
 
@@ -235,6 +237,7 @@ window.showAgentCard = function(agentId) {
       ${row('Status', escapeHtml(agent.status || 'idle'))}
       ${row('Identity', `<span style="color:${statusColor};font-weight:600;">${escapeHtml(statusLabel)}</span>`)}
       ${row('Agent ID', didHtml)}
+      ${explorerHtml ? row('Explorer', explorerHtml) : ''}
       ${row('Runtime', escapeHtml(agent.runtime || '—'))}
       ${row('Model', escapeHtml(agent.model || '—'))}
       <div style="margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08);font-size:11px;color:var(--color-text-soft);line-height:1.5;">
