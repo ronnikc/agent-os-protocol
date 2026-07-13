@@ -14,7 +14,7 @@ import { saveIntegrationSecret, getDecryptedSecret } from './githubApp.js';
  * Slack foundation, generalized so Discord/Telegram/Supabase don't each reinvent secret handling.
  */
 
-export type OwnerConnectedProvider = 'discord' | 'telegram' | 'supabase';
+export type OwnerConnectedProvider = 'discord' | 'telegram' | 'supabase' | 'slack' | 'dreambase';
 
 export interface ConnectOwnerIntegrationParams {
   lobbyId: string;

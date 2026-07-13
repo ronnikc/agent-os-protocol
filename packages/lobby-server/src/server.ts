@@ -2029,11 +2029,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // The LobbyOwner brings their OWN bot token / project key; the lobby seals it per-lobby and never
     // shares it. GET returns connected status with a masked hint only (never the secret); POST connects
     // (or reconnects, revoking the prior credential); DELETE revokes. Owner-gated like every manage op.
-    const ownerIntegMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/(discord|telegram|supabase)$/);
+    const ownerIntegMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/(discord|telegram|supabase|slack|dreambase)$/);
     if (ownerIntegMatch) {
       const lobbyId = ownerIntegMatch[1];
       const provider = ownerIntegMatch[2] as OwnerConnectedProvider;
-      const secretType = provider === 'supabase' ? 'access_token' as const : 'bot_token' as const;
+      const secretType = (provider === 'supabase' || provider === 'dreambase') ? 'access_token' as const : 'bot_token' as const;
       if (req.method === 'GET') {
         // Status is owner-only too — a masked hint still confirms a credential is set.
         const identityRef = sessionIdentity(lobbyId);
@@ -2046,13 +2046,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!identityRef) return json({ error: 'authentication required' }, 401);
         if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
         const body = await readBody(req).catch(() => ({} as any));
-        // Discord/Telegram: a bot token (+ channel/chat id). Supabase: a service key (+ project URL/ref).
-        const secret = String(body?.secret ?? body?.bot_token ?? body?.service_key ?? '').trim();
-        if (!secret) return json({ error: `a ${provider === 'supabase' ? 'service key' : 'bot token'} is required` }, 400);
+        // Discord/Telegram/Slack: a bot token (+ channel/chat/workspace id). Supabase: a service key
+        // (+ project URL). dreambase: an API key (+ project id).
+        const secret = String(body?.secret ?? body?.bot_token ?? body?.service_key ?? body?.api_key ?? '').trim();
+        const credName = provider === 'supabase' ? 'service key' : provider === 'dreambase' ? 'API key' : 'bot token';
+        if (!secret) return json({ error: `a ${credName} is required` }, 400);
         const externalId = body?.external_id != null ? String(body.external_id).trim() : undefined;
         const externalName = body?.name != null ? String(body.name).trim() : undefined;
-        // Supabase keeps the (non-secret) project URL in scopes so the UI + scaffold can read it back.
-        const scopes = provider === 'supabase' && body?.project_url ? [`url:${String(body.project_url).trim()}`] : undefined;
+        // Non-secret config the UI reads back is kept in scopes: Supabase's project URL, dreambase's
+        // project id. Never a credential — the sealed secret is the only thing in the vault.
+        const scopes = provider === 'supabase' && body?.project_url ? [`url:${String(body.project_url).trim()}`]
+          : provider === 'dreambase' && body?.project_id ? [`project:${String(body.project_id).trim()}`]
+          : undefined;
         try {
           const integ = await connectOwnerIntegration({ lobbyId, identityRef, provider, secret, secretType, externalId, externalName, scopes }, store);
           await recordEvent(lobbyId, `${provider}_connected`, identityRef, { external_id: externalId, name: externalName });
