@@ -5,9 +5,12 @@
  * orchestrates, but deploys/DBs/bots run on YOUR accounts. The GitHub repo connection itself stays
  * in the Lobby tab; this tab is where you turn that repo into something that ships and talks.
  *
- *   Live now:   Vercel deploy scaffold · GitHub Actions CI scaffold
- *   Foundation: Slack (server-side integration foundation)
- *   Planned:    Discord · Telegram · Supabase (hosted DB) · dreambase.io (stats)
+ *   Deploy & CI:  Vercel deploy scaffold · GitHub Actions CI scaffold
+ *   Chat apps:    Slack · Discord · Telegram (owner-connected bot token, sealed per-lobby)
+ *   Data & stats: Supabase (hosted DB + migrations scaffold) · dreambase.io (stats, on Supabase)
+ *
+ * Every integration is owner-connected: the owner brings their own credential, the lobby seals it
+ * per-lobby and never shares it; status endpoints return only a masked hint.
  */
 import { fetchJson, registerTab, escapeHtml, showAlert, showHtmlAlert } from '../app.js';
 
@@ -92,11 +95,13 @@ async function render() {
     el.innerHTML = `<div class="empty-state" style="padding:32px;">Apps (Vercel deploy, CI, chat &amp; data integrations) are available in the hosted lobby.</div>`;
     return;
   }
-  const [gh, discordStatus, telegramStatus, supabaseStatus] = await Promise.all([
+  const [gh, slackStatus, discordStatus, telegramStatus, supabaseStatus, dreambaseStatus] = await Promise.all([
     fetchJson('/api/lobby/remote/integrations/github').catch(() => null),
+    integStatus('slack'),
     integStatus('discord'),
     integStatus('telegram'),
     integStatus('supabase'),
+    integStatus('dreambase'),
   ]);
   github = gh;
   const repo = github?.connected && github.repo ? github.repo : '';
@@ -119,10 +124,15 @@ async function render() {
   });
 
   // ── Chat apps ──
+  const slackFields = [
+    { key: 'bot_token', placeholder: 'Slack bot token (xoxb-…)', type: 'password' },
+    { key: 'external_id', placeholder: 'Channel ID (optional)' },
+  ];
   const slack = card({
-    accent: '#611f69', badge: foundationBadge, title: 'Slack',
-    body: `Relay the lobby chat to/from a Slack workspace so the swarm is reachable where your team already works. The server-side foundation (install + authorization) is in place; the panel configuration UI is being wired next.`,
-    foot: 'Owner-connected: your Slack app + bot token, scoped to this lobby.',
+    accent: '#611f69', badge: slackStatus?.connected ? liveBadge : foundationBadge, title: 'Slack',
+    body: `Relay the lobby chat to/from a Slack workspace so the swarm is reachable where your team already works. Paste a <strong>bot token</strong> from your own Slack app (and optionally a channel ID). Sealed per-lobby, never shared.`,
+    actions: slackStatus?.connected ? connectedRow('slack', slackStatus) : connectRow('slack', slackFields),
+    foot: 'Owner-connected: your Slack app + bot token, scoped to this lobby. <a href="https://api.slack.com/apps" target="_blank" rel="noopener">Create an app →</a>',
   });
   const discordFields = [
     { key: 'bot_token', placeholder: 'Discord bot token', type: 'password' },
@@ -162,12 +172,19 @@ async function render() {
     actions: supabaseActions,
     foot: 'Owner-connected: your Supabase project + service key, scoped to this lobby. <a href="https://supabase.com/dashboard" target="_blank" rel="noopener">Open dashboard →</a>',
   });
+  const dreambaseConnected = !!dreambaseStatus?.connected;
+  const dreambaseFields = [
+    { key: 'api_key', placeholder: 'dreambase API key', type: 'password' },
+    { key: 'project_id', placeholder: 'Project ID (optional)' },
+  ];
+  const dreambaseActions = !supabaseConnected
+    ? `<div style="font-size:11px; color:var(--color-yellow);">Connect <strong>Supabase</strong> above first — dreambase surfaces stats on top of it.</div>`
+    : dreambaseConnected ? connectedRow('dreambase', dreambaseStatus) : connectRow('dreambase', dreambaseFields);
   const dreambase = card({
-    accent: '#7c5cff', badge: supabaseConnected ? foundationBadge : plannedBadge, title: 'dreambase.io — stats',
-    body: `Surface project stats and analytics on top of your connected Supabase — usage, growth and health at a glance.`,
-    foot: supabaseConnected
-      ? 'Supabase is connected — dreambase stats wiring is the next increment.'
-      : 'Available when Supabase is connected. Planned.',
+    accent: '#7c5cff', badge: dreambaseConnected ? liveBadge : supabaseConnected ? foundationBadge : plannedBadge, title: 'dreambase.io — stats',
+    body: `Surface project stats and analytics on top of your connected Supabase — usage, growth and health at a glance. Paste your <strong>dreambase API key</strong> (and optionally a project ID); sealed per-lobby, never shared.`,
+    actions: dreambaseActions,
+    foot: 'Owner-connected: your dreambase account, scoped to this lobby. <a href="https://dreambase.io" target="_blank" rel="noopener">dreambase.io →</a>',
   });
 
   el.innerHTML = `
@@ -181,9 +198,11 @@ async function render() {
 
   document.getElementById('btn-app-vercel')?.addEventListener('click', () => scaffold('scaffold-vercel', 'Vercel deploy', el));
   document.getElementById('btn-app-ci')?.addEventListener('click', () => scaffold('scaffold-ci', 'CI', el));
+  wireOwnerIntegration('slack', slackFields);
   wireOwnerIntegration('discord', discordFields);
   wireOwnerIntegration('telegram', telegramFields);
   wireOwnerIntegration('supabase', supabaseFields);
+  wireOwnerIntegration('dreambase', dreambaseFields);
   document.getElementById('btn-app-supabase-scaffold')?.addEventListener('click', () => scaffold('scaffold-supabase', 'Supabase migrations', el));
 }
 
