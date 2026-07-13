@@ -2511,6 +2511,77 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // POST /lobbies/:id/messages/upload — upload a file/image in the Messages tab: ingest it into the
+    // Knowledge Base (same pipeline as /kb/upload) AND post a chat message carrying the attachment,
+    // optionally linked to a task. One action → the file becomes searchable KB context AND is visible
+    // in the conversation, tied to the work it belongs to. Owner-gated (it writes to the KB).
+    const msgUploadMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/messages\/upload$/);
+    if (msgUploadMatch && req.method === 'POST') {
+      const lobbyId = msgUploadMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const lobby = await store.getLobby(lobbyId);
+      if (!lobby) return json({ error: 'Lobby not found' }, 404);
+      const body = await readBody(req, MAX_UPLOAD_BODY_BYTES);
+      if (body.__body_too_large) {
+        return json({ error: `file too large — uploads are limited to ~${Math.floor(MAX_UPLOAD_BODY_BYTES / 1_048_576 * 0.75)} MB per file` }, 413);
+      }
+      const fileName = typeof body.file_name === 'string' ? body.file_name.trim() : '';
+      const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : '';
+      const fileContentBase64 = typeof body.file_content === 'string' ? body.file_content : '';
+      const taskId = typeof body.task_id === 'string' && body.task_id.trim() ? body.task_id.trim() : undefined;
+      const note = typeof body.content === 'string' ? body.content.trim() : '';
+      if (!fileName || !mimeType || !fileContentBase64) {
+        return json({ error: 'file_name, mime_type, and file_content (base64) are required' }, 400);
+      }
+      // A supplied task_id must name a real task in this lobby, so an attachment link is never dangling.
+      if (taskId) {
+        const t = await store.getTask(lobbyId, taskId).catch(() => null);
+        if (!t) return json({ error: 'task_id does not match a task in this lobby' }, 400);
+      }
+
+      const buffer = Buffer.from(fileContentBase64, 'base64');
+      const jobId = `job_${randomUUID()}`;
+      const kb = await store.getKnowledgeBase(lobbyId);
+      const job = await store.upsertKnowledgeSyncJob({
+        id: jobId,
+        lobby_id: lobbyId,
+        kb_id: kb?.id || 'none',
+        source_provider: 'upload',
+        status: 'queued',
+        source_ref: taskId ? `task:${taskId}` : 'message-attachment',
+        created_by_identity_ref: identityRef,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      const { processKnowledgeSyncJob } = await import('./kb/jobs.js');
+      processKnowledgeSyncJob(jobId, buffer, fileName, mimeType, store).catch((err) => {
+        console.error(`[Messages Upload] Async KB processing failed for job ${jobId}:`, err);
+      });
+
+      // Post the attachment as a chat message so it appears in the feed, linked to the task if given.
+      const isImage = mimeType.startsWith('image/');
+      const attachment = {
+        file_name: fileName, mime_type: mimeType, kb_job_id: jobId,
+        size_bytes: buffer.length, is_image: isImage, ...(taskId ? { task_id: taskId } : {}),
+      };
+      const seq = await store.nextSeq(lobbyId);
+      const fromId = 'LobbyOwner'; // manager-gated above
+      const defaultContent = `📎 Uploaded **${fileName}** to the Knowledge Base${taskId ? ` · linked to task \`${taskId}\`` : ''}`;
+      const message: LobbyMessage = {
+        message_id: randomUUID(), seq, from_agent_id: fromId, to_agent_id: 'all',
+        message_type: 'chat', content: note || defaultContent, created_at: new Date().toISOString(),
+        delivered: false, attachment,
+      };
+      await store.appendMessage(lobbyId, message);
+      await recordEvent(lobbyId, 'message_attachment_uploaded', fromId, { file_name: fileName, mime_type: mimeType, kb_job_id: jobId, task_id: taskId });
+      const outMsg: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, outMsg);
+
+      return json({ message, job }, 201);
+    }
+
     // The lobby only relays reads and sign-ready payload builders; signing and submission
     // happen in the owner's wallet, client-side. No keys pass through here.
 

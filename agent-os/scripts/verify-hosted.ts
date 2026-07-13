@@ -865,6 +865,26 @@ async function main(): Promise<void> {
     assert.equal(await revokeOwnerIntegration(L, 'telegram', store), false, 'revoke of a never-connected provider is a no-op');
   });
 
+  await check('MESSAGE ATTACHMENT: a KB-linked file attachment round-trips on a lobby message', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `MA-${Date.now().toString(36)}`;
+    await store.createLobby({ lobby_id: L, org_id: 'default', name: 'MA', status: 'active', connected_agent_ids: [], message_seq: 0, created_at: '', updated_at: '', created_by: 'owner' } as unknown as Parameters<InMemoryLobbyStore['createLobby']>[0]);
+    const seq = await store.nextSeq(L);
+    const message = {
+      message_id: 'm1', seq, from_agent_id: 'LobbyOwner', to_agent_id: 'all',
+      message_type: 'chat' as const, content: '📎 Uploaded spec.pdf', created_at: new Date().toISOString(),
+      delivered: false,
+      attachment: { file_name: 'spec.pdf', mime_type: 'application/pdf', kb_job_id: 'job_x', size_bytes: 2048, is_image: false, task_id: 'task-7' },
+    };
+    await store.appendMessage(L, message);
+    const back = (await store.listMessages(L)).find(m => m.message_id === 'm1');
+    assert.ok(back?.attachment, 'attachment persisted on the message');
+    assert.equal(back!.attachment!.file_name, 'spec.pdf', 'file name round-trips');
+    assert.equal(back!.attachment!.kb_job_id, 'job_x', 'KB job id links the message to the ingested file');
+    assert.equal(back!.attachment!.task_id, 'task-7', 'attachment carries the linked task id');
+    assert.equal(back!.attachment!.is_image, false, 'non-image flagged correctly');
+  });
+
   // ── L. ApiRuntimeAdapter tool call loop ──
   await check('ApiRuntimeAdapter executes repository tools inside loop', async () => {
     const mockRepoClient = {
