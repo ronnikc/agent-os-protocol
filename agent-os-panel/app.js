@@ -263,6 +263,15 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
         } else if (cleanPath === 'integrations/github/connect') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
+        } else if (/^integrations\/(discord|telegram|slack|supabase|dreambase)$/.test(cleanPath)) {
+          // Owner-connected chat/data integrations (GET status · POST connect · DELETE revoke). These
+          // are lobby-scoped; without this mapping the generic fallback dropped the /lobbies/:id/
+          // segment and the server 404'd ("Connect failed — not found").
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/${cleanPath}`;
+        } else if (cleanPath === 'messages/upload') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages/upload`;
+        } else if (cleanPath === 'repo/scaffold-supabase') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/scaffold-supabase`;
         } else if (cleanPath === 'repo/initialize') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/initialize`;
         } else if (cleanPath === 'repo/ui-assist') {
