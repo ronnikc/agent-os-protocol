@@ -126,33 +126,33 @@ async function render() {
   // ── Chat apps ──
   const slackFields = [
     { key: 'bot_token', placeholder: 'Slack bot token (xoxb-…)', type: 'password' },
-    { key: 'external_id', placeholder: 'Channel ID (optional)' },
+    { key: 'external_id', placeholder: 'Channel ID — e.g. C0123ABC (required to relay)' },
   ];
   const slack = card({
     accent: '#611f69', badge: slackStatus?.connected ? liveBadge : foundationBadge, title: 'Slack',
-    body: `Relay the lobby chat to/from a Slack workspace so the swarm is reachable where your team already works. Paste a <strong>bot token</strong> from your own Slack app (and optionally a channel ID). Sealed per-lobby, never shared.`,
+    body: `Mirror the swarm's messages into a Slack channel so you can watch the fleet from where your team works. Paste a <strong>bot token</strong> from your own Slack app and the <strong>channel ID</strong> to post into (invite the bot to that channel first). Sealed per-lobby, never shared.`,
     actions: slackStatus?.connected ? connectedRow('slack', slackStatus) : connectRow('slack', slackFields),
-    foot: 'Owner-connected: your Slack app + bot token, scoped to this lobby. <a href="https://api.slack.com/apps" target="_blank" rel="noopener">Create an app →</a>',
+    foot: 'Outbound relay (swarm → your channel). Owner-connected. <a href="https://api.slack.com/apps" target="_blank" rel="noopener">Create an app →</a>',
   });
   const discordFields = [
     { key: 'bot_token', placeholder: 'Discord bot token', type: 'password' },
-    { key: 'external_id', placeholder: 'Channel ID (optional)' },
+    { key: 'external_id', placeholder: 'Channel ID (required to relay)' },
   ];
   const discord = card({
     accent: '#5865F2', badge: discordStatus?.connected ? liveBadge : foundationBadge, title: 'Discord',
-    body: `Bridge the lobby to a Discord server so the swarm is reachable from your channels. Paste a <strong>bot token</strong> from your own Discord app (and optionally a channel ID). Agent OS seals it per-lobby and never shares it.`,
+    body: `Mirror the swarm's messages into a Discord channel. Paste a <strong>bot token</strong> from your own Discord app and the <strong>channel ID</strong> to post into (the bot must be in that server/channel). Sealed per-lobby, never shared.`,
     actions: discordStatus?.connected ? connectedRow('discord', discordStatus) : connectRow('discord', discordFields),
-    foot: 'Owner-connected: your Discord app + bot token, scoped to this lobby. <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Create a bot →</a>',
+    foot: 'Outbound relay (swarm → your channel). Owner-connected. <a href="https://discord.com/developers/applications" target="_blank" rel="noopener">Create a bot →</a>',
   });
   const telegramFields = [
     { key: 'bot_token', placeholder: 'Telegram bot token', type: 'password' },
-    { key: 'external_id', placeholder: 'Chat/channel ID (optional)' },
+    { key: 'external_id', placeholder: 'Chat ID — e.g. -1001234567890 (required to relay)' },
   ];
   const telegram = card({
     accent: '#229ED9', badge: telegramStatus?.connected ? liveBadge : foundationBadge, title: 'Telegram',
-    body: `Bridge the lobby to a Telegram chat/channel for mobile-first notifications and control. Paste a <strong>bot token</strong> from <code>@BotFather</code> (and optionally a chat ID). Sealed per-lobby, never shared.`,
+    body: `Mirror the swarm's messages into a Telegram chat/channel for mobile-first visibility. Paste a <strong>bot token</strong> from <code>@BotFather</code> and the <strong>chat ID</strong> to post into (add the bot to the chat first). Sealed per-lobby, never shared.`,
     actions: telegramStatus?.connected ? connectedRow('telegram', telegramStatus) : connectRow('telegram', telegramFields),
-    foot: 'Owner-connected: your Telegram bot token, scoped to this lobby. <a href="https://core.telegram.org/bots#botfather" target="_blank" rel="noopener">Create a bot →</a>',
+    foot: 'Outbound relay (swarm → your chat). Owner-connected. <a href="https://core.telegram.org/bots#botfather" target="_blank" rel="noopener">Create a bot →</a>',
   });
 
   // ── Data & stats ──

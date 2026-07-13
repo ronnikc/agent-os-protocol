@@ -39,6 +39,7 @@ import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/s
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, maskSecret } from '../../packages/lobby-server/src/integrations/ownerConnectedApp.js';
+import { relayLobbyMessageToChatApps, formatRelayText } from '../../packages/lobby-server/src/integrations/chatRelay.js';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
@@ -872,6 +873,43 @@ async function main(): Promise<void> {
     assert.equal(await revokeOwnerIntegration(L, 'discord', store), true, 'revoke returns true when it revoked');
     assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord disconnected after revoke');
     assert.equal(await revokeOwnerIntegration(L, 'telegram', store), false, 'revoke of a never-connected provider is a no-op');
+  });
+
+  await check('CHAT RELAY: mirrors a lobby message to connected Slack/Telegram; skips a channel-less provider', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `CR-${Date.now().toString(36)}`;
+    await store.createLobby({ lobby_id: L, org_id: 'default', name: 'CR', status: 'active', connected_agent_ids: [], message_seq: 0, created_at: '', updated_at: '', created_by: 'owner' } as unknown as Parameters<InMemoryLobbyStore['createLobby']>[0]);
+    // Telegram + Slack connected WITH a channel id; Discord connected WITHOUT one (should be skipped).
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'telegram', secret: 'TG-TOKEN', externalId: '-1009988' }, store);
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'slack', secret: 'xoxb-SLACK', externalId: 'C0ABC' }, store);
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'DISCORD-TOK' }, store); // no channel
+
+    const calls: Array<{ url: string; opts: any }> = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, opts: any) => {
+      calls.push({ url: String(url), opts });
+      return { ok: true, json: async () => ({ ok: true }) } as any;
+    }) as any;
+    let delivered: string[] = [];
+    try {
+      delivered = await relayLobbyMessageToChatApps(store, L, { from_agent_id: 'system', content: 'Task done ✅', message_type: 'system' });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+    assert.deepEqual(delivered.slice().sort(), ['slack', 'telegram'], 'delivered to the two channel-bound providers, not channel-less discord');
+
+    const tg = calls.find(c => c.url.includes('api.telegram.org'));
+    assert.ok(tg && tg.url.includes('/botTG-TOKEN/sendMessage'), 'telegram bot token goes in the URL path');
+    const tgBody = JSON.parse(tg!.opts.body);
+    assert.equal(tgBody.chat_id, '-1009988', 'telegram posts to the supplied chat id');
+    assert.equal(tgBody.text, 'Agent OS: Task done ✅', 'system sender relays as "Agent OS", content preserved');
+
+    const sl = calls.find(c => c.url.includes('slack.com'));
+    assert.equal(sl!.opts.headers.authorization, 'Bearer xoxb-SLACK', 'slack uses Bearer bot token');
+    assert.equal(JSON.parse(sl!.opts.body).channel, 'C0ABC', 'slack posts to the supplied channel');
+
+    assert.ok(!calls.some(c => c.url.includes('discord.com')), 'channel-less discord is skipped (no target)');
+    assert.equal(formatRelayText('Api Agent', 'hello'), 'Api Agent: hello', 'relay text is "Name: content"');
   });
 
   await check('MESSAGE ATTACHMENT: a KB-linked file attachment round-trips on a lobby message', async () => {

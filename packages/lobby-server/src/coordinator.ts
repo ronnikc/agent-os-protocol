@@ -35,6 +35,7 @@ import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
 import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
 import { validateSessionToken } from './auth/identityProof.js';
+import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 
 /**
  * The read-only identity-verification seam (Phase 8). The coordinator stays decoupled from any
@@ -435,6 +436,8 @@ export class LobbyCoordinator {
     };
     await this.store.appendMessage(conn.lobbyId, message);
     await this.event(conn.lobbyId, 'message_sent', conn.agentId, { to: msg.to_agent_id, broadcast: isBroadcast });
+    // Mirror the swarm's chatter out to any connected Slack/Telegram/Discord channel (fire-and-forget).
+    void relayLobbyMessageToChatApps(this.store, conn.lobbyId, message);
 
     const received: LobbyToAgentMessage = { type: 'lobby-message-received', message };
     if (isBroadcast) {

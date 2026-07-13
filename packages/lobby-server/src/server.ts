@@ -30,6 +30,7 @@ import { githubAppConfig, getInstallationToken, installUrl, listAppInstallations
 import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
+import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
@@ -3003,6 +3004,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, outMsg);
         }
+        // Mirror owner/web messages out to any connected Slack/Telegram/Discord channel.
+        void relayLobbyMessageToChatApps(store, lobbyId, message);
 
         return json({ message }, 201);
       }
