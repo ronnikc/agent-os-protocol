@@ -102,6 +102,24 @@ export interface LobbyMessage {
   created_at: string;
   /** Whether the recipient has acknowledged receipt. */
   delivered: boolean;
+  /** Optional file/image attachment stored in the Knowledge Base, optionally linked to a task. */
+  attachment?: LobbyMessageAttachment;
+}
+
+/** A file or image uploaded in the Messages tab, ingested into the Knowledge Base. */
+export interface LobbyMessageAttachment {
+  /** Original file name. */
+  file_name: string;
+  /** MIME type of the uploaded file. */
+  mime_type: string;
+  /** The KB sync job that ingested this file (so the panel can trace it to the KB). */
+  kb_job_id: string;
+  /** Byte size of the uploaded file. */
+  size_bytes: number;
+  /** True when the MIME type is an image (the panel can render a thumbnail note). */
+  is_image: boolean;
+  /** Optional task this attachment is evidence/context for — links the file to executed work. */
+  task_id?: string;
 }
 
 // ── Lobby Requests (human approval workflow) ──

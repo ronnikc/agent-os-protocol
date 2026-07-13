@@ -159,6 +159,7 @@
         <div class="feed-item" style="color:var(--text-muted)">(loading...)</div>
       </div>
     </div>
+    <div class="toolbar" id="msg-attach-staging" style="display:none;border-top:1px solid var(--border);border-bottom:none;"></div>
     <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:none;">
       <select id="msg-send-to" style="width:160px" aria-label="Recipient Agent">
         <option value="*">All Agents (broadcast)</option>
@@ -171,6 +172,8 @@
         <option value="completion">completion</option>
       </select>
       <input type="text" id="msg-send-content" placeholder="Send a message..." style="flex:1" aria-label="Message Content" />
+      <input type="file" id="msg-attach-input" style="display:none" aria-hidden="true" />
+      <button class="btn btn-secondary btn-sm" id="msg-attach-btn" title="Attach a file or image — stored in the Knowledge Base (hosted lobby)">📎</button>
       <button class="btn btn-primary btn-sm" id="msg-send-btn">Send</button>
     </div>
   </div>

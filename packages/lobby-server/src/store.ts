@@ -39,6 +39,17 @@ export function hostedAgentSpecKey(lobbyId: string, roleOrName: string): string 
   return `${lobbyId}::${roleOrName}`;
 }
 
+/**
+ * The current shared "work session" branch + PR for a lobby. All task writes in a session stack onto
+ * this one branch so the swarm produces ONE reviewable Pull Request, not a conflicting PR per task.
+ * A new session starts once this PR merges/closes.
+ */
+export interface LobbyWorkSession {
+  branch: string;
+  pr_url: string;
+  pr_number: number | null;
+}
+
 export interface LobbyStore {
   createLobby(lobby: LobbySession): Promise<LobbySession>;
   getLobby(lobbyId: string): Promise<LobbySession | undefined>;
@@ -73,7 +84,7 @@ export interface LobbyStore {
   updateMember(lobbyId: string, memberId: string, patch: Partial<LobbyMember>): Promise<LobbyMember | undefined>;
 
   addIntegration(integration: LobbyIntegration): Promise<LobbyIntegration>;
-  getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined>;
+  getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase'): Promise<LobbyIntegration | undefined>;
   listIntegrations(lobbyId: string): Promise<LobbyIntegration[]>;
   updateIntegration(lobbyId: string, integrationId: string, patch: Partial<LobbyIntegration>): Promise<LobbyIntegration | undefined>;
 
@@ -102,6 +113,8 @@ export interface LobbyStore {
   listHostedAgentSpecs(lobbyId: string): Promise<HostedAgentSpec[]>;
   listAllHostedAgentSpecs(): Promise<HostedAgentSpec[]>;
   removeHostedAgentSpec(lobbyId: string, roleOrName: string): Promise<void>;
+  getLobbySession(lobbyId: string): Promise<LobbyWorkSession | undefined>;
+  setLobbySession(lobbyId: string, session: LobbyWorkSession): Promise<void>;
 
   upsertKnowledgeSyncJob(job: KnowledgeSyncJob): Promise<KnowledgeSyncJob>;
   getKnowledgeSyncJob(jobId: string): Promise<KnowledgeSyncJob | undefined>;
@@ -159,6 +172,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private knowledgeBases = new Map<string, KnowledgeBase>(); // lobbyId -> KnowledgeBase
   private agentNicknames = new Map<string, Record<string, string>>(); // lobbyId -> { role: nickname }
   private hostedAgentSpecs = new Map<string, HostedAgentSpec>(); // `${lobbyId}::${role|name}` -> desired hosted agent
+  private lobbySessions = new Map<string, LobbyWorkSession>(); // lobbyId -> current shared session branch/PR
   private syncJobs = new Map<string, KnowledgeSyncJob>(); // jobId -> KnowledgeSyncJob
   private nonces = new Map<string, { nonce: string; lobbyId: string; expiresAt: number }>(); // identityRef -> nonce details
   
@@ -204,6 +218,7 @@ export class InMemoryLobbyStore implements LobbyStore {
         knowledgeBases: Array.from(this.knowledgeBases.entries()),
         agentNicknames: Array.from(this.agentNicknames.entries()),
         hostedAgentSpecs: Array.from(this.hostedAgentSpecs.entries()),
+        lobbySessions: Array.from(this.lobbySessions.entries()),
         syncJobs: Array.from(this.syncJobs.entries()),
         marketplaceTasks: Array.from(this.marketplaceTasks.entries()),
         bids: Array.from(this.bids.entries()),
@@ -257,6 +272,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       if (Array.isArray(data.knowledgeBases)) this.knowledgeBases = new Map(data.knowledgeBases);
       if (Array.isArray(data.agentNicknames)) this.agentNicknames = new Map(data.agentNicknames);
       if (Array.isArray(data.hostedAgentSpecs)) this.hostedAgentSpecs = new Map(data.hostedAgentSpecs);
+      if (Array.isArray(data.lobbySessions)) this.lobbySessions = new Map(data.lobbySessions);
       if (Array.isArray(data.syncJobs)) this.syncJobs = new Map(data.syncJobs);
       if (Array.isArray(data.marketplaceTasks)) this.marketplaceTasks = new Map(data.marketplaceTasks);
       if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
@@ -414,7 +430,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     return integration;
   }
 
-  async getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive'): Promise<LobbyIntegration | undefined> {
+  async getIntegration(lobbyId: string, provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase'): Promise<LobbyIntegration | undefined> {
     return [...this.integrations.values()].find((i) => i.lobby_id === lobbyId && i.provider === provider && i.status === 'active');
   }
 
@@ -529,6 +545,15 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   async removeHostedAgentSpec(lobbyId: string, roleOrName: string): Promise<void> {
     if (this.hostedAgentSpecs.delete(hostedAgentSpecKey(lobbyId, roleOrName))) this.queueSave();
+  }
+
+  async getLobbySession(lobbyId: string): Promise<LobbyWorkSession | undefined> {
+    return this.lobbySessions.get(lobbyId);
+  }
+
+  async setLobbySession(lobbyId: string, session: LobbyWorkSession): Promise<void> {
+    this.lobbySessions.set(lobbyId, session);
+    this.queueSave();
   }
 
   async getKnowledgeBase(lobbyId: string): Promise<KnowledgeBase | undefined> {
