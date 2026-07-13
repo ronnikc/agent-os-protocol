@@ -835,7 +835,7 @@ async function main(): Promise<void> {
     assert.equal((await store.getLobbySession(L))?.pr_number, null, 'fresh session has no PR yet');
   });
 
-  await check('OWNER INTEGRATIONS: Discord/Telegram/Supabase seal the credential; status is masked-only; revoke works', async () => {
+  await check('OWNER INTEGRATIONS: Slack/Discord/Telegram/Supabase/dreambase seal the credential; status is masked-only; revoke works', async () => {
     const store = new InMemoryLobbyStore();
     const L = `OI-${Date.now().toString(36)}`;
     // Not connected before any connect.
@@ -859,6 +859,15 @@ async function main(): Promise<void> {
     assert.equal(ss.connected, true, 'supabase connected');
     assert.deepEqual(ss.scopes, ['url:https://proj.supabase.co'], 'project url carried in scopes, not as a secret');
     assert.ok(ss.secret_hint?.startsWith('••••'), 'supabase key masked');
+    // Slack (bot_token) and dreambase (access_token) go through the same generic path.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'slack', secret: 'xoxb-slack-tok-bbbb', externalName: 'Acme WS' }, store);
+    const sl = await ownerIntegrationStatus(L, 'slack', store);
+    assert.equal(sl.connected, true, 'slack connected via the generic owner-connect path');
+    assert.ok(sl.secret_hint?.startsWith('••••') && !JSON.stringify(sl).includes('xoxb-slack-tok-bbbb'), 'slack token masked, never leaked');
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'dreambase', secret: 'db-api-key-cccc', secretType: 'access_token', scopes: ['project:proj-1'] }, store);
+    const db = await ownerIntegrationStatus(L, 'dreambase', store, 'access_token');
+    assert.equal(db.connected, true, 'dreambase connected');
+    assert.deepEqual(db.scopes, ['project:proj-1'], 'dreambase project id carried in scopes, not as a secret');
     // Revoke drops it from the connected view.
     assert.equal(await revokeOwnerIntegration(L, 'discord', store), true, 'revoke returns true when it revoked');
     assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord disconnected after revoke');
