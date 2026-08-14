@@ -175,11 +175,11 @@ async function refreshSwarmKb() {
       <div style="display:flex;flex-direction:column;gap:12px;max-width:400px;">
         <div>
           <label style="display:block;font-size:12px;margin-bottom:4px;">GitHub Repository URL</label>
-          <input type="text" id="kb-config-repo" placeholder="https://github.com/owner/repo" style="width:100%;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:4px;" />
+          <input type="text" id="kb-config-repo" placeholder="https://github.com/owner/repo" value="${githubIntegration?.connected && githubIntegration.repo ? escapeHtml(`https://github.com/${githubIntegration.repo}`) : ''}" style="width:100%;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:4px;" />
         </div>
         <div>
           <label style="display:block;font-size:12px;margin-bottom:4px;">Branch</label>
-          <input type="text" id="kb-config-branch" value="main" style="width:100%;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:4px;" />
+          <input type="text" id="kb-config-branch" value="${escapeHtml(githubIntegration?.branch || 'main')}" style="width:100%;padding:6px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text);border-radius:4px;" />
         </div>
         <div>
           <label style="display:block;font-size:12px;margin-bottom:4px;">Root Path (within repo)</label>

@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showConfirm } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
@@ -24,7 +24,15 @@ let lobbyGithub = null;
  */
 function identityBadge(a) {
   const status = a.identity_status;
-  if (!status || status === 'unverified') return '';
+  if (!status || status === 'unverified') {
+    // A linked-but-unverified DID is still worth showing — the agent presented an identity ref at
+    // join time but no registry verifier is configured (or verification failed soft). Absence of
+    // ANY badge previously made a freshly bound Agent ID look like the save didn't work.
+    if (a.identity_ref) {
+      return `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="ID linked (${escapeHtml(a.identity_ref)}) — not registry-verified: configure AGENT_OS_CONCORDIUM_INDEXER_URL on the lobby to verify">🔗 ID linked</span>`;
+    }
+    return '';
+  }
   const map = {
     human_linked: ['badge-success', '✓ Human-linked', 'Backed by a verified human owner (Concordium VCK)'],
     org_linked: ['badge-success', '✓ Org-verified', 'Backed by a verified organization/domain (Concordium VCDC)'],
@@ -146,6 +154,18 @@ function renderLobby() {
   const offline = remoteAgents.filter(a => a.status === 'disconnected');
   const online = onlineAgents; // alias for count
   const humanUsers = onlineHumans.length ? onlineHumans : (lobbyState.humanUsers || []);
+
+  // Membership Control picker — the set of connected participants (agents + humans) that are not
+  // already members of this lobby. Lets the owner invite anyone in the roster directly instead of
+  // hand-typing a DID. Humans carry their DID as agent_id; agents carry their agent_id.
+  const memberRefs = new Set((lobbyMembers || []).map(m => m.identity_ref));
+  const invitableParticipants = [
+    ...onlineHumans.map(h => ({ id: h.agent_id, label: `${h.display_name || h.name || h.agent_id} (human)` })),
+    ...onlineAgents.map(a => ({ id: a.agent_id, label: `${a.display_name || a.name || a.agent_id}${a.agent_role ? ` · ${a.agent_role}` : ''}` })),
+  ].filter(p => p.id && !memberRefs.has(p.id));
+  const invitePickerOptions = invitableParticipants
+    .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`)
+    .join('');
 
   const inviteCheckboxes = onlineAgents.map(a => `
     <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-secondary);cursor:pointer;background:var(--bg-base);padding:4px 8px;border-radius:4px;border:1px solid var(--border);">
@@ -321,8 +341,14 @@ function renderLobby() {
             <h4 style="margin:0 0 4px 0; font-size:14px; font-weight:600; color:var(--text-primary);">Membership Control</h4>
             <span style="font-size:11px; color:var(--text-muted); display:block; margin-bottom:4px;">Invite Concordium DIDs or local agents, and manage floor permissions.</span>
             
+            <div style="display:flex; gap:6px; margin-bottom:6px;">
+              <select id="invite-member-picker" style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                <option value="">${invitableParticipants.length ? 'Select a connected agent or human…' : 'No connected participants to invite'}</option>
+                ${invitePickerOptions}
+              </select>
+            </div>
             <div style="display:flex; gap:6px;">
-              <input type="text" id="invite-member-did" placeholder="did:ccd:mainnet:..." style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+              <input type="text" id="invite-member-did" placeholder="…or paste a did:ccd:mainnet: / agent id" style="flex:1; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
               <select id="invite-member-role" style="padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
                 <option value="contributor">Contributor</option>
                 <option value="admin">Admin</option>
@@ -388,7 +414,26 @@ function renderLobby() {
                     <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Working Branch (optional)</label>
                     <input type="text" id="panel-github-branch" placeholder="main" value="${escapeHtml(lobbyGithub.branch || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" ${lobbyGithub.isManager === false ? 'disabled' : ''} />
                   </div>
-                  
+                  ${lobbyGithub.repo ? (lobbyGithub.initialized ? `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(0,200,100,0.05); border:1px solid rgba(0,200,100,0.15); color:var(--text-secondary); line-height:1.45;">
+                      <span style="color:var(--color-green); font-weight:600;">✓ Agent OS structure initialized</span> —
+                      <code style="font-size:10px;">agent-os/</code> in <strong>${escapeHtml(lobbyGithub.repo)}</strong> holds the agent definitions (+ bound Agent IDs), skills, scheduled prompts, shared memories, and trained packs this lobby manages.
+                    </div>
+                    ${lobbyGithub.isManager !== false ? `<button class="btn btn-secondary btn-sm" id="btn-panel-github-init" style="width:100%;" title="Safe re-run: commits only files added in newer Agent OS versions (README, planning, …) — anything already in the repo is never touched">Re-run initialization (add new/missing files)</button>` : ''}
+                  ` : `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.18); color:var(--text-secondary); line-height:1.45;">
+                      <span style="color:var(--color-yellow); font-weight:600;">Repository not initialized.</span>
+                      Seed <strong>${escapeHtml(lobbyGithub.repo)}</strong> with the Agent OS structure — agent definitions, skills, scheduled self-learning prompts, and the shared-memory/training scaffolding — in one commit so the lobby can manage agents, IDs, and memories there.
+                    </div>
+                    ${lobbyGithub.isManager !== false ? `<button class="btn btn-primary btn-sm" id="btn-panel-github-init" style="width:100%;">Initialize Agent OS structure in ${escapeHtml(lobbyGithub.repo)}</button>` : ''}
+                  `) : ''}
+
+                  ${lobbyGithub.repo ? `
+                    <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(120,140,180,0.06); border:1px solid var(--color-border); color:var(--text-secondary); line-height:1.45; margin-top:4px;">
+                      Deploy (Vercel), CI (build &amp; test), and chat apps (Slack, Discord, Telegram) moved to the <strong>Apps</strong> tab.
+                    </div>
+                  ` : ''}
+
                   ${lobbyGithub.isManager === false ? `
                     <div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--text-muted); background:var(--bg-elevated); padding:6px 10px; border-radius:4px; border:1px solid var(--border); margin-top:4px;">
                       <span>🔒 View-only (Sign in to edit)</span>
@@ -430,8 +475,16 @@ function renderLobby() {
       }
     });
 
+    // Selecting a connected participant fills the identity field so Invite works with one click.
+    document.getElementById('invite-member-picker')?.addEventListener('change', (e) => {
+      const val = e.target.value;
+      const didInput = document.getElementById('invite-member-did');
+      if (val && didInput) didInput.value = val;
+    });
+
     document.getElementById('btn-invite-member')?.addEventListener('click', async () => {
-      const identity_ref = document.getElementById('invite-member-did')?.value?.trim();
+      const identity_ref = document.getElementById('invite-member-did')?.value?.trim()
+        || document.getElementById('invite-member-picker')?.value?.trim();
       const role = document.getElementById('invite-member-role')?.value;
       if (!identity_ref) return;
       const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
@@ -468,24 +521,36 @@ function renderLobby() {
     document.getElementById('btn-panel-github-setup')?.addEventListener('click', async () => {
       const modeData = await fetchJson('/api/mode');
       const lobbyUrl = modeData?.lobbyUrl || window.location.origin;
+      // NOTE: Do NOT include `hook_attributes` unless it carries a `url`. GitHub's manifest parser
+      // requires `hook_attributes.url` whenever the object is present, and reports its absence as the
+      // confusingly generic "Error 'url' wasn't supplied." (the top-level `url` below IS supplied).
+      // Since we register no webhook (`default_events: []`), we omit `hook_attributes` entirely.
       const manifest = {
         name: `Agent OS Swarm ${lobbyInfo.id ? lobbyInfo.id.slice(0, 8) : 'Local'}`,
         url: lobbyUrl,
-        hook_attributes: {
-          active: false
-        },
+        // `redirect_url` fires ONCE, right after the app is created from this manifest (carries the
+        // temporary `code` we exchange in setup-callback). `setup_url` is what GitHub redirects to
+        // AFTER the user installs the app on their repos — it carries `installation_id` + our `state`,
+        // which the callback handler needs to record the installation. Without setup_url the app
+        // installs on GitHub but the lobby never learns about it, so the panel stays on "Connect".
         redirect_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/setup-callback`,
-        callback_urls: [
-          `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`
-        ],
+        setup_url: `${lobbyUrl}/api/v1/agent-lobby/integrations/github/callback`,
+        setup_on_update: false,
         public: false,
         default_permissions: {
           contents: "write",
           pull_requests: "write",
-          metadata: "read"
+          metadata: "read",
+          // Read CI results on task PRs: check runs need `checks`, Actions runs/logs need `actions`.
+          checks: "read",
+          actions: "read"
         },
         default_events: []
       };
+      if (!lobbyUrl || !/^https?:\/\//i.test(lobbyUrl)) {
+        showAlert('Cannot Register App', `The lobby URL ("${lobbyUrl || 'empty'}") is not a valid http(s) URL, so GitHub would reject the manifest. Open the panel over its public https URL and try again.`);
+        return;
+      }
 
       // Open a new window and build+submit the manifest form inside it.
       // Previous approaches (setAttribute, .value on current-doc form with target=_blank) all
@@ -549,6 +614,19 @@ function renderLobby() {
         window.open(res.install_url, '_blank', 'noopener');
       } else if (!handleGithubAuthError(res)) {
         showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
+      }
+    });
+
+    document.getElementById('btn-panel-github-init')?.addEventListener('click', async () => {
+      const btn = document.getElementById('btn-panel-github-init');
+      if (btn) { btn.disabled = true; btn.textContent = 'Initializing… (one batch commit)'; }
+      const res = await fetchJson('/api/lobby/remote/repo/initialize', { method: 'POST' });
+      if (res && res.ok) {
+        showAlert('Repository Initialized', `Committed ${res.files_committed} file(s) to ${res.repo}@${res.branch} (${res.skipped_existing} already present were left untouched). The lobby now manages agents, IDs, skills, memories, and trained packs in this repository.`);
+        refresh();
+      } else {
+        if (btn) { btn.disabled = false; btn.textContent = 'Initialize Agent OS structure'; }
+        showAlert('Initialization Failed', res?.error || 'Unknown error');
       }
     });
 
@@ -763,34 +841,46 @@ function init() {
     if (agent) agent.agent_role = newRole;
   });
 
-  onWsMessage('agent-start', (data) => { events.push({ type: 'agent-start', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
-  onWsMessage('agent-exit', (data) => { events.push({ type: 'agent-exit', slug: data.slug || '', ts: new Date().toISOString() }); refresh(); });
-  onWsMessage('lobby-agent-update', (data) => {
-    const info = data?.agent?.display_name || data?.agent_id || '';
-    const eventType = data?.type || 'agent-update';
+  // NOTE on payload shape: the Local-Mode panel-server wraps payloads as { type, data }, so the
+  // first arg carries the payload. In Hosted Mode the panel is connected directly to the lobby WS
+  // and receives raw protocol frames — fields live on the frame itself (second arg). Every handler
+  // below reads `data || raw` so both modes fire.
+  onWsMessage('agent-start', (data) => { events.push({ type: 'agent-start', slug: data?.slug || '', ts: new Date().toISOString() }); refresh(); });
+  onWsMessage('agent-exit', (data) => { events.push({ type: 'agent-exit', slug: data?.slug || '', ts: new Date().toISOString() }); refresh(); });
+  const onAgentUpdate = (data, raw) => {
+    const p = data || raw || {};
+    const info = p.agent?.display_name || p.agent_id || '';
+    const eventType = p.type || 'agent-update';
     events.push({ type: eventType, slug: info, ts: new Date().toISOString() });
     refresh();
-  });
-  onWsMessage('lobby-boss-appointed', (data) => {
-    if (data?.agent_id) {
-      lobbyState.bossAgentSlug = data.agent_id;
-      events.push({ type: 'boss-appointed', slug: data.agent_id, ts: new Date().toISOString() });
+  };
+  onWsMessage('lobby-agent-update', onAgentUpdate);   // Local Mode rebroadcast
+  onWsMessage('lobby-agent-joined', onAgentUpdate);   // raw lobby frames (Hosted Mode)
+  onWsMessage('lobby-agent-updated', onAgentUpdate);
+  onWsMessage('lobby-agent-left', onAgentUpdate);
+  onWsMessage('lobby-boss-appointed', (data, raw) => {
+    const p = data || raw || {};
+    if (p.agent_id) {
+      lobbyState.bossAgentSlug = p.agent_id;
+      events.push({ type: 'boss-appointed', slug: p.agent_id, ts: new Date().toISOString() });
       renderLobby();
     }
   });
-  onWsMessage('lobby-boss-lost', (data) => {
+  onWsMessage('lobby-boss-lost', () => {
     lobbyState.bossAgentSlug = null;
     events.push({ type: 'boss-lost', slug: '', ts: new Date().toISOString() });
     renderLobby();
   });
-  onWsMessage('lobby-message', (data) => {
-    const msg = data?.message || data;
+  const onLobbySystemMsg = (data, raw) => {
+    const msg = data?.message || data || raw?.message;
     if (msg?.from_agent_id === 'system') {
       events.push({ type: 'system', slug: (msg.content || '').slice(0, 80), ts: msg.created_at || new Date().toISOString() });
       // System messages include boss appointments — update local state
       if ((msg.content || '').includes('Boss Agent')) refresh();
     }
-  });
+  };
+  onWsMessage('lobby-message', onLobbySystemMsg);
+  onWsMessage('lobby-message-received', onLobbySystemMsg);
 
   setInterval(refresh, 10000);
 }

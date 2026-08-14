@@ -74,7 +74,7 @@ export interface WalletChallenge {
 export interface LobbyIntegration {
   id: string;
   lobby_id: string;
-  provider: 'slack' | 'github' | 'google_drive';
+  provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase' | 'dreambase';
   status: 'pending' | 'active' | 'revoked' | 'error';
   external_account_id?: string;
   external_account_name?: string;

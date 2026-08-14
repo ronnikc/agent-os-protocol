@@ -12,6 +12,8 @@ export const state = {
   relayConnected: false,
   activeTab: 'agents',
   mode: 'local',
+  // Hosted GitHub integration snapshot for the top-bar working-repo pill (refreshed periodically).
+  githubStatus: null,
   wallet: {
     connected: false,
     address: null,
@@ -36,9 +38,27 @@ export async function fetchJson(url, opts) {
   if (s && s.token) {
     token = s.token;
     lobbyId = s.lobbyId;
+  } else if (s && s.guest) {
+    // Guest: no token (reads only). lobbyId still flows so proxy routing resolves the public lobby.
+    lobbyId = s.lobbyId;
   } else {
     token = localStorage.getItem('agent-os-lobby-token');
     lobbyId = state.session?.lobbyId;
+  }
+
+  // Guest write-guard: a read-only guest cannot mutate the lobby. The server already denies these
+  // (no wallet token → authorizeLobbyManager fails), but we short-circuit with a friendly upgrade
+  // prompt instead of surfacing a raw 401 across every tab. Reads (GET) pass straight through.
+  if (s && s.guest && !s.token) {
+    const method = (finalOpts.method || 'GET').toUpperCase();
+    const isLobbyWrite = method !== 'GET' &&
+      (url.startsWith('/api/lobby/remote/') || url.startsWith('/api/v1/agent-lobby/') ||
+       url.startsWith('/api/agents/') || url.startsWith('/api/tasks') || url.startsWith('/api/messages') ||
+       url.startsWith('/api/loops') || url.startsWith('/api/lobby/state'));
+    if (isLobbyWrite) {
+      promptGuestUpgrade();
+      return { error: 'guest_read_only', guest: true };
+    }
   }
 
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED && s && s.lobbyId) {
@@ -215,6 +235,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/upload${query}`;
         } else if (cleanPath === 'kb/jobs') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/jobs${query}`;
+        } else if (cleanPath === 'kb/sync') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/kb/sync${query}`;
         } else if (cleanPath === 'provider-keys') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/provider-keys${query}`;
         } else if (cleanPath.startsWith('provider-keys/')) {
@@ -241,6 +263,25 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github`;
         } else if (cleanPath === 'integrations/github/connect') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/integrations/github/connect`;
+        } else if (/^integrations\/(discord|telegram|slack|supabase|dreambase)$/.test(cleanPath)) {
+          // Owner-connected chat/data integrations (GET status · POST connect · DELETE revoke). These
+          // are lobby-scoped; without this mapping the generic fallback dropped the /lobbies/:id/
+          // segment and the server 404'd ("Connect failed — not found").
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/${cleanPath}`;
+        } else if (cleanPath === 'messages/upload') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/messages/upload`;
+        } else if (cleanPath === 'repo/scaffold-supabase') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/scaffold-supabase`;
+        } else if (cleanPath === 'repo/initialize') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/initialize`;
+        } else if (cleanPath === 'repo/ui-assist') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/ui-assist`;
+        } else if (cleanPath === 'repo/scaffold-vercel') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/scaffold-vercel`;
+        } else if (cleanPath === 'repo/scaffold-ci') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/scaffold-ci`;
+        } else if (cleanPath.startsWith('repo/checks')) {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/repo/checks${query}`;
         } else if (cleanPath === 'create') {
           lobbyPath = `/api/v1/agent-lobby/lobbies`;
         } else if (cleanPath === 'status') {
@@ -255,13 +296,17 @@ export async function fetchJson(url, opts) {
         } else if (cleanPath === 'tasks') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/tasks${query}`;
         } else if (cleanPath === 'requests') {
-          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/pending`;
+          // ALL requests (pending + decided) so the Requests tab shows processed ones as history,
+          // not just the pending queue — matches how Tasks show completed items.
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests`;
         } else if (cleanPath.startsWith('requests/') && cleanPath.endsWith('/decide')) {
           const requestId = cleanPath.split('/')[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/requests/${requestId}/decide`;
         } else if (cleanPath.startsWith('providers/') && cleanPath.endsWith('/models')) {
           const provider = cleanPath.split('/')[1];
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/providers/${provider}/models`;
+        } else if (cleanPath === 'agent-nicknames') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-nicknames`;
         } else if (cleanPath === 'agent-definitions') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
         } else if (cleanPath === 'gantt/phases') {
@@ -323,14 +368,24 @@ export async function patchJson(url, body) {
 
 /**
  * The wallet session shared by lobby-web (same origin) when the panel runs hosted at /panel.
- * Returns { token, identityRef, lobbyId } or null (local mode, or not signed in).
+ * Returns { token, identityRef, lobbyId } for a signed-in wallet, OR a guest session
+ * { lobbyId, guest: true } (no token) for read-only public exploration, OR null.
+ * A guest session carries a lobbyId so all read proxying works; it has no token, so the server
+ * denies every management write (authorizeLobbyManager) — guests are read-only by server enforcement.
  */
 export function hostedSession() {
   if (typeof window === 'undefined') return null;
   try {
     const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
-    return s && s.token && s.lobbyId ? s : null;
+    if (s && s.lobbyId && (s.token || s.guest)) return s;
+    return null;
   } catch { return null; }
+}
+
+/** True when the current hosted session is a read-only guest (no wallet, public lobbies only). */
+export function isGuest() {
+  const s = hostedSession();
+  return !!(s && s.guest && !s.token);
 }
 
 /** Call a lobby API (`/api/v1/agent-lobby<path>`) with the hosted wallet session token. */
@@ -393,6 +448,62 @@ export async function getRelayWsUrl() {
 
 export function truncate(s, n = 120) {
   return s && s.length > n ? s.slice(0, n) + '...' : (s || '');
+}
+
+// ── Agent name resolution (shared) ──
+// Maps an agent_id (or 'system'/'LobbyOwner'/'WebUser') to a human name for Messages/Tasks, so the
+// UI never shows a raw uuid. Backed by the live lobby roster, refreshed on demand and cached.
+let _agentNameMap = {};
+let _agentNameMapAt = 0;
+export async function refreshAgentNameMap(force = false) {
+  if (!force && Date.now() - _agentNameMapAt < 8000) return _agentNameMap;
+  const map = {};
+  try {
+    const data = await fetchJson('/api/lobby/remote/agents');
+    for (const a of (data?.agents || [])) if (a.agent_id) map[a.agent_id] = a.display_name || a.agent_role || a.agent_id;
+  } catch {}
+  _agentNameMap = map;
+  _agentNameMapAt = Date.now();
+  return map;
+}
+export function agentName(id) {
+  if (!id) return '?';
+  if (id === 'system') return 'System';
+  if (id === 'all' || id === '*' || id === 'broadcast') return 'everyone';
+  if (id === 'LobbyOwner') return 'LobbyOwner';
+  if (id === 'WebUser') return 'WebUser';
+  const n = _agentNameMap[id];
+  if (n) return n;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(id) ? id.slice(0, 8) + '…' : id;
+}
+
+// ── Shared markdown renderer (chat-grade) ──
+// A compact, safe markdown → HTML renderer used by Messages and the Tasks report so both match the
+// UI Assist quality. Escapes first, then applies a limited, well-tested set of transforms.
+export function renderMarkdownSafe(content) {
+  if (!content) return '';
+  let html = escapeHtml(String(content));
+  const codeBlocks = [];
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_, _l, code) => {
+    codeBlocks.push(`<pre style="background:var(--bg-base);padding:8px;border-radius:4px;font-size:11px;margin:6px 0;overflow-x:auto;white-space:pre;"><code>${code}</code></pre>`);
+    return `%%CB${codeBlocks.length - 1}%%`;
+  });
+  html = html
+    .replace(/^#### (.+)$/gm, '<div style="font-size:13px;font-weight:700;margin:8px 0 3px;">$1</div>')
+    .replace(/^### (.+)$/gm, '<div style="font-size:14px;font-weight:700;margin:10px 0 4px;">$1</div>')
+    .replace(/^## (.+)$/gm, '<div style="font-size:15px;font-weight:700;margin:12px 0 4px;">$1</div>')
+    .replace(/^# (.+)$/gm, '<div style="font-size:16px;font-weight:700;margin:12px 0 4px;">$1</div>')
+    .replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>')
+    .replace(/`([^`]+)`/g, '<code style="background:var(--bg-base);padding:1px 4px;border-radius:3px;font-size:11px;">$1</code>')
+    .replace(/^\s*[-*] (.+)$/gm, '<div style="margin-left:16px;">• $1</div>')
+    .replace(/^\s*(\d+)\. (.+)$/gm, '<div style="margin-left:16px;">$1. $2</div>')
+    .replace(/\[([^\]]+)\]\((https?:[^)]+)\)/g, '<a href="$2" target="_blank" style="color:var(--accent,#38bdf8);">$1</a>')
+    .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:8px 0;">')
+    .replace(/\n/g, '<br>');
+  html = html.replace(/%%CB(\d+)%%/g, (_, i) => `</p>${codeBlocks[+i]}<p>`).replace(/<br>(<(?:pre|div|hr))/g, '$1');
+  return html;
 }
 
 // ── WebSocket ──
@@ -481,16 +592,33 @@ async function updateStatusBar() {
   const modeHtml = mode === 'swarm'
     ? `<span class="status-pill swarm" title="${escapeHtml(lobbyUrl)}">Swarm: ${escapeHtml(lobbyUrl.replace(/^https?:\/\//, '').slice(0, 30))}</span>`
     : `<span class="status-pill local">Local Mode</span>`;
-    
+
   const wsHtml = `<span class="status-pill ${state.wsConnected ? 'connected' : ''}">
     <span class="status-dot ${state.wsConnected ? 'status-running' : 'status-stopped'}"></span>WS
   </span>`;
-  
+
   const agentsHtml = `<span class="status-pill">${running} / ${state.agents.length} agents</span>`;
+
+  // Working-repo pill (hosted): the repository this lobby's agents operate on — definitions,
+  // Agent IDs, KB/memories, scheduled prompts, and agent commits all target it, so it must be
+  // obvious from every tab (like a git branch indicator). Click routes to the Lobby tab.
+  let repoHtml = '';
+  if (mode === 'swarm') {
+    const g = state.githubStatus;
+    if (!g || g.configured === false && !g.connected) {
+      repoHtml = `<span class="status-pill" id="status-repo-pill" style="cursor:pointer;color:var(--warning,#eab308);" title="No GitHub App configured — connect it in the Lobby tab so agents can work on a repository">⚠ Connect GitHub</span>`;
+    } else if (!g.connected || !g.repo) {
+      repoHtml = `<span class="status-pill" id="status-repo-pill" style="cursor:pointer;color:var(--warning,#eab308);" title="GitHub App ${g.connected ? 'connected — select the working repository' : 'not installed'} in the Lobby tab">⚠ Select repo</span>`;
+    } else {
+      const init = g.initialized ? '' : ' · not initialized';
+      repoHtml = `<span class="status-pill ${g.initialized ? 'connected' : ''}" id="status-repo-pill" style="cursor:pointer;" title="Working repository for this lobby${g.initialized ? ' (Agent OS structure initialized)' : ' — initialize the Agent OS structure in the Lobby tab'}">📁 ${escapeHtml(g.repo)}@${escapeHtml(g.branch || 'main')}${init}</span>`;
+    }
+  }
 
   el.innerHTML = `
     <div class="status-pill-group">
       ${modeHtml}
+      ${repoHtml}
       ${wsHtml}
       ${agentsHtml}
     </div>
@@ -620,9 +748,17 @@ export async function init() {
   if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
     document.body.classList.add('hosted-mode');
     const banner = document.createElement('div');
-    banner.textContent = 'Hosted Agent OS Panel — agents run server-side against your connected GitHub repo; identity, provider keys and the Knowledge Base are wallet-scoped.';
-    banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
+    if (isGuest()) {
+      document.body.classList.add('guest-mode');
+      banner.innerHTML = '👀 <strong>Guest mode (read-only)</strong> — exploring a public lobby. Connect your Concordium Wallet to own a lobby, spawn agents, connect a repo and issue Agent IDs. <a href="#" id="guest-banner-connect" style="color:#38bdf8;text-decoration:underline;">Connect Wallet</a>';
+      banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(255,179,0,0.12);border-bottom:1px solid rgba(255,179,0,0.3);color:#ffcf66;';
+    } else {
+      banner.textContent = 'Hosted Agent OS Panel — agents run server-side against your connected GitHub repo; identity, provider keys and the Knowledge Base are wallet-scoped.';
+      banner.style.cssText = 'padding:6px 12px;font-size:11px;text-align:center;background:rgba(49,140,255,0.10);border-bottom:1px solid var(--border);color:var(--color-cyan);';
+    }
     document.body.prepend(banner);
+    const guestConnect = document.getElementById('guest-banner-connect');
+    if (guestConnect) guestConnect.onclick = (e) => { e.preventDefault(); exitGuestToSignIn(); };
   }
 
   // Wire up tab buttons
@@ -680,6 +816,24 @@ export async function init() {
 
   const presetData = await fetchJson('/api/presets');
   if (presetData && !presetData.error) state.presets = presetData;
+
+  // Hosted: keep the top-bar working-repo pill current. 30s cadence — the server caches the
+  // initialized check, and repo changes come through the Lobby tab which triggers its own refresh.
+  if (window.AGENT_OS_HOSTED) {
+    const refreshGithubStatus = async () => {
+      try {
+        const g = await fetchJson('/api/lobby/remote/integrations/github');
+        state.githubStatus = (g && !g.error) ? g : null;
+      } catch { state.githubStatus = null; }
+      updateStatusBar();
+    };
+    refreshGithubStatus();
+    setInterval(refreshGithubStatus, 60000); // 60s — the status call touches the GitHub API; keep it light
+    // The pill is re-rendered on every status-bar update; delegate the click once.
+    document.getElementById('status-bar')?.addEventListener('click', (e) => {
+      if (e.target.closest('#status-repo-pill')) switchTab('lobby');
+    });
+  }
 
   updateStatusBar();
 
@@ -790,6 +944,7 @@ export async function connectWallet({ silent = false } = {}) {
     }
   }
 }
+if (typeof window !== 'undefined') window.connectWallet = connectWallet;
 
 export async function signInToLobby() {
   const lobbySelect = document.getElementById('header-lobby-select');
@@ -894,16 +1049,19 @@ export async function loadLobbies() {
   try {
     const data = await fetchJson('/api/v1/agent-lobby/lobbies');
     if (data && data.lobbies) {
-      state.lobbies = data.lobbies;
-      
+      // Guests may only see/select PUBLIC lobbies — private lobbies require a Verified Agent ID.
+      const guest = isGuest();
+      state.lobbies = guest ? data.lobbies.filter(l => (l.visibility || 'public') === 'public') : data.lobbies;
+
       select.innerHTML = '';
       if (state.lobbies.length === 0) {
-        select.innerHTML = '<option value="">No Active Lobbies</option>';
+        select.innerHTML = `<option value="">${guest ? 'No public lobbies' : 'No Active Lobbies'}</option>`;
       } else {
         state.lobbies.forEach(l => {
           const opt = document.createElement('option');
           opt.value = l.lobby_id;
-          opt.textContent = l.name;
+          const isPrivate = (l.visibility || 'public') === 'private';
+          opt.textContent = isPrivate ? `🔒 ${l.name}` : l.name;
           if (state.session.lobbyId === l.lobby_id) {
             opt.selected = true;
           }
@@ -998,21 +1156,29 @@ function renderAuthOverlay() {
           </svg>
         </div>
         
-        <h2 style="font-size:22px; font-weight:600; margin:0 0 12px 0; background:linear-gradient(90deg, #00E5D4, #318CFF); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Outfit', sans-serif;">Swarm Mode Connection Required</h2>
-        <p style="font-size:13px; color:#8da0bf; line-height:1.6; margin:0 0 28px 0;">To access the hosted Agent OS Panel, you must connect your Concordium Wallet and authenticate with a lobby.</p>
-        
+        <h2 style="font-size:22px; font-weight:600; margin:0 0 12px 0; background:linear-gradient(90deg, #00E5D4, #318CFF); -webkit-background-clip:text; -webkit-text-fill-color:transparent; font-family:'Outfit', sans-serif;">Welcome to Agent OS</h2>
+        <p style="font-size:13px; color:#8da0bf; line-height:1.6; margin:0 0 24px 0;">Connect your Concordium Wallet to own a lobby, connect agents &amp; repos, and issue Agent IDs — or continue as a guest to explore public lobbies read-only.</p>
+
         <!-- Lobby selector container in Auth overlay -->
         <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; background: rgba(16, 27, 49, 0.4); border: 1px solid var(--color-border); padding: 8px 12px; border-radius: 8px; justify-content: space-between;">
           <span style="font-size: 12px; color: var(--color-text-soft); font-weight: 500;">Select Lobby:</span>
           <select id="header-lobby-select" style="background:#0B1326; border:1px solid var(--color-border); color:var(--color-text); padding:4px 10px; border-radius:6px; font-size:12px; min-width: 180px;"></select>
         </div>
 
-        <div id="auth-status-container" style="margin-bottom:24px; text-align:left;">
+        <div id="auth-status-container" style="margin-bottom:20px; text-align:left;">
           <!-- Dynamic statuses will go here -->
         </div>
-        
-        <div style="display:flex; flex-direction:column; gap:12px;">
+
+        <div style="display:flex; flex-direction:column; gap:10px;">
           <button class="btn btn-primary" id="btn-auth-action" style="padding:12px; border-radius:8px; font-size:14px; font-weight:600; width:100%; cursor:pointer; height:auto; line-height:1.2; text-transform:none; border:none; display:block;">Connect Wallet</button>
+          <button id="btn-auth-guest" style="padding:11px; border-radius:8px; font-size:13px; font-weight:500; width:100%; cursor:pointer; background:transparent; color:#c7d4ea; border:1px solid rgba(49,140,255,0.3);">Continue as Guest — explore public lobbies (read-only)</button>
+        </div>
+
+        <div style="margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); text-align:left;">
+          <p style="font-size:11px; color:#7c8db0; line-height:1.6; margin:0 0 8px 0;">
+            <span style="color:#ffb300;">🔒 Private lobbies</span> require a <strong style="color:#c7d4ea;">Verified Agent ID</strong> to join — only agents with a Concordium-anchored identity are admitted. Guests see public lobbies only.
+          </p>
+          <button id="btn-auth-create-id" style="background:none; border:none; padding:0; color:#38bdf8; font-size:12px; text-decoration:underline; cursor:pointer;">Don't have a wallet? Create a Concordium ID &amp; Wallet →</button>
         </div>
       </div>
     </div>
@@ -1021,7 +1187,85 @@ function renderAuthOverlay() {
   loadLobbies();
   updateAuthStatus();
   setInterval(updateAuthStatus, 1000);
+  const guestBtn = document.getElementById('btn-auth-guest');
+  if (guestBtn) guestBtn.onclick = continueAsGuest;
+  const createIdBtn = document.getElementById('btn-auth-create-id');
+  if (createIdBtn) createIdBtn.onclick = showCreateConcordiumIdInstructions;
 }
+
+/**
+ * Enter read-only guest mode: pick a PUBLIC lobby and store a token-less guest session, then reload
+ * so the panel boots against it. Private lobbies are never offered to guests (server also denies
+ * their WS join without a verified identity). Guests can browse roster/messages/tasks/memory but
+ * every management write is blocked (see the guest write-guard in fetchJson).
+ */
+export async function continueAsGuest() {
+  const statusEl = document.getElementById('auth-status-container');
+  const setStatus = (t) => { if (statusEl) statusEl.innerHTML = `<div style="font-size:12px;color:#8da0bf;padding:4px 2px;">${t}</div>`; };
+  try {
+    setStatus('finding a public lobby…');
+    const data = await fetchJson('/api/v1/agent-lobby/lobbies');
+    const lobbies = (data && data.lobbies) || [];
+    const publicLobbies = lobbies.filter(l => (l.visibility || 'public') === 'public');
+    if (publicLobbies.length === 0) {
+      setStatus('no public lobbies are available to explore right now — connect a wallet to create one.');
+      return;
+    }
+    const chosen = publicLobbies[0];
+    localStorage.setItem('agentos.hosted.session', JSON.stringify({ lobbyId: chosen.lobby_id, guest: true }));
+    window.location.reload();
+  } catch (err) {
+    setStatus(`could not start guest mode: ${err.message || err}`);
+  }
+}
+window.continueAsGuest = continueAsGuest;
+
+/** Leave guest mode: drop the token-less guest session and reload into the full Connect+Sign-In flow. */
+export function exitGuestToSignIn() {
+  try { localStorage.removeItem('agentos.hosted.session'); } catch { /* storage unavailable */ }
+  window.location.reload();
+}
+window.exitGuestToSignIn = exitGuestToSignIn;
+
+/** Instructions modal: how to get a Concordium Wallet + ID and why it matters for Agent OS. */
+export function showCreateConcordiumIdInstructions() {
+  showHtmlAlert('Create a Concordium ID &amp; Wallet', `
+    <div style="text-align:left; font-size:13px; line-height:1.65; color:#cbd5e1;">
+      <p style="margin:0 0 14px 0;">Your Concordium <strong style="color:#f5f8ff;">wallet</strong> is how you <strong>own this lobby</strong> and connect your agents, repositories and Knowledge Base to <em>your</em> account. Your Concordium <strong style="color:#f5f8ff;">ID</strong> anchors real-world accountability to your wallet — privately — and is what lets you issue and co-sign verifiable <strong>Agent IDs</strong>.</p>
+      <ol style="margin:0 0 14px 0; padding-left:20px;">
+        <li style="margin-bottom:8px;"><strong>Install the wallet.</strong> Add the <a href="https://chromewebstore.google.com/detail/concordium-wallet/odfbpeocbbpdnneocdnlphceeapeglne" target="_blank" style="color:#38bdf8; text-decoration:underline;">Concordium Wallet for Web</a> (browser extension), or get the mobile wallet from the <a href="https://www.concordium.com/wallets" target="_blank" style="color:#38bdf8; text-decoration:underline;">official wallets page ↗</a>.</li>
+        <li style="margin-bottom:8px;"><strong>Create a Concordium ID.</strong> In the wallet, complete the one-time identity verification with an identity provider. This links your real identity to your account <em>privately</em> — the chain only ever sees cryptographic proofs, never your documents.</li>
+        <li style="margin-bottom:8px;"><strong>Create an account.</strong> Your account address (e.g. <code style="font-size:11px; color:#8da0bf;">3abc…xyz</code>) is what you'll use to sign in here.</li>
+        <li style="margin-bottom:0;"><strong>Come back and Connect Wallet.</strong> Signing in proves ownership, unlocks lobby management, and lets you mint Agent IDs.</li>
+      </ol>
+      <div style="background:rgba(255,179,0,0.08); border:1px solid rgba(255,179,0,0.2); border-radius:6px; padding:10px 12px; font-size:12px; color:#e5c07b;">
+        <strong>Trust chain:</strong> Human Owner (Concordium ID) ➔ Wallet Address ➔ Agent ID (DID). Only <strong>Verified ID</strong> agents may join <strong>private</strong> lobbies; public lobbies are open to guests read-only.
+      </div>
+      <div style="text-align:right; margin-top:16px;">
+        <button class="btn btn-secondary" onclick="closeModal()" style="padding:8px 16px;">Close</button>
+      </div>
+    </div>
+  `);
+}
+window.showCreateConcordiumIdInstructions = showCreateConcordiumIdInstructions;
+
+/** Nudge a guest to connect a wallet when they try to perform a management action. */
+let __guestUpgradeShownAt = 0;
+export function promptGuestUpgrade() {
+  const now = Date.now();
+  if (now - __guestUpgradeShownAt < 1500) return; // debounce bursts of blocked writes
+  __guestUpgradeShownAt = now;
+  showHtmlAlert('Connect a Wallet to Continue', `
+    <div style="text-align:left; font-size:13px; line-height:1.6; color:#cbd5e1;">
+      <p style="margin:0 0 12px 0;">You're exploring as a <strong style="color:#c7d4ea;">guest</strong> — this view is read-only. Managing a lobby (spawning agents, creating tasks, sending messages, issuing Agent IDs) requires a Concordium Wallet so actions are cryptographically owned by you.</p>
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:14px;">
+        <button class="btn btn-secondary" onclick="showCreateConcordiumIdInstructions()" style="padding:8px 14px;">Create ID &amp; Wallet</button>
+        <button class="btn btn-primary" onclick="closeModal(); exitGuestToSignIn();" style="padding:8px 14px;">Connect Wallet</button>
+      </div>
+    </div>
+  `);
+}
+window.promptGuestUpgrade = promptGuestUpgrade;
 
 function updateAuthStatus() {
   const container = document.getElementById('auth-status-container');
@@ -1065,7 +1309,7 @@ function updateAuthStatus() {
   }
 }
 
-export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false) {
+export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false, bindError = '') {
   const { did, txHash, metadataUrl, anchor, anchorError, cardHash, signatureHex, network = 'mainnet' } = res;
   
   const storedBadge = metadataUrl
@@ -1110,9 +1354,10 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBou
           </div>
         ` : `
           <div style="margin-top:16px; padding:12px; background:rgba(234, 179, 8, 0.1); border:1px solid rgba(234, 179, 8, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
-            <strong style="color:#eab308; display:block; margin-bottom:4px;">⚠ GitHub Bind Skipped / Failed:</strong>
-            The Agent ID was minted successfully, but could not be auto-bound because <strong>no GitHub repository is connected</strong>. 
-            Please connect your GitHub repository in the <strong>Lobby</strong> tab, and then link this DID reference to your agent.
+            <strong style="color:#eab308; display:block; margin-bottom:4px;">⚠ GitHub Bind Failed:</strong>
+            The Agent ID was minted successfully, but binding it to the agent definition in your repository failed:
+            <div style="margin:6px 0; padding:6px 8px; background:rgba(0,0,0,0.25); border-radius:4px; font-family:monospace; font-size:11px; word-break:break-word;">${escapeHtml(bindError || 'no GitHub repository is connected')}</div>
+            Fix the cause (Lobby tab → GitHub Swarm Connection) and use <strong>Set ID</strong> on the agent to retry the bind with this DID.
           </div>
         `}
       ` : `

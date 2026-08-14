@@ -7,6 +7,7 @@ import { fetchJson, postJson, putJson, registerTab, formatDate, escapeHtml, show
 let tasks = [];
 let lobbyMode = 'local';
 let repoConfigured = true;
+let workingRepo = ''; // owner/repo of the lobby's connected GitHub integration (hosted mode)
 
 function utcToLocal(timeUtc) {
   if (!timeUtc) return '';
@@ -45,13 +46,15 @@ function renderTasks() {
 
   let bannerHtml = '';
   if (lobbyMode === 'swarm' && !repoConfigured) {
+    const repoLabel = workingRepo ? `<strong>${escapeHtml(workingRepo)}</strong>` : 'your connected GitHub repository';
+    const noRepoNote = workingRepo ? '' : ' <em>(No repository connected yet — connect the GitHub App in the Lobby tab first.)</em>';
     bannerHtml = `
       <div style="background:rgba(255,165,0,0.1); border:1px solid var(--color-yellow); border-radius:8px; padding:16px; margin:12px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
         <div>
           <strong style="color:var(--color-yellow); font-size:14px; display:block; margin-bottom:4px;">Daily Scheduled Tasks Not Set Up</strong>
-          <span style="font-size:12px; color:var(--color-text-soft);">Initialize config.json and specialist prompts in your connected GitHub repository so the swarm can run them daily.</span>
+          <span style="font-size:12px; color:var(--color-text-soft);">Initialize config.json and specialist prompts in ${repoLabel} so the swarm can run them daily.${noRepoNote}</span>
         </div>
-        <button class="btn btn-primary btn-sm" id="btn-setup-scheduled" style="white-space:nowrap;">Add to Repository (Sponsored)</button>
+        <button class="btn btn-primary btn-sm" id="btn-setup-scheduled" style="white-space:nowrap;" ${workingRepo ? '' : 'disabled title="Connect a GitHub repository in the Lobby tab first"'}>Add to Repository (Sponsored)</button>
       </div>
     `;
   }
@@ -187,6 +190,10 @@ async function refresh() {
   lobbyMode = modeData?.mode || 'local';
 
   if (lobbyMode === 'swarm') {
+    try {
+      const g = await fetchJson('/api/lobby/remote/integrations/github');
+      workingRepo = (g?.connected && g.repo) ? g.repo : '';
+    } catch { workingRepo = ''; }
     const data = await fetchJson('/api/lobby/remote/scheduled');
     if (data && !data.error) {
       repoConfigured = data.repoConfigured !== false;

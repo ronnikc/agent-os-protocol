@@ -32,11 +32,19 @@ import {
 import {
   generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, verifySignature,
 } from '../../packages/lobby-server/src/auth/identityProof.js';
-import { isLobbyManager, lobbyOwnerRef } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
+import { isLobbyManager, lobbyOwnerRef, authorizeLobbyManager, claimLobbyOwnership } from '../../packages/lobby-server/src/auth/lobbyAuthz.js';
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from '../../packages/lobby-server/src/hosted/boss-delegation.js';
+import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
+import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
+import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
+import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, maskSecret } from '../../packages/lobby-server/src/integrations/ownerConnectedApp.js';
+import { relayLobbyMessageToChatApps, formatRelayText } from '../../packages/lobby-server/src/integrations/chatRelay.js';
+import { resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { createVerify } from 'node:crypto';
-import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
+import { createAppJwt, getInstallationToken, githubAppConfig, installUrl, listAppInstallations, _clearInstallationTokenCache } from '../../packages/lobby-server/src/integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, putFile, parseRepoRef } from '../../packages/lobby-server/src/integrations/github/repoClient.js';
 
 const ENV = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'test-master-key-verify-hosted', AGENT_OS_SECRET_KEY_ID: 'v1' } as NodeJS.ProcessEnv;
@@ -252,6 +260,48 @@ async function main(): Promise<void> {
     assert.equal(await isLobbyManager(store, 'L4', ''), false);
   });
 
+  await check('authorizeLobbyManager adopts an unowned lobby for the first wallet, then locks others out', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L5', 'system')); // legacy/bootstrap unowned lobby
+    // First wallet to manage claims ownership...
+    assert.equal(await authorizeLobbyManager(store, 'L5', 'did:ccd:testnet:first'), true);
+    // ...and is now the bound owner, resolvable by the pure predicate.
+    assert.equal(await isLobbyManager(store, 'L5', 'did:ccd:testnet:first'), true);
+    // A different wallet is denied once the lobby is owned (no re-claim).
+    assert.equal(await authorizeLobbyManager(store, 'L5', 'did:ccd:testnet:second'), false);
+    // Unknown lobby and empty ref stay denied.
+    assert.equal(await authorizeLobbyManager(store, 'nope', 'did:ccd:testnet:first'), false);
+    assert.equal(await authorizeLobbyManager(store, 'L5', ''), false);
+  });
+
+  await check('claimLobbyOwnership binds an unowned lobby to the first signer, then never reassigns', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.createLobby(mkLobby('L6', 'system')); // unowned public lobby
+    // First wallet to SIGN IN claims ownership...
+    assert.equal(await claimLobbyOwnership(store, 'L6', 'did:ccd:testnet:first'), true);
+    assert.equal(await isLobbyManager(store, 'L6', 'did:ccd:testnet:first'), true, 'first signer is now owner');
+    // ...a later signer never reassigns ownership and cannot manage.
+    assert.equal(await claimLobbyOwnership(store, 'L6', 'did:ccd:testnet:second'), false, 'no re-claim once owned');
+    assert.equal(await isLobbyManager(store, 'L6', 'did:ccd:testnet:second'), false, 'later joiner is not a manager');
+    // Already-owned lobby is never claimable; unknown lobby / empty ref are no-ops.
+    await store.createLobby(mkLobby('L7', 'did:ccd:testnet:owner'));
+    assert.equal(await claimLobbyOwnership(store, 'L7', 'did:ccd:testnet:intruder'), false);
+    assert.equal(await claimLobbyOwnership(store, 'nope', 'did:ccd:testnet:first'), false);
+    assert.equal(await claimLobbyOwnership(store, 'L6', ''), false);
+  });
+
+  await check('agent observation: parses a RAISE verdict into a hand-raise intent; PASS yields none', () => {
+    assert.equal(parseHandRaise('PASS'), null, 'PASS means nothing to add');
+    assert.equal(parseHandRaise('I think this is fine, nothing to add.'), null, 'prose without RAISE is a pass');
+    const a = parseHandRaise('RAISE: the migration drops the users index — queries will table-scan');
+    assert.ok(a, 'a RAISE line is parsed');
+    assert.equal(a!.reason, 'the migration drops the users index — queries will table-scan');
+    const b = parseHandRaise('RAISE [risk]: no auth check on the new endpoint');
+    assert.equal(b!.category, 'risk', 'an optional [tag] sets the category');
+    assert.equal(b!.reason, 'no auth check on the new endpoint');
+    assert.ok(OBSERVATION_GUIDE.includes('PASS') && OBSERVATION_GUIDE.includes('RAISE'), 'guide documents both verdicts');
+  });
+
   // ── I. Hosted agent runner (server-side execution via the API runtime) ──
   const sseFetch = (chunks: string[], status = 200): typeof fetch =>
     (async () => new Response(
@@ -285,6 +335,50 @@ async function main(): Promise<void> {
     const reply = await r.respondTo('go');
     assert.match(reply, /^⚠/);
     await r.stop();
+  });
+
+  await check('boss delegation: parses directives, distinguishes task vs message, and resolves agents', () => {
+    const roster = [
+      { agent_id: 'boss-1', display_name: 'Boss-agent Agent', agent_role: 'boss-agent', status: 'idle' },
+      { agent_id: 'be-9', display_name: 'Backend Agent', agent_role: 'backend', status: 'idle' },
+      { agent_id: 'cr-3', display_name: 'Code-review Agent', agent_role: 'code-review', status: 'idle' },
+      { agent_id: 'gone-4', display_name: 'Frontend Agent', agent_role: 'frontend', status: 'disconnected' },
+    ];
+    const reply = [
+      'Here is the plan:',
+      '@Backend Agent [task]: implement the /users endpoint and add tests',  // tracked task
+      'This part is prose that mentions the Frontend Agent but is not a directive.',
+      '  @code-review: what is your read on the current diff?',              // plain message (ask for input)
+      '@Frontend Agent [task]: build the form',   // disconnected → must not resolve
+      '@Nonexistent: do something',               // unknown → must not resolve
+    ].join('\n');
+
+    const directives = parseBossDelegations(reply);
+    assert.equal(directives.length, 4, 'four @-directives parsed (prose line excluded)');
+    assert.equal(directives[0].kind, 'task', 'the [task] directive is classified as a task');
+    assert.equal(directives[0].instruction, 'implement the /users endpoint and add tests');
+    assert.equal(directives[1].kind, 'message', 'a plain @Name directive is a message, not a task');
+
+    const resolved = directives
+      .map(d => ({ agent: resolveRosterAgent(roster, d.target, 'boss-1'), kind: d.kind }))
+      .filter(r => r.agent);
+    assert.deepEqual(resolved.map(r => r.agent!.agent_id), ['be-9', 'cr-3'], 'only connected, known agents resolve');
+    assert.deepEqual(resolved.map(r => r.kind), ['task', 'message'], 'kinds are preserved through resolution');
+    assert.equal(resolveRosterAgent(roster, 'boss-agent', 'boss-1'), undefined, 'the boss never delegates to itself');
+    assert.ok(BOSS_DELEGATION_GUIDE.includes('[task]'), 'the guide documents the task directive syntax');
+  });
+
+  await check('boss triage: decides hand-raises, escalation stays pending, recommendations parse', () => {
+    assert.deepEqual(parseBossTriage('APPROVE: solid catch, go ahead'), { decision: 'approved', note: 'solid catch, go ahead' });
+    assert.deepEqual(parseBossTriage('REJECT — duplicate of open task'), { decision: 'rejected', note: 'duplicate of open task' });
+    assert.equal(parseBossTriage('DEFER: after the sprint closes')?.decision, 'deferred');
+    assert.equal(parseBossTriage('ESCALATE: scope question for the owner'), null, 'ESCALATE leaves the request pending for the human');
+    assert.equal(parseBossTriage('I think we should approve this request.'), null, 'prose without a verdict line is not a decision');
+    assert.equal(parseBossRecommendation('RECOMMEND approve: low risk, matches the plan'), 'approve — low risk, matches the plan');
+    assert.equal(parseBossRecommendation('nothing structured'), null);
+    assert.ok(BOSS_DECIDABLE_CATEGORIES.has('hand_raise') && !BOSS_DECIDABLE_CATEGORIES.has('commit_approval'),
+      'the boss decides hand-raises only — authority categories stay with the human');
+    assert.ok(BOSS_TRIAGE_GUIDE.includes('ESCALATE'), 'the guide documents the escalation path');
   });
 
   await check('dev wallet-signature bridge: on accepts any non-empty sig; off rejects garbage; MOCK unaffected', () => {
@@ -436,6 +530,18 @@ async function main(): Promise<void> {
     assert.ok(parsed && parsed.privateKey.includes('\n') && !parsed.privateKey.includes('\\n'), 'escaped-newline PEM is normalized');
     assert.ok(installUrl(cfg, 'st.ate').includes('/apps/agent-os/installations/new?state=st.ate'));
     assert.equal(githubAppConfig({} as NodeJS.ProcessEnv), null, 'no config → null (GitHub connect off)');
+
+    // Installation auto-detect: list via the App JWT, most-recently-updated first (recovery path).
+    const listFetch = (async (u: unknown, init: { headers?: Record<string, string> }) => {
+      assert.ok(String(u).includes('/app/installations'), 'hits the app installations endpoint');
+      assert.ok(String(init.headers?.authorization).startsWith('Bearer '), 'authenticates with the app JWT');
+      return new Response(JSON.stringify([
+        { id: 11, account: { login: 'old-org' }, updated_at: '2026-01-01T00:00:00Z' },
+        { id: 22, account: { login: 'fresh-org' }, updated_at: '2026-07-01T00:00:00Z' },
+      ]), { status: 200 });
+    }) as unknown as typeof fetch;
+    const installs = await listAppInstallations({ config: cfg, fetchFn: listFetch });
+    assert.deepEqual(installs, [{ id: '22', account: 'fresh-org' }, { id: '11', account: 'old-org' }], 'most recent installation first');
   });
 
   await check('GITHUB REPO CLIENT: lists repos/tree, decodes a file, base64-encodes a commit', async () => {
@@ -466,7 +572,7 @@ async function main(): Promise<void> {
       calledUrl = url;
       calledMethod = opts?.method || 'GET';
       calledBody = opts?.body || '';
-      if (url.endsWith('/contents/test.txt') && calledMethod === 'GET') {
+      if (url.includes('/contents/test.txt') && calledMethod === 'GET') {
         return new Response(JSON.stringify({ type: 'file', content: Buffer.from('hello').toString('base64'), sha: 'sha123' }), { status: 200 });
       }
       if (url.endsWith('/contents/test.txt') && calledMethod === 'PUT') {
@@ -483,7 +589,8 @@ async function main(): Promise<void> {
 
     const content = await client.readFile('test.txt');
     assert.equal(content, 'hello');
-    assert.equal(calledUrl, 'https://api.github.com/repos/owner/repo/contents/test.txt');
+    // reads default to the active branch (defaults to 'main'), appended as a ?ref= query
+    assert.equal(calledUrl, 'https://api.github.com/repos/owner/repo/contents/test.txt?ref=main');
 
     const commitSha = await client.writeFile('test.txt', 'new content', 'commit message');
     assert.equal(commitSha, 'commitsha456');
@@ -492,6 +599,337 @@ async function main(): Promise<void> {
 
     const prUrl = await client.createPullRequest('title', 'head', 'base');
     assert.equal(prUrl, 'https://github.com/owner/repo/pull/1');
+  });
+
+  await check('REPO INIT: seed collects agents + skills + prompts + scaffolds; batch commit is atomic', async () => {
+    // Seed collection reads this deployment's own agent-os tree.
+    const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../..');
+    const seed = collectAgentOsSeed(REPO_ROOT);
+    const paths = seed.map(f => f.path);
+    assert.ok(paths.filter(p => p.startsWith('agent-os/sub-agents/agents/')).length >= 50, 'seeds the agent-definition catalog');
+    assert.ok(paths.filter(p => /^agent-os\/sub-agents\/skills\/[^/]+\/SKILL\.md$/.test(p)).length >= 50, 'seeds the skills');
+    assert.ok(paths.filter(p => p.startsWith('agent-os/scheduled/prompts/')).length >= 3, 'seeds the self-learning prompts');
+    assert.ok(paths.includes('agent-os/config.json'), 'seeds a default scheduler config');
+    assert.ok(paths.includes('agent-os/shared-memory/README.md'), 'scaffolds shared memory');
+    assert.ok(paths.includes('agent-os/training/packs/README.md'), 'scaffolds trained packs');
+    assert.ok(!paths.includes(AGENT_OS_MANIFEST_PATH), 'the manifest is added by the endpoint, not the collector');
+    const manifest = JSON.parse(buildManifest('did:ccd:mainnet:test'));
+    assert.ok(!JSON.stringify(manifest).includes('did:ccd:mainnet:test'), 'the raw wallet ref never lands in the (possibly public) repo');
+    assert.match(manifest.initialized_by_fingerprint, /^[0-9a-f]{12}$/, 'attribution is a short fingerprint');
+    assert.ok(Array.isArray(manifest.components) && manifest.components.includes('agents'));
+
+    // Batch commit: tree (content inlined) → commit → ref, ONE commit for N files, NO blob POSTs.
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const gitFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      calls.push({ url, method, body: opts?.body ? JSON.parse(opts.body) : undefined });
+      if (url.includes('/git/ref/heads/')) return new Response(JSON.stringify({ object: { sha: 'base' } }), { status: 200 });
+      if (url.includes('/git/commits/base')) return new Response(JSON.stringify({ tree: { sha: 'basetree' } }), { status: 200 });
+      if (url.endsWith('/git/blobs')) return new Response(JSON.stringify({ sha: `blob${calls.length}` }), { status: 201 });
+      if (url.endsWith('/git/trees') && method === 'POST') return new Response(JSON.stringify({ sha: 'newtree' }), { status: 201 });
+      if (url.endsWith('/git/commits') && method === 'POST') return new Response(JSON.stringify({ sha: 'newcommit' }), { status: 201 });
+      if (url.includes('/git/refs/heads/') && method === 'PATCH') return new Response(JSON.stringify({ object: { sha: 'newcommit' } }), { status: 200 });
+      if (url.includes('/git/trees/basetree')) return new Response(JSON.stringify({ tree: [{ path: 'README.md', type: 'blob' }] }), { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const client = new GitHubRepoClient('o', 'r', 't', gitFetch);
+
+    const existing = await client.listTreePaths('main');
+    assert.ok(existing.has('README.md'), 'recursive tree lists existing blobs');
+
+    const sha = await client.commitFiles([
+      { path: 'a.md', content: 'A' }, { path: 'b/c.md', content: 'C' },
+    ], 'chore: init', 'main');
+    assert.equal(sha, 'newcommit');
+    const commitCalls = calls.filter(c => c.url.endsWith('/git/commits') && c.method === 'POST');
+    assert.equal(commitCalls.length, 1, 'exactly ONE commit for the whole batch');
+    assert.deepEqual(commitCalls[0].body.parents, ['base']);
+    const refPatch = calls.find(c => c.method === 'PATCH' && c.url.includes('/git/refs/heads/'));
+    assert.equal(refPatch?.body.sha, 'newcommit', 'branch ref advanced to the batch commit');
+    // Rate-limit fix: content is inlined in the tree, so there are NO per-file blob POSTs.
+    assert.equal(calls.filter(c => c.url.endsWith('/git/blobs')).length, 0, 'no per-file blob POSTs — content inlined in the tree');
+    const treePost = calls.find(c => c.url.endsWith('/git/trees') && c.method === 'POST');
+    assert.equal(treePost?.body.tree.length, 2, 'both files land in one tree call');
+    assert.equal(treePost?.body.tree[0].content, 'A', 'file content is inlined in the tree entry');
+    assert.ok(!('sha' in treePost!.body.tree[0]), 'tree entry carries content, not a blob sha');
+
+    // EMPTY repository (no commits): the ref lookup 409s — bootstrap via the contents API (which
+    // creates the branch), then batch the remainder. A fresh test repo is the first-connect case.
+    let bootstrapped = false;
+    const emptyCalls: string[] = [];
+    const emptyFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      emptyCalls.push(`${method} ${url}`);
+      if (url.includes('/git/ref/heads/')) {
+        if (!bootstrapped) return new Response(JSON.stringify({ message: 'Git Repository is empty.' }), { status: 409 });
+        return new Response(JSON.stringify({ object: { sha: 'boot' } }), { status: 200 });
+      }
+      if (url.includes('/contents/first.md') && method === 'GET') return new Response('{"message":"Not Found"}', { status: 404 });
+      if (url.includes('/contents/first.md') && method === 'PUT') { bootstrapped = true; return new Response(JSON.stringify({ commit: { sha: 'bootsha' } }), { status: 201 }); }
+      if (url.includes('/git/commits/boot')) return new Response(JSON.stringify({ tree: { sha: 'boottree' } }), { status: 200 });
+      if (url.endsWith('/git/blobs')) return new Response(JSON.stringify({ sha: 'b1' }), { status: 201 });
+      if (url.endsWith('/git/trees') && method === 'POST') return new Response(JSON.stringify({ sha: 't1' }), { status: 201 });
+      if (url.endsWith('/git/commits') && method === 'POST') return new Response(JSON.stringify({ sha: 'c1' }), { status: 201 });
+      if (url.includes('/git/refs/heads/') && method === 'PATCH') return new Response('{}', { status: 200 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const emptyClient = new GitHubRepoClient('o', 'r', 't', emptyFetch);
+    assert.equal((await emptyClient.listTreePaths('main')).size, 0, 'an empty repo lists as zero paths, not an error');
+    // Reset: listTreePaths didn't bootstrap; commitFiles must.
+    const sha2 = await emptyClient.commitFiles([
+      { path: 'first.md', content: '1' }, { path: 'second.md', content: '2' },
+    ], 'chore: init', 'main');
+    assert.equal(sha2, 'c1', 'remaining files land as a batch commit after the bootstrap');
+    assert.ok(emptyCalls.some(c => c.startsWith('PUT') && c.includes('/contents/first.md')), 'first file bootstraps the branch via the contents API');
+  });
+
+  await check('BRANCH/PR: activeBranch redirects writes; createBranch/aheadBy/PR primitives', async () => {
+    const calls: Array<{ url: string; method: string; body?: any }> = [];
+    const prFetch = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      calls.push({ url, method, body: opts?.body ? JSON.parse(opts.body) : undefined });
+      if (url.includes('/git/ref/heads/main')) return new Response(JSON.stringify({ object: { sha: 'mainsha' } }), { status: 200 });
+      if (url.endsWith('/git/refs') && method === 'POST') return new Response('{}', { status: 201 });
+      if (url.includes('/contents/x.md') && method === 'GET') return new Response('{"message":"Not Found"}', { status: 404 });
+      if (url.includes('/contents/x.md') && method === 'PUT') return new Response(JSON.stringify({ commit: { sha: 'wsha' } }), { status: 201 });
+      if (url.includes('/compare/')) return new Response(JSON.stringify({ ahead_by: 2 }), { status: 200 });
+      if (url.endsWith('/pulls') && method === 'POST') return new Response(JSON.stringify({ html_url: 'https://github.com/o/r/pull/7' }), { status: 201 });
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', 't', prFetch, 'main');
+
+    await c.createBranch('agent-os/task/abc-work', 'main');
+    assert.ok(calls.some(x => x.url.endsWith('/git/refs') && x.body?.ref === 'refs/heads/agent-os/task/abc-work' && x.body?.sha === 'mainsha'), 'branch created off main tip');
+
+    // With activeBranch set, write_file (no explicit branch) commits to the task branch.
+    c.activeBranch = 'agent-os/task/abc-work';
+    await c.writeFile('x.md', 'hi', 'add x');
+    const put = calls.find(x => x.method === 'PUT' && x.url.includes('/contents/x.md'));
+    assert.equal(put?.body?.branch, 'agent-os/task/abc-work', 'the write targets the active task branch, not main');
+
+    assert.equal(await c.aheadBy('main', 'agent-os/task/abc-work'), 2, 'aheadBy reports commits on the task branch');
+    assert.equal(await c.createPullRequest('t', 'agent-os/task/abc-work', 'main', 'b'), 'https://github.com/o/r/pull/7');
+  });
+
+  await check('CI CHECKS: getCheckRunsForRef summarizes pass/fail/running; failing logs feed back', async () => {
+    const mk = (runs: any[]) => (async () =>
+      new Response(JSON.stringify({ check_runs: runs }), { status: 200 })) as unknown as typeof fetch;
+
+    // All green → completed/success.
+    let c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'completed', conclusion: 'success', html_url: 'h1' },
+    ]));
+    let s = await c.getCheckRunsForRef('agent-os/task/x');
+    assert.equal(s.status, 'completed'); assert.equal(s.conclusion, 'success'); assert.equal(s.total, 1);
+
+    // One failure → completed/failure, and the failing logs are extracted for the agent.
+    c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'completed', conclusion: 'failure', html_url: 'h', output: { summary: 'test X failed at line 42' } },
+      { name: 'lint', status: 'completed', conclusion: 'success' },
+    ]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.conclusion, 'failure', 'any failed run fails the summary');
+    const logs = await c.getFailingCheckLogs('ref');
+    assert.ok(logs.includes('test X failed at line 42'), 'failing job summary is captured for feedback');
+    assert.ok(!logs.includes('lint'), 'only failing runs are included');
+
+    // Still running → in_progress/null.
+    c = new GitHubRepoClient('o', 'r', 't', mk([
+      { name: 'build-test', status: 'in_progress', conclusion: null },
+    ]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.status, 'in_progress'); assert.equal(s.conclusion, null);
+
+    // No runs yet → none.
+    c = new GitHubRepoClient('o', 'r', 't', mk([]));
+    s = await c.getCheckRunsForRef('ref');
+    assert.equal(s.status, 'none'); assert.equal(s.total, 0);
+  });
+
+  await check('TOKEN PROVIDER: repo client mints a fresh token per call and refreshes once on 401', async () => {
+    let minted = 0;
+    const provider = async () => { minted++; return `tok-${minted}`; };
+    let seenAuth: string[] = [];
+    let failFirst = true;
+    const fetchFn = (async (url: string, opts?: any) => {
+      seenAuth.push((opts?.headers?.Authorization) || '');
+      if (url.includes('/contents/a.txt')) {
+        if (failFirst) { failFirst = false; return new Response('bad creds', { status: 401 }); }
+        return new Response(JSON.stringify({ type: 'file', content: Buffer.from('hi').toString('base64') }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', provider, fetchFn, 'main');
+    const out = await c.readFile('a.txt');
+    assert.equal(out, 'hi', 'succeeds after the 401 refresh retry');
+    assert.equal(minted >= 2, true, 'token provider was called again to refresh on 401');
+    assert.equal(seenAuth[1], 'token tok-2', 'the retry used a freshly-minted token');
+
+    // A static token cannot refresh — a 401 surfaces as an error, no infinite retry.
+    let hits = 0;
+    const staticFetch = (async () => { hits++; return new Response('bad creds', { status: 401 }); }) as unknown as typeof fetch;
+    const s = new GitHubRepoClient('o', 'r', 'static-tok', staticFetch, 'main');
+    await assert.rejects(() => s.readFile('a.txt'), /401/);
+    assert.equal(hits, 1, 'static token does not retry on 401');
+  });
+
+  await check('MERGE MEMORY: getPullRequest reports merge state; appendToFile creates then appends', async () => {
+    let putBody: any;
+    const store: Record<string, string> = {};
+    const fetchFn = (async (url: string, opts?: any) => {
+      const method = opts?.method || 'GET';
+      if (url.endsWith('/pulls/7') && method === 'GET')
+        return new Response(JSON.stringify({ merged: true, state: 'closed', merge_commit_sha: 'abc123def456', merged_at: '2026-07-11T13:00:00Z' }), { status: 200 });
+      if (url.includes('/contents/agent-os/shared-memory/facts.jsonl') && method === 'GET') {
+        return store['facts'] !== undefined
+          ? new Response(JSON.stringify({ type: 'file', content: Buffer.from(store['facts']).toString('base64'), sha: 's' }), { status: 200 })
+          : new Response('{"message":"Not Found"}', { status: 404 });
+      }
+      if (url.includes('/contents/agent-os/shared-memory/facts.jsonl') && method === 'PUT') {
+        putBody = JSON.parse(opts.body); store['facts'] = Buffer.from(putBody.content, 'base64').toString('utf8');
+        return new Response(JSON.stringify({ commit: { sha: 'c' } }), { status: 200 });
+      }
+      return new Response('{}', { status: 200 });
+    }) as unknown as typeof fetch;
+    const c = new GitHubRepoClient('o', 'r', 't', fetchFn, 'main');
+
+    const pr = await c.getPullRequest(7);
+    assert.equal(pr.merged, true); assert.equal(pr.merge_commit_sha, 'abc123def456');
+
+    await c.appendToFile('agent-os/shared-memory/facts.jsonl', '{"a":1}\n', 'm');
+    assert.equal(store['facts'], '{"a":1}\n', 'creates the file when absent');
+    await c.appendToFile('agent-os/shared-memory/facts.jsonl', '{"b":2}\n', 'm');
+    assert.equal(store['facts'], '{"a":1}\n{"b":2}\n', 'appends to existing content');
+  });
+
+  await check('HOSTED AGENT SPECS: persisted desired-running set (with model), keyed per role', async () => {
+    const store = new InMemoryLobbyStore();
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-5.4' });
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'boss', name: 'Boss', provider: 'anthropic', model: 'claude-opus-4-8' });
+    await store.putHostedAgentSpec({ lobby_id: 'L2', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-4o' });
+    const l = await store.listHostedAgentSpecs('L');
+    assert.equal(l.length, 2, 'scoped per lobby');
+    assert.equal(l.find(s => s.agent_role === 'api-agent')?.model, 'gpt-5.4', 'model is persisted');
+    assert.equal((await store.listAllHostedAgentSpecs()).length, 3, 'listAll spans lobbies');
+    // Re-put same role replaces (no duplicate); remove drops it.
+    await store.putHostedAgentSpec({ lobby_id: 'L', agent_role: 'api-agent', name: 'API', provider: 'openai', model: 'gpt-5.5' });
+    assert.equal((await store.listHostedAgentSpecs('L')).find(s => s.agent_role === 'api-agent')?.model, 'gpt-5.5', 're-put updates model');
+    await store.removeHostedAgentSpec('L', 'api-agent');
+    assert.equal((await store.listHostedAgentSpecs('L')).length, 1, 'remove drops the spec');
+  });
+
+  await check('WORK SESSION: shared session branch/PR persisted per lobby (one PR per session)', async () => {
+    const store = new InMemoryLobbyStore();
+    // Unique ids so the assertion doesn't collide with (or depend on) the shared persisted store file.
+    const L = `WS-${Date.now().toString(36)}`, L2 = `${L}-other`;
+    assert.equal(await store.getLobbySession(L), undefined, 'no session before any task');
+    // First substantive task opens the session PR — recorded so later tasks reuse it.
+    await store.setLobbySession(L, { branch: `agent-os/session/${L}-abc`, pr_url: 'https://github.com/o/r/pull/9', pr_number: 9 });
+    const s = await store.getLobbySession(L);
+    assert.equal(s?.branch, `agent-os/session/${L}-abc`, 'session branch persisted');
+    assert.equal(s?.pr_number, 9, 'session PR number persisted so the sweep can watch it for merge');
+    // Scoped per lobby — one lobby's session never leaks into another's.
+    assert.equal(await store.getLobbySession(L2), undefined, 'session is scoped per lobby');
+    // A new session (after the previous PR merges) overwrites the record.
+    await store.setLobbySession(L, { branch: `agent-os/session/${L}-def`, pr_url: '', pr_number: null });
+    assert.equal((await store.getLobbySession(L))?.branch, `agent-os/session/${L}-def`, 'new session replaces the merged one');
+    assert.equal((await store.getLobbySession(L))?.pr_number, null, 'fresh session has no PR yet');
+  });
+
+  await check('OWNER INTEGRATIONS: Slack/Discord/Telegram/Supabase/dreambase seal the credential; status is masked-only; revoke works', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `OI-${Date.now().toString(36)}`;
+    // Not connected before any connect.
+    assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord not connected initially');
+    // Connect Discord with a bot token — sealed, never returned in the clear.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'discord-bot-SECRETxyz9', externalId: '12345', externalName: 'My Server' }, store);
+    const ds = await ownerIntegrationStatus(L, 'discord', store);
+    assert.equal(ds.connected, true, 'discord connected after connect');
+    assert.equal(ds.account, 'My Server', 'friendly name surfaced');
+    assert.equal(ds.external_id, '12345', 'channel id surfaced');
+    assert.ok(ds.secret_hint && ds.secret_hint.startsWith('••••'), 'only a masked hint is returned');
+    assert.ok(!JSON.stringify(ds).includes('discord-bot-SECRETxyz9'), 'raw bot token never leaves the vault');
+    assert.equal(ds.secret_hint, maskSecret('discord-bot-SECRETxyz9'), 'hint is the last-4 mask');
+    // Reconnect revokes the prior integration (no stale sealed token) and re-seals the new one.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'new-token-aaaa', externalName: 'My Server' }, store);
+    const active = (await store.listIntegrations(L)).filter(i => i.provider === 'discord' && i.status === 'active');
+    assert.equal(active.length, 1, 'reconnect leaves exactly one active discord integration');
+    // Supabase uses a service key classified as access_token — status reads it back masked.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'supabase', secret: 'sb-service-key-zzzz', secretType: 'access_token', scopes: ['url:https://proj.supabase.co'] }, store);
+    const ss = await ownerIntegrationStatus(L, 'supabase', store, 'access_token');
+    assert.equal(ss.connected, true, 'supabase connected');
+    assert.deepEqual(ss.scopes, ['url:https://proj.supabase.co'], 'project url carried in scopes, not as a secret');
+    assert.ok(ss.secret_hint?.startsWith('••••'), 'supabase key masked');
+    // Slack (bot_token) and dreambase (access_token) go through the same generic path.
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'slack', secret: 'xoxb-slack-tok-bbbb', externalName: 'Acme WS' }, store);
+    const sl = await ownerIntegrationStatus(L, 'slack', store);
+    assert.equal(sl.connected, true, 'slack connected via the generic owner-connect path');
+    assert.ok(sl.secret_hint?.startsWith('••••') && !JSON.stringify(sl).includes('xoxb-slack-tok-bbbb'), 'slack token masked, never leaked');
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'dreambase', secret: 'db-api-key-cccc', secretType: 'access_token', scopes: ['project:proj-1'] }, store);
+    const db = await ownerIntegrationStatus(L, 'dreambase', store, 'access_token');
+    assert.equal(db.connected, true, 'dreambase connected');
+    assert.deepEqual(db.scopes, ['project:proj-1'], 'dreambase project id carried in scopes, not as a secret');
+    // Revoke drops it from the connected view.
+    assert.equal(await revokeOwnerIntegration(L, 'discord', store), true, 'revoke returns true when it revoked');
+    assert.equal((await ownerIntegrationStatus(L, 'discord', store)).connected, false, 'discord disconnected after revoke');
+    assert.equal(await revokeOwnerIntegration(L, 'telegram', store), false, 'revoke of a never-connected provider is a no-op');
+  });
+
+  await check('CHAT RELAY: mirrors a lobby message to connected Slack/Telegram; skips a channel-less provider', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `CR-${Date.now().toString(36)}`;
+    await store.createLobby({ lobby_id: L, org_id: 'default', name: 'CR', status: 'active', connected_agent_ids: [], message_seq: 0, created_at: '', updated_at: '', created_by: 'owner' } as unknown as Parameters<InMemoryLobbyStore['createLobby']>[0]);
+    // Telegram + Slack connected WITH a channel id; Discord connected WITHOUT one (should be skipped).
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'telegram', secret: 'TG-TOKEN', externalId: '-1009988' }, store);
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'slack', secret: 'xoxb-SLACK', externalId: 'C0ABC' }, store);
+    await connectOwnerIntegration({ lobbyId: L, identityRef: 'owner', provider: 'discord', secret: 'DISCORD-TOK' }, store); // no channel
+
+    const calls: Array<{ url: string; opts: any }> = [];
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: any, opts: any) => {
+      calls.push({ url: String(url), opts });
+      return { ok: true, json: async () => ({ ok: true }) } as any;
+    }) as any;
+    let delivered: string[] = [];
+    try {
+      delivered = await relayLobbyMessageToChatApps(store, L, { from_agent_id: 'system', content: 'Task done ✅', message_type: 'system' });
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+    assert.deepEqual(delivered.slice().sort(), ['slack', 'telegram'], 'delivered to the two channel-bound providers, not channel-less discord');
+
+    const tg = calls.find(c => c.url.includes('api.telegram.org'));
+    assert.ok(tg && tg.url.includes('/botTG-TOKEN/sendMessage'), 'telegram bot token goes in the URL path');
+    const tgBody = JSON.parse(tg!.opts.body);
+    assert.equal(tgBody.chat_id, '-1009988', 'telegram posts to the supplied chat id');
+    assert.equal(tgBody.text, 'Agent OS: Task done ✅', 'system sender relays as "Agent OS", content preserved');
+
+    const sl = calls.find(c => c.url.includes('slack.com'));
+    assert.equal(sl!.opts.headers.authorization, 'Bearer xoxb-SLACK', 'slack uses Bearer bot token');
+    assert.equal(JSON.parse(sl!.opts.body).channel, 'C0ABC', 'slack posts to the supplied channel');
+
+    assert.ok(!calls.some(c => c.url.includes('discord.com')), 'channel-less discord is skipped (no target)');
+    assert.equal(formatRelayText('Api Agent', 'hello'), 'Api Agent: hello', 'relay text is "Name: content"');
+  });
+
+  await check('MESSAGE ATTACHMENT: a KB-linked file attachment round-trips on a lobby message', async () => {
+    const store = new InMemoryLobbyStore();
+    const L = `MA-${Date.now().toString(36)}`;
+    await store.createLobby({ lobby_id: L, org_id: 'default', name: 'MA', status: 'active', connected_agent_ids: [], message_seq: 0, created_at: '', updated_at: '', created_by: 'owner' } as unknown as Parameters<InMemoryLobbyStore['createLobby']>[0]);
+    const seq = await store.nextSeq(L);
+    const message = {
+      message_id: 'm1', seq, from_agent_id: 'LobbyOwner', to_agent_id: 'all',
+      message_type: 'chat' as const, content: '📎 Uploaded spec.pdf', created_at: new Date().toISOString(),
+      delivered: false,
+      attachment: { file_name: 'spec.pdf', mime_type: 'application/pdf', kb_job_id: 'job_x', size_bytes: 2048, is_image: false, task_id: 'task-7' },
+    };
+    await store.appendMessage(L, message);
+    const back = (await store.listMessages(L)).find(m => m.message_id === 'm1');
+    assert.ok(back?.attachment, 'attachment persisted on the message');
+    assert.equal(back!.attachment!.file_name, 'spec.pdf', 'file name round-trips');
+    assert.equal(back!.attachment!.kb_job_id, 'job_x', 'KB job id links the message to the ingested file');
+    assert.equal(back!.attachment!.task_id, 'task-7', 'attachment carries the linked task id');
+    assert.equal(back!.attachment!.is_image, false, 'non-image flagged correctly');
   });
 
   // ── L. ApiRuntimeAdapter tool call loop ──

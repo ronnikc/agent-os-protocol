@@ -85,7 +85,7 @@ export async function verifyWalletChallenge(
   store: LobbyStore,
   source: AccountInfoSource,
   input: VerifyChallengeInput,
-): Promise<{ token: string; identityRef: string; network: CcdNetwork } | null> {
+): Promise<{ token: string; identityRef: string; network: CcdNetwork; lobbyId: string } | null> {
   const pending = await store.consumeWalletChallenge(input.challengeId); // single-use, always consumed
   if (!pending) return null;
   if (Date.now() > pending.expires_at) return null;
@@ -97,5 +97,5 @@ export async function verifyWalletChallenge(
   if (!ok) return null;
 
   const identityRef = `did:ccd:${pending.network}:${input.account}`;
-  return { token: issueSessionToken(identityRef, pending.lobby_id), identityRef, network: pending.network };
+  return { token: issueSessionToken(identityRef, pending.lobby_id), identityRef, network: pending.network, lobbyId: pending.lobby_id };
 }

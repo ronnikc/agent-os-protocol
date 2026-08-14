@@ -374,15 +374,26 @@ function renderEditor() {
 }
 
 // ── Tab Render ──
-function render() {
+async function render() {
   const el = document.getElementById('files-content');
   if (!el) return;
+
+  // Hosted: name the repository being browsed — "Project Root" hid WHICH repo the lobby works on.
+  let treeHeader = 'Project Root';
+  if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+    try {
+      const g = await fetchJson('/api/lobby/remote/integrations/github');
+      treeHeader = g?.connected && g.repo
+        ? `📁 ${g.repo}@${g.branch || 'main'}`
+        : '⚠ No repository connected';
+    } catch { treeHeader = '⚠ No repository connected'; }
+  }
 
   el.innerHTML = `
     <div style="display:flex;height:100%;">
       <div style="width:280px;min-width:200px;border-right:1px solid var(--border);overflow-y:auto;background:var(--bg-surface);">
-        <div style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;border-bottom:1px solid var(--border);">
-          Project Root
+        <div style="padding:8px 12px;font-size:11px;font-weight:600;color:var(--text-muted);text-transform:none;border-bottom:1px solid var(--border);" title="The repository this lobby's agents work on (read-only browse)">
+          ${escapeHtml(treeHeader)}
         </div>
         <div id="file-tree-root" style="font-size:12px;padding:4px 0;"></div>
       </div>
