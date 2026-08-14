@@ -403,30 +403,29 @@ function renderLobby() {
                   
                   <div>
                     <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Target Repository</label>
-                    <select id="panel-github-repo" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;">
+                    <select id="panel-github-repo" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px; appearance:auto;" ${lobbyGithub.isManager === false ? 'disabled' : ''}>
                       ${(lobbyGithub.repos || []).map(r => `
                         <option value="${escapeHtml(r.full_name)}" ${r.full_name === lobbyGithub.repo ? 'selected' : ''}>${escapeHtml(r.full_name)}${r.private ? ' 🔒' : ''}</option>
-                      `).join('') || '<option value="">(no repositories configured)</option>'}
+                      `).join('') || (lobbyGithub.repo ? `<option value="${escapeHtml(lobbyGithub.repo)}" selected>${escapeHtml(lobbyGithub.repo)}</option>` : '<option value="">(no repositories configured)</option>')}
                     </select>
                   </div>
                   
                   <div>
                     <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Working Branch (optional)</label>
-                    <input type="text" id="panel-github-branch" placeholder="main" value="${escapeHtml(lobbyGithub.branch || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" />
+                    <input type="text" id="panel-github-branch" placeholder="main" value="${escapeHtml(lobbyGithub.branch || '')}" style="width:100%; padding:6px 10px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:12px;" ${lobbyGithub.isManager === false ? 'disabled' : ''} />
                   </div>
-
                   ${lobbyGithub.repo ? (lobbyGithub.initialized ? `
                     <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(0,200,100,0.05); border:1px solid rgba(0,200,100,0.15); color:var(--text-secondary); line-height:1.45;">
                       <span style="color:var(--color-green); font-weight:600;">✓ Agent OS structure initialized</span> —
                       <code style="font-size:10px;">agent-os/</code> in <strong>${escapeHtml(lobbyGithub.repo)}</strong> holds the agent definitions (+ bound Agent IDs), skills, scheduled prompts, shared memories, and trained packs this lobby manages.
                     </div>
-                    <button class="btn btn-secondary btn-sm" id="btn-panel-github-init" style="width:100%;" title="Safe re-run: commits only files added in newer Agent OS versions (README, planning, …) — anything already in the repo is never touched">Re-run initialization (add new/missing files)</button>
+                    ${lobbyGithub.isManager !== false ? `<button class="btn btn-secondary btn-sm" id="btn-panel-github-init" style="width:100%;" title="Safe re-run: commits only files added in newer Agent OS versions (README, planning, …) — anything already in the repo is never touched">Re-run initialization (add new/missing files)</button>` : ''}
                   ` : `
                     <div style="font-size:11px; padding:8px; border-radius:4px; background:rgba(234,179,8,0.06); border:1px solid rgba(234,179,8,0.18); color:var(--text-secondary); line-height:1.45;">
                       <span style="color:var(--color-yellow); font-weight:600;">Repository not initialized.</span>
                       Seed <strong>${escapeHtml(lobbyGithub.repo)}</strong> with the Agent OS structure — agent definitions, skills, scheduled self-learning prompts, and the shared-memory/training scaffolding — in one commit so the lobby can manage agents, IDs, and memories there.
                     </div>
-                    <button class="btn btn-primary btn-sm" id="btn-panel-github-init" style="width:100%;">Initialize Agent OS structure in ${escapeHtml(lobbyGithub.repo)}</button>
+                    ${lobbyGithub.isManager !== false ? `<button class="btn btn-primary btn-sm" id="btn-panel-github-init" style="width:100%;">Initialize Agent OS structure in ${escapeHtml(lobbyGithub.repo)}</button>` : ''}
                   `) : ''}
 
                   ${lobbyGithub.repo ? `
@@ -435,10 +434,17 @@ function renderLobby() {
                     </div>
                   ` : ''}
 
-                  <div style="display:flex; gap:6px; margin-top:4px;">
-                    <button class="btn btn-secondary btn-sm" id="btn-panel-github-save-repo" style="flex:1;">Save Settings</button>
-                    <button class="btn btn-danger btn-sm" id="btn-panel-github-disconnect">Disconnect</button>
-                  </div>
+                  ${lobbyGithub.isManager === false ? `
+                    <div style="display:flex; align-items:center; justify-content:space-between; font-size:11px; color:var(--text-muted); background:var(--bg-elevated); padding:6px 10px; border-radius:4px; border:1px solid var(--border); margin-top:4px;">
+                      <span>🔒 View-only (Sign in to edit)</span>
+                      <button class="btn btn-secondary btn-sm" id="btn-panel-github-signin" style="font-size:11px; padding:2px 8px;">Sign In</button>
+                    </div>
+                  ` : `
+                    <div style="display:flex; gap:6px; margin-top:4px;">
+                      <button class="btn btn-secondary btn-sm" id="btn-panel-github-save-repo" style="flex:1;">Save Settings</button>
+                      <button class="btn btn-danger btn-sm" id="btn-panel-github-disconnect">Disconnect</button>
+                    </div>
+                  `}
                 </div>
               `}
             </div>
@@ -571,11 +577,42 @@ function renderLobby() {
       w.document.close();
     });
 
+    function handleGithubAuthError(res) {
+      const errStr = String(res?.error || res || '');
+      if (errStr.includes('authentication required') || errStr.includes('not authorized')) {
+        showConfirm(
+          'Lobby Sign-In Required',
+          'You are not signed in or authorized to manage GitHub integrations for this remote swarm lobby.\n\nWould you like to sign in now using your connected Concordium wallet?',
+          async () => {
+            try {
+              await signInToLobby();
+              showAlert('Signed In', 'Successfully signed in to lobby.');
+              refresh();
+            } catch (e) {
+              showAlert('Sign-In Failed', e.message || String(e));
+            }
+          }
+        );
+        return true;
+      }
+      return false;
+    }
+
+    document.getElementById('btn-panel-github-signin')?.addEventListener('click', async () => {
+      try {
+        await signInToLobby();
+        showAlert('Signed In', 'Successfully signed in to lobby.');
+        refresh();
+      } catch (e) {
+        showAlert('Sign-In Failed', e.message || String(e));
+      }
+    });
+
     document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {
       const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
       if (res && res.install_url) {
         window.open(res.install_url, '_blank', 'noopener');
-      } else {
+      } else if (!handleGithubAuthError(res)) {
         showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
       }
     });
@@ -607,7 +644,7 @@ function renderLobby() {
       if (res && !res.error) {
         showAlert('Success', 'GitHub repository linked successfully!');
         refresh();
-      } else {
+      } else if (!handleGithubAuthError(res)) {
         showAlert('Error', 'Could not set repo: ' + (res?.error || 'Unknown error'));
       }
     });
@@ -621,7 +658,7 @@ function renderLobby() {
           if (res && !res.error) {
             showAlert('Disconnected', 'GitHub repository disconnected.');
             refresh();
-          } else {
+          } else if (!handleGithubAuthError(res)) {
             showAlert('Error', 'Could not disconnect: ' + (res?.error || 'Unknown error'));
           }
         }

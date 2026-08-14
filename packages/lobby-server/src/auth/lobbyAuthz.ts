@@ -31,9 +31,12 @@ export function lobbyOwnerRef(lobby: Pick<LobbySession, 'created_by'> | undefine
 export async function isLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
   if (!identityRef) return false;
   const lobby = await store.getLobby(lobbyId);
-  if (!lobby) return false;
-  if (lobbyOwnerRef(lobby) === identityRef) return true;
   const member = await store.getMember(lobbyId, identityRef);
+  if (member && member.status === 'revoked') return false;
+
+  const owner = lobbyOwnerRef(lobby);
+  if (owner && owner === identityRef) return true;
+
   return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
 }
 
