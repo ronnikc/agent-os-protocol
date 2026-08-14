@@ -946,7 +946,8 @@ export async function connectWallet({ silent = false } = {}) {
 }
 if (typeof window !== 'undefined') window.connectWallet = connectWallet;
 
-export async function signInToLobby() {
+export async function signInToLobby(options = {}) {
+  const shouldReload = options.reload !== false;
   const lobbySelect = document.getElementById('header-lobby-select');
   let lobbyId = lobbySelect ? lobbySelect.value : null;
   if (!lobbyId) {
@@ -1028,6 +1029,7 @@ export async function signInToLobby() {
     state.wallet.connected = true;
     state.wallet.address = address;
     localStorage.setItem('agentos.wallet.connected', 'true');
+    localStorage.setItem('agent-os-lobby-token', verifyRes.token);
     
     localStorage.setItem('agentos.hosted.session', JSON.stringify({
       token: verifyRes.token,
@@ -1035,7 +1037,11 @@ export async function signInToLobby() {
       lobbyId: activeLobbyId
     }));
 
-    window.location.reload();
+    updateHeaderUI();
+
+    if (shouldReload) {
+      window.location.reload();
+    }
   } catch (err) {
     console.error('Sign-in failed:', err);
     showAlert('Authentication Failed', err.message || err);
