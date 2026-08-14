@@ -23,6 +23,11 @@ import type { ProviderConfig, ModelProviderAdapter, CompletionMessage } from '@a
 import { AnthropicCompatibleProvider, OpenAICompatibleProvider } from '@agent-os/providers';
 import { randomUUID } from 'node:crypto';
 
+export interface LobbyToolsProvider {
+  getRoster(): Promise<string>;
+  sendMessage(toAgentId: string, content: string): Promise<string>;
+}
+
 export interface ApiRuntimeConfig {
   /** Provider selection + model + optional base URL. `id` picks the wire format. */
   provider: ProviderConfig;
@@ -34,6 +39,8 @@ export interface ApiRuntimeConfig {
   maxTokens?: number;
   /** Injected repo client for hosted repository tool-use. */
   repoClient?: any;
+  /** Injected lobby tools for roster queries, messaging, and task management. */
+  lobbyTools?: LobbyToolsProvider;
 }
 
 interface Session {
@@ -92,8 +99,30 @@ function buildToolsForProvider(providerId: string): any[] {
     }
   ];
 
+  // Lobby tools — available to all hosted agents for roster awareness and messaging
+  const lobbyToolDefs = [
+    {
+      name: 'get_roster',
+      description: 'Get the current lobby roster: all connected agents with their names, roles, statuses, and current work. Use this to understand who is online and available before coordinating work.',
+      properties: {},
+      required: [] as string[]
+    },
+    {
+      name: 'send_message',
+      description: 'Send a directed message to a specific agent by their agent_id (from get_roster). Use this to assign tasks, request status updates, or coordinate work with individual agents.',
+      properties: {
+        to_agent_id: { type: 'string', description: 'The agent_id of the target agent (from get_roster output)' },
+        content: { type: 'string', description: 'The message content to send' }
+      },
+      required: ['to_agent_id', 'content']
+    }
+  ];
+
+  // Combine repo tools + lobby tools based on what's available
+  const allDefs = [...definitions, ...lobbyToolDefs];
+
   if (providerId === 'openai-compatible') {
-    return definitions.map(d => ({
+    return allDefs.map(d => ({
       type: 'function',
       function: {
         name: d.name,
@@ -107,7 +136,7 @@ function buildToolsForProvider(providerId: string): any[] {
     }));
   } else {
     // Anthropic-compatible
-    return definitions.map(d => ({
+    return allDefs.map(d => ({
       name: d.name,
       description: d.description,
       input_schema: {
@@ -127,7 +156,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   readonly supportsJsonOutput = true;
   readonly supportsSessionResume = true;
   get supportsMcp(): boolean {
-    return !!this.cfg.repoClient;
+    return !!(this.cfg.repoClient || this.cfg.lobbyTools);
   }
 
   private readonly provider: ModelProviderAdapter;
@@ -166,6 +195,17 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private async executeTool(name: string, args: any): Promise<string> {
+    // Lobby tools — always available when lobbyTools is configured
+    if (name === 'get_roster') {
+      if (!this.cfg.lobbyTools) return 'Lobby tools not available.';
+      return this.cfg.lobbyTools.getRoster();
+    }
+    if (name === 'send_message') {
+      if (!this.cfg.lobbyTools) return 'Lobby tools not available.';
+      return this.cfg.lobbyTools.sendMessage(args.to_agent_id, args.content);
+    }
+
+    // Repo tools — require repoClient
     const client = this.cfg.repoClient;
     if (!client) {
       throw new Error(`repoClient is not configured for executing tool: ${name}`);
