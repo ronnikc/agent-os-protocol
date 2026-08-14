@@ -1904,6 +1904,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const ghMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/github$/);
     if (ghMatch) {
       const lobbyId = ghMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
       const isManager = identityRef ? await authorizeLobbyManager(store, lobbyId, identityRef) : false;
       const integ = await store.getIntegration(lobbyId, 'github');
 
