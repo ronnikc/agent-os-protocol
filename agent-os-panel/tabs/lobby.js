@@ -577,7 +577,17 @@ function renderLobby() {
       w.document.close();
     });
 
-    function handleGithubAuthError(res) {
+    async function executeGithubConnect() {
+      const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
+      if (res && res.install_url) {
+        window.open(res.install_url, '_blank', 'noopener');
+        refresh();
+      } else if (!handleGithubAuthError(res, executeGithubConnect)) {
+        showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
+      }
+    }
+
+    function handleGithubAuthError(res, retryFn) {
       const errStr = String(res?.error || res || '');
       if (errStr.includes('authentication required') || errStr.includes('not authorized')) {
         showConfirm(
@@ -585,9 +595,12 @@ function renderLobby() {
           'You are not signed in or authorized to manage GitHub integrations for this remote swarm lobby.\n\nWould you like to sign in now using your connected Concordium wallet?',
           async () => {
             try {
-              await signInToLobby();
-              showAlert('Signed In', 'Successfully signed in to lobby.');
-              refresh();
+              await signInToLobby({ reload: false });
+              if (typeof retryFn === 'function') {
+                await retryFn();
+              } else {
+                refresh();
+              }
             } catch (e) {
               showAlert('Sign-In Failed', e.message || String(e));
             }
@@ -600,7 +613,7 @@ function renderLobby() {
 
     document.getElementById('btn-panel-github-signin')?.addEventListener('click', async () => {
       try {
-        await signInToLobby();
+        await signInToLobby({ reload: false });
         showAlert('Signed In', 'Successfully signed in to lobby.');
         refresh();
       } catch (e) {
@@ -608,14 +621,7 @@ function renderLobby() {
       }
     });
 
-    document.getElementById('btn-panel-github-connect')?.addEventListener('click', async () => {
-      const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
-      if (res && res.install_url) {
-        window.open(res.install_url, '_blank', 'noopener');
-      } else if (!handleGithubAuthError(res)) {
-        showAlert('Error', 'Could not start GitHub connect: ' + (res?.error || 'Unknown error'));
-      }
-    });
+    document.getElementById('btn-panel-github-connect')?.addEventListener('click', executeGithubConnect);
 
     document.getElementById('btn-panel-github-init')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-panel-github-init');
@@ -630,7 +636,7 @@ function renderLobby() {
       }
     });
 
-    document.getElementById('btn-panel-github-save-repo')?.addEventListener('click', async () => {
+    async function executeSaveRepo() {
       const repo = document.getElementById('panel-github-repo')?.value;
       const branch = document.getElementById('panel-github-branch')?.value?.trim() || undefined;
       if (!repo) {
@@ -644,12 +650,14 @@ function renderLobby() {
       if (res && !res.error) {
         showAlert('Success', 'GitHub repository linked successfully!');
         refresh();
-      } else if (!handleGithubAuthError(res)) {
+      } else if (!handleGithubAuthError(res, executeSaveRepo)) {
         showAlert('Error', 'Could not set repo: ' + (res?.error || 'Unknown error'));
       }
-    });
+    }
 
-    document.getElementById('btn-panel-github-disconnect')?.addEventListener('click', async () => {
+    document.getElementById('btn-panel-github-save-repo')?.addEventListener('click', executeSaveRepo);
+
+    async function executeDisconnectRepo() {
       showConfirm(
         'Disconnect GitHub',
         'Disconnect the GitHub repository from this lobby? Your agents will lose access to repo files.',
@@ -658,12 +666,14 @@ function renderLobby() {
           if (res && !res.error) {
             showAlert('Disconnected', 'GitHub repository disconnected.');
             refresh();
-          } else if (!handleGithubAuthError(res)) {
+          } else if (!handleGithubAuthError(res, executeDisconnectRepo)) {
             showAlert('Error', 'Could not disconnect: ' + (res?.error || 'Unknown error'));
           }
         }
       );
-    });
+    }
+
+    document.getElementById('btn-panel-github-disconnect')?.addEventListener('click', executeDisconnectRepo);
   }
 }
 
