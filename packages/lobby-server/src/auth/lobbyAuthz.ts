@@ -32,22 +32,11 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
   const lobby = await store.getLobby(lobbyId);
   if (!lobby) return false;
 
-  // Auto-claim unowned/system/web-user lobbies upon first wallet management action
-  const owner = lobby.created_by;
-  if (!owner || owner === 'system' || owner === 'web-user') {
-    lobby.created_by = identityRef;
-    await store.updateLobby(lobbyId, { created_by: identityRef });
-    await store.addMember({
-      id: `mem_${randomUUID()}`,
-      lobby_id: lobbyId,
-      identity_ref: identityRef,
-      role: 'owner',
-      status: 'active',
-    });
-    return true;
-  }
-
-  if (lobbyOwnerRef(lobby) === identityRef) return true;
   const member = await store.getMember(lobbyId, identityRef);
+  if (member && member.status === 'revoked') return false;
+
+  const owner = lobbyOwnerRef(lobby);
+  if (owner && owner === identityRef) return true;
+
   return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
 }

@@ -655,7 +655,11 @@ async function renderHostedGitHub() {
     document.getElementById('btn-github-connect')?.addEventListener('click', async () => {
       const res = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/integrations/github/connect`);
       if (res.ok && res.data?.install_url) window.open(res.data.install_url, '_blank', 'noopener');
-      else alert('Could not start GitHub connect: ' + (res.data?.error || res.status));
+      else if (res.data?.error === 'authentication required' || res.status === 401) {
+        alert('Could not start GitHub connect: wallet sign-in required. Please sign in with your Concordium wallet.');
+      } else {
+        alert('Could not start GitHub connect: ' + (res.data?.error || res.status));
+      }
     });
     return;
   }

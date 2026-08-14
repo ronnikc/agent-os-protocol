@@ -34,7 +34,7 @@ import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-sign
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { isLobbyManager } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
-import { createApiRuntimeAdapter } from '@agent-os/adapters';
+import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import type { ProviderId } from '@agent-os/protocol-core';
 
@@ -341,11 +341,38 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
+    // Lobby tools provider — gives hosted agents on-demand access to the roster and messaging.
+    // The Boss agent uses get_roster to see who's online before coordinating work.
+    // connRef is populated after registration so sendMessage can route through the coordinator.
+    const connRef: { conn?: Connection } = {};
+    const lobbyTools: LobbyToolsProvider = {
+      async getRoster(): Promise<string> {
+        const roster = await store.roster(params.lobbyId);
+        const online = roster.filter(a => a.status !== 'disconnected');
+        const lines = online.map(a =>
+          `- ${a.display_name || a.agent_id} | role: ${a.agent_role || 'none'} | status: ${a.status || 'idle'} | agent_id: ${a.agent_id}${a.current_work ? ` | working on: ${a.current_work.slice(0, 80)}` : ''}`
+        );
+        return `${online.length} agents online:\n${lines.join('\n')}`;
+      },
+      async sendMessage(toAgentId: string, content: string): Promise<string> {
+        if (!connRef.conn) return 'Error: agent not yet registered in lobby.';
+        const res = await coordinator.handle(connRef.conn, {
+          type: 'lobby-message',
+          to_agent_id: toAgentId,
+          message_type: 'chat',
+          content: content.length > 4000 ? content.slice(0, 4000) + '\n\n_(truncated)_' : content,
+        } as AgentToLobbyMessage);
+        dispatch(connRef.conn, res.out);
+        return `Message sent to ${toAgentId}.`;
+      }
+    };
+
     const adapter = createApiRuntimeAdapter({
       provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
       apiKey: params.apiKey,
       fetchFn: options.apiRuntimeFetch,
       repoClient,
+      lobbyTools,
     });
     const runner = new HostedAgentRunner(adapter, { systemPrompt: params.systemPrompt });
     await runner.start();
@@ -371,6 +398,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       join_token: params.joinToken,
     } as AgentToLobbyMessage);
     if (conn.agentId) agentConn.set(conn.agentId, connId);
+    connRef.conn = conn; // Wire up sendMessage lobby tool now that the connection is registered
     dispatch(conn, reg.out);
     const agentId = conn.agentId ?? connId;
 
@@ -933,17 +961,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (ghMatch) {
       const lobbyId = ghMatch[1];
       const identityRef = sessionIdentity(lobbyId);
-      if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const isManager = identityRef ? await isLobbyManager(store, lobbyId, identityRef) : false;
       const integ = await store.getIntegration(lobbyId, 'github');
 
       if (req.method === 'GET') {
-        if (!integ || integ.status !== 'active') return json({ connected: false, configured: Boolean(githubAppConfig()) });
+        if (!integ || integ.status !== 'active') return json({ connected: false, configured: Boolean(githubAppConfig()), isManager });
         let repos: unknown[] = [];
-        const token = await ghToken(lobbyId);
-        if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
-        return json({ connected: true, account: integ.external_account_name, repo: integ.repo_full_name, branch: integ.branch, repos });
+        if (isManager) {
+          const token = await ghToken(lobbyId);
+          if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
+        }
+        return json({
+          connected: true,
+          account: integ.external_account_name,
+          repo: integ.repo_full_name,
+          branch: integ.branch,
+          repos,
+          isManager,
+          configured: Boolean(githubAppConfig())
+        });
       }
+
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!isManager) return json({ error: 'not authorized to manage this lobby' }, 403);
+
       if (req.method === 'POST') {
         if (!integ) return json({ error: 'GitHub is not connected' }, 400);
         const body = await readBody(req);
