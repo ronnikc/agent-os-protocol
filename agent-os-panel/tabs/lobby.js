@@ -578,6 +578,13 @@ function renderLobby() {
     });
 
     async function executeGithubConnect() {
+      // Check if the app is already connected (e.g. auto-adopted) before opening the install page.
+      const status = await fetchJson('/api/lobby/remote/integrations/github');
+      if (status && status.connected) {
+        lobbyGithub = status;
+        refresh();
+        return;
+      }
       const res = await fetchJson('/api/lobby/remote/integrations/github/connect', { method: 'POST' });
       if (res && res.install_url) {
         window.open(res.install_url, '_blank', 'noopener');
@@ -596,6 +603,14 @@ function renderLobby() {
           async () => {
             try {
               await signInToLobby({ reload: false });
+              // After sign-in, check if the connection is already active (auto-adopted).
+              // If so, just refresh the panel instead of blindly retrying the original action.
+              const status = await fetchJson('/api/lobby/remote/integrations/github');
+              if (status && status.connected) {
+                lobbyGithub = status;
+                refresh();
+                return;
+              }
               if (typeof retryFn === 'function') {
                 await retryFn();
               } else {
