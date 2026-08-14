@@ -4,6 +4,19 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Agent OS Panel</title>
+<meta name="description" content="Agent OS — coordinate a fleet of AI coding agents. Boss orchestration, tasks & PRs, CI, memory, and verifiable Concordium Agent IDs.">
+<!-- Open Graph / Twitter cards. og:image is a relative asset; for richest previews serve it over
+     your public https origin (crawlers resolve it against the page URL). -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Agent OS">
+<meta property="og:title" content="Agent OS Panel">
+<meta property="og:description" content="Coordinate a fleet of AI coding agents — boss orchestration, tasks & PRs, CI, memory, and verifiable agent identity.">
+<meta property="og:image" content="og-image.svg">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Agent OS Panel">
+<meta name="twitter:description" content="Coordinate a fleet of AI coding agents — accountable, provider-neutral, local-first.">
+<meta name="twitter:image" content="og-image.svg">
+<meta name="theme-color" content="#050b18">
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -74,6 +87,7 @@
 <div class="tab-bar">
   <button data-tab="agents" class="active">Agents</button>
   <button data-tab="lobby">Lobby</button>
+  <button data-tab="apps">Apps</button>
   <button data-tab="messages">Messages</button>
   <button data-tab="tasks">Tasks</button>
   <button data-tab="requests">Requests</button>
@@ -85,6 +99,7 @@
   <button data-tab="memory">Memory</button>
   <button data-tab="loop">Loop</button>
   <button data-tab="identity">Identity</button>
+  <button data-tab="uiassist">UI Assist</button>
 </div>
 
 <!-- Tab Panes -->
@@ -126,6 +141,16 @@
     <div class="scroll-panel" id="lobby-content"></div>
   </div>
 
+  <!-- Apps Tab -->
+  <div id="tab-apps" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">Apps</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Deploy, CI &amp; chat integrations for your connected repo · owner-connected (BYO credentials)</span>
+    </div>
+    <div id="apps-content" style="flex:1;overflow:auto;padding:12px;"></div>
+  </div>
+
   <!-- Messages Tab -->
   <div id="tab-messages" class="tab-pane">
     <div class="toolbar" id="message-filters"></div>
@@ -134,6 +159,7 @@
         <div class="feed-item" style="color:var(--text-muted)">(loading...)</div>
       </div>
     </div>
+    <div class="toolbar" id="msg-attach-staging" style="display:none;border-top:1px solid var(--border);border-bottom:none;"></div>
     <div class="toolbar" style="border-top:1px solid var(--border);border-bottom:none;">
       <select id="msg-send-to" style="width:160px" aria-label="Recipient Agent">
         <option value="*">All Agents (broadcast)</option>
@@ -146,6 +172,8 @@
         <option value="completion">completion</option>
       </select>
       <input type="text" id="msg-send-content" placeholder="Send a message..." style="flex:1" aria-label="Message Content" />
+      <input type="file" id="msg-attach-input" style="display:none" aria-hidden="true" />
+      <button class="btn btn-secondary btn-sm" id="msg-attach-btn" title="Attach a file or image — stored in the Knowledge Base (hosted lobby)">📎</button>
       <button class="btn btn-primary btn-sm" id="msg-send-btn">Send</button>
     </div>
   </div>
@@ -241,6 +269,16 @@
     <div id="identity-content" style="flex:1;overflow:auto;padding:12px;"></div>
   </div>
 
+  <!-- UI Assist Tab -->
+  <div id="tab-uiassist" class="tab-pane" style="flex-direction:column;">
+    <div class="toolbar">
+      <span style="font-size:13px;font-weight:600;">UI Assist</span>
+      <span style="flex:1"></span>
+      <span style="font-size:11px;color:var(--text-muted)">Embed the in-app assistant overlay into your own product · suggest-only by default</span>
+    </div>
+    <div id="uiassist-content" style="flex:1;overflow:auto;padding:12px;"></div>
+  </div>
+
   <!-- Memory Tab -->
   <div id="tab-memory" class="tab-pane" style="flex-direction:column;">
     <div class="toolbar">
@@ -258,6 +296,7 @@ import { init } from './app.js';
 import './tabs/agents.js';
 import './tabs/scheduled.js';
 import './tabs/lobby.js';
+import './tabs/apps.js';
 import './tabs/messages.js';
 import './tabs/tasks.js';
 import './tabs/requests.js';
@@ -267,6 +306,7 @@ import './tabs/gantt.js';
 import './tabs/kb.js';
 import './tabs/loop.js';
 import './tabs/identity.js';
+import './tabs/uiassist.js';
 import './tabs/memory.js';
 
 init();

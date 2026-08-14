@@ -31,6 +31,9 @@ export class HostedAgentRunner {
     this.handle = await this.adapter.startAgent({ cwd: this.opts.cwd ?? '/hosted', systemPrompt: this.opts.systemPrompt });
   }
 
+  /** True while a turn is in flight — callers that must not drop work (task execution) wait on it. */
+  get busy(): boolean { return this.running; }
+
   /**
    * Run one turn for an inbound message and return the reply text ('' if none). Serialised: a
    * second call while a turn is in flight is skipped (returns '') so a burst of messages can't

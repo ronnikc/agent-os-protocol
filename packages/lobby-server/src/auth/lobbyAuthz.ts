@@ -24,14 +24,13 @@ export function lobbyOwnerRef(lobby: Pick<LobbySession, 'created_by'> | undefine
 
 /**
  * True when `identityRef` may manage `lobbyId`: it is the bound owner (created_by) OR an active
- * member with an owner/admin role. Returns false for unknown lobbies and unowned (legacy) lobbies —
- * Hosted-Mode configuration requires an owned lobby.
+ * member with an owner/admin role. Returns false for unknown lobbies, unowned (legacy) lobbies, and
+ * revoked members. PURE predicate — no side effects; safe to call from anywhere. To adopt an unowned
+ * lobby for a wallet (the deliberate write path), use `authorizeLobbyManager`.
  */
 export async function isLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
   if (!identityRef) return false;
   const lobby = await store.getLobby(lobbyId);
-  if (!lobby) return false;
-
   const member = await store.getMember(lobbyId, identityRef);
   if (member && member.status === 'revoked') return false;
 
@@ -39,4 +38,47 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
   if (owner && owner === identityRef) return true;
 
   return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
+}
+
+/**
+ * Bind an UNOWNED lobby's owner to `identityRef`. No-op (returns false) if the lobby is already
+ * owned or unknown. This is the single ownership-adoption primitive, used at wallet SIGN-IN so the
+ * first wallet to authenticate to a public lobby becomes its owner — after which management is
+ * locked to that wallet and no later joiner can claim it. First-writer-wins and safe: claiming a
+ * lobby only ever binds it to the claiming wallet.
+ */
+export async function claimLobbyOwnership(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
+  if (!identityRef) return false;
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) return false;
+  const owner = lobby.created_by;
+  if (owner && owner !== 'system' && owner !== 'web-user') return false; // already owned — do not reassign
+  await store.updateLobby(lobbyId, { created_by: identityRef });
+  await store.addMember({
+    id: `mem_${randomUUID()}`,
+    lobby_id: lobbyId,
+    identity_ref: identityRef,
+    role: 'owner',
+    status: 'active',
+  });
+  return true;
+}
+
+/**
+ * Authorize a wallet to manage a lobby. Ownership is normally bound at sign-in (`claimLobbyOwnership`),
+ * so by the time any management action runs the lobby is already owned. As a backstop, an UNOWNED
+ * lobby is still adopted for the caller here — kept OUT of `isLobbyManager` so that predicate stays
+ * pure. Once owned, only the bound owner (or an active admin member) passes.
+ */
+export async function authorizeLobbyManager(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
+  if (!identityRef) return false;
+  const lobby = await store.getLobby(lobbyId);
+  if (!lobby) return false;
+
+  const owner = lobby.created_by;
+  if (!owner || owner === 'system' || owner === 'web-user') {
+    await claimLobbyOwnership(store, lobbyId, identityRef);
+    return true;
+  }
+  return isLobbyManager(store, lobbyId, identityRef);
 }

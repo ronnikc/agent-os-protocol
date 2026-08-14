@@ -14,6 +14,19 @@ function renderGantt() {
   if (!el) return;
 
   if (!ganttData.phases.length) {
+    if (typeof window !== 'undefined' && window.AGENT_OS_HOSTED) {
+      el.innerHTML = ganttData.repo
+        ? `<div class="empty-state" style="padding:32px;line-height:1.6;">
+             No phases planned yet for <strong>${escapeHtml(ganttData.repo)}</strong>.<br>
+             Define phases and sprints in <code>agent-os/planning.json</code> in your repository
+             (seeded by Initialize) — or create tasks in the Tasks tab: live lobby tasks appear here automatically.
+           </div>`
+        : `<div class="empty-state" style="padding:32px;line-height:1.6;">
+             ⚠ No GitHub repository connected — the project timeline reads <code>agent-os/planning.json</code>
+             from your working repo. Connect the GitHub App in the <strong>Lobby</strong> tab first.
+           </div>`;
+      return;
+    }
     el.innerHTML = '<div class="empty-state">No phase data found in docs/product/phases/</div>';
     return;
   }
@@ -25,6 +38,7 @@ function renderGantt() {
 
   let html = `
     <div style="padding:8px 12px;font-size:12px;color:var(--text-secondary);border-bottom:1px solid var(--border);display:flex;gap:16px;">
+      ${ganttData.repo ? `<span title="Plan source: agent-os/planning.json in the working repo">📁 ${escapeHtml(ganttData.repo)}</span>` : ''}
       <span>${ganttData.phases.length} phases</span>
       <span>${totalSprints} sprints</span>
       <span style="color:var(--success)">${completedPhases} phases complete</span>

@@ -7,6 +7,7 @@ let linkedDid = '';
 let lobbyMode = 'local';
 let selectedSlug = '';
 let githubConnected = false;
+let rosterAgents = []; // connected (live) lobby agents — the hosted pre-populate source
 
 function sortKeys(value) {
   if (Array.isArray(value)) return value.map(sortKeys);
@@ -64,10 +65,23 @@ async function load() {
 
   if (lobbyMode === 'swarm') {
     try {
-      const laRes = await fetchJson('/api/agents/list');
+      // /api/agents is served locally AND intercepted in hosted mode; /api/agents/list never
+      // existed on either backend, so this dropdown was always empty.
+      const laRes = await fetchJson('/api/agents');
       state.agents = laRes?.agents || [];
     } catch (e) {
       console.warn('[Identity] Failed to fetch agents list:', e);
+    }
+    try {
+      // The live roster — the pre-populate dropdown should offer the agents actually CONNECTED to
+      // this lobby (what the user is minting an ID for), not the whole 60-definition catalog.
+      const rosterRes = await fetchJson('/api/lobby/remote/agents');
+      rosterAgents = (rosterRes?.agents || [])
+        .filter(a => a.status !== 'disconnected' && a.participant_type !== 'human' && a.agent_role !== 'panel' && a.agent_role)
+        .map(a => ({ slug: a.agent_role, name: a.display_name || a.agent_role, agent_id: a.agent_id }));
+    } catch (e) {
+      rosterAgents = [];
+      console.warn('[Identity] Failed to fetch lobby roster:', e);
     }
     try {
       const gitRes = await fetchJson('/api/lobby/remote/integrations/github');
@@ -172,10 +186,8 @@ async function handlePrepareReg() {
     const isSwarm = lobbyMode === 'swarm';
     const steps = isSwarm ? [
       `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
-      `Open your Concordium wallet on ${network}.`,
-      `Click the "Mint Agent ID" button to initiate the sponsored, gasless transaction.`,
-      `Sign the card and submit the transaction in your wallet.`,
-      `Once submitted, the DID is automatically bound to your agent definition (committed to GitHub).`,
+      `Click "Mint Agent ID" and sign in your Concordium wallet (${network}) — the transaction is sponsored (gasless).`,
+      `Everything after the signature is automatic: card hosting, on-chain anchor, and the DID bind committed to your repository.`,
     ] : [
       `Review the Agent Card "${draftCard.name}" (v${draftCard.version}) — content hash sha256:${cardHash}.`,
       `Open your Concordium wallet (or the registry MCP service) on ${network}.`,
@@ -265,15 +277,25 @@ function drawProgressModal(stepStates) {
 }
 
 async function handleMintIdentity() {
+  try {
+    await handleMintIdentityInner();
+  } catch (err) {
+    // A thrown error here used to die silently — the button looked dead. Always surface it.
+    console.error('[Identity] Mint failed:', err);
+    showAlert('Mint Failed', String(err?.message || err));
+  }
+}
+
+async function handleMintIdentityInner() {
   readFormValues();
   const network = document.getElementById('identity-network')?.value || 'mainnet';
-  const selectedSlug = document.getElementById('identity-agent-select')?.value || 'boss';
-  
-  if (lobbyMode === 'swarm' && !githubConnected) {
-    showAlert('GitHub Required', 'Please connect a GitHub repository in the Lobby tab first to enable auto-binding of your Agent ID.');
-    return;
-  }
-  
+  const selectedSlug = document.getElementById('identity-agent-select')?.value
+    || rosterAgents[0]?.slug || 'boss-agent';
+
+  // NOTE: no stale load()-time GitHub gate here — the FRESH check below decides. The old gate used
+  // `githubConnected` captured when the tab loaded, so connecting the repo after opening the tab
+  // left Mint refusing with a misleading alert.
+
   if (!window.concordium) {
     showHtmlAlert('Concordium Wallet Required', `
       <div style="text-align:left;font-size:12px;line-height:1.5;">
@@ -293,21 +315,27 @@ async function handleMintIdentity() {
   const isHosted = typeof window !== 'undefined' && window.AGENT_OS_HOSTED;
   
   let hasGithub = true;
+  let appConnectedNoRepo = false;
   if (isHosted) {
     const gitRes = await fetchJson('/api/lobby/remote/integrations/github').catch(() => null);
-    hasGithub = gitRes && gitRes.connected;
+    // The bind step needs a SELECTED repository, not just an installed app — hold both to the
+    // same bar so "connected" here can't still fail at bind time.
+    hasGithub = !!(gitRes && gitRes.connected && gitRes.repo);
+    appConnectedNoRepo = !!(gitRes && gitRes.connected && !gitRes.repo);
   }
 
   if (isHosted && !hasGithub) {
     showModal(`
       <div style="padding:20px; text-align:left; box-sizing:border-box;">
-        <h3 style="margin:0 0 12px 0; color:#eab308; font-size:16px; font-weight:600;">GitHub Repository Not Connected</h3>
+        <h3 style="margin:0 0 12px 0; color:#eab308; font-size:16px; font-weight:600;">${appConnectedNoRepo ? 'GitHub Repository Not Selected' : 'GitHub Repository Not Connected'}</h3>
         <p style="font-size:13px; color:var(--text-secondary); line-height:1.5; margin:0 0 16px;">
-          Creating an Agent ID requires committing the resulting DID back to your repository's agent definition file. 
-          Without a connected GitHub repository, the lobby cannot automate this step.
+          Creating an Agent ID requires committing the resulting DID back to your repository's agent definition file.
+          ${appConnectedNoRepo
+            ? 'The GitHub App is connected, but no target repository is selected yet, so the lobby cannot automate this step.'
+            : 'Without a connected GitHub repository, the lobby cannot automate this step.'}
         </p>
         <div style="background:var(--bg-elevated); border:1px solid var(--border); border-radius:6px; padding:12px; font-size:12px; color:var(--text-muted); margin-bottom:20px; line-height:1.5;">
-          <strong>Recommended:</strong> Switch to the <strong>Lobby</strong> tab, configure the GitHub App, select your repository, and then return here to mint.
+          <strong>Recommended:</strong> Switch to the <strong>Lobby</strong> tab, ${appConnectedNoRepo ? 'pick your repository in the GitHub Swarm Connection card and save' : 'configure the GitHub App, select your repository'}, and then return here to mint.
         </div>
         <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
           <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
@@ -359,8 +387,15 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
   drawProgressModal(stepStates);
 
   try {
-    const accounts = await window.concordium.requestAccounts();
-    const owner = accounts[0];
+    // The Concordium browser wallet exposes connect(); requestAccounts is not guaranteed on all
+    // versions — when it's absent the old call threw inside the progress modal and Mint looked
+    // dead. Use the same connection path as the (working) Agents-tab Create ID, with a fallback.
+    let owner;
+    if (typeof window.concordium.connect === 'function') {
+      owner = await window.concordium.connect();
+    } else if (typeof window.concordium.requestAccounts === 'function') {
+      owner = (await window.concordium.requestAccounts())[0];
+    }
     if (!owner) {
       throw new Error('Please connect your Concordium wallet account.');
     }
@@ -404,6 +439,7 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
 
       const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: res.did });
       let githubBound = false;
+      let bindError = '';
       if (saved && saved.ok !== false && !saved.error) {
         githubBound = true;
         const localAgent = (state.agents || []).find(a => a.slug === selectedSlug);
@@ -413,13 +449,14 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
         stepStates.bind = 'success';
       } else {
         stepStates.bind = 'warning';
-        stepStates.bind_desc = saved?.error || 'GitHub repository not connected';
+        bindError = saved?.error || 'the bind endpoint did not respond';
+        stepStates.bind_desc = bindError;
       }
       drawProgressModal(stepStates);
 
       await new Promise(r => setTimeout(r, 600));
       closeModal();
-      showIdentitySuccessModal(res, draftCard.name, owner, githubBound);
+      showIdentitySuccessModal(res, draftCard.name, owner, githubBound, bindError);
       render();
     }
   } catch (err) {
@@ -509,10 +546,14 @@ function render() {
           <label class="form-label" style="display:block;font-size:11px;color:var(--text-muted);margin-bottom:4px;">Pre-populate from Connected Swarm Agents</label>
           <select id="identity-agent-select" style="width:100%;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;appearance:auto;">
             <option value="">-- Select an Agent --</option>
-            ${(state.agents || []).map(a => `
-              <option value="${escapeHtml(a.slug)}" ${a.slug === selectedSlug ? 'selected' : ''}>${escapeHtml(a.name)} (${escapeHtml(a.slug)})</option>
-            `).join('')}
+            ${(lobbyMode === 'swarm' && rosterAgents.length
+              ? rosterAgents.map(a => `
+                <option value="${escapeHtml(a.slug)}" ${a.slug === selectedSlug ? 'selected' : ''}>${escapeHtml(a.name)} (${escapeHtml(a.slug)}) · connected</option>`)
+              : (state.agents || []).map(a => `
+                <option value="${escapeHtml(a.slug)}" ${a.slug === selectedSlug ? 'selected' : ''}>${escapeHtml(a.name)} (${escapeHtml(a.slug)})</option>`)
+            ).join('')}
           </select>
+          ${lobbyMode === 'swarm' && !rosterAgents.length ? '<span style="font-size:10px;color:var(--color-yellow,#eab308);display:block;margin-top:3px;">No agents connected to the lobby — start agents in the Agents tab to mint IDs for them (catalog shown as fallback).</span>' : ''}
         </div>
         
         <div style="display:flex;gap:10px;">
@@ -642,19 +683,18 @@ function render() {
           </div>
         ` : ''}
 
-        <!-- Linked DID Profile configuration -->
+        ${lobbyMode !== 'swarm' ? `
+        <!-- Linked DID Profile configuration (Local Mode only — hosted minting binds automatically) -->
         <div style="background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:16px;">
           <h3 style="margin:0 0 4px 0;font-size:14px;font-weight:600;color:var(--text-primary);">4. Link Registry Reference (DID)</h3>
           <span style="font-size:11px;color:var(--text-muted);display:block;margin-bottom:8px;">
-            ${lobbyMode === 'swarm'
-              ? '✓ Minting automatically commits the DID to your agent definition in GitHub. You can also manually override it below.'
-              : 'Once registered, bind your non-secret DID reference to this workspace.'}
+            Once registered, bind your non-secret DID reference to this workspace.
           </span>
           <div style="display:flex;gap:6px;">
             <input type="text" id="linked-did-input" value="${escapeHtml(linkedDid)}" placeholder="did:ccd:mainnet:..." style="flex:1;padding:6px 10px;background:var(--bg-elevated);border:1px solid var(--border);color:var(--text-primary);border-radius:4px;font-size:12px;" />
             <button class="btn btn-secondary btn-sm" id="btn-link-did">Link Reference</button>
           </div>
-        </div>
+        </div>` : ''}
 
       </div>
 
@@ -666,15 +706,18 @@ function render() {
     const slug = e.target.value;
     selectedSlug = slug;
     if (slug) {
+      // Prefer the catalog definition (scope, runtime, bound identity); a connected roster agent
+      // whose role has no definition yet still prefills with its live name.
       const agent = (state.agents || []).find(a => a.slug === slug);
-      if (agent) {
-        draftCard.name = agent.name;
-        draftCard.description = agent.scope || `${agent.name} specialist`;
-        draftCard.runtime = agent.runtime || 'api';
-        if (agent.model) {
+      const rosterAgent = rosterAgents.find(a => a.slug === slug);
+      if (agent || rosterAgent) {
+        draftCard.name = agent?.name || rosterAgent?.name || slug;
+        draftCard.description = agent?.scope || `${draftCard.name} specialist`;
+        draftCard.runtime = agent?.runtime || 'api';
+        if (agent?.model) {
           draftCard.description += ` (model: ${agent.model})`;
         }
-        linkedDid = agent.identity || '';
+        linkedDid = agent?.identity || '';
         render();
       }
     }

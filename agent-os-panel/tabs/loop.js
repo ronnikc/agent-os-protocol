@@ -5,12 +5,14 @@
  * Runs here are SIMULATED by the panel server (deterministic seams; no live gate skills or lobby),
  * the same as `npm run loop`.
  */
-import { fetchJson, postJson, registerTab, escapeHtml, onWsMessage } from '../app.js';
+import { fetchJson, postJson, registerTab, escapeHtml, onWsMessage, showAlert } from '../app.js';
 
 let presets = [];
 let runs = [];
+let isHosted = false;
 
 async function load() {
+  isHosted = typeof window !== 'undefined' && !!window.AGENT_OS_HOSTED;
   const data = await fetchJson('/api/loops');
   presets = data?.presets || [];
   runs = data?.runs || [];
@@ -186,6 +188,16 @@ function render() {
       </div>`;
   }).join('') : '<div class="empty-state">No loop runs active. Select a preset on the left to launch.</div>';
 
+  // Hosted Mode has no loop engine on the lobby server (the LoopOrchestrator runs on a local
+  // panel/relay next to your repo) — say so instead of offering Run buttons that silently 404.
+  const hostedNotice = isHosted ? `
+    <div style="margin-bottom:14px;padding:12px;background:rgba(234,179,8,0.08);border:1px solid rgba(234,179,8,0.2);border-radius:6px;font-size:12px;line-height:1.5;color:var(--color-text-muted);">
+      <strong style="color:var(--color-yellow);">Loop Mode runs locally.</strong>
+      The loop engine executes on a local Panel/relay next to your working copy
+      (<code>npm run agent-os-panel</code>), where checkpoints gate real commits/merges.
+      Hosted lobby loop execution is on the roadmap — presets below are shown for reference.
+    </div>` : '';
+
   el.innerHTML = `
     <div style="display:grid;grid-template-columns:260px 1fr;gap:24px;height:100%;min-height:500px;">
       <!-- Left sidebar: Presets -->
@@ -193,9 +205,10 @@ function render() {
         <div style="font-family:var(--display);font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.08em;">Loop Presets</div>
         ${presetRows || '<div class="empty-state">No presets.</div>'}
       </div>
-      
+
       <!-- Right area: Active/Past Runs -->
       <div style="overflow-y:auto;padding-right:4px;display:flex;flex-direction:column;">
+        ${hostedNotice}
         <div style="font-family:var(--display);font-size:12px;font-weight:600;color:var(--color-text-muted);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:12px;">Execution Swarm Logs</div>
         ${runRows}
       </div>
@@ -216,6 +229,10 @@ function render() {
 }
 
 async function start(preset, unattended) {
+  if (isHosted) {
+    showAlert('Loop Mode Runs Locally', 'The loop engine executes on a local Panel/relay next to your working copy — run `npm run agent-os-panel` locally and start the loop there. Hosted loop execution is on the roadmap.');
+    return;
+  }
   await postJson('/api/loops/run', { preset, unattended });
   load();
 }

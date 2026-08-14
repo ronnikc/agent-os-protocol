@@ -20,22 +20,27 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType } from '@agent-os/protocol-core';
-import { InMemoryLobbyStore, type LobbyStore } from './store.js';
+import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
+import { InMemoryLobbyStore, type LobbyStore, type HostedAgentSpec, type LobbyWorkSession } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
 import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.js';
-import { githubAppConfig, getInstallationToken, installUrl } from './integrations/github/appAuth.js';
+import { githubAppConfig, getInstallationToken, installUrl, listAppInstallations } from './integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
+import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
+import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
-import { isLobbyManager } from './auth/lobbyAuthz.js';
+import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership } from './auth/lobbyAuthz.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
+import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
+import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
+import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
 import type { ProviderId } from '@agent-os/protocol-core';
 
 const DEFAULT_PORT = 4730;
@@ -45,6 +50,30 @@ function parseGithubUrl(url: string): { owner: string; repo: string } | null {
   const match = url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
   if (!match) return null;
   return { owner: match[1], repo: match[2] };
+}
+
+/**
+ * Owner/repo from an integration's repo_full_name, accepting BOTH stored forms: a github.com URL
+ * (KB configs) and the bare "owner/repo" the GitHub App integration stores. Individual endpoints
+ * previously called parseGithubUrl directly and failed with "invalid GitHub repository URL" on the
+ * bare form — the DID bind, agent-definition loading, and scheduled setup all broke that way.
+ */
+/** Turn a raw GitHub error into an operator-friendly message; rate limits get a wait hint. */
+function githubErrorMessage(err: unknown): string {
+  const raw = String((err as Error)?.message ?? err);
+  if (/rate limit exceeded/i.test(raw) || /\b403\b/.test(raw) && /rate limit/i.test(raw)) {
+    return 'GitHub API rate limit reached for this installation. Wait a few minutes and retry — the panel now caches reads to avoid this.';
+  }
+  return raw;
+}
+
+function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
+  if (!fullName) return null;
+  const parsed = parseGithubUrl(fullName);
+  if (parsed) return parsed;
+  return /^[^/\s]+\/[^/\s]+$/.test(fullName)
+    ? { owner: fullName.split('/')[0], repo: fullName.split('/')[1] }
+    : null;
 }
 
 function parseAgentDef(fileName: string, content: string) {
@@ -74,54 +103,248 @@ function parseAgentDef(fileName: string, content: string) {
   };
 }
 
-async function getAgentDefinitions(lobbyId: string, store: LobbyStore): Promise<any[]> {
+/**
+ * A FRESH GitHub installation token for a lobby's connected integration. Always mint via the App
+ * JWT (getInstallationToken caches and auto-renews) — do NOT read the `installation_token` secret
+ * stored at connect time: GitHub installation tokens expire after ~1h, so every consumer of the
+ * stored copy silently broke an hour after connecting (identity bind, KB sync, agent definitions,
+ * hosted-agent repo tools) while the Lobby tab — which already minted fresh — kept showing
+ * "connected". One token path, no drift.
+ */
+async function githubTokenForLobby(lobbyId: string, store: LobbyStore): Promise<string | null> {
   const integration = await store.getIntegration(lobbyId, 'github');
-  const agents: any[] = [];
+  if (!integration || integration.status !== 'active' || !integration.installation_id) return null;
+  try { return await getInstallationToken(integration.installation_id); } catch { return null; }
+}
 
-  if (integration && integration.repo_full_name) {
-    const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-    const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
-    if (token) {
-      const parsed = parseGithubUrl(integration.repo_full_name);
-      if (parsed) {
-        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
-        const branchName = integration.branch || 'main';
-        try {
-          const files = await client.readDir('agent-os/sub-agents/agents', branchName);
-          const mdFiles = files.filter((f: any) => f.name.endsWith('.md') && f.type === 'file');
-          for (const file of mdFiles) {
-            try {
-              const content = await client.readFile(file.path, branchName);
-              agents.push(parseAgentDef(file.name, content));
-            } catch {}
-          }
-          return agents;
-        } catch (err) {
-          console.warn('[Lobby Server] Failed to read agents from GitHub:', err);
-        }
-      }
-    }
-  }
-
-  // Local filesystem fallback
+// The built-in catalog is read from local disk ONCE per process — it never changes at runtime.
+let builtinCatalogCache: any[] | null = null;
+function builtinAgentCatalog(): any[] {
+  if (builtinCatalogCache) return builtinCatalogCache;
+  const defs: any[] = [];
   try {
     const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
     const localAgentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
     if (existsSync(localAgentsDir)) {
-      const files = readdirSync(localAgentsDir).filter(f => f.endsWith('.md'));
-      for (const file of files) {
-        try {
-          const content = readFileSync(join(localAgentsDir, file), 'utf-8');
-          agents.push(parseAgentDef(file, content));
-        } catch {}
+      for (const file of readdirSync(localAgentsDir).filter(f => f.endsWith('.md'))) {
+        try { defs.push(parseAgentDef(file, readFileSync(join(localAgentsDir, file), 'utf-8'))); } catch {}
       }
     }
   } catch (err) {
-    console.warn('[Lobby Server] Failed to read agents from local fs:', err);
+    console.warn('[Lobby Server] Failed to read built-in agent catalog:', err);
+  }
+  builtinCatalogCache = defs;
+  return defs;
+}
+
+// Per-lobby merged-definition cache. getAgentDefinitions previously read ~60 repo files on EVERY
+// call, and it is hit on every panel poll (/api/agents, /api/presets, gantt, spawn) — which
+// exhausted the GitHub App installation's API rate limit and left the panel blank for minutes.
+// Cache the merged result and serve it stale on error, so a repo read happens at most once per TTL.
+const agentDefsCache = new Map<string, { defs: any[]; at: number; ok: boolean }>();
+const AGENT_DEFS_TTL_MS = 5 * 60_000;
+// A failed/partial read is cached only briefly so it recovers fast, without retrying on every poll
+// (which would pile onto the very rate limit that caused the failure).
+const AGENT_DEFS_FAIL_TTL_MS = 20_000;
+function invalidateAgentDefs(lobbyId: string) { agentDefsCache.delete(lobbyId); }
+
+/**
+ * Agent definitions for a lobby: the built-in catalog MERGED with any definitions in the connected
+ * GitHub repo (repo wins per slug). Cached per lobby; on a GitHub error (rate limit, transient) the
+ * last good result — or the built-in catalog — is returned rather than failing.
+ */
+async function getAgentDefinitions(lobbyId: string, store: LobbyStore, force = false): Promise<any[]> {
+  const cached = agentDefsCache.get(lobbyId);
+  if (!force && cached && Date.now() - cached.at < (cached.ok ? AGENT_DEFS_TTL_MS : AGENT_DEFS_FAIL_TTL_MS)) return cached.defs;
+
+  const bySlug = new Map<string, any>();
+  for (const def of builtinAgentCatalog()) bySlug.set(def.slug, def);
+
+  const integration = await store.getIntegration(lobbyId, 'github');
+  // Track whether we actually read the connected repo. A FAILED read must NOT be cached as if it
+  // were the truth: doing so pins the identity-less built-in catalog for the whole TTL, which is
+  // exactly what made freshly-restarted agents lose the Agent IDs bound in their repo definitions
+  // (a single cold/rate-limited read right after a deploy poisoned every poll and spawn for 5 min).
+  let repoReadOk = true;
+  if (integration && integration.repo_full_name) {
+    const token = await githubTokenForLobby(lobbyId, store);
+    const parsed = token ? repoRef(integration.repo_full_name) : null;
+    if (parsed) {
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+        const branchName = integration.branch || 'main';
+        const files = await client.readDir('agent-os/sub-agents/agents', branchName);
+        const mdFiles = files.filter((f: any) => f.name.endsWith('.md') && f.type === 'file');
+        for (const file of mdFiles) {
+          try {
+            const def = parseAgentDef(file.name, await client.readFile(file.path, branchName));
+            bySlug.set(def.slug, def);
+          } catch {
+            // A per-file read/parse failure (rate limit mid-listing) yields a PARTIAL result missing
+            // that agent's repo definition — and its bound Agent ID. Caching a partial as the 5-min
+            // truth is exactly what showed a connected repo's agents WITHOUT their DIDs: readDir
+            // succeeded but the readFiles failed and were swallowed. Mark not-ok so it retries soon.
+            repoReadOk = false;
+          }
+        }
+      } catch (err) {
+        // Rate-limited or transient. Prefer a prior GOOD cache (keeps repo identities); otherwise
+        // serve the built-in catalog but mark it not-ok so it is retried after the short fail TTL.
+        repoReadOk = false;
+        console.warn('[Lobby Server] Failed to read agents from GitHub (serving cached/catalog):', (err as Error)?.message ?? err);
+        if (cached && cached.ok) return cached.defs;
+      }
+    } else {
+      // No token / unparseable repo — a transient auth state, not an authoritative "no repo".
+      repoReadOk = false;
+    }
   }
 
-  return agents;
+  const defs = [...bySlug.values()];
+  agentDefsCache.set(lobbyId, { defs, at: Date.now(), ok: repoReadOk });
+  return defs;
+}
+
+/**
+ * The Agent ID (DID) persisted in an agent's own definition file, read authoritatively (one file,
+ * live from the connected repo) — NOT via the merged/cached catalog. The catalog can be stale or a
+ * built-in fallback that has no identities, so the branch/PR reuse path reads the single source of
+ * truth directly. Returns the `did:…` string or null.
+ */
+async function getBoundAgentIdentity(lobbyId: string, store: LobbyStore, slug: string): Promise<string | null> {
+  if (!slug) return null;
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return null;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return null;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    const branchName = integration.branch || 'main';
+    const content = await client.readFile(`agent-os/sub-agents/agents/${slug}.md`, branchName);
+    const did = content.match(/^Identity:\s*(.+)$/m)?.[1]?.trim();
+    return did && /^did:/i.test(did) ? did : null;
+  } catch {
+    return null; // file missing (never bound) or transient read error
+  }
+}
+
+/** Path in the connected repo where per-role nicknames are mirrored (survives deploys like DIDs). */
+const NICKNAMES_REPO_PATH = 'agent-os/nicknames.json';
+
+/**
+ * Per-role nicknames, hydrated from the connected repo when the (possibly ephemeral) store has none.
+ * Nicknames are a user setting; persisting them in the repo — like agent DIDs — lets them survive a
+ * container recycle even without a durable store. On a store miss we read `agent-os/nicknames.json`
+ * and seed the store so later reads are cheap.
+ */
+async function readAgentNicknames(lobbyId: string, store: LobbyStore): Promise<Record<string, string>> {
+  const local = await store.getAgentNicknames(lobbyId);
+  if (Object.keys(local).length > 0) return local;
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return local;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return local;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    const content = await client.readFile(NICKNAMES_REPO_PATH, integration.branch || 'main');
+    const map = JSON.parse(content);
+    if (map && typeof map === 'object') {
+      for (const [role, nick] of Object.entries(map)) {
+        if (typeof nick === 'string' && nick) await store.setAgentNickname(lobbyId, role, nick);
+      }
+      return await store.getAgentNicknames(lobbyId);
+    }
+  } catch { /* no nicknames.json yet, or transient read error */ }
+  return local;
+}
+
+/** Mirror the full nickname map into the connected repo (best-effort; never fails the caller). */
+async function persistNicknamesToRepo(lobbyId: string, store: LobbyStore, map: Record<string, string>): Promise<void> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return;
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+    await client.writeFile(NICKNAMES_REPO_PATH, JSON.stringify(map, null, 2) + '\n', 'chore: update agent nicknames', integration.branch || 'main');
+  } catch (e) {
+    console.warn('[Lobby Server] Failed to mirror nicknames to repo:', (e as Error)?.message ?? e);
+  }
+}
+
+/** Extract the PR number from a GitHub PR html_url (…/pull/N), or null. */
+function prNumberFromUrl(url: string | undefined): number | null {
+  const m = (url ?? '').match(/\/pull\/(\d+)/);
+  return m ? Number(m[1]) : null;
+}
+
+/** A short, filesystem-safe slug for a memory filename. */
+function memSlug(s: string): string {
+  return (s || 'task').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'task';
+}
+
+/**
+ * Self-learning on merge: record a durable memory of a merged task-PR into the connected repo's
+ * shared-memory, plus a structured fact line. This is the hosted equivalent of the local post-merge
+ * self-learning pass — every merged deliverable leaves a memory the swarm (and owner) can revisit.
+ * Deterministic and idempotent (guarded by result_memory_written); commits to the working branch.
+ */
+async function recordTaskMergeMemory(
+  store: LobbyStore, lobbyId: string, task: LobbyTask, agentName: string,
+  merge: { merge_commit_sha: string | null; merged_at: string | null },
+  lessons?: string | null,
+): Promise<boolean> {
+  const integration = await store.getIntegration(lobbyId, 'github');
+  if (!integration || !integration.repo_full_name) return false;
+  const token = await githubTokenForLobby(lobbyId, store);
+  const parsed = token ? repoRef(integration.repo_full_name) : null;
+  if (!parsed) return false;
+  const branch = integration.branch || 'main';
+  const when = merge.merged_at || new Date().toISOString();
+  const date = when.slice(0, 10);
+  const files = Array.isArray((task as any).result_files) && (task as any).result_files.length
+    ? (task as any).result_files.map((f: string) => `- ${f}`).join('\n')
+    : '- (see the PR diff)';
+  const memPath = `agent-os/shared-memory/${date}-${memSlug(task.title || task.task_id)}-${String(task.task_id).slice(0, 8)}.md`;
+  const memBody = [
+    `# Memory — ${task.title || task.task_id}`, '',
+    `- **Task:** ${task.title || '(untitled)'} (\`${task.task_id}\`)`,
+    `- **Agent:** ${agentName}`,
+    `- **Merged PR:** ${task.result_pr_url || '(unknown)'}${merge.merge_commit_sha ? ` (\`${merge.merge_commit_sha.slice(0, 10)}\`)` : ''}`,
+    `- **CI:** ${task.result_ci_status || 'n/a'}`,
+    `- **Merged:** ${when}`, '',
+    '## Objective', '', (task.description || '(none)'), '',
+    '## What was done', '', (task.result || '(no agent report captured)'), '',
+    ...(lessons ? ['## Lessons (AI reflection)', '', lessons.trim(), ''] : []),
+    '## Files', '', files, '',
+  ].join('\n');
+  const fact = JSON.stringify({
+    type: 'task_merged', task_id: task.task_id, title: task.title || null,
+    agent: agentName, pr: task.result_pr_url || null, ci: task.result_ci_status || null, at: when,
+  }) + '\n';
+  try {
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, branch);
+    await client.writeFile(memPath, memBody, `memory: record merged task "${(task.title || task.task_id).slice(0, 60)}"`, branch);
+    await client.appendToFile('agent-os/shared-memory/facts.jsonl', fact, 'memory: append task-merge fact', branch);
+    // Roll AI-distilled lessons into a running LESSONS.md so the durable, reusable knowledge
+    // accumulates in one place (a lightweight "skills" ledger the team and swarm can revisit).
+    if (lessons && lessons.trim()) {
+      const entry = `\n## ${task.title || task.task_id} — ${date}\n_[memory](${memPath.split('/').pop()}) · ${task.result_pr_url || ''}_\n\n${lessons.trim()}\n`;
+      await client.appendToFile('agent-os/shared-memory/LESSONS.md', entry, 'memory: append distilled lessons', branch);
+    }
+    return true;
+  } catch (e) {
+    console.warn('[Lobby Server] self-learning memory write failed:', (e as Error)?.message ?? e);
+    return false;
+  }
 }
 
 export interface LobbyServerOptions {
@@ -244,7 +467,78 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
-  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout }>();
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: any; workingBranch?: string }>();
+  // Per-agent throttle for broadcast observation (see observeBroadcast) — bounds LLM cost so a
+  // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
+  const lastObservation = new Map<string, number>();
+  const OBSERVE_COOLDOWN_MS = Number(process.env.AGENT_OS_OBSERVE_COOLDOWN_MS) || 20_000;
+  // Per-lobby throttle for GitHub-installation auto-detect (see autoAdoptGithubInstallation) so a
+  // disconnected status poll can't hammer the GitHub App rate limit.
+  const lastGithubAutoDetect = new Map<string, number>();
+  const GITHUB_AUTODETECT_THROTTLE_MS = 15_000;
+  // Boss task dispatches allowed on AGENT-originated turns between human messages. Human turns
+  // reset the budget; without a cap, a Boss reacting to task-completion handoffs could re-assign
+  // tasks in a self-sustaining loop with no human in it.
+  const bossAutoTaskBudget = new Map<string, number>();
+  const BOSS_AUTO_TASK_BUDGET = 3;
+  // Cached "is the Agent OS structure initialized in the connected repo?" per lobby — the GitHub
+  // status endpoint is polled every ~10s and the answer costs an API read of the manifest file.
+  // `ok:true` marks an AUTHORITATIVE answer (manifest read succeeded, or a real 404 = not there).
+  // `ok:false` is a best-effort guess after a transient error (rate limit / 5xx) — retried sooner.
+  const repoInitializedCache = new Map<string, { value: boolean; at: number; ok: boolean }>();
+  const REPO_INIT_CACHE_MS = 60_000;
+  const REPO_INIT_FAIL_CACHE_MS = 20_000;
+
+  /**
+   * Whether the connected repo carries the Agent OS manifest (cached; see repoInitializedCache).
+   * A rate-limit / transient error must NOT flip an already-initialized repo to "not initialized":
+   * only a genuine 404 (manifest absent) is an authoritative false. Otherwise the last known answer
+   * is preserved — this is what made a freshly-deployed lobby wrongly report "not initialized".
+   */
+  async function isRepoInitialized(lobbyId: string, repoFullName: string | undefined, branch: string | undefined): Promise<boolean> {
+    if (!repoFullName) return false;
+    const cached = repoInitializedCache.get(lobbyId);
+    if (cached && Date.now() - cached.at < (cached.ok ? REPO_INIT_CACHE_MS : REPO_INIT_FAIL_CACHE_MS)) return cached.value;
+    try {
+      const token = await githubTokenForLobby(lobbyId, store);
+      const parsed = token ? repoRef(repoFullName) : null;
+      if (token && parsed) {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        await client.readFile(AGENT_OS_MANIFEST_PATH, branch || 'main');
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now(), ok: true });
+        return true;
+      }
+      // No token / unparseable repo — a transient auth state, not an authoritative "no manifest".
+      if (cached) return cached.value;
+      return false;
+    } catch (err) {
+      const msg = String((err as Error)?.message ?? err);
+      if (/\b404\b/.test(msg)) {
+        // Manifest genuinely absent — the repo is not initialized. Authoritative.
+        repoInitializedCache.set(lobbyId, { value: false, at: Date.now(), ok: true });
+        return false;
+      }
+      // Rate limit / 5xx / network: never downgrade a known-initialized repo. Keep the last answer;
+      // if we have none, guess false but only briefly so the next poll recovers quickly.
+      if (cached) return cached.value;
+      repoInitializedCache.set(lobbyId, { value: false, at: Date.now(), ok: false });
+      return false;
+    }
+  }
+
+  // The GitHub status endpoint is polled continuously and re-listed the installation's repos on
+  // every poll — a wasted API call, since the repo set rarely changes. Cache it per lobby so polling
+  // costs one list call per minute, not one every ~10s (this fed the rate-limit exhaustion).
+  const installRepoCache = new Map<string, { repos: unknown[]; at: number }>();
+  const INSTALL_REPO_CACHE_MS = 60_000;
+  async function cachedInstallationRepos(lobbyId: string, token: string): Promise<unknown[]> {
+    const c = installRepoCache.get(lobbyId);
+    if (c && Date.now() - c.at < INSTALL_REPO_CACHE_MS) return c.repos;
+    const repos = await listInstallationRepos(token);
+    installRepoCache.set(lobbyId, { repos, at: Date.now() });
+    return repos;
+  }
 
   const providerIdFor = (name: string): ProviderId => {
     const n = (name || '').toLowerCase();
@@ -266,8 +560,172 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const entry = hostedAgents.get(myId);
       if (entry) {
         try {
-          await entry.runner.respondTo('[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, and facilitate the lobby.');
+          await entry.runner.respondTo(`[SYSTEM] You have been appointed as the Boss Agent. You now have floor control and can broadcast messages to all agents. Coordinate work, manage handoffs, facilitate the lobby, and triage the Requests queue.\n${BOSS_DELEGATION_GUIDE}`);
         } catch { /* ignore errors from system injection */ }
+        // Backlog sweep: triage pending requests left over from before this Boss existed (bounded —
+        // a large stale queue must not turn the appointment into a long LLM loop).
+        try {
+          const pending = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending').slice(0, 5);
+          for (const r of pending) await bossTriageRequest(conn, myId, r);
+        } catch { /* sweep is best-effort */ }
+      }
+      return;
+    }
+
+    // A new request in the lobby — the Boss triages it (decides hand-raises, recommends on
+    // authority categories). Fire-and-forget so the creating flow isn't blocked.
+    if (msg?.type === 'lobby-request-created') {
+      const request = (msg as unknown as { request?: Record<string, any> }).request;
+      if (!request) return;
+      const lobbyForReq = await store.getLobby(conn.lobbyId);
+      if (lobbyForReq?.boss_agent_id === myId) {
+        void bossTriageRequest(conn, myId, request as any).catch(() => {});
+      }
+      return;
+    }
+
+    // A task assigned to this hosted agent — this is where assigned work actually gets DONE.
+    // Without this handler, lobby-task-assigned was silently ignored and a Boss- or panel-created
+    // task sat in "assigned" forever. Flow: mark in_progress → run one adapter turn on the task
+    // (the runner has repo tools when a GitHub repo is connected) → mark completed/failed with the
+    // result → report to the assigner (falling back to the Boss, then the lobby log).
+    if (msg?.type === 'lobby-task-assigned') {
+      const task = (msg as unknown as { task?: { task_id?: string; title?: string; description?: string; assigned_to?: string; assigned_by?: string } }).task;
+      if (!task?.task_id || task.assigned_to !== myId) return;
+      const entry = hostedAgents.get(myId);
+      if (!entry) return;
+      const upd = async (status: string, result?: string) => {
+        const r = await coordinator.handle(conn, {
+          type: 'lobby-task-update', task_id: task.task_id, status, ...(result ? { result } : {}),
+        } as AgentToLobbyMessage);
+        dispatch(conn, r.out);
+      };
+      await upd('in_progress').catch(() => {});
+      // Wait (bounded) for any in-flight chat turn to finish — respondTo drops overlapping calls,
+      // and a dropped task turn would spuriously fail the task.
+      for (let i = 0; i < 60 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+
+      // ── Branch/PR workflow (shared session branch) ── In PR mode (default), every task's writes in
+      // this lobby stack onto ONE shared "work session" branch off the working branch, and we open a
+      // single PR for the LobbyOwner to review — so the whole session is one reviewable diff, never
+      // multiple conflicting PRs for the same work, and never silent commits to main. A new session
+      // begins only after that PR merges/closes. Direct mode (AGENT_OS_AGENT_WRITES=direct) keeps
+      // writing straight to the working branch.
+      const workingBranch = entry.workingBranch || 'main';
+      const prMode = AGENT_WRITES_MODE === 'pr' && !!entry.repoClient;
+      let session: LobbyWorkSession | null = null;
+      let sessionBranch = workingBranch;
+      let writeGuidance = 'writes commit directly to the working branch';
+      if (prMode) {
+        try {
+          session = await getOrCreateSessionBranch(conn.lobbyId, entry.repoClient, workingBranch);
+          sessionBranch = session.branch;
+          entry.repoClient.activeBranch = sessionBranch; // redirect this task's writes to the session branch
+          writeGuidance = `write_file commits go to the shared work-session branch "${sessionBranch}" — every task in this session stacks onto ONE Pull Request for human review; you cannot merge`;
+        } catch (e) {
+          console.warn('[Lobby Server] Failed to resolve session branch, falling back to direct writes:', (e as Error)?.message ?? e);
+        }
+      }
+
+      let result = '';
+      try {
+        result = await entry.runner.respondTo(
+          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files) — ${writeGuidance}. Do NOT call create_pr yourself; the lobby opens the PR for you. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests), say so plainly as the blocker — do NOT fabricate work you did not do.`,
+        );
+      } catch { /* fall through to failed */ }
+      const failed = !result || result.startsWith('⚠');
+
+      // Open the session's single PR once the branch is actually ahead of the working branch. If a PR
+      // already exists for this session, the agent's push has already updated it — no second PR. The
+      // empty-branch case is left intact: a later task in the same session may add the first commit.
+      let prUrl = session?.pr_url || '';
+      if (prMode && entry.repoClient && sessionBranch !== workingBranch) {
+        try {
+          await withLobbyLock(conn.lobbyId, async () => {
+            // Re-read under the lock so concurrent agents converge on a single PR.
+            const cur = await store.getLobbySession(conn.lobbyId).catch(() => session);
+            if (cur?.pr_url) { prUrl = cur.pr_url; return; }
+            const ahead = await entry.repoClient.aheadBy(workingBranch, sessionBranch);
+            if (ahead > 0) {
+              prUrl = await entry.repoClient.createPullRequest(
+                '[agent-os] Lobby work session'.slice(0, 120),
+                sessionBranch, workingBranch,
+                `Automated changes from the Agent OS lobby work session. Every task in this session stacks onto this branch — review the whole diff and merge; the agents cannot merge.\n\nOpened for task **${task.title ?? task.task_id}** by ${(await store.getAgent(conn.lobbyId, myId))?.display_name || myId}.\n\n${(result || '').slice(0, 3000)}`,
+              );
+              const prNumber = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]) || null;
+              session = { branch: sessionBranch, pr_url: prUrl, pr_number: prNumber };
+              await store.setLobbySession(conn.lobbyId, session).catch(() => {});
+            }
+          });
+        } catch (e) {
+          console.warn('[Lobby Server] Session PR creation failed:', (e as Error)?.message ?? e);
+        } finally {
+          entry.repoClient.activeBranch = workingBranch; // always restore
+        }
+      }
+
+      // ── Phase 2b: CI feedback loop ── When CI is configured, wait for the session PR's checks; on a
+      // red run, hand the failing logs back to the agent to fix and re-push to the SAME branch (which
+      // updates the PR), bounded to a couple of iterations. Turns "I can't run tests" into an
+      // actionable fix. Entirely best-effort — it never prevents the task from finishing.
+      let ciStatus: 'passing' | 'failing' | 'pending' | 'none' = 'none';
+      if (prUrl && prMode && entry.repoClient && sessionBranch !== workingBranch) {
+        const rc = entry.repoClient;
+        const waitForChecks = async (): Promise<{ done: boolean; conclusion: string | null; none: boolean }> => {
+          for (let i = 0; i < 6; i++) {
+            const s = await rc.getCheckRunsForRef(sessionBranch).catch(() => ({ status: 'none', conclusion: null, total: 0 }));
+            if (s.total === 0) { if (i >= 2) return { done: false, conclusion: null, none: true }; }
+            else if (s.status === 'completed') return { done: true, conclusion: s.conclusion, none: false };
+            await new Promise(r => setTimeout(r, Math.min(15_000, 6_000 * (i + 1))));
+          }
+          return { done: false, conclusion: null, none: false };
+        };
+        try {
+          let check = await waitForChecks();
+          let fixes = 0;
+          while (check.conclusion === 'failure' && fixes < 2) {
+            fixes++;
+            const logs = await rc.getFailingCheckLogs(sessionBranch).catch(() => '');
+            rc.activeBranch = sessionBranch; // the fix turn's write_file commits update the PR branch
+            try {
+              await entry.runner.respondTo(
+                `[CI FAILED] The Pull Request for this work session failed its checks on GitHub. Fix the cause and write the corrected files with write_file — they commit to the same session branch and update the PR. Do NOT open a new PR. Failing checks:\n\n${logs || '(no log summary captured — inspect the workflow)'}\n\nReport exactly what you changed.`,
+              ).catch(() => {});
+            } finally {
+              rc.activeBranch = workingBranch;
+            }
+            check = await waitForChecks();
+          }
+          ciStatus = check.conclusion === 'success' ? 'passing'
+            : check.conclusion === 'failure' ? 'failing'
+            : check.none ? 'none' : 'pending';
+        } catch (e) {
+          console.warn('[Lobby Server] CI feedback loop error:', (e as Error)?.message ?? e);
+        }
+      }
+
+      const ciNote = ciStatus === 'passing' ? '\n\n✅ CI passed on the PR.'
+        : ciStatus === 'failing' ? '\n\n❌ CI is still failing after fixes — needs a human.'
+        : ciStatus === 'pending' ? '\n\n⏳ CI was still running when the task finished.'
+        : '';
+      const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
+      // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
+      const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
+      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus } as any).catch(() => {});
+      await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
+
+      // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
+      // reply in message history, and the Boss is CC'd so coordination continues.
+      const lobbyNow = await store.getLobby(conn.lobbyId);
+      const recipients = new Set<string>();
+      if (task.assigned_by) recipients.add(task.assigned_by);
+      if (lobbyNow?.boss_agent_id && lobbyNow.boss_agent_id !== myId) recipients.add(lobbyNow.boss_agent_id);
+      for (const to of recipients) {
+        const r = await coordinator.handle(conn, {
+          type: 'lobby-message', to_agent_id: to, message_type: 'handoff',
+          content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}]${prUrl ? ` (PR: ${prUrl})` : ''} ${(result || '').slice(0, 2000)}`,
+        } as AgentToLobbyMessage);
+        dispatch(conn, r.out);
       }
       return;
     }
@@ -280,25 +738,74 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const lobby = await store.getLobby(conn.lobbyId);
     const isBoss = lobby?.boss_agent_id === myId;
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
-    // Respond to direct messages addressed to us, or to broadcasts if we're the Boss
-    if (m.to_agent_id !== myId && !(isBroadcast && isBoss)) return;
+    const addressedToMe = m.to_agent_id === myId;
+    // Routing: reply to direct messages addressed to us, or (as Boss) to broadcasts. A non-boss
+    // agent does not reply to broadcasts — floor control forbids it — but it DOES silently observe
+    // them and may raise a hand via the Requests system. Everything else (chatter between other
+    // agents, system notices) is ignored to prevent cascades.
+    if (!addressedToMe && !(isBroadcast && isBoss)) {
+      if (isBroadcast && !isBoss && m.from_agent_id !== 'system') {
+        await observeBroadcast(conn, entry, myId, m).catch(() => {});
+      }
+      return;
+    }
 
-    // Build context-enriched message for the runner — include sender info and roster for the Boss
+    // Build context-enriched message for the runner — include sender info and roster for the Boss.
+    // Roster + sender type are captured for reuse after the turn (Boss delegation resolution).
     let enrichedContent = String(m.content ?? '');
+    let roster: Awaited<ReturnType<typeof store.roster>> = [];
+    let senderIsHuman = false;
     try {
-      const roster = await store.roster(conn.lobbyId);
+      roster = await store.roster(conn.lobbyId);
       const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
+      // Human = a roster human participant, OR a sender that is NOT in the roster at all. The web
+      // UI posts chat over HTTP with from_agent_id 'WebUser' (or a display name), and that endpoint
+      // REJECTS ids belonging to connected agents — so an off-roster sender can only be a human.
+      // This was the bug that made Boss `@Agent [task]:` directives dead: WebUser was never in the
+      // roster, senderIsHuman stayed false, and the delegation parser never ran. 'system' notices
+      // are never treated as human — they must not trigger delegation.
+      senderIsHuman = m.from_agent_id !== 'system'
+        && (senderAgent ? senderAgent.participant_type === 'human' : true);
+      const isOwner = m.from_agent_id === 'LobbyOwner';
       const senderName = senderAgent?.display_name || senderAgent?.agent_role || m.from_agent_id || 'unknown';
-      const senderType = senderAgent?.participant_type === 'human' ? ' (human)' : '';
+      const senderType = isOwner ? ' (LOBBY OWNER — their instructions carry final authority)' : (senderIsHuman ? ' (human)' : '');
       const header = `[From: ${senderName}${senderType}]`;
 
       if (isBoss) {
-        // Give the Boss full roster context so it can coordinate effectively
+        // Give the Boss full operational context: the live roster, open coordination tasks, and
+        // pending human-approval requests — without these it coordinated blind (it could not
+        // answer "what is in flight?" or notice work stuck in assigned/in_progress).
         const rosterSummary = roster
           .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
           .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
           .join('\n');
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}\n\n${enrichedContent}`;
+        let opsSummary = '';
+        try {
+          // Working-repo state — without it the Boss invented "repository initialization" tasks
+          // when the owner asked to initialize the repo (a Panel action, not agent work).
+          const ghInteg = await store.getIntegration(conn.lobbyId, 'github');
+          if (ghInteg?.status === 'active' && ghInteg.repo_full_name) {
+            const initialized = await isRepoInitialized(conn.lobbyId, ghInteg.repo_full_name, ghInteg.branch);
+            opsSummary += `\n[WORKING REPO] ${ghInteg.repo_full_name}@${ghInteg.branch || 'main'} — Agent OS structure ${initialized ? 'initialized' : 'NOT initialized (the LobbyOwner initializes it from the Lobby tab — it is a Panel action, NOT a task for an agent)'}. Agents work on this repo via file tools only (no command execution).`;
+          } else {
+            opsSummary += `\n[WORKING REPO] none connected — repository work is impossible until the LobbyOwner connects the GitHub App in the Lobby tab. Do not assign repository tasks.`;
+          }
+          const openTasks = (await store.listTasks(conn.lobbyId))
+            .filter(t => !['completed', 'cancelled'].includes(t.status));
+          if (openTasks.length) {
+            const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
+            opsSummary += `\n[OPEN TASKS — ${openTasks.length}]\n` + openTasks.slice(-10)
+              .map(t => `  - "${t.title}" → ${nameOf(t.assigned_to)} [${t.status}]${t.progress ? ` — ${String(t.progress).slice(0, 50)}` : ''}`)
+              .join('\n');
+          }
+          const pendingReqs = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending');
+          if (pendingReqs.length) {
+            opsSummary += `\n[PENDING HUMAN-APPROVAL REQUESTS — ${pendingReqs.length}]\n` + pendingReqs.slice(-5)
+              .map(r => `  - ${r.agent_display_name}: ${r.title}`)
+              .join('\n');
+          }
+        } catch { /* ops summary is best-effort */ }
+        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -307,9 +814,66 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let reply = '';
     try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
     if (!reply) return;
-    // Boss broadcasts replies; non-boss agents MUST reply directly to the sender (floor control
-    // rejects non-boss broadcasts, causing the "message_rejected: non-boss broadcast" error).
-    const replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
+
+    // Boss delegation: the Boss emits directive lines. A plain `@Name: msg` is a direct request/
+    // coordination message (no task); an explicit `@Name [task]: title` creates a tracked Task.
+    // Both reach the agent directly — a broadcast would be ignored by sub-agents (they only act on
+    // messages addressed to them). Cascade guard: plain coordination messages dispatch only on
+    // human-originated turns (agent↔boss message ping-pong must not fan out), but `[task]`
+    // directives ALSO dispatch on agent-originated turns — the Boss legitimately assigns a task
+    // after an agent ACKs or reports a result, and tasks are bounded, tracked, and visible rather
+    // than loop-prone chatter. Each target is acted on at most once per turn.
+    if (isBoss && roster.length) {
+      if (senderIsHuman) bossAutoTaskBudget.set(myId, BOSS_AUTO_TASK_BUDGET); // human turn resets the loop budget
+      const directives = parseBossDelegations(reply);
+      const dispatched = new Set<string>();
+      for (const d of directives) {
+        // Plain coordination directives dispatch on human-originated turns AND on 'system' turns
+        // (request decisions, appointments — bounded, human-triggered events): observed live, the
+        // Boss reacting to an approved hand-raise addressed the requester and the directive was
+        // silently dropped. Agent-originated turns still only dispatch [task] (budgeted below).
+        if (!senderIsHuman && m.from_agent_id !== 'system' && d.kind !== 'task') continue;
+        const target = resolveRosterAgent(roster, d.target, myId);
+        if (!target || dispatched.has(target.agent_id)) continue;
+        if (!senderIsHuman) {
+          const budget = bossAutoTaskBudget.get(myId) ?? BOSS_AUTO_TASK_BUDGET;
+          if (budget <= 0) continue; // out of unattended budget — wait for the next human turn
+          bossAutoTaskBudget.set(myId, budget - 1);
+        }
+        dispatched.add(target.agent_id);
+        if (d.kind === 'task') {
+          // A tracked unit of work — creates a Task card (task_created event) and notifies the agent.
+          const title = d.instruction.length > 90 ? d.instruction.slice(0, 87) + '…' : d.instruction;
+          const taskRes = await coordinator.handle(conn, {
+            type: 'lobby-task-create',
+            assigned_to: target.agent_id,
+            title,
+            description: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, taskRes.out);
+        } else {
+          // Just the Boss talking to a sub-agent (asking for input / coordinating) — no task.
+          const msgRes = await coordinator.handle(conn, {
+            type: 'lobby-message',
+            to_agent_id: target.agent_id,
+            message_type: 'coordination',
+            content: d.instruction,
+          } as AgentToLobbyMessage);
+          dispatch(conn, msgRes.out);
+        }
+      }
+    }
+
+    // Boss broadcasts its prose reply; non-boss agents MUST reply directly to the sender (floor
+    // control rejects non-boss broadcasts, causing "message_rejected: non-boss broadcast").
+    // A reply to a 'system' notice (e.g. "your hand-raise was approved — go ahead") is routed to
+    // the Boss: 'system' is not a connected agent, so replying to it would silently go nowhere,
+    // and the Boss is who coordinates the follow-up.
+    let replyTo = isBoss ? 'all' : (m.from_agent_id ?? 'all');
+    if (!isBoss && m.from_agent_id === 'system') {
+      if (!lobby?.boss_agent_id) return; // no boss to receive it — drop rather than dead-letter
+      replyTo = lobby.boss_agent_id;
+    }
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',
       to_agent_id: replyTo,
@@ -319,25 +883,200 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     dispatch(conn, res.out);
   }
 
+  // A non-boss hosted agent observing a broadcast. It runs one evaluation turn and, only if it
+  // decides it has a genuinely valuable contribution, raises a hand via the Requests system (a
+  // `lobby-request` of category `hand_raise` that surfaces in the Requests tab). A per-agent cooldown
+  // bounds cost and prevents an agent from flooding the queue; the runner's in-flight guard prevents
+  // overlapping turns. Never posts a chat reply — floor control forbids a non-boss broadcast.
+  async function observeBroadcast(
+    conn: Connection,
+    entry: { runner: HostedAgentRunner },
+    myId: string,
+    m: { from_agent_id?: string; content?: string },
+  ): Promise<void> {
+    const now = Date.now();
+    const last = lastObservation.get(myId) ?? 0;
+    if (now - last < OBSERVE_COOLDOWN_MS) return;
+    lastObservation.set(myId, now);
+
+    const content = String(m.content ?? '').trim();
+    if (!content) return;
+    // One pending hand per agent — 11 near-duplicate "ensure X" requests piled up in one live
+    // session because every boss broadcast triggered another observation turn. An unaddressed hand
+    // already says "this agent wants attention"; more are queue noise (LOBBY-PROTOCOL Rule 3:
+    // max one hand-raise per agent per topic).
+    try {
+      const pendingMine = (await store.listLobbyRequests(conn.lobbyId))
+        .some(r => r.status === 'pending' && r.agent_id === myId);
+      if (pendingMine) return;
+    } catch { /* best-effort — proceed */ }
+    const prompt = `${OBSERVATION_GUIDE}\n\n[LOBBY BROADCAST] ${content}`;
+    let verdict = '';
+    try { verdict = await entry.runner.respondTo(prompt); } catch { return; }
+    const intent = parseHandRaise(verdict);
+    if (!intent) return; // agent passed — nothing valuable to add
+
+    const reqRes = await coordinator.handle(conn, {
+      type: 'lobby-request',
+      category: 'hand_raise',
+      title: `HAND: ${intent.reason.length > 80 ? intent.reason.slice(0, 77) + '…' : intent.reason}`,
+      description: intent.reason,
+      context: { hand_category: intent.category, observed_from: m.from_agent_id ?? 'lobby' },
+    } as AgentToLobbyMessage);
+    dispatch(conn, reqRes.out);
+  }
+
+  /**
+   * Apply a decision to a lobby request and propagate it everywhere it matters: the store, the
+   * Requests-tab WS event, a system broadcast into the chat (the Boss runs a turn on it), and the
+   * "go ahead" direct message to the requester (whose reply routes to the Boss). Shared by the
+   * HTTP decide endpoint (human) and Boss triage. Returns 'not-found' | undefined | the request.
+   */
+  async function applyRequestDecision(lobbyId: string, requestId: string, decision: string, decidedBy: string, decisionNotes: string) {
+    const request = await store.getLobbyRequest(lobbyId, requestId);
+    if (!request) return 'not-found' as const;
+    const updated = await store.updateLobbyRequest(lobbyId, requestId, {
+      status: decision as any,
+      decided_by: decidedBy,
+      decision_notes: decisionNotes,
+      decided_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    });
+    if (!updated) return undefined;
+
+    const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
+    for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, out);
+
+    const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
+    const by = decidedBy && decidedBy !== 'panel' ? ` by ${decidedBy}` : '';
+    const announce = async (to: string, content: string) => {
+      const seq = await store.nextSeq(lobbyId);
+      const message: LobbyMessage = {
+        message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
+        message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
+      };
+      await store.appendMessage(lobbyId, message);
+      const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
+    };
+    await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${updated.status}${by}${notes}`);
+    if (updated.agent_id && updated.agent_id !== 'anonymous') {
+      await announce(updated.agent_id, updated.status === 'approved'
+        ? `Your request "${updated.title}" was APPROVED${by}${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
+        : `Your request "${updated.title}" was ${String(updated.status).toUpperCase()}${by}${notes}.`);
+    }
+    return updated;
+  }
+
+  // Boss request triage (opt-out: AGENT_OS_BOSS_TRIAGE=off). The Boss DECIDES hand-raises itself
+  // (floor-control coordination) and only RECOMMENDS on authority categories — those stay pending
+  // for the LobbyOwner with the recommendation attached (boss-agent.md: "no autonomous approvals").
+  const BOSS_TRIAGE_ENABLED = (process.env.AGENT_OS_BOSS_TRIAGE ?? 'on') !== 'off';
+  // How hosted agents land task changes: 'pr' (default) = per-task branch + Pull Request for human
+  // review; 'direct' = commit straight to the working branch (the pre-PR-workflow behavior).
+  const AGENT_WRITES_MODE = (process.env.AGENT_OS_AGENT_WRITES ?? 'pr').toLowerCase() === 'direct' ? 'direct' : 'pr';
+
+  // ── Shared session branch ── All task writes in a lobby stack onto ONE branch and open ONE Pull
+  // Request (the "work session"), instead of a branch+PR per task — which produced multiple
+  // conflicting PRs for the same work. A session starts fresh only after its PR merges/closes.
+  // A per-lobby async mutex serializes branch resolution + PR opening so concurrent agents can't
+  // race two session branches or two PRs into existence.
+  const lobbySessionLocks = new Map<string, Promise<unknown>>();
+  function withLobbyLock<T>(lobbyId: string, fn: () => Promise<T>): Promise<T> {
+    const prev = lobbySessionLocks.get(lobbyId) ?? Promise.resolve();
+    const next = prev.then(fn, fn);
+    lobbySessionLocks.set(lobbyId, next.then(() => {}, () => {}));
+    return next;
+  }
+
+  // Return the current session's branch, reusing it while its PR is still open (or before any PR
+  // exists), and starting a fresh `agent-os/session/<lobby>-<ts>` branch once the previous PR has
+  // merged/closed. Persisted so the next task — and the next deploy — reuse the same branch/PR.
+  async function getOrCreateSessionBranch(
+    lobbyId: string, repoClient: any, workingBranch: string,
+  ): Promise<LobbyWorkSession> {
+    return withLobbyLock(lobbyId, async () => {
+      const existing = await store.getLobbySession(lobbyId).catch(() => undefined);
+      if (existing?.branch) {
+        if (existing.pr_number) {
+          // Reuse while the PR is genuinely open; a merged/closed PR ends the session.
+          const pr = await repoClient.getPullRequest(existing.pr_number).catch(() => null);
+          if (pr && !pr.merged && pr.state === 'open') return existing;
+        } else {
+          // Branch exists but no PR yet — reuse it if the branch is still present so writes stack.
+          try { await repoClient.aheadBy(workingBranch, existing.branch); return existing; }
+          catch { /* branch gone (base moved on) — start fresh below */ }
+        }
+      }
+      const sessionBranch = `agent-os/session/${lobbyId.slice(0, 8)}-${Date.now().toString(36)}`;
+      await repoClient.createBranch(sessionBranch, workingBranch);
+      const session = { branch: sessionBranch, pr_url: '', pr_number: null };
+      await store.setLobbySession(lobbyId, session).catch(() => {});
+      return session;
+    });
+  }
+
+  async function bossTriageRequest(conn: Connection, bossId: string, request: { request_id?: string; category?: string; title?: string; description?: string; agent_display_name?: string; agent_id?: string; status?: string }): Promise<void> {
+    if (!BOSS_TRIAGE_ENABLED || !request?.request_id || request.status !== 'pending') return;
+    if (request.agent_id === bossId) return; // never triage your own request
+    const entry = hostedAgents.get(bossId);
+    if (!entry) return;
+    // Wait briefly for any in-flight turn; if still busy, leave it pending for the human.
+    for (let i = 0; i < 15 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
+    if (entry.runner.busy) return;
+
+    const bossName = (await store.getAgent(conn.lobbyId, bossId))?.display_name || 'Boss';
+    const summary = `Request from ${request.agent_display_name ?? request.agent_id ?? 'unknown'} [${request.category ?? 'general'}]: ${request.title ?? ''}\n${request.description ?? ''}`;
+
+    if (BOSS_DECIDABLE_CATEGORIES.has(String(request.category))) {
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_TRIAGE_GUIDE}\n\n${summary}`); } catch { return; }
+      const triage = parseBossTriage(verdict);
+      if (!triage) return; // ESCALATE / off-format → stays pending for the LobbyOwner
+      await applyRequestDecision(conn.lobbyId, request.request_id, triage.decision, bossName, triage.note).catch(() => {});
+    } else {
+      // Authority category — attach a recommendation, keep it pending for the human.
+      let verdict = '';
+      try { verdict = await entry.runner.respondTo(`${BOSS_RECOMMEND_GUIDE}\n\n${summary}`); } catch { return; }
+      const rec = parseBossRecommendation(verdict);
+      if (!rec) return;
+      await store.updateLobbyRequest(conn.lobbyId, request.request_id, {
+        decision_notes: `Boss recommendation: ${rec}`,
+        updated_at: new Date().toISOString(),
+      }).catch(() => {});
+      const reqOut: LobbyToAgentMessage = { type: 'lobby-request-updated' as any, request: await store.getLobbyRequest(conn.lobbyId, request.request_id) } as any;
+      for (const cid of lobbyConns.get(conn.lobbyId) ?? []) send(cid, reqOut);
+    }
+  }
+
   // Launch a hosted agent: open an API-runtime session with the resolved key and register it into
   // the lobby via a virtual socket so it shows in the roster and receives messages like any agent.
   async function spawnHostedAgent(params: {
     lobbyId: string; name: string; role?: string; apiKey: string; providerId: ProviderId;
     model: string; baseUrl?: string; systemPrompt?: string; joinToken?: string;
   }): Promise<string> {
-    const kb = await store.getKnowledgeBase(params.lobbyId);
+    // Give the agent repo tools whenever the lobby has ANY repo connection: the KB's repository
+    // when configured, else the GitHub App integration's selected repo. Previously only the KB
+    // path was wired, so agents in a lobby with a connected GitHub repo (but no KB) had no way to
+    // actually do repository work. Token is minted fresh — never the stored (expiring) copy.
     let repoClient: any = undefined;
-    if (kb && kb.repository_url) {
-      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-      const githubToken = await getDecryptedSecret(params.lobbyId, 'github', 'installation_token', store).catch(() => null);
-      if (githubToken) {
-        const match = kb.repository_url.match(/(?:github\.com[:\/])([^\/]+)\/([^\/\.]+)(?:\.git)?/);
-        if (match) {
-          const owner = match[1];
-          const repo = match[2];
-          const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
-          repoClient = new GitHubRepoClient(owner, repo, githubToken);
-        }
+    const kb = await store.getKnowledgeBase(params.lobbyId);
+    const integration = await store.getIntegration(params.lobbyId, 'github');
+    const repoRefUrl = (kb && kb.repository_url) || (integration?.status === 'active' && integration.repo_full_name) || '';
+    if (repoRefUrl) {
+      const parsed = repoRef(repoRefUrl);
+      // Only wire repo tools if a token can be minted now, but pass a PROVIDER (not a snapshot) so
+      // every later repo call re-mints a fresh installation token. A snapshot expires after ~1h and
+      // then the agent's list_files/read_file/write_file all 401 "Bad credentials" — observed live.
+      const initialToken = parsed ? await githubTokenForLobby(params.lobbyId, store) : null;
+      if (parsed && initialToken) {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const tokenProvider = async () => {
+          const t = await githubTokenForLobby(params.lobbyId, store);
+          if (!t) throw new Error('GitHub installation token unavailable — reconnect the GitHub App');
+          return t;
+        };
+        repoClient = new GitHubRepoClient(parsed.owner, parsed.repo, tokenProvider, undefined, integration?.branch || 'main');
       }
     }
 
@@ -374,11 +1113,26 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       repoClient,
       lobbyTools,
     });
-    const runner = new HostedAgentRunner(adapter, { systemPrompt: params.systemPrompt });
+    // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
+    // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
+    // having any tools at all — both observed live. The preamble states exactly what exists here:
+    // repository file tools when a repo is connected, and NOTHING that executes code.
+    const workingBranch = integration?.branch || 'main';
+    const writeDest = AGENT_WRITES_MODE === 'pr'
+      ? `write_file commits go to a per-task branch the lobby manages and are opened as a Pull Request for the LobbyOwner to review (you never merge, and never call create_pr yourself)`
+      : `write_file commits go DIRECTLY to the working branch "${workingBranch}"`;
+    const capabilities = repoClient
+      ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file, list_files. ${writeDest}. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches yourself. Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names, commit SHAs, or timestamps — if a task demands command execution, state that limitation as the blocker.`
+      : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
+    const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
+    const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
     await runner.start();
 
     const connId = `hosted-${randomUUID()}`;
-    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default' };
+    // trusted: this is a server-spawned agent on a virtual socket. The LobbyOwner already
+    // authenticated to spawn it, so the coordinator may accept the bound DID it presents without an
+    // external-client impersonation session token (see coordinator register path).
+    const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default', trusted: true };
     const virtualSocket = {
       readyState: WebSocket.OPEN,
       send: (data: string) => { void onHostedInbound(conn, data); },
@@ -402,22 +1156,38 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     dispatch(conn, reg.out);
     const agentId = conn.agentId ?? connId;
 
+    // Auto-appoint a boss-role agent as the Boss when the lobby has none. Relaunching agents mints
+    // new agent ids, so the previous appointment always dies with the old id — and with no Boss,
+    // floor control leaves every human broadcast unanswered ("who is ready to work?" → silence,
+    // observed live). The coordinator allows the first appointment when the seat is empty.
+    if (conn.agentId && /boss/i.test(`${params.role ?? ''} ${params.name}`)) {
+      const lobbyNow = await store.getLobby(params.lobbyId);
+      if (lobbyNow && !lobbyNow.boss_agent_id) {
+        const appointRes = await coordinator.handle(conn, {
+          type: 'lobby-boss-appoint', agent_id: conn.agentId,
+        } as AgentToLobbyMessage).catch(() => ({ out: [] as Outbound[] }));
+        dispatch(conn, appointRes.out);
+      }
+    }
+
     // Start a periodic heartbeat so the stale-heartbeat sweeper does not reap this hosted agent.
     // Without this, the agent registers (setting last_seen once) and then gets reaped after
     // STALE_MS (default 90s) because nothing ever updates last_seen again.
     const heartbeatInterval = setInterval(async () => {
       try {
         if (!hostedAgents.has(agentId)) { clearInterval(heartbeatInterval); return; }
+        // Report real activity — an unconditional 'idle' used to overwrite the roster status even
+        // while the agent was mid-task, so the UI showed everything as idle.
         await coordinator.handle(conn, {
           type: 'lobby-heartbeat',
-          status: 'idle',
+          status: runner.busy ? 'working' : 'idle',
           current_work: '',
         } as AgentToLobbyMessage);
       } catch { /* swallow heartbeat errors */ }
     }, Math.max(Math.floor(STALE_MS / 3), 15_000)); // heartbeat at 1/3 of stale threshold, min 15s
     if (typeof heartbeatInterval.unref === 'function') heartbeatInterval.unref();
 
-    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval });
+    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, workingBranch: integration?.branch || 'main' });
     return agentId;
   }
 
@@ -432,7 +1202,76 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     lobbyConns.get(entry.conn.lobbyId)?.delete(entry.connId);
     agentConn.delete(agentId);
     hostedAgents.delete(agentId);
+    lastObservation.delete(agentId);
     return true;
+  }
+
+  // Re-launch a hosted agent from its persisted spec (used to restore the swarm after a
+  // restart/deploy). Resolves the provider key, model, system prompt and bound DID exactly like the
+  // manual launch. Returns the new agent id, or null when it can't run (e.g. provider key missing).
+  async function launchHostedAgentFromSpec(spec: HostedAgentSpec): Promise<string | null> {
+    const providerName = spec.provider || 'anthropic';
+    const agentRef = spec.agent_ref || null;
+    const resolved = await resolveProviderKey(store, spec.lobby_id, providerName, agentRef);
+    if (!resolved) {
+      console.warn(`[lobby-server] cannot re-launch hosted agent "${spec.agent_role || spec.name}" — no "${providerName}" provider key`);
+      return null;
+    }
+    const model = spec.model || resolved.model || 'claude-opus-4-8';
+    let systemPrompt: string | undefined;
+    let definitionIdentity: string | undefined;
+    if (spec.agent_role) {
+      try {
+        const defs = await getAgentDefinitions(spec.lobby_id, store);
+        const def = defs.find(d => d.slug === spec.agent_role);
+        if (def?.system_prompt) systemPrompt = def.system_prompt;
+        if (def?.identity && /^did:/i.test(def.identity)) definitionIdentity = def.identity;
+      } catch { /* fall through to catalog default */ }
+      if (!definitionIdentity) definitionIdentity = (await getBoundAgentIdentity(spec.lobby_id, store, spec.agent_role)) ?? undefined;
+    }
+    const nicknames = await readAgentNicknames(spec.lobby_id, store);
+    const displayName = (spec.agent_role && nicknames[spec.agent_role]) || spec.name || 'Hosted Agent';
+    return spawnHostedAgent({
+      lobbyId: spec.lobby_id, name: displayName, role: spec.agent_role,
+      apiKey: resolved.apiKey, providerId: providerIdFor(providerName), model,
+      baseUrl: resolved.baseUrl, systemPrompt, joinToken: agentRef ?? definitionIdentity ?? undefined,
+    });
+  }
+
+  // Self-learning reflection: one LLM turn (no tools) that distills durable lessons from a merged
+  // task — what worked, gotchas, decisions, reusable patterns/skills — for the shared-memory ledger.
+  // Best-effort: uses the lobby's own provider key; returns null if none is set or on any error.
+  async function reflectOnMergedTask(lobbyId: string, task: LobbyTask): Promise<string | null> {
+    try {
+      const keys = await listProviderKeys(store, lobbyId);
+      const key = keys.find(k => k.scope === 'lobby') || keys[0];
+      if (!key) return null;
+      const resolved = await resolveProviderKey(store, lobbyId, key.provider, null);
+      if (!resolved) return null;
+      const adapter = createApiRuntimeAdapter({
+        provider: { id: providerIdFor(key.provider), model: resolved.model || 'claude-opus-4-8', baseUrl: resolved.baseUrl },
+        apiKey: resolved.apiKey, fetchFn: options.apiRuntimeFetch,
+      });
+      const runner = new HostedAgentRunner(adapter, {
+        systemPrompt: 'You are a senior engineer writing a terse post-merge retrospective for the team\'s shared memory. From the task and the agent\'s report, extract DURABLE, reusable lessons only: what worked, gotchas/pitfalls, key decisions and why, and reusable patterns or skills worth keeping. Bullet points, specific, no fluff, max ~180 words. Output GitHub markdown only — no preamble.',
+      });
+      await runner.start();
+      try {
+        const out = await runner.respondTo(
+          `A task's Pull Request just merged. Reflect and extract durable lessons.\n\n` +
+          `TASK: ${task.title ?? '(untitled)'}\n${task.description ?? ''}\n\n` +
+          `AGENT REPORT:\n${(task.result ?? '(none)').slice(0, 4000)}\n\n` +
+          `FILES: ${(Array.isArray((task as any).result_files) ? (task as any).result_files.join(', ') : '(see PR)')}\n` +
+          `CI: ${task.result_ci_status ?? 'n/a'}`,
+        );
+        return out && !out.startsWith('⚠') ? out : null;
+      } finally {
+        await runner.stop();
+      }
+    } catch (e) {
+      console.warn('[lobby-server] merge reflection failed:', (e as Error)?.message ?? e);
+      return null;
+    }
   }
 
   // ── HTTP control plane ──
@@ -501,10 +1340,51 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return payload ? payload.identityRef : null;
     };
 
-    const ghToken = async (lobbyId: string): Promise<string | null> => {
-      const integ = await store.getIntegration(lobbyId, 'github');
-      if (!integ || integ.status !== 'active' || !integ.installation_id) return null;
-      try { return await getInstallationToken(integ.installation_id); } catch { return null; }
+    const ghToken = (lobbyId: string): Promise<string | null> => githubTokenForLobby(lobbyId, store);
+
+    // Adopt an existing GitHub App installation for a lobby that has none recorded yet — the recovery
+    // path when GitHub didn't redirect back with an installation_id. Discovers installations via the
+    // App JWT and adopts the most recent, minting + storing its token. Throttled per lobby so a poll
+    // loop while disconnected can't exhaust the GitHub App rate limit. Returns the connected payload
+    // on success, or null (leaving the caller to report not-connected).
+    const autoAdoptGithubInstallation = async (
+      lobbyId: string, identityRef: string, existing: Awaited<ReturnType<typeof store.getIntegration>>,
+    ): Promise<{ connected: true; account?: string; repo?: string; branch?: string; repos: unknown[] } | null> => {
+      const last = lastGithubAutoDetect.get(lobbyId) ?? 0;
+      if (Date.now() - last < GITHUB_AUTODETECT_THROTTLE_MS) return null;
+      lastGithubAutoDetect.set(lobbyId, Date.now());
+
+      const installs = await listAppInstallations();
+      if (installs.length === 0) return null;
+      const chosen = installs[0]; // most recently updated — the one the user most likely just added
+      const instToken = await getInstallationToken(chosen.id);
+      const repos = await listInstallationRepos(instToken);
+      const account = chosen.account || repos[0]?.full_name?.split('/')[0];
+      const now = new Date().toISOString();
+      // When the installation covers exactly one repository, select it automatically — every
+      // downstream feature (identity bind, KB, agent repo tools) needs repo_full_name, and a
+      // recovered/adopted connection would otherwise sit "connected" but unusable until the user
+      // notices the repo picker.
+      const soleRepo = repos.length === 1 ? repos[0] : undefined;
+      let integration = existing;
+      if (existing) {
+        integration = await store.updateIntegration(lobbyId, existing.id, {
+          status: 'active', installation_id: chosen.id, external_account_name: account, updated_at: now,
+          ...(soleRepo && !existing.repo_full_name ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
+        }) ?? existing;
+      } else {
+        integration = await store.addIntegration({
+          id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
+          external_account_name: account, installation_id: chosen.id,
+          ...(soleRepo ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
+          scopes: ['contents', 'pull_requests'], installed_by_identity_ref: identityRef,
+          created_at: now, updated_at: now,
+        });
+      }
+      await saveIntegrationSecret(integration!.id, 'installation_token', instToken, store, 3300);
+      invalidateAgentDefs(lobbyId); // a repo just became (re)connected — re-read its agent DIDs
+      await recordEvent(lobbyId, 'github_connected', identityRef, { account, repos: repos.length, via: 'auto-detect' });
+      return { connected: true, account, repo: integration!.repo_full_name, branch: integration!.branch, repos };
     };
 
     if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
@@ -533,6 +1413,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const token = await verifyProofAndIssueToken(identityRef, signature, publicKey, lobbyId, store);
       if (!token) return json({ error: 'invalid or expired proof' }, 401);
+      // First wallet to sign in to an unowned lobby owns it (see wallet-signin path above).
+      if (await claimLobbyOwnership(store, lobbyId, identityRef)) {
+        await recordEvent(lobbyId, 'lobby_owner_bound', identityRef, { via: 'proof-signin' });
+      }
       return json({ token, expires_at: Date.now() + 15 * 60 * 1000 });
     }
 
@@ -575,6 +1459,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         challengeId, account, signature: body.signature, origin: requestOrigin(), sessionId,
       });
       if (!result) return json({ error: 'invalid or expired challenge' }, 401);
+      // Bind ownership at sign-in: the first wallet to authenticate to an unowned (public) lobby
+      // becomes its owner, so no later joiner can silently claim it. No-op once owned.
+      if (await claimLobbyOwnership(store, result.lobbyId, result.identityRef)) {
+        await recordEvent(result.lobbyId, 'lobby_owner_bound', result.identityRef, { via: 'wallet-signin' });
+      }
       return json({ token: result.token, identity_ref: result.identityRef, expires_at: Date.now() + 15 * 60 * 1000 });
     }
 
@@ -596,7 +1485,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const keyId = pkMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../provider-keys — list configured keys (masked)
       if (req.method === 'GET' && !keyId) {
@@ -637,7 +1526,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const agentId = hostedMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../hosted-agents — list the running hosted agents in this lobby.
       if (req.method === 'GET' && !agentId) {
@@ -653,42 +1542,98 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!resolved) return json({ error: `no provider key configured for "${providerName}" — set one first (POST .../provider-keys)` }, 400);
         const model = (typeof body.model === 'string' && body.model.trim()) || resolved.model || 'claude-opus-4-8';
         let systemPrompt = typeof body.system_prompt === 'string' ? body.system_prompt : undefined;
-        if (!systemPrompt && typeof body.agent_role === 'string') {
+        // The agent's persisted DID (its definition's `Identity:` line) is presented as the join
+        // token so the roster reflects the bound identity. Without this, a DID saved via "Set ID"
+        // never reached the register step and the agent stayed "unverified" forever.
+        let definitionIdentity: string | undefined;
+        if (typeof body.agent_role === 'string') {
           try {
             const defs = await getAgentDefinitions(lobbyId, store);
             const def = defs.find(d => d.slug === body.agent_role);
-            if (def && def.system_prompt) {
+            if (def && def.system_prompt && !systemPrompt) {
               systemPrompt = def.system_prompt;
             }
+            if (def?.identity && /^did:/i.test(def.identity)) definitionIdentity = def.identity;
           } catch (e) {
-            console.warn('[Lobby Server] Failed to resolve system prompt for hosted agent:', e);
+            console.warn('[Lobby Server] Failed to resolve definition for hosted agent:', e);
+          }
+          // Authoritative fallback: read the agent's own definition file directly. The merged
+          // catalog above can be a stale/cached or built-in (identity-less) result, which is why a
+          // restarted agent could fail to re-present the Agent ID bound in its repo definition.
+          if (!definitionIdentity) {
+            definitionIdentity = (await getBoundAgentIdentity(lobbyId, store, body.agent_role)) ?? undefined;
           }
         }
+
+        // A user-chosen nickname for this role (persisted) wins over the default display name.
+        const nicknames = await readAgentNicknames(lobbyId, store);
+        const roleSlug = typeof body.agent_role === 'string' ? body.agent_role : '';
+        const defaultName = typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent';
+        const displayName = (roleSlug && nicknames[roleSlug]) || defaultName;
 
         try {
           const newId = await spawnHostedAgent({
             lobbyId,
-            name: typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent',
+            name: displayName,
             role: typeof body.agent_role === 'string' ? body.agent_role : undefined,
             apiKey: resolved.apiKey,
             providerId: providerIdFor(providerName),
             model,
             baseUrl: resolved.baseUrl,
             systemPrompt,
-            joinToken: agentRef ?? undefined,
+            joinToken: agentRef ?? definitionIdentity ?? undefined,
           });
+          // Remember this agent as desired-running so it's re-launched (on the same model) after a
+          // lobby restart/deploy — hosted agents live in-process and otherwise die on restart.
+          await store.putHostedAgentSpec({
+            lobby_id: lobbyId,
+            agent_role: typeof body.agent_role === 'string' ? body.agent_role : undefined,
+            name: displayName, provider: providerName, model, base_url: resolved.baseUrl, agent_ref: agentRef,
+          }).catch(() => {});
           await recordEvent(lobbyId, 'hosted_agent_launched', identityRef, { agent_id: newId, provider: providerName, model, scope: resolved.scope });
-          return json({ agent_id: newId, name: body.name ?? 'Hosted Agent', model, provider: providerName }, 201);
+          return json({ agent_id: newId, name: displayName, model, provider: providerName }, 201);
         } catch (e) {
           return json({ error: `failed to launch hosted agent: ${String((e as Error).message ?? e)}` }, 500);
         }
       }
       // DELETE .../hosted-agents/:agentId — stop a hosted agent.
       if (req.method === 'DELETE' && agentId) {
+        // A deliberate stop clears the desired-running spec so it is NOT re-launched on restart.
+        const agentRec = await store.getAgent(lobbyId, agentId).catch(() => null);
         const stopped = await stopHostedAgent(agentId);
         if (!stopped) return json({ error: 'hosted agent not found' }, 404);
+        if (agentRec) await store.removeHostedAgentSpec(lobbyId, agentRec.agent_role || agentRec.display_name).catch(() => {});
         await recordEvent(lobbyId, 'hosted_agent_stopped', identityRef, { agent_id: agentId });
         return json({ stopped: agentId });
+      }
+    }
+
+    // GET / POST /api/v1/agent-lobby/lobbies/:id/agent-nicknames — per-role user-chosen names.
+    const nicknamesMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/agent-nicknames$/);
+    if (nicknamesMatch) {
+      const lobbyId = nicknamesMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (req.method === 'GET') return json({ nicknames: await readAgentNicknames(lobbyId, store) });
+      if (req.method === 'POST') {
+        const body = await readBody(req);
+        const role = typeof body.role === 'string' ? body.role.trim() : '';
+        const nickname = typeof body.nickname === 'string' ? body.nickname : '';
+        if (!role) return json({ error: 'role is required' }, 400);
+        const map = await store.setAgentNickname(lobbyId, role, nickname);
+        void persistNicknamesToRepo(lobbyId, store, map); // mirror to the repo so it survives deploys
+        // Live rename: update any CONNECTED agents of this role so the roster reflects it now,
+        // without waiting for a relaunch. Broadcast the roster update.
+        const effective = map[role] || '';
+        for (const a of await store.roster(lobbyId)) {
+          if (a.agent_role === role && a.status !== 'disconnected') {
+            const newName = effective || a.display_name;
+            const updated = await store.updateAgent(lobbyId, a.agent_id, { display_name: newName }).catch(() => null);
+            if (updated) for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, { type: 'lobby-agent-updated', agent: updated } as LobbyToAgentMessage);
+          }
+        }
+        return json({ nicknames: map });
       }
     }
 
@@ -698,7 +1643,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = agentDefsMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       try {
         const agents = await getAgentDefinitions(lobbyId, store);
@@ -714,7 +1659,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = scheduledGetMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const defaultTasks = [
         {
@@ -747,7 +1692,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) {
         return json({ repoConfigured: false, tasks: defaultTasks });
       }
@@ -793,7 +1738,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = scheduledSetupMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const integration = await store.getIntegration(lobbyId, 'github');
       if (!integration || !integration.repo_full_name) {
@@ -803,7 +1748,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const token = await ghToken(lobbyId);
       if (!token) return json({ error: 'GitHub installation token unavailable' }, 502);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'Invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -811,34 +1756,29 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const branchName = integration.branch || 'main';
 
       try {
+        // Scheduled setup IS repo initialization plus enabling the tasks: seed the full Agent OS
+        // structure in one atomic commit (files already present in the repo are left untouched),
+        // then enable the scheduled tasks in agent-os/config.json. Replaces the old per-file
+        // commit loop (~65 commits of history spam, and it overwrote user-customized files).
         const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
-        
-        // 1. Write agent-os/config.json
-        const configPath = join(REPO_ROOT, 'agent-os/scheduled/config.json');
-        if (existsSync(configPath)) {
-          const content = readFileSync(configPath, 'utf-8');
-          await client.writeFile('agent-os/config.json', content, 'chore: setup agent-os scheduled config', branchName);
+        const seed = collectAgentOsSeed(REPO_ROOT);
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = seed.filter(f => !existing.has(f.path) && f.path !== 'agent-os/config.json');
+        // Config is authoritative from this action: tasks the user just set up are enabled.
+        const enabledConfig = JSON.stringify({
+          scheduled: [
+            { name: 'graph-update', enabled: true, time_utc: '03:00' },
+            { name: 'pr-quality-review', enabled: true, time_utc: '04:00' },
+            { name: 'fix-sprint-executor', enabled: true, time_utc: '05:00' },
+          ],
+        }, null, 2) + '\n';
+        toWrite.push({ path: 'agent-os/config.json', content: enabledConfig });
+        if (!existing.has(AGENT_OS_MANIFEST_PATH)) {
+          toWrite.push({ path: AGENT_OS_MANIFEST_PATH, content: buildManifest(identityRef) });
         }
-
-        // 2. Write scheduled prompts (graph-update, pr-quality-review, fix-sprint-executor)
-        const promptsDir = join(REPO_ROOT, 'agent-os/scheduled/prompts');
-        if (existsSync(promptsDir)) {
-          const files = readdirSync(promptsDir).filter(f => f.endsWith('.md'));
-          for (const file of files) {
-            const content = readFileSync(join(promptsDir, file), 'utf-8');
-            await client.writeFile(`agent-os/scheduled/prompts/${file}`, content, `chore: setup scheduled prompt for ${file}`, branchName);
-          }
-        }
-
-        // 3. Write core agent definitions (60 files)
-        const agentsDir = join(REPO_ROOT, 'agent-os/sub-agents/agents');
-        if (existsSync(agentsDir)) {
-          const files = readdirSync(agentsDir).filter(f => f.endsWith('.md'));
-          for (const file of files) {
-            const content = readFileSync(join(agentsDir, file), 'utf-8');
-            await client.writeFile(`agent-os/sub-agents/agents/${file}`, content, `chore: bootstrap core agent definition ${file}`, branchName);
-          }
-        }
+        await client.commitFiles(toWrite, 'chore: set up Agent OS scheduled self-learning (config, prompts, agents)', branchName);
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        invalidateAgentDefs(lobbyId);
 
         await recordEvent(lobbyId, 'scheduled_tasks_configured', identityRef, { repo: integration.repo_full_name, branch: branchName });
         return json({ ok: true });
@@ -860,7 +1800,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = ghConnect[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
       const cfg = githubAppConfig();
       if (!cfg || !cfg.slug) return json({ error: 'GitHub App not configured on this lobby (set GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY / GITHUB_APP_SLUG)' }, 503);
       const state = `${lobbyId}.${issueSessionToken(identityRef, lobbyId)}`;
@@ -931,15 +1871,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const account = repos[0]?.full_name?.split('/')[0];
         const existing = await store.getIntegration(lobbyId, 'github');
         const now = new Date().toISOString();
+        // Single-repo installs select that repo immediately — see autoAdoptGithubInstallation.
+        const soleRepo = repos.length === 1 ? repos[0] : undefined;
         let integration = existing;
         if (existing) {
           integration = await store.updateIntegration(lobbyId, existing.id, {
             status: 'active', installation_id: installationId, external_account_name: account, updated_at: now,
+            ...(soleRepo && !existing.repo_full_name ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
           }) ?? existing;
         } else {
           integration = await store.addIntegration({
             id: randomUUID(), lobby_id: lobbyId, provider: 'github', status: 'active',
             external_account_name: account, installation_id: installationId,
+            ...(soleRepo ? { repo_full_name: soleRepo.full_name, branch: soleRepo.default_branch } : {}),
             scopes: ['contents', 'pull_requests'], installed_by_identity_ref: payload.identityRef,
             created_at: now, updated_at: now,
           });
@@ -960,23 +1904,31 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const ghMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/github$/);
     if (ghMatch) {
       const lobbyId = ghMatch[1];
-      const identityRef = sessionIdentity(lobbyId);
-      const isManager = identityRef ? await isLobbyManager(store, lobbyId, identityRef) : false;
+      const isManager = identityRef ? await authorizeLobbyManager(store, lobbyId, identityRef) : false;
       const integ = await store.getIntegration(lobbyId, 'github');
 
       if (req.method === 'GET') {
-        if (!integ || integ.status !== 'active') return json({ connected: false, configured: Boolean(githubAppConfig()), isManager });
+        if (!integ || integ.status !== 'active') {
+          const cfg = githubAppConfig();
+          if (cfg && identityRef && isManager) {
+            const adopted = await autoAdoptGithubInstallation(lobbyId, identityRef, integ).catch(() => null);
+            if (adopted) return json({ ...adopted, isManager });
+          }
+          return json({ connected: false, configured: Boolean(cfg), isManager });
+        }
         let repos: unknown[] = [];
         if (isManager) {
           const token = await ghToken(lobbyId);
-          if (token) { try { repos = await listInstallationRepos(token); } catch { /* token stale */ } }
+          if (token) { try { repos = await cachedInstallationRepos(lobbyId, token); } catch { /* token stale */ } }
         }
+        const initialized = await isRepoInitialized(lobbyId, integ.repo_full_name, integ.branch);
         return json({
           connected: true,
           account: integ.external_account_name,
           repo: integ.repo_full_name,
           branch: integ.branch,
           repos,
+          initialized,
           isManager,
           configured: Boolean(githubAppConfig())
         });
@@ -987,6 +1939,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
       if (req.method === 'POST') {
         if (!integ) return json({ error: 'GitHub is not connected' }, 400);
+        repoInitializedCache.delete(lobbyId); // repo/branch may change — re-check the manifest
+        invalidateAgentDefs(lobbyId);         // and re-read agent definitions (their bound DIDs) from the new repo
         const body = await readBody(req);
         const repo = typeof body.repo === 'string' ? body.repo.trim() : '';
         if (!/^[^/\s]+\/[^/\s]+$/.test(repo)) return json({ error: 'repo must be "owner/repo"' }, 400);
@@ -997,8 +1951,461 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       if (req.method === 'DELETE') {
         if (integ) await store.updateIntegration(lobbyId, integ.id, { status: 'revoked', updated_at: new Date().toISOString() });
+        repoInitializedCache.delete(lobbyId);
+        invalidateAgentDefs(lobbyId);
         await recordEvent(lobbyId, 'github_disconnected', identityRef, {});
         return json({ connected: false });
+      }
+    }
+
+    // POST /lobbies/:id/repo/initialize — seed the Agent OS structure into the connected repo.
+    // One atomic commit "clones down" what the lobby needs to manage agents there: agent
+    // definitions (where Agent IDs bind), skills, scheduled self-learning prompts, the scheduler
+    // config, and scaffolding for shared memories + locally trained packs. Idempotent: files that
+    // already exist in the repo are left untouched (user customizations win); only the manifest is
+    // always (re)written.
+    const repoInitMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/initialize$/);
+    if (repoInitMatch && req.method === 'POST') {
+      const lobbyId = repoInitMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+        const seed = collectAgentOsSeed(REPO_ROOT);
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = seed.filter(f => !existing.has(f.path));
+        toWrite.push({ path: AGENT_OS_MANIFEST_PATH, content: buildManifest(identityRef) });
+        const commitSha = await client.commitFiles(
+          toWrite,
+          'chore: initialize Agent OS structure (agents, skills, prompts, memory + training scaffold)',
+          branchName,
+        );
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        invalidateAgentDefs(lobbyId);
+        await recordEvent(lobbyId, 'repo_initialized', identityRef, {
+          repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha,
+        });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `repository initialization failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // POST /lobbies/:id/repo/ui-assist — clone the UI Assist embed into the connected repo:
+    // the dependency-free overlay (embed.js) plus a README tailored to THIS lobby (its WS URL) with
+    // both integration paths (hosted lobby chat / local panel + relay). Skip-if-exists, one commit.
+    const uiAssistCloneMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/ui-assist$/);
+    if (uiAssistCloneMatch && req.method === 'POST') {
+      const lobbyId = uiAssistCloneMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      try {
+        const REPO_ROOT = resolve(fileURLToPath(import.meta.url), '../../../../');
+        const embedSrc = readFileSync(join(REPO_ROOT, 'packages/ui-assist-embed/embed.js'), 'utf-8');
+        const proto = (req.headers['x-forwarded-proto'] as string) === 'https' ? 'wss' : 'ws';
+        const host = req.headers['x-forwarded-host'] ?? req.headers.host ?? 'localhost:4730';
+        const lobbyWsUrl = `${proto}://${host}${WS_PATH}?lobby_id=${encodeURIComponent(lobbyId)}`;
+        const readme = [
+          '# UI Assist — embeddable assistant overlay', '',
+          'A floating launcher + chat panel for YOUR web app: one script tag, dependency-free,',
+          'framework-agnostic, **suggest-only by default** (edit authority stays off until you enable it).', '',
+          '## Option A — connect to your hosted lobby chat', '',
+          '```html', '<script type="module">', "  import { mountUiAssist } from '/agent-os/ui-assist/embed.js';",
+          `  mountUiAssist({ relayUrl: '${lobbyWsUrl}' });`, '</script>', '```', '',
+          'Messages from your app land in the lobby chat where the Boss coordinates the swarm.', '',
+          '## Option B — run against a local Agent OS Panel + relay', '',
+          '```bash', 'npm run agent-os-panel        # panel :4800 · relay ws://localhost:4722',
+          'npm run ui-assist-integrate -- /path/to/your/app   # framework detection + embed plan', '```', '',
+          '```html', '<script type="module">', "  import { mountUiAssist } from './ui-assist/embed.js';",
+          "  mountUiAssist({ relayUrl: 'ws://localhost:4722' });", '</script>', '```', '',
+          'Docs: `agent-os/UI-ASSIST.md`, `agent-os/UI-ASSIST-GUIDE.md`, and `docs/ui-assist/` in the',
+          '[Agent OS Protocol](https://github.com/ronnikc/agent-os-protocol) repository.', '',
+        ].join('\n');
+
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: 'agent-os/ui-assist/embed.js', content: embedSrc },
+          { path: 'agent-os/ui-assist/README.md', content: readme },
+        ].filter(f => !existing.has(f.path));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'UI Assist already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: add UI Assist embed + integration instructions', branchName);
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `UI Assist clone failed: ${String((e as Error).message ?? e)}` }, 502);
+      }
+    }
+
+    // /lobbies/:id/integrations/(discord|telegram|supabase) — owner-connected chat/data integrations.
+    // The LobbyOwner brings their OWN bot token / project key; the lobby seals it per-lobby and never
+    // shares it. GET returns connected status with a masked hint only (never the secret); POST connects
+    // (or reconnects, revoking the prior credential); DELETE revokes. Owner-gated like every manage op.
+    const ownerIntegMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/integrations\/(discord|telegram|supabase|slack|dreambase)$/);
+    if (ownerIntegMatch) {
+      const lobbyId = ownerIntegMatch[1];
+      const provider = ownerIntegMatch[2] as OwnerConnectedProvider;
+      const secretType = (provider === 'supabase' || provider === 'dreambase') ? 'access_token' as const : 'bot_token' as const;
+      if (req.method === 'GET') {
+        // Status is owner-only too — a masked hint still confirms a credential is set.
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        return json(await ownerIntegrationStatus(lobbyId, provider, store, secretType));
+      }
+      if (req.method === 'POST') {
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        const body = await readBody(req).catch(() => ({} as any));
+        // Discord/Telegram/Slack: a bot token (+ channel/chat/workspace id). Supabase: a service key
+        // (+ project URL). dreambase: an API key (+ project id).
+        const secret = String(body?.secret ?? body?.bot_token ?? body?.service_key ?? body?.api_key ?? '').trim();
+        const credName = provider === 'supabase' ? 'service key' : provider === 'dreambase' ? 'API key' : 'bot token';
+        if (!secret) return json({ error: `a ${credName} is required` }, 400);
+        const externalId = body?.external_id != null ? String(body.external_id).trim() : undefined;
+        const externalName = body?.name != null ? String(body.name).trim() : undefined;
+        // Non-secret config the UI reads back is kept in scopes: Supabase's project URL, dreambase's
+        // project id. Never a credential — the sealed secret is the only thing in the vault.
+        const scopes = provider === 'supabase' && body?.project_url ? [`url:${String(body.project_url).trim()}`]
+          : provider === 'dreambase' && body?.project_id ? [`project:${String(body.project_id).trim()}`]
+          : undefined;
+        try {
+          const integ = await connectOwnerIntegration({ lobbyId, identityRef, provider, secret, secretType, externalId, externalName, scopes }, store);
+          await recordEvent(lobbyId, `${provider}_connected`, identityRef, { external_id: externalId, name: externalName });
+          return json({ ok: true, connected: true, provider, account: integ.external_account_name, external_id: integ.external_account_id, scopes: integ.scopes });
+        } catch (e) {
+          return json({ error: `${provider} connect failed: ${(e as Error)?.message ?? e}` }, 502);
+        }
+      }
+      if (req.method === 'DELETE') {
+        const identityRef = sessionIdentity(lobbyId);
+        if (!identityRef) return json({ error: 'authentication required' }, 401);
+        if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+        const revoked = await revokeOwnerIntegration(lobbyId, provider, store);
+        if (revoked) await recordEvent(lobbyId, `${provider}_revoked`, identityRef, {});
+        return json({ ok: true, connected: false, revoked });
+      }
+      return json({ error: 'method not allowed' }, 405);
+    }
+
+    // POST /lobbies/:id/repo/scaffold-vercel — write the Vercel deploy setup + scripts into the repo.
+    // Agent OS only FACILITATES: it scaffolds vercel.json + a GitHub Actions deploy workflow + an
+    // owner setup doc. The deploy runs on the OWNER's Vercel, from the OWNER's repo — the lobby never
+    // holds a Vercel token; the token lives in the owner's GitHub repo secrets that the workflow
+    // reads. Idempotent (skip-if-exists), one commit. Returns the secrets the owner must add.
+    const vercelScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-vercel$/);
+    if (vercelScaffoldMatch && req.method === 'POST') {
+      const lobbyId = vercelScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      // Built as arrays of lines so GitHub Actions ${{ … }} expressions pass through verbatim.
+      const vercelJson = [
+        '{',
+        '  "$schema": "https://openapi.vercel.sh/vercel.json"',
+        '}',
+        '',
+      ].join('\n');
+      const workflow = [
+        '# Deploys this repository to YOUR Vercel project.',
+        '# Add these repository secrets (Settings → Secrets and variables → Actions):',
+        '#   VERCEL_TOKEN, VERCEL_ORG_ID, VERCEL_PROJECT_ID  — from your own Vercel account.',
+        '# See agent-os/VERCEL-SETUP.md. Agent OS never holds these; they stay in your repo.',
+        'name: Deploy to Vercel',
+        'on:',
+        '  push:',
+        '    branches: [' + (integ.branch || 'main') + ']',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  deploy:',
+        '    runs-on: ubuntu-latest',
+        '    env:',
+        '      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}',
+        '      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 20',
+        '      - name: Install Vercel CLI',
+        '        run: npm install --global vercel@latest',
+        '      - name: Resolve environment (production on the default branch, else preview)',
+        '        id: env',
+        "        run: echo \"target=${{ github.ref == 'refs/heads/" + (integ.branch || 'main') + "' && 'production' || 'preview' }}\" >> \"$GITHUB_OUTPUT\"",
+        '      - name: Pull Vercel environment',
+        '        run: vercel pull --yes --environment=${{ steps.env.outputs.target }} --token=${{ secrets.VERCEL_TOKEN }}',
+        '      - name: Build',
+        "        run: vercel build ${{ steps.env.outputs.target == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}",
+        '      - name: Deploy',
+        "        run: vercel deploy --prebuilt ${{ steps.env.outputs.target == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}",
+        '',
+      ].join('\n');
+      const setupDoc = [
+        '# Deploy to Vercel — setup', '',
+        'Agent OS scaffolds the deploy config; the deploy runs on **your** Vercel project, from **your**',
+        'GitHub repo. Agent OS never stores your Vercel credentials — they live only in this repo\'s',
+        'GitHub Actions secrets, which you control.', '',
+        '## One-time setup', '',
+        '1. Create (or pick) a project in your [Vercel dashboard](https://vercel.com/dashboard) and link it to this repository, or run `vercel link` locally.',
+        '2. Create a Vercel access token: Vercel → Account Settings → Tokens.',
+        '3. Find your project + org IDs: they are in `.vercel/project.json` after `vercel link`, or in your Vercel project settings.',
+        '4. In this GitHub repo, add three **Actions secrets** (Settings → Secrets and variables → Actions):',
+        '   - `VERCEL_TOKEN` — your Vercel access token',
+        '   - `VERCEL_ORG_ID` — your Vercel org/team ID',
+        '   - `VERCEL_PROJECT_ID` — your Vercel project ID', '',
+        '## How it deploys', '',
+        '- Push to `' + (integ.branch || 'main') + '` → **production** deploy.',
+        '- Open a pull request → **preview** deploy.', '',
+        'The workflow lives at `.github/workflows/deploy-vercel.yml` and uses the Vercel CLI. Edit it,',
+        'or `vercel.json`, to fit your framework and build — Vercel auto-detects most frameworks.', '',
+        '> Alternatively, skip the workflow entirely and import the repo directly in Vercel — its native',
+        '> Git integration will deploy on every push. This scaffold is the scripted path when you want',
+        '> the deploy defined in-repo and reviewable.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: 'vercel.json', content: vercelJson },
+          { path: '.github/workflows/deploy-vercel.yml', content: workflow },
+          { path: 'agent-os/VERCEL-SETUP.md', content: setupDoc },
+        ].filter(f => !existing.has(f.path));
+        const requiredSecrets = ['VERCEL_TOKEN', 'VERCEL_ORG_ID', 'VERCEL_PROJECT_ID'];
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, required_secrets: requiredSecrets, note: 'Vercel deploy scaffold already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: scaffold Vercel deploy config + workflow', branchName);
+        await recordEvent(lobbyId, 'vercel_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), required_secrets: requiredSecrets, commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `Vercel scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // POST /lobbies/:id/repo/scaffold-ci — write a GitHub Actions CI workflow into the repo so the
+    // agents' task PRs get install → lint → build → test run on GitHub's ephemeral runners. This is
+    // the execution environment: agents never get a shell on this host; instead their PRs are built
+    // and tested by CI, and the lobby reads the results back (see the task-PR check read-back).
+    const ciScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-ci$/);
+    if (ciScaffoldMatch && req.method === 'POST') {
+      const lobbyId = ciScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+
+      // Built as lines so GitHub Actions ${{ … }} passes through verbatim. --if-present means a repo
+      // without a lint/build/test script still passes rather than failing on a missing script.
+      const workflow = [
+        '# Continuous integration for this repository. Runs on pushes and on every pull request —',
+        '# including the agent-os/task/* branches the lobby opens — so agent work is built and tested',
+        '# on GitHub\'s runners. The lobby reads these check results back to guide the agents.',
+        'name: CI',
+        'on:',
+        '  push:',
+        '    branches: [' + (integ.branch || 'main') + ']',
+        '  pull_request:',
+        'permissions:',
+        '  contents: read',
+        'jobs:',
+        '  build-test:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 20',
+        '      - name: Install dependencies',
+        '        run: npm ci || npm install',
+        '      - name: Lint',
+        '        run: npm run lint --if-present',
+        '      - name: Build',
+        '        run: npm run build --if-present',
+        '      - name: Test',
+        '        run: npm test --if-present',
+        '',
+      ].join('\n');
+      const ciDoc = [
+        '# Continuous integration', '',
+        'The lobby scaffolded `.github/workflows/ci.yml` so every push and pull request — including the',
+        '`agent-os/task/*` branches the swarm opens — runs **install → lint → build → test** on GitHub\'s',
+        'ephemeral runners.', '',
+        'Agents have no shell on the lobby host by design; this is how their work gets verified. Adjust',
+        'the workflow to match your project (Node version, extra steps, matrix). Steps use `--if-present`,',
+        'so a repo without a `lint`/`build`/`test` script still passes until you add one.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const toWrite = [
+          { path: '.github/workflows/ci.yml', content: workflow },
+          { path: 'agent-os/CI.md', content: ciDoc },
+        ].filter(f => !existing.has(f.path));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'CI workflow already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: add CI workflow (install, lint, build, test)', branchName);
+        await recordEvent(lobbyId, 'ci_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `CI scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // POST /lobbies/:id/repo/scaffold-supabase — write a supabase/ migrations folder + owner setup doc
+    // into the repo. Agent OS only FACILITATES: migrations run against the OWNER's own Supabase project,
+    // and the service key stays sealed per-lobby (never committed). Requires the owner to have connected
+    // Supabase first. Idempotent (skip-if-exists), one commit.
+    const supabaseScaffoldMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/scaffold-supabase$/);
+    if (supabaseScaffoldMatch && req.method === 'POST') {
+      const lobbyId = supabaseScaffoldMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const sb = await store.getIntegration(lobbyId, 'supabase');
+      if (!sb || sb.status !== 'active') return json({ error: 'connect your Supabase project in the Apps tab first' }, 400);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) {
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab first' }, 400);
+      }
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
+      const parsed = repoRef(integ.repo_full_name);
+      if (!parsed) return json({ error: 'invalid GitHub repository reference' }, 400);
+      const projectUrl = (sb.scopes || []).find(s => s.startsWith('url:'))?.slice(4) || 'https://<your-project-ref>.supabase.co';
+
+      const configToml = [
+        '# Supabase CLI project config (owner-managed). See https://supabase.com/docs/guides/cli/config',
+        'project_id = "agent-os-lobby"',
+        '',
+        '[db]',
+        'major_version = 15',
+        '',
+      ].join('\n');
+      const seedMigration = [
+        '-- Initial migration scaffolded by Agent OS.',
+        '-- Runs against YOUR Supabase project; edit or add files under supabase/migrations/.',
+        '-- Example: a table the swarm can build on.',
+        'create table if not exists public.agent_os_notes (',
+        '  id uuid primary key default gen_random_uuid(),',
+        '  body text not null,',
+        '  created_at timestamptz not null default now()',
+        ');',
+        '',
+      ].join('\n');
+      const setupDoc = [
+        '# Supabase — setup', '',
+        'Agent OS scaffolds the migrations layout; the database is **your own** Supabase project. Your',
+        'service key is sealed per-lobby by Agent OS and is **never committed** to this repo.', '',
+        '## One-time setup', '',
+        '1. Your project URL is `' + projectUrl + '` (connected in the Apps tab).',
+        '2. Install the Supabase CLI: `npm install -D supabase` (or use `npx supabase`).',
+        '3. Link the CLI to your project: `npx supabase link --project-ref <your-project-ref>`.',
+        '4. Apply migrations: `npx supabase db push` (uses your local Supabase session).', '',
+        '## Applying migrations from CI (optional)', '',
+        'If you want CI to apply migrations, add your **`SUPABASE_ACCESS_TOKEN`** and **`SUPABASE_DB_PASSWORD`**',
+        'as GitHub Actions secrets (Settings → Secrets and variables → Actions) and run `supabase db push`',
+        'in a workflow. Agent OS never stores or commits these — they stay in your repo secrets.', '',
+        '## Layout', '',
+        '- `supabase/config.toml` — CLI project config.',
+        '- `supabase/migrations/*.sql` — ordered migrations; the swarm adds to these as it builds.', '',
+      ].join('\n');
+
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+        const branchName = integ.branch || 'main';
+        const existing = await client.listTreePaths(branchName);
+        const ts = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
+        const toWrite = [
+          { path: 'supabase/config.toml', content: configToml },
+          { path: `supabase/migrations/${ts}_init.sql`, content: seedMigration },
+          { path: 'agent-os/SUPABASE-SETUP.md', content: setupDoc },
+        ].filter(f => !existing.has(f.path) && !(f.path.startsWith('supabase/migrations/') && [...existing].some(p => p.startsWith('supabase/migrations/'))));
+        if (toWrite.length === 0) {
+          return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: 0, note: 'Supabase scaffold already present in the repository' });
+        }
+        const commitSha = await client.commitFiles(toWrite, 'chore: scaffold Supabase migrations + setup', branchName);
+        await recordEvent(lobbyId, 'supabase_scaffolded', identityRef, { repo: integ.repo_full_name, branch: branchName, files: toWrite.map(f => f.path), commit_sha: commitSha });
+        return json({ ok: true, repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, files: toWrite.map(f => f.path), commit_sha: commitSha });
+      } catch (e) {
+        return json({ error: `Supabase scaffold failed: ${githubErrorMessage(e)}` }, 502);
+      }
+    }
+
+    // GET /lobbies/:id/repo/checks?ref=<branch|sha> — CI check-run summary for a ref (read-back so
+    // the panel/agents see whether a task's PR built and tested green). Owner-gated.
+    const checksMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/repo\/checks$/);
+    if (checksMatch && req.method === 'GET') {
+      const lobbyId = checksMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (!integ || integ.status !== 'active' || !integ.repo_full_name) return json({ error: 'no connected repo' }, 400);
+      const ref = url.searchParams.get('ref') || '';
+      if (!ref) return json({ error: 'ref is required' }, 400);
+      const token = await githubTokenForLobby(lobbyId, store);
+      const parsed = token ? repoRef(integ.repo_full_name) : null;
+      if (!parsed) return json({ error: 'could not access repository' }, 400);
+      try {
+        const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+        const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!);
+        const summary = await client.getCheckRunsForRef(ref);
+        return json(summary);
+      } catch (e) {
+        return json({ error: `could not read checks: ${githubErrorMessage(e)}` }, 502);
       }
     }
 
@@ -1009,7 +2416,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const kind = repoMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
       const integ = await store.getIntegration(lobbyId, 'github');
       if (!integ || integ.status !== 'active' || !integ.repo_full_name) return json({ error: 'no connected repo — connect GitHub and select a repo first' }, 400);
       const token = await ghToken(lobbyId);
@@ -1032,7 +2439,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const action = kbMatch[2]; // undefined, 'upload', 'jobs', or 'sync'
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       // GET .../kb — get KB settings
       if (req.method === 'GET' && !action) {
@@ -1108,9 +2515,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return json({ job }, 202);
       }
 
-      // POST .../kb/upload — upload file for KB conversion
+      // POST .../kb/upload — upload file for KB conversion. Uploads carry base64 file content, so
+      // they get their own (much larger) body limit — the 1 MiB control-plane default rejected any
+      // real document and surfaced as "unknown error" in the panel.
       if (req.method === 'POST' && action === 'upload') {
-        const body = await readBody(req);
+        const body = await readBody(req, MAX_UPLOAD_BODY_BYTES);
+        if (body.__body_too_large) {
+          return json({ error: `file too large — uploads are limited to ~${Math.floor(MAX_UPLOAD_BODY_BYTES / 1_048_576 * 0.75)} MB per document` }, 413);
+        }
         const fileName = typeof body.file_name === 'string' ? body.file_name.trim() : '';
         const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : '';
         const fileContentBase64 = typeof body.file_content === 'string' ? body.file_content : '';
@@ -1140,6 +2552,77 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
         return json({ job }, 202);
       }
+    }
+
+    // POST /lobbies/:id/messages/upload — upload a file/image in the Messages tab: ingest it into the
+    // Knowledge Base (same pipeline as /kb/upload) AND post a chat message carrying the attachment,
+    // optionally linked to a task. One action → the file becomes searchable KB context AND is visible
+    // in the conversation, tied to the work it belongs to. Owner-gated (it writes to the KB).
+    const msgUploadMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/messages\/upload$/);
+    if (msgUploadMatch && req.method === 'POST') {
+      const lobbyId = msgUploadMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      const lobby = await store.getLobby(lobbyId);
+      if (!lobby) return json({ error: 'Lobby not found' }, 404);
+      const body = await readBody(req, MAX_UPLOAD_BODY_BYTES);
+      if (body.__body_too_large) {
+        return json({ error: `file too large — uploads are limited to ~${Math.floor(MAX_UPLOAD_BODY_BYTES / 1_048_576 * 0.75)} MB per file` }, 413);
+      }
+      const fileName = typeof body.file_name === 'string' ? body.file_name.trim() : '';
+      const mimeType = typeof body.mime_type === 'string' ? body.mime_type.trim() : '';
+      const fileContentBase64 = typeof body.file_content === 'string' ? body.file_content : '';
+      const taskId = typeof body.task_id === 'string' && body.task_id.trim() ? body.task_id.trim() : undefined;
+      const note = typeof body.content === 'string' ? body.content.trim() : '';
+      if (!fileName || !mimeType || !fileContentBase64) {
+        return json({ error: 'file_name, mime_type, and file_content (base64) are required' }, 400);
+      }
+      // A supplied task_id must name a real task in this lobby, so an attachment link is never dangling.
+      if (taskId) {
+        const t = await store.getTask(lobbyId, taskId).catch(() => null);
+        if (!t) return json({ error: 'task_id does not match a task in this lobby' }, 400);
+      }
+
+      const buffer = Buffer.from(fileContentBase64, 'base64');
+      const jobId = `job_${randomUUID()}`;
+      const kb = await store.getKnowledgeBase(lobbyId);
+      const job = await store.upsertKnowledgeSyncJob({
+        id: jobId,
+        lobby_id: lobbyId,
+        kb_id: kb?.id || 'none',
+        source_provider: 'upload',
+        status: 'queued',
+        source_ref: taskId ? `task:${taskId}` : 'message-attachment',
+        created_by_identity_ref: identityRef,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      });
+      const { processKnowledgeSyncJob } = await import('./kb/jobs.js');
+      processKnowledgeSyncJob(jobId, buffer, fileName, mimeType, store).catch((err) => {
+        console.error(`[Messages Upload] Async KB processing failed for job ${jobId}:`, err);
+      });
+
+      // Post the attachment as a chat message so it appears in the feed, linked to the task if given.
+      const isImage = mimeType.startsWith('image/');
+      const attachment = {
+        file_name: fileName, mime_type: mimeType, kb_job_id: jobId,
+        size_bytes: buffer.length, is_image: isImage, ...(taskId ? { task_id: taskId } : {}),
+      };
+      const seq = await store.nextSeq(lobbyId);
+      const fromId = 'LobbyOwner'; // manager-gated above
+      const defaultContent = `📎 Uploaded **${fileName}** to the Knowledge Base${taskId ? ` · linked to task \`${taskId}\`` : ''}`;
+      const message: LobbyMessage = {
+        message_id: randomUUID(), seq, from_agent_id: fromId, to_agent_id: 'all',
+        message_type: 'chat', content: note || defaultContent, created_at: new Date().toISOString(),
+        delivered: false, attachment,
+      };
+      await store.appendMessage(lobbyId, message);
+      await recordEvent(lobbyId, 'message_attachment_uploaded', fromId, { file_name: fileName, mime_type: mimeType, kb_job_id: jobId, task_id: taskId });
+      const outMsg: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, outMsg);
+
+      return json({ message, job }, 201);
     }
 
     // The lobby only relays reads and sign-ready payload builders; signing and submission
@@ -1385,7 +2868,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const slug = agentIdentityMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const body = await readBody(req);
       if (typeof body.identity !== 'string' || !body.identity.trim()) {
@@ -1394,14 +2877,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
       const integration = await store.getIntegration(lobbyId, 'github');
       if (!integration || !integration.repo_full_name) {
-        return json({ error: 'no connected GitHub repository' }, 400);
+        return json({ error: 'no connected GitHub repository — connect the GitHub App and select a repository in the Lobby tab' }, 400);
       }
 
-      const { getDecryptedSecret } = await import('./integrations/githubApp.js');
-      const token = await getDecryptedSecret(lobbyId, 'github', 'installation_token', store).catch(() => null);
-      if (!token) return json({ error: 'GitHub authorization token expired or not found' }, 400);
+      const token = await githubTokenForLobby(lobbyId, store);
+      if (!token) return json({ error: 'could not mint a GitHub installation token — reconnect the GitHub App in the Lobby tab' }, 400);
 
-      const parsed = parseGithubUrl(integration.repo_full_name);
+      const parsed = repoRef(integration.repo_full_name);
       if (!parsed) return json({ error: 'invalid GitHub repository URL' }, 400);
 
       const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
@@ -1409,19 +2891,34 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const branchName = integration.branch || 'main';
 
       const filePath = `agent-os/sub-agents/agents/${slug}.md`;
+      const identityLine = `Identity: ${body.identity.trim()}`;
+      let newContent = '';
       let content = '';
       try {
         content = await client.readFile(filePath, branchName);
       } catch {
-        return json({ error: `agent definition file "${filePath}" not found in repository` }, 404);
+        // The connected repo has no definition file for this agent — normal for a user's own
+        // project repo, which starts without the agent-os structure. BOOTSTRAP the file from the
+        // built-in catalog definition (or a minimal stub) instead of failing the bind: this is
+        // exactly the DID-persistence step the mint flow promises.
+        const defs = await getAgentDefinitions(lobbyId, store).catch(() => [] as any[]);
+        const def = defs.find((d: any) => d.slug === slug);
+        newContent = [
+          `Title: ${def?.name ?? slug}`,
+          identityLine,
+          `Slug: ${slug}`,
+          ...(def?.scope ? [`Scope: ${def.scope}`] : []),
+          ...(def?.runtime ? [`Runtime: ${def.runtime}`] : []),
+          ...(def?.model ? [`Model: ${def.model}`] : []),
+          '',
+          def?.system_prompt ?? '',
+        ].join('\n').trimEnd() + '\n';
       }
 
-      const identityLine = `Identity: ${body.identity.trim()}`;
-      let newContent = '';
-      if (content.match(/^Identity:\s*(.+)$/m)) {
-        newContent = content.replace(/^Identity:\s*(.+)$/m, identityLine);
-      } else {
-        if (content.match(/^Title:\s*(.+)$/m)) {
+      if (!newContent) {
+        if (content.match(/^Identity:\s*(.+)$/m)) {
+          newContent = content.replace(/^Identity:\s*(.+)$/m, identityLine);
+        } else if (content.match(/^Title:\s*(.+)$/m)) {
           newContent = content.replace(/^(Title:\s*.+)$/m, `$1\n${identityLine}`);
         } else {
           newContent = `${identityLine}\n${content}`;
@@ -1430,9 +2927,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
       try {
         await client.writeFile(filePath, newContent, `chore: bind Agent ID identity ref to ${slug}`, branchName);
-        return json({ ok: true, identity: body.identity.trim() });
+        // restartRequired: identity is presented at REGISTER time (join_token) — a running agent
+        // keeps its old roster identity until it is relaunched with the new DID.
+        invalidateAgentDefs(lobbyId);
+        return json({ ok: true, identity: body.identity.trim(), restartRequired: true });
       } catch (err: any) {
-        return json({ error: `failed to write to GitHub repository: ${err.message || err}` }, 500);
+        return json({ error: `failed to write to GitHub repository: ${githubErrorMessage(err)}` }, 500);
       }
     }
 
@@ -1500,7 +3000,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const lobby = await store.getLobby(lobbyId);
         if (!lobby) return json({ error: 'Lobby not found' }, 404);
 
-        const fromId = body.from_agent_id || 'WebUser';
+        // Sender attribution: a wallet-authenticated lobby manager speaks as LobbyOwner — the
+        // accountable human running this lobby — not as an anonymous "WebUser". The generic
+        // default only applies to unauthenticated visitors, and a client-supplied name can never
+        // claim the LobbyOwner label without holding a manager session (anti-spoofing).
+        let fromId = typeof body.from_agent_id === 'string' && body.from_agent_id.trim() ? body.from_agent_id.trim() : '';
+        const senderIdentity = sessionIdentity(lobbyId);
+        const senderIsManager = senderIdentity ? await isLobbyManager(store, lobbyId, senderIdentity) : false;
+        if (senderIsManager && (!fromId || fromId === 'WebUser' || fromId === 'LobbyOwner')) {
+          fromId = 'LobbyOwner';
+        } else if (!senderIsManager && fromId === 'LobbyOwner') {
+          fromId = 'WebUser';
+        } else if (!fromId) {
+          fromId = 'WebUser';
+        }
         const roster = await store.roster(lobbyId);
         if (roster.some((a) => a.agent_id === fromId && a.status !== 'disconnected')) {
           return json({ error: 'from_agent_id belongs to a connected agent — send via the agent WebSocket instead' }, 403);
@@ -1528,6 +3041,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, outMsg);
         }
+        // Mirror owner/web messages out to any connected Slack/Telegram/Discord channel.
+        void relayLobbyMessageToChatApps(store, lobbyId, message);
 
         return json({ message }, 201);
       }
@@ -1558,6 +3073,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }
 
     // POST / GET /api/v1/agent-lobby/lobbies/:id/tasks
+    // Two task systems share this path: COORDINATION tasks (the coordinator's LobbyTask — what the
+    // Boss's `[task]` directives create and what the panel's Tasks kanban shows) and MARKETPLACE
+    // tasks (budget/escrow — the web app's marketplace). POST discriminates by shape: `assigned_to`
+    // means a coordination task; a budget/escrow body means a marketplace posting. GET returns both,
+    // under separate keys, so each UI reads its own list.
     const taskListMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks$/);
     if (taskListMatch) {
       const lobbyId = taskListMatch[1];
@@ -1567,8 +3087,43 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ error: 'missing title' }, 400);
         }
         const description = typeof body.description === 'string' ? body.description : '';
+
+        // Coordination task — assigned to a named roster agent, delivered like a Boss-created task.
+        if (typeof body.assigned_to === 'string' && body.assigned_to.trim()) {
+          const assignedTo = body.assigned_to.trim();
+          const target = await store.getAgent(lobbyId, assignedTo);
+          if (!target) return json({ error: `unknown assignee: ${assignedTo}` }, 400);
+          const lobby = await store.getLobby(lobbyId);
+          if (!lobby) return json({ error: 'Lobby not found' }, 404);
+          // Attribute the assigner: an authenticated lobby manager is the LobbyOwner.
+          const creatorIdentity = sessionIdentity(lobbyId);
+          const creatorIsManager = creatorIdentity ? await isLobbyManager(store, lobbyId, creatorIdentity) : false;
+          const seq = await store.nextSeq(lobbyId);
+          const task = {
+            task_id: randomUUID(),
+            lobby_id: lobbyId,
+            org_id: lobby.org_id,
+            assigned_by: (typeof body.assigned_by === 'string' && body.assigned_by.trim()) || (creatorIsManager ? 'LobbyOwner' : 'WebUser'),
+            assigned_to: assignedTo,
+            assigned_at: new Date().toISOString(),
+            title: String(body.title).slice(0, 200),
+            description,
+            priority: (['critical', 'high', 'normal', 'low'].includes(body.priority) ? body.priority : 'normal') as 'critical' | 'high' | 'normal' | 'low',
+            category: typeof body.category === 'string' ? body.category : 'general',
+            status: 'assigned' as const,
+            seq,
+          };
+          await store.upsertTask(task as Parameters<typeof store.upsertTask>[0]);
+          await recordEvent(lobbyId, 'task_created', task.assigned_by, { task_id: task.task_id, assigned_to: assignedTo });
+          // Deliver to the assignee (hosted agents act on lobby-task-assigned) + tell the lobby.
+          send(agentConn.get(assignedTo), { type: 'lobby-task-assigned', task } as LobbyToAgentMessage);
+          for (const cid of lobbyConns.get(lobbyId) ?? []) {
+            send(cid, { type: 'lobby-task-updated', task } as LobbyToAgentMessage);
+          }
+          return json({ task }, 201);
+        }
+
         const proposed_budget_ccd = typeof body.proposed_budget_ccd === 'number' ? body.proposed_budget_ccd : 0;
-        
         const task = await store.createMarketplaceTask({
           id: randomUUID(),
           lobby_id: lobbyId,
@@ -1591,26 +3146,52 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       if (req.method === 'GET') {
         const tasks = await store.listMarketplaceTasks(lobbyId);
-        return json({ tasks });
+        const coordination_tasks = await store.listTasks(lobbyId);
+        return json({ tasks, coordination_tasks });
       }
     }
 
-    // PATCH /api/v1/agent-lobby/lobbies/:id/tasks/:taskId
+    // PATCH /api/v1/agent-lobby/lobbies/:id/tasks/:taskId — coordination task first, else marketplace.
     const taskUpdateMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)$/);
     if (taskUpdateMatch && req.method === 'PATCH') {
       const lobbyId = taskUpdateMatch[1];
       const taskId = taskUpdateMatch[2];
       const body = await readBody(req);
+      const coordTask = await store.getTask(lobbyId, taskId);
+      if (coordTask) {
+        const STATUSES = new Set(['pending', 'assigned', 'accepted', 'in_progress', 'completed', 'failed', 'cancelled']);
+        const updatedTask = {
+          ...coordTask,
+          ...(STATUSES.has(body.status) ? { status: body.status } : {}),
+          ...(typeof body.progress === 'string' ? { progress: body.progress } : {}),
+          ...(typeof body.result === 'string' ? { result: body.result } : {}),
+        };
+        await store.upsertTask(updatedTask);
+        const patchIdentity = sessionIdentity(lobbyId);
+        const patchIsManager = patchIdentity ? await isLobbyManager(store, lobbyId, patchIdentity) : false;
+        await recordEvent(lobbyId, 'task_updated', patchIsManager ? 'LobbyOwner' : 'WebUser', { task_id: taskId, status: updatedTask.status });
+        for (const cid of lobbyConns.get(lobbyId) ?? []) {
+          send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
+        }
+        // Reopen semantics: setting a task back to 'assigned' RE-DELIVERS it to the assignee —
+        // hosted agents execute on lobby-task-assigned, so without this a reopened task sat
+        // "assigned" forever with nobody told.
+        if (body.status === 'assigned' && updatedTask.assigned_to) {
+          send(agentConn.get(updatedTask.assigned_to), { type: 'lobby-task-assigned', task: updatedTask } as LobbyToAgentMessage);
+        }
+        return json({ task: updatedTask });
+      }
       const updated = await store.updateMarketplaceTask(lobbyId, taskId, body);
       return json({ task: updated });
     }
 
-    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/delete
+    // POST /api/v1/agent-lobby/lobbies/:id/tasks/:taskId/delete — coordination task first, else marketplace.
     const taskDeleteMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/tasks\/([^/]+)\/delete$/);
     if (taskDeleteMatch && req.method === 'POST') {
       const lobbyId = taskDeleteMatch[1];
       const taskId = taskDeleteMatch[2];
-      await store.deleteMarketplaceTask(lobbyId, taskId);
+      const deletedCoord = await store.deleteTask(lobbyId, taskId);
+      if (!deletedCoord) await store.deleteMarketplaceTask(lobbyId, taskId);
       return json({ ok: true });
     }
 
@@ -1620,7 +3201,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = clearMessagesMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized' }, 403);
       await store.clearMessages(lobbyId);
       return json({ ok: true });
     }
@@ -1631,7 +3212,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const lobbyId = bossAgentMatch[1];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const body = await readBody(req);
       const agentId = body.agent_id;
@@ -1660,16 +3241,64 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ ok: true, boss_agent_id: agentId });
     }
 
-    // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases
+    // GET /api/v1/agent-lobby/lobbies/:id/gantt/phases — the lobby's OWN plan, not demo data.
+    // Phases/sprints come from `agent-os/planning.json` in the connected repo (seeded empty by
+    // initialization; the LobbyOwner or agents edit it); live coordination tasks are appended as a
+    // synthetic phase so real in-flight work is always visible. The old handler returned this
+    // deployment's hardcoded roadmap for every lobby.
     const ganttMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/gantt\/phases$/);
     if (ganttMatch && req.method === 'GET') {
-      return json({
-        phases: [
-          { id: 'phase-1', name: 'Phase 1: Foundation & Core Setup', completedSprints: 4, sprintCount: 4, status: 'complete', tasks: [] },
-          { id: 'phase-2', name: 'Phase 2: Swarm Capabilities', completedSprints: 2, sprintCount: 3, status: 'active', tasks: [] },
-          { id: 'phase-3', name: 'Phase 3: Visual Playgrounds & Market Bidding', completedSprints: 0, sprintCount: 2, status: 'planned', tasks: [] }
-        ]
-      });
+      const lobbyId = ganttMatch[1];
+      const identityRef = sessionIdentity(lobbyId);
+      if (!identityRef) return json({ error: 'authentication required' }, 401);
+
+      const phases: any[] = [];
+      let repoLabel: string | null = null;
+      let planningFound = false;
+      const integ = await store.getIntegration(lobbyId, 'github');
+      if (integ?.status === 'active' && integ.repo_full_name) {
+        repoLabel = `${integ.repo_full_name}@${integ.branch || 'main'}`;
+        try {
+          const token = await githubTokenForLobby(lobbyId, store);
+          const parsed = token ? (repoRef(integ.repo_full_name)) : null;
+          if (token && parsed) {
+            const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+            const client = new GitHubRepoClient(parsed.owner, parsed.repo, token);
+            const raw = await client.readFile('agent-os/planning.json', integ.branch || 'main');
+            const plan = JSON.parse(raw);
+            planningFound = true;
+            for (const p of (Array.isArray(plan?.phases) ? plan.phases : [])) {
+              const sprints = Array.isArray(p.sprints) ? p.sprints : [];
+              phases.push({
+                id: String(p.id ?? `phase-${phases.length + 1}`),
+                name: String(p.name ?? `Phase ${phases.length + 1}`),
+                sprintCount: sprints.length,
+                completedSprints: sprints.filter((s: any) => s?.status === 'complete').length,
+                status: p.status ?? 'planned',
+                tasks: sprints.map((s: any) => ({ id: String(s?.id ?? ''), name: String(s?.name ?? ''), status: s?.status ?? 'planned' })),
+              });
+            }
+          }
+        } catch { /* no planning.json yet — fall through with planningFound=false */ }
+      }
+
+      // Live coordination tasks — real work in flight, independent of the written plan.
+      const liveTasks = await store.listTasks(lobbyId);
+      if (liveTasks.length) {
+        const roster = await store.roster(lobbyId);
+        const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
+        const done = liveTasks.filter(t => t.status === 'completed').length;
+        phases.push({
+          id: 'live-tasks',
+          name: 'Lobby Tasks (live)',
+          sprintCount: liveTasks.length,
+          completedSprints: done,
+          status: done === liveTasks.length ? 'complete' : 'active',
+          tasks: liveTasks.map(t => ({ id: t.task_id, name: `${t.title} → ${nameOf(t.assigned_to)}`, status: t.status })),
+        });
+      }
+
+      return json({ phases, repo: repoLabel, planning_found: planningFound });
     }
 
     // GET /api/v1/agent-lobby/lobbies/:id/requests/pending
@@ -1681,31 +3310,27 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return json({ requests: pending });
     }
 
+    // GET /api/v1/agent-lobby/lobbies/:id/requests — ALL requests (pending + decided), newest first.
+    // The Requests tab shows a decided/history section like Tasks; the pending-only feed hid every
+    // request the moment the Boss approved/denied it, so processed hand-raises vanished.
+    const allRequestsMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/requests$/);
+    if (allRequestsMatch && req.method === 'GET') {
+      const lobbyId = allRequestsMatch[1];
+      const requests = (await store.listLobbyRequests(lobbyId))
+        .slice()
+        .sort((a, b) => String(b.created_at ?? '').localeCompare(String(a.created_at ?? '')));
+      return json({ requests });
+    }
+
     // POST /api/v1/agent-lobby/lobbies/:id/requests/:requestId/decide
     const decideRequestMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/requests\/([^/]+)\/decide$/);
     if (decideRequestMatch && req.method === 'POST') {
       const lobbyId = decideRequestMatch[1];
       const requestId = decideRequestMatch[2];
       const body = await readBody(req);
-      const request = await store.getLobbyRequest(lobbyId, requestId);
-      if (!request) return json({ error: 'request not found' }, 404);
-
-      const updated = await store.updateLobbyRequest(lobbyId, requestId, {
-        status: body.decision || 'approved',
-        decided_by: body.decided_by || 'panel',
-        decision_notes: body.decision_notes || '',
-        decided_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      });
-
+      const updated = await applyRequestDecision(lobbyId, requestId, body.decision || 'approved', body.decided_by || 'panel', body.decision_notes || '');
+      if (updated === 'not-found') return json({ error: 'request not found' }, 404);
       if (!updated) return json({ error: 'failed to update request' }, 500);
-
-      // Broadcast the decision to the lobby WebSocket
-      const out: LobbyToAgentMessage = { type: 'lobby-request-decided', request: updated };
-      for (const cid of lobbyConns.get(lobbyId) ?? []) {
-        send(cid, out);
-      }
-
       return json({ ok: true, request: updated });
     }
 
@@ -1716,7 +3341,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const provider = providerModelsMatch[2];
       const identityRef = sessionIdentity(lobbyId);
       if (!identityRef) return json({ error: 'authentication required' }, 401);
-      if (!(await isLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      if (!(await authorizeLobbyManager(store, lobbyId, identityRef))) return json({ error: 'not authorized to manage this lobby' }, 403);
 
       const resolved = await resolveProviderKey(store, lobbyId, provider).catch(() => null);
       if (!resolved || !resolved.apiKey) {
@@ -1976,6 +3601,35 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   if (autoDefault) await ensureDefaultLobby();
 
+  // ── Re-launch hosted agents that were running before this restart/deploy ──
+  // Hosted agents run in-process, so a restart (pm2 reload on deploy) stops them all. Their desired
+  // state is persisted (store.putHostedAgentSpec on launch); re-launch each on the same model. Runs
+  // after the store is loaded and the coordinator is wired; best-effort per agent.
+  void (async () => {
+    try {
+      const specs = await store.listAllHostedAgentSpecs();
+      if (specs.length === 0) return;
+      // The persisted boss_agent_id points at the PRE-restart (now-reaped) agent id — floor control
+      // would be dead. Clear the seat per lobby so the re-launched boss-role agent re-appoints itself
+      // (spawnHostedAgent auto-appoints only when the seat is empty). This is why the boss assignment
+      // was "forgotten after deploy".
+      for (const lobbyId of new Set(specs.map(s => s.lobby_id))) {
+        await store.updateLobby(lobbyId, { boss_agent_id: '' as any }).catch(() => {});
+      }
+      console.log(`[lobby-server] re-launching ${specs.length} hosted agent(s) from persisted specs`);
+      for (const spec of specs) {
+        try {
+          const id = await launchHostedAgentFromSpec(spec);
+          if (id) console.log(`[lobby-server] re-launched "${spec.agent_role || spec.name}" (${spec.model}) → ${id}`);
+        } catch (e) {
+          console.warn(`[lobby-server] failed to re-launch "${spec.agent_role || spec.name}":`, (e as Error)?.message ?? e);
+        }
+      }
+    } catch (e) {
+      console.warn('[lobby-server] hosted-agent re-launch sweep failed:', (e as Error)?.message ?? e);
+    }
+  })();
+
   // ── Stale-heartbeat sweeper ──
   const sweeper = setInterval(() => {
     void (async () => {
@@ -2006,6 +3660,51 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }, SWEEP_MS);
   if (typeof sweeper.unref === 'function') sweeper.unref();
 
+  // ── Self-learning: memory on task-PR merge ── Webhooks aren't wired, so poll the PRs the lobby
+  // opened for merges and record a memory for each newly-merged task. Idempotent per task
+  // (result_memory_written). Runs every 2 min, bounded per pass to protect the GitHub rate limit.
+  const memorySweep = setInterval(() => {
+    void (async () => {
+      try {
+        let budget = 8; // cap PR lookups per pass
+        for (const lobby of await store.listLobbies()) {
+          const integ = await store.getIntegration(lobby.lobby_id, 'github');
+          if (!integ || integ.status !== 'active' || !integ.repo_full_name) continue;
+          const token = await githubTokenForLobby(lobby.lobby_id, store);
+          const parsed = token ? repoRef(integ.repo_full_name) : null;
+          if (!parsed) continue;
+          const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+          const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, integ.branch || 'main');
+          const tasks = (await store.listTasks(lobby.lobby_id).catch(() => [] as LobbyTask[]))
+            .filter(t => t.result_pr_url && !t.result_memory_written);
+          for (const t of tasks) {
+            if (budget-- <= 0) return;
+            const num = prNumberFromUrl(t.result_pr_url);
+            if (!num) continue;
+            const pr = await client.getPullRequest(num).catch(() => null);
+            if (!pr) continue;
+            if (pr.merged) {
+              const agentDisplay = (await store.getAgent(lobby.lobby_id, t.assigned_to || '').catch(() => null))?.display_name || t.assigned_to || 'agent';
+              // Distill durable lessons with one LLM turn (best-effort — null if no provider key).
+              const lessons = await reflectOnMergedTask(lobby.lobby_id, t).catch(() => null);
+              const ok = await recordTaskMergeMemory(store, lobby.lobby_id, t, agentDisplay, pr, lessons);
+              if (ok) {
+                await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
+                await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', { task_id: t.task_id, pr: t.result_pr_url });
+              }
+            } else if (pr.state === 'closed') {
+              // Closed unmerged — nothing to learn; mark so we stop polling it.
+              await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
+            }
+          }
+        }
+      } catch (e) {
+        console.warn('[lobby-server] memory sweep failed:', (e as Error)?.message ?? e);
+      }
+    })();
+  }, 120_000);
+  if (typeof memorySweep.unref === 'function') memorySweep.unref();
+
   const port = options.port ?? DEFAULT_PORT;
   await new Promise<void>((resolve) => httpServer.listen(port, resolve));
 
@@ -2016,22 +3715,27 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     close: () =>
       new Promise<void>((resolve) => {
         clearInterval(sweeper);
+        clearInterval(memorySweep);
         for (const s of sockets.values()) s.terminate();
         wss.close(() => httpServer.close(() => resolve()));
       }),
   };
 }
 
-const MAX_BODY_BYTES = 1_048_576; // 1 MiB — no lobby control-plane payload is legitimately larger
+const MAX_BODY_BYTES = 1_048_576; // 1 MiB — control-plane default; uploads pass their own limit
+// KB uploads carry base64 file content (~33% inflation) — a 25 MiB body ≈ an 18 MB document.
+const MAX_UPLOAD_BODY_BYTES = 25 * 1_048_576;
 
-async function readBody(req: IncomingMessage): Promise<Record<string, any>> {
+async function readBody(req: IncomingMessage, maxBytes = MAX_BODY_BYTES): Promise<Record<string, any>> {
   const chunks: Buffer[] = [];
   let total = 0;
   for await (const c of req) {
     total += (c as Buffer).length;
-    if (total > MAX_BODY_BYTES) {
+    if (total > maxBytes) {
       req.destroy();
-      return {};
+      // Marker instead of a silent {} — routes with large payloads (KB upload) answer 413 with a
+      // real message; the old destroy-and-{} path surfaced as "unknown error" in the panel.
+      return { __body_too_large: true };
     }
     chunks.push(c as Buffer);
   }

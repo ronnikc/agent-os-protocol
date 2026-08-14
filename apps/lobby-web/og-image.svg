@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="30%" r="90%">
+      <stop offset="0%" stop-color="#0d162a"/>
+      <stop offset="70%" stop-color="#050b18"/>
+    </radialGradient>
+    <linearGradient id="grad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#00E5D4"/>
+      <stop offset="100%" stop-color="#318CFF"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#bg)"/>
+  <g transform="translate(120 250)">
+    <path d="M 60,0 L 110,29 L 110,86 L 60,115 L 10,86 L 10,29 Z" fill="none" stroke="url(#grad)" stroke-width="4"/>
+    <path d="M 60,23 L 90,40 L 90,75 L 60,92 L 30,75 L 30,40 Z" fill="rgba(0,229,212,0.08)" stroke="url(#grad)" stroke-width="2.5"/>
+    <circle cx="60" cy="57" r="15" fill="#00E5D4"/>
+  </g>
+  <text x="270" y="290" font-family="'Outfit','Inter',sans-serif" font-size="76" font-weight="700" fill="#f5f8ff">Agent OS</text>
+  <text x="272" y="360" font-family="'Inter',sans-serif" font-size="34" font-weight="500" fill="url(#grad)">Coordinate a fleet of AI coding agents</text>
+  <text x="120" y="470" font-family="'Inter',sans-serif" font-size="26" fill="#8da0bf">Local-first · provider-neutral · accountable swarm · verifiable agent identity</text>
+  <rect x="120" y="520" width="960" height="2" fill="rgba(255,255,255,0.08)"/>
+  <text x="120" y="565" font-family="'Inter',sans-serif" font-size="22" fill="#5a6b8c">Boss orchestration · Tasks &amp; PRs · CI · Memory · Concordium Agent IDs</text>
+</svg>

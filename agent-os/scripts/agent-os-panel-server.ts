@@ -2127,6 +2127,16 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  // Messages attachment upload → KB + a chat message (optionally task-linked), for local-panel swarm mode.
+  if (path === '/api/lobby/remote/messages/upload' && method === 'POST') {
+    const lobbyId = await resolveLobbyId(req);
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const body = await parseBody(req);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/messages/upload`, 'POST', JSON.stringify(body), reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
   if (path === '/api/lobby/remote/agents' && method === 'GET') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId && stagingAgentRoster.size === 0) {
