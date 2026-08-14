@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm, signInToLobby } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
