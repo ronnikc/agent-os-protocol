@@ -30,6 +30,9 @@ Keep three independent trust decisions:
 - The scheme uses `ccd:9dd9ca4d19e9393877d2c44b70f89acb` on mainnet and `ccd:4221332d34e1694168c2a0c0b3fd0f27` on testnet. Native CCD uses six decimals. Read PLT decimals from the chain. Verify the selected facilitator's supported assets and sponsor address rather than assuming the upstream package defaults match a deployment.
 - Current code already signs wallet login challenges in the panel and resolves CIS-8004 records in `packages/lobby-server/src/hosted/registry-roster-verifier.ts`. Marketplace authorizations in the lobby UI are wallet-signed messages. They do not sign or settle an x402 transaction.
 
+- The mainnet MCP builder returned 122 bytes for a payment-wallet binding. The published CIS-8004 message is 162 bytes and includes the current owner and wallet-set nonce. Do not use either layout for production signatures until the deployed contract and SDK path are verified against each other.
+- The commerce transport is exercised by `npm run verify-commerce`. It rejects unapproved quotes, requests proof before signing when required, uses the official Concordium exact client to build a sponsored CCD transaction in a fixture, and leaves unknown settlements unresolved. Runtime integration, real credentials, on-chain settlement, and durable reservations remain release gates.
+
 ## Product and security decisions
 
 - Reuse the existing Concordium panel sign-in and registry verifier. Account connection is not account creation. Lead with **Connect an existing account** and **Create in Concordium Wallet**, then return to select the new address. The Wallet SDK can deploy a credential only with the required identity material. Treat embedded account creation as a separate capability that stays off unless the wallet can provide an authorized flow without exposing the owner's seed or identity secrets to Agent OS.
