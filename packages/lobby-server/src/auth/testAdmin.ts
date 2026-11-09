@@ -4,17 +4,19 @@
 import { createHash, timingSafeEqual } from 'node:crypto';
 import type { LobbySession } from '@agent-os/protocol-core';
 import type { LobbyStore } from '../store.js';
-import { issueSessionToken, testAdminKeyDigest, TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID } from './identityProof.js';
+import { issueSessionToken, liveTestAdminConfig, testAdminKeyDigest, TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID } from './identityProof.js';
 
 export async function signInTestAdmin(store: LobbyStore, key: unknown) {
-  const digest = testAdminKeyDigest();
+  const live = liveTestAdminConfig();
+  const digest = live?.digest ?? testAdminKeyDigest();
   if (!digest) return { status: 404 } as const;
   if (typeof key !== 'string' || key.length < 32 || key.length > 256 ||
       !timingSafeEqual(createHash('sha256').update(key).digest(), Buffer.from(digest, 'hex'))) {
     return { status: 401 } as const;
   }
 
-  let lobby = await store.getLobby(TEST_ADMIN_LOBBY_ID);
+  let lobby = await store.getLobby(live?.lobbyId ?? TEST_ADMIN_LOBBY_ID);
+  if (live && !lobby) return { status: 404 } as const;
   if (!lobby) {
     const now = new Date().toISOString();
     const testLobby: LobbySession = {
@@ -32,7 +34,7 @@ export async function signInTestAdmin(store: LobbyStore, key: unknown) {
     };
     lobby = await store.createLobby(testLobby, false);
   }
-  if (lobby.created_by !== TEST_ADMIN_IDENTITY || lobby.visibility !== 'private') return { status: 409 } as const;
+  if (!live && (lobby.created_by !== TEST_ADMIN_IDENTITY || lobby.visibility !== 'private')) return { status: 409 } as const;
 
   return {
     status: 200,

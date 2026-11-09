@@ -11,7 +11,7 @@
 import type { LobbyStore } from '../store.js';
 import type { LobbySession } from '@agent-os/protocol-core';
 import { randomUUID } from 'node:crypto';
-import { isProduction } from './identityProof.js';
+import { isProduction, liveTestAdminConfig, TEST_ADMIN_IDENTITY } from './identityProof.js';
 
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 
@@ -35,6 +35,7 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
   const member = await store.getMember(lobbyId, identityRef);
   if (member && (member.status === 'revoked' ||
       (member.expires_at && Date.parse(member.expires_at) <= Date.now()))) return false;
+  if (lobby && identityRef === TEST_ADMIN_IDENTITY && liveTestAdminConfig()?.lobbyId === lobbyId) return true;
 
   const owner = lobbyOwnerRef(lobby);
   if (owner && owner === identityRef) return true;
