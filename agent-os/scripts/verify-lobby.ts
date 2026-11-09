@@ -533,7 +533,7 @@ async function main(): Promise<void> {
 
     await check('live test admin can send commands only in the configured lobby before expiry', async () => {
       const lobby = { ...makeLobby('public'), created_by: 'live-qa-owner' };
-      const other = { ...makeLobby('public'), created_by: 'other-qa-owner' };
+      const other = { ...makeLobby('private'), created_by: 'other-qa-owner' };
       await server.store.createLobby(lobby);
       await server.store.createLobby(other);
       const key = randomBytes(32).toString('hex');
@@ -560,9 +560,26 @@ async function main(): Promise<void> {
         assert.equal(allowed.status, 201);
         assert.equal((await allowed.json()).message.from_agent_id, 'LobbyOwner');
         assert.equal((await server.store.getLobby(lobby.lobby_id))?.created_by, lobby.created_by);
-        process.env.AGENT_OS_LIVE_TEST_ADMIN = `${lobby.lobby_id}:${digest}:${Date.now() - 1}`;
+        process.env.AGENT_OS_LIVE_TEST_ADMIN = `all:${digest}:${Date.now() + 60_000}`;
+        const privateLogin = await post('/auth/test-admin', { key, lobby_id: other.lobby_id });
+        assert.equal(privateLogin.status, 200);
+        const privateSession = await privateLogin.json();
+        assert.ok(privateSession.lobbies.some((entry: LobbySession) => entry.lobby_id === other.lobby_id));
+        assert.equal((await send(other, privateSession.token)).status, 201);
+        assert.equal((await send(lobby, privateSession.token)).status, 401);
+        const operator = new LobbyClient({
+          lobbyUrl, lobbyId: other.lobby_id, reconnect: false, heartbeatMs: 0,
+          register: { type: 'lobby-register', display_name: 'QA operator', participant_type: 'human', join_token: privateSession.token },
+        });
+        clients.push(operator);
+        const joined = waitForMessage(operator, message => message.type === 'lobby-registered');
+        await operator.connect();
+        await joined;
+        operator.close();
+        process.env.AGENT_OS_LIVE_TEST_ADMIN = `all:${digest}:${Date.now() - 1}`;
         assert.equal((await post('/auth/test-admin', { key })).status, 404);
         assert.equal((await send(lobby, token)).status, 401);
+        assert.equal((await send(other, privateSession.token)).status, 401);
       } finally {
         if (oldMode === undefined) delete process.env.NODE_ENV;
         else process.env.NODE_ENV = oldMode;

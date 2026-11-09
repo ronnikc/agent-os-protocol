@@ -99,7 +99,7 @@ jobs:
         env:
           LIVE_TEST_ADMIN: ${{ secrets.AGENT_OS_LIVE_TEST_ADMIN }}
         run: |
-          if [[ -n "$LIVE_TEST_ADMIN" && ! "$LIVE_TEST_ADMIN" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}:[0-9a-f]{64}:[0-9]{13}$ ]]; then
+          if [[ -n "$LIVE_TEST_ADMIN" && ! "$LIVE_TEST_ADMIN" =~ ^(all|[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}):[0-9a-f]{64}:[0-9]{13}$ ]]; then
             echo "Invalid live test-admin configuration" >&2
             exit 1
           fi

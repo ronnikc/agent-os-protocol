@@ -330,6 +330,23 @@ async function main(): Promise<void> {
     await r.stop();
   });
 
+  await check('a task reserves the hosted runner while its repository branch is prepared', async () => {
+    const runner = mkRunner(sseFetch(['task result']));
+    const preparation = Promise.withResolvers<void>();
+    const preparing = Promise.withResolvers<void>();
+    const task = runner.runTask(async respond => {
+      preparing.resolve();
+      await preparation.promise;
+      assert.equal(await respond('execute assigned task'), 'task result');
+    });
+    await preparing.promise;
+    assert.equal(await runner.respondTo('observe boss broadcast'), '');
+    preparation.resolve();
+    await task;
+    assert.equal(await runner.respondTo('ordinary chat after task'), 'task result');
+    await runner.stop();
+  });
+
   await check('hosted runner surfaces a provider error as a ⚠ reply, not a throw', async () => {
     const r = mkRunner(sseFetch([], 500));
     const reply = await r.respondTo('go');

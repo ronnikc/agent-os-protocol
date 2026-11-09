@@ -34,7 +34,7 @@ import type {
 import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
 import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
-import { isProduction, validateSessionToken, liveTestAdminConfig, testAdminKeyDigest, TEST_ADMIN_IDENTITY, type SessionTokenPayload } from './auth/identityProof.js';
+import { isProduction, validateSessionToken, liveTestAdminAllowsLobby, testAdminKeyDigest, TEST_ADMIN_IDENTITY, type SessionTokenPayload } from './auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef } from './auth/lobbyAuthz.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 
@@ -140,7 +140,7 @@ export class LobbyCoordinator {
       const lobby = await this.store.getLobby(conn.lobbyId);
       if (!conn.agentId || lobby?.status !== 'active') return { out: [], close: true };
       if (conn.session?.identityRef === TEST_ADMIN_IDENTITY &&
-          ((!testAdminKeyDigest() && liveTestAdminConfig()?.lobbyId !== conn.lobbyId) ||
+          ((!testAdminKeyDigest() && !liveTestAdminAllowsLobby(conn.lobbyId)) ||
             conn.session.expiresAt <= Date.now())) return { out: [], close: true };
       if (isProduction() && !conn.trusted && msg.type !== 'lobby-heartbeat' &&
           (!conn.session || conn.session.expiresAt <= Date.now())) {
@@ -261,9 +261,12 @@ export class LobbyCoordinator {
     const registryRef = msg.join_token?.startsWith('did:ccd:') ? msg.join_token : undefined;
     let presentedRef = msg.agent_identity_ref ?? session?.identityRef ?? registryRef;
     let isTokenVerified = false;
+    const liveOperator = session?.identityRef === TEST_ADMIN_IDENTITY && msg.participant_type === 'human' &&
+      !msg.agent_identity_ref && await isLobbyManager(this.store, conn.lobbyId, TEST_ADMIN_IDENTITY) &&
+      liveTestAdminAllowsLobby(conn.lobbyId);
 
     // Enforce private lobby signature-token check
-    if (lobby.visibility === 'private') {
+    if (lobby.visibility === 'private' && !liveOperator) {
       const trustedDid = conn.trusted && msg.join_token?.startsWith('did:ccd:');
       if (!trustedDid) {
         const joinResult = await verifyLobbyJoinPolicy(conn.lobbyId, msg.join_token, this.store, msg.agent_identity_ref);
@@ -278,6 +281,7 @@ export class LobbyCoordinator {
         isTokenVerified = !msg.agent_identity_ref;
       }
     }
+    if (liveOperator) isTokenVerified = true;
 
     if (!isTokenVerified) {
       // ── Private-lobby access ladder (Phase 8): none → registered → allowlisted → verified_human_link.
