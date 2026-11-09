@@ -375,6 +375,7 @@ export class LobbyCoordinator {
       runtime: msg.runtime,
       ...(verification ? { identity_status: verification.status } : {}),
       ...(verification?.registryLinks ? { identity_registry_links: verification.registryLinks } : {}),
+      ...(msg.execution_enabled === false ? { execution_enabled: false } : {}),
       ...(presentedRef ? { identity_ref: verification?.ref?.did ?? presentedRef } : {}),
     };
     await this.store.addAgent(conn.lobbyId, agent);
