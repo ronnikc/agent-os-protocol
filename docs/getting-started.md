@@ -126,8 +126,9 @@ sessions. The local test-admin setting is ignored in production.
 
 For a temporary live QA session, set the deployment secret `AGENT_OS_LIVE_TEST_ADMIN` to
 `lobby-uuid:sha256-of-random-32-byte-key:expiry-unix-milliseconds`. Use an existing test lobby
-and a deadline within 24 hours. The same sign-in form issues a session for that one lobby,
-expiring at the deadline or after one hour, whichever comes first. Delete the secret and
+and a deadline within 24 hours. Use `all` in place of the lobby UUID to let the operator
+select any existing lobby from the hosted or connected localhost panel. Sign-in issues a
+session for the selected lobby, expiring at the deadline or after one hour, whichever comes first. Delete the secret and
 redeploy to disable access immediately. Keep the original key outside the repository.
 
 ## Verify your install
