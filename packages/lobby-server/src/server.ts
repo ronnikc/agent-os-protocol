@@ -808,7 +808,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     let roster: Awaited<ReturnType<typeof store.roster>> = [];
     let senderIsHuman = false;
     try {
-      roster = await store.roster(conn.lobbyId);
+      roster = (await store.roster(conn.lobbyId)).filter(agent => agentConn.has(agent.agent_id));
       const senderAgent = roster.find(a => a.agent_id === m.from_agent_id);
       // Human = a roster human participant, OR a sender that is NOT in the roster at all. The web
       // UI posts chat over HTTP with from_agent_id 'WebUser' (or a display name), and that endpoint
@@ -1151,7 +1151,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const connRef: { conn?: Connection } = {};
     const lobbyTools: LobbyToolsProvider = {
       async getRoster(): Promise<string> {
-        return describeLiveRoster(await store.roster(params.lobbyId), connRef.conn?.agentId);
+        const roster = await store.roster(params.lobbyId);
+        return describeLiveRoster(roster.filter(agent => agentConn.has(agent.agent_id)), connRef.conn?.agentId);
       },
       async sendMessage(toAgentId: string, content: string): Promise<string> {
         if (!connRef.conn) return 'Error: agent not yet registered in lobby.';
@@ -2961,7 +2962,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (lobbyMatch && req.method === 'GET') {
       const lobbyId = lobbyMatch[1];
       const sub = lobbyMatch[3];
-      if (sub === 'roster') return json({ agents: await store.roster(lobbyId) });
+      if (sub === 'roster') {
+        const roster = await store.roster(lobbyId);
+        return json({ agents: roster.filter(agent => agentConn.has(agent.agent_id)) });
+      }
       if (sub === 'events') return json({ events: await store.listEvents(lobbyId) });
       if (sub === 'messages') return json({ messages: await store.listMessages(lobbyId) });
       if (sub === 'members') {
