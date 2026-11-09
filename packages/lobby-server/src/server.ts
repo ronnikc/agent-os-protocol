@@ -25,6 +25,7 @@ import { InMemoryLobbyStore, type LobbyStore, type HostedAgentSpec, type LobbyWo
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
 import { RegistryMcpClient, REGISTRY_TOOL_ALLOWLIST } from './registry-mcp.js';
+import { createRegistryRosterVerifier } from './hosted/registry-roster-verifier.js';
 import { RegistrySponsorClient, DEFAULT_SPONSOR_URL } from './registry-sponsor.js';
 import { githubAppConfig, getInstallationToken, installUrl, listAppInstallations } from './integrations/github/appAuth.js';
 import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integrations/github/repoClient.js';
@@ -383,7 +384,6 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     : undefined;
   // Auto-failover: opt-in appointment of a successor Boss on Boss loss (unattended swarms).
   const autoFailover = (process.env.AGENT_OS_LOBBY_AUTO_FAILOVER ?? '').toLowerCase() === 'true';
-  const coordinator = options.coordinator ?? new LobbyCoordinator(store, { verifyIdentity, autoFailover });
   const autoDefault = options.autoDefaultLobby ?? true;
 
   // Stale-heartbeat reaping: agents that stop heartbeating (freeze, SIGKILL, network partition)
@@ -416,6 +416,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       console.log(`[lobby-server] Loaded ${agentCards.size} agent cards from disk`);
     }
   } catch (e) { console.warn('[lobby-server] Could not load agent cards file:', e); }
+
+  const cardOrigin = process.env.AGENT_OS_AGENT_CARD_ORIGIN;
+  const verifyHostedRosterIdentity = !verifyIdentity && registryMcp && cardOrigin
+    ? createRegistryRosterVerifier(registryMcp, cardOrigin, (did) => agentCards.get(did))
+    : undefined;
+  const coordinator = options.coordinator ?? new LobbyCoordinator(store, {
+    verifyIdentity, verifyHostedRosterIdentity, autoFailover,
+  });
+  const verificationSource = indexerUrl ? 'http-indexer' : verifyHostedRosterIdentity ? 'registry-mcp' : 'none';
 
   function persistCards() {
     const obj: Record<string, unknown> = {};
@@ -2691,13 +2700,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     // GET /api/v1/agent-lobby/registry/status
     if (path === '/api/v1/agent-lobby/registry/status' && req.method === 'GET') {
-      if (!registryMcp) return json({ configured: false });
+      if (!registryMcp) return json({ configured: false, verificationSource });
       const network = url.searchParams.get('network') ?? 'mainnet';
       try {
         const capabilities = await registryMcp.callTool('agent_registry_capabilities', { network });
-        return json({ configured: true, network, capabilities, sponsored: Boolean(registrySponsor) });
+        return json({ configured: true, network, capabilities, sponsored: Boolean(registrySponsor), verificationSource });
       } catch (e) {
-        return json({ configured: true, network, sponsored: Boolean(registrySponsor), error: String((e as Error).message ?? e) }, 502);
+        return json({ configured: true, network, sponsored: Boolean(registrySponsor), verificationSource, error: String((e as Error).message ?? e) }, 502);
       }
     }
 

@@ -21,6 +21,7 @@ import type { AgentToLobbyMessage, LobbyToAgentMessage, LobbySession } from '@ag
 import { InMemoryLobbyStore, LobbyCoordinator, startLobbyServer, RegistrySponsorClient, type Connection } from '@agent-os/lobby-server';
 import { LobbyClient } from '@agent-os/lobby-client';
 import { issueSessionToken } from '../../packages/lobby-server/src/auth/identityProof.js';
+import { createRegistryRosterVerifier } from '../../packages/lobby-server/src/hosted/registry-roster-verifier.js';
 import { WebSocket } from 'ws';
 
 let passed = 0;
@@ -186,6 +187,43 @@ async function main(): Promise<void> {
     const joined = find(int.out, 'lobby-agent-joined');
     assert.equal(joined?.agent?.identity_status, 'registry_verified', 'roster reflects the verified identity');
     assert.equal(joined?.agent?.identity_ref, DID, 'identity_ref bound on the roster record');
+  });
+
+  await check('hosted roster badges require an active registry record and the exact hosted card hash', async () => {
+    const origin = 'https://lobby.example.test';
+    const did = 'did:ccd:mainnet:agent-fixture';
+    const card = { did, network: 'mainnet', ownerAddress: 'fixture-owner', name: 'Original' };
+    const record = {
+      network: 'mainnet', owner_account: card.ownerAddress, status: 'Active',
+      agent_uri: `http://lobby.example.test/agent-cards/${encodeURIComponent(did)}`,
+      metadata_hash_hex: createHash('sha256').update(JSON.stringify(card)).digest('hex'),
+    };
+    let queries = 0;
+    const verify = createRegistryRosterVerifier({
+      async callTool(name, args) {
+        assert.equal(name, 'agents_by_owner');
+        assert.equal(args.owner_account, card.ownerAddress);
+        queries++;
+        return { agents: [record] };
+      },
+    }, origin, () => card);
+    const { store, lobbyId } = await unitSetup();
+    const coord = new LobbyCoordinator(store, { verifyHostedRosterIdentity: verify });
+    const message = { type: 'lobby-register', display_name: 'fixture', join_token: did } as const;
+    const connection = () => ({ connId: randomUUID(), lobbyId, orgId: 'default' });
+    const hosted = await coord.handle({ ...connection(), trusted: true }, message);
+    assert.equal(find(hosted.out, 'lobby-agent-joined')?.agent.identity_status, 'registry_verified');
+    const external = await coord.handle(connection(), message);
+    assert.equal(find(external.out, 'lobby-agent-joined')?.agent.identity_status, 'unverified');
+    card.name = 'Modified';
+    assert.equal((await verify(did)).status, 'unverified');
+    card.name = 'Original';
+    record.status = 'Revoked';
+    assert.equal((await verify(did)).status, 'unverified');
+    record.status = 'Active';
+    record.agent_uri = record.agent_uri.replace('lobby.example.test', 'another.example.test');
+    assert.equal((await verify(did)).status, 'unverified');
+    assert.equal(queries, 1);
   });
 
   await check('FLOOR CONTROL: a non-boss broadcast is rejected (anti echo-cascade)', async () => {
