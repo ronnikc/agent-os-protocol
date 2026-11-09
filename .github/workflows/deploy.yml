@@ -4,9 +4,8 @@
 # Deploy the sites over SSH.
 #
 # Both sites deploy the SAME way — the server keeps a git checkout, and each deploy is
-# `git fetch && reset --hard origin/main && npm ci && pm2 restart`. Both run under pm2,
-# fully userspace — NO sudo / systemd / root needed at any point. The repo is public, so
-# no git credentials are needed on the box. See deploy/ecosystem.config.cjs.
+# `git fetch && reset --hard <verified revision> && npm ci && pm2 restart`. Both run under
+# pm2. The deploy checkouts need read access to the Git remote. See deploy/ecosystem.config.cjs.
 #
 # Website — the server keeps a git checkout at SSH_PATH_WEBSITE; the Node server
 # (apps/website/server.ts) serves the static SPA on 127.0.0.1:4802 (Apache proxies to it,
@@ -37,11 +36,15 @@ on:
     paths:
       - "apps/website/**"
       - "apps/lobby-web/**"
+      - "agent-os-panel/**"
+      - "agent-os/**"
       - "packages/**"
       - "package.json"
       - "package-lock.json"
       - "deploy/**"
+      - "tsconfig*.json"
       - ".github/workflows/deploy.yml"
+      - ".github/workflows/verify.yml"
   workflow_dispatch:
 
 concurrency:
@@ -49,7 +52,11 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  verify:
+    uses: ./.github/workflows/verify.yml
+
   deploy:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -66,7 +73,7 @@ jobs:
       - name: Deploy website (Node server)
         run: |
           SSH="ssh -i ~/.ssh/website_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER_WEBSITE }}@${{ secrets.SSH_HOST }}"
-          # The server keeps a git checkout at SSH_PATH_WEBSITE (public repo, no creds).
+          # The server keeps a git checkout at SSH_PATH_WEBSITE.
           # Pull the pushed commit, install deps, restart under pm2, verify health.
           # Fully userspace — NO sudo. nvm is sourced because a non-interactive SSH shell
           # doesn't load it, so node/npm/pm2 wouldn't be on PATH otherwise.
@@ -75,12 +82,12 @@ jobs:
           $SSH "set -e; \
             export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; \
             cd '${{ secrets.SSH_PATH_WEBSITE }}'; \
-            git fetch --depth 1 origin main; \
-            git reset --hard origin/main; \
+            git fetch --depth 1 origin ${{ github.sha }}; \
+            git reset --hard ${{ github.sha }}; \
             npm ci; \
-            pm2 startOrReload deploy/ecosystem.config.cjs --only website --update-env; \
+            AGENT_OS_REVISION=${{ github.sha }} pm2 startOrReload deploy/ecosystem.config.cjs --only website --update-env; \
             pm2 save; \
-            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4802/ >/dev/null && exit 0; sleep 2; done; \
+            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4802/health | grep -q '${{ github.sha }}' && exit 0; sleep 2; done; \
             echo 'health check failed' >&2; exit 1"
 
       # NOTE: no separate rsync for apps/lobby-web. The git checkout below already
@@ -91,7 +98,7 @@ jobs:
       - name: Deploy lobby backend (Node server)
         run: |
           SSH="ssh -i ~/.ssh/lobby_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER_LOBBY }}@${{ secrets.SSH_HOST }}"
-          # The server keeps a git checkout at SSH_PATH_LOBBY (public repo, no creds).
+          # The server keeps a git checkout at SSH_PATH_LOBBY.
           # Pull the pushed commit, install deps, restart under pm2, verify health.
           # Fully userspace — NO sudo. nvm is sourced because a non-interactive SSH shell
           # doesn't load it, so node/npm/pm2 wouldn't be on PATH otherwise.
@@ -100,12 +107,12 @@ jobs:
           $SSH "set -e; \
             export NVM_DIR=\"\$HOME/.nvm\"; [ -s \"\$NVM_DIR/nvm.sh\" ] && . \"\$NVM_DIR/nvm.sh\"; \
             cd '${{ secrets.SSH_PATH_LOBBY }}'; \
-            git fetch --depth 1 origin main; \
-            git reset --hard origin/main; \
+            git fetch --depth 1 origin ${{ github.sha }}; \
+            git reset --hard ${{ github.sha }}; \
             npm ci; \
-            pm2 startOrReload deploy/ecosystem.config.cjs --only lobby-server --update-env; \
+            AGENT_OS_REVISION=${{ github.sha }} pm2 startOrReload deploy/ecosystem.config.cjs --only lobby-server --update-env; \
             pm2 save; \
-            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4730/health && exit 0; sleep 2; done; \
+            for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4730/health | grep -q '${{ github.sha }}' && exit 0; sleep 2; done; \
             echo 'health check failed' >&2; exit 1"
 
       - name: Clean up SSH keys

@@ -227,8 +227,10 @@ export type AgentToLobbyMessage =
       pid?: number;
       relay_port?: number;
       agent_role?: string;
-      /** Optional join token for a private lobby — matched against the lobby allowlist. */
+      /** Lobby-scoped session token. Hosted agents may present a server-bound registry reference. */
       join_token?: string;
+      /** Agent DID presented alongside an external wallet session. */
+      agent_identity_ref?: string;
       /** Marks a browser human participant (exempt from floor control). Defaults to cli_agent. */
       participant_type?: LobbyParticipantType;
       /** API / Model used by the agent. */
@@ -472,6 +474,8 @@ export type LobbyEventType =
   | 'agent_card_published' // agent card metadata published for hosting
   | 'member_invited' // a member was invited to the lobby (management view)
   | 'member_revoked' // a member's access was revoked / kicked
+  | 'member_status_updated'
+  | 'lobby_owner_bound'
   | 'lobby_settings_updated' // visibility / join policy / allowlist changed
   | 'provider_key_configured' // Hosted Mode: a model-provider API key was set (lobby or agent scope)
   | 'provider_key_revoked' // Hosted Mode: a stored provider key was revoked
@@ -482,7 +486,13 @@ export type LobbyEventType =
   | 'github_repo_selected' // Hosted Mode: the working repo/branch was chosen
   | 'scheduled_tasks_configured' // Hosted Mode: daily scheduled tasks configured
   | 'repo_initialized' // Hosted Mode: the Agent OS structure was seeded into the connected repo
-  | 'github_disconnected'; // Hosted Mode: the GitHub integration was revoked
+  | 'github_disconnected' // Hosted Mode: the GitHub integration was revoked
+  | `${'slack' | 'discord' | 'telegram' | 'supabase' | 'dreambase'}_${'connected' | 'revoked'}`
+  | 'vercel_scaffolded'
+  | 'ci_scaffolded'
+  | 'supabase_scaffolded'
+  | 'message_attachment_uploaded'
+  | 'self_learning_memory';
 
 /** One append-only entry in a lobby's event log. */
 export interface LobbyEvent {

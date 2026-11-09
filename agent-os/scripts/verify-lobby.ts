@@ -16,10 +16,12 @@
  */
 
 import assert from 'node:assert/strict';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import type { AgentToLobbyMessage, LobbyToAgentMessage, LobbySession } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, LobbyCoordinator, startLobbyServer, RegistrySponsorClient, type Connection } from '@agent-os/lobby-server';
 import { LobbyClient } from '@agent-os/lobby-client';
+import { issueSessionToken } from '../../packages/lobby-server/src/auth/identityProof.js';
+import { WebSocket } from 'ws';
 
 let passed = 0;
 const failures: string[] = [];
@@ -158,6 +160,24 @@ async function main(): Promise<void> {
     assert.ok(find(ext.out, 'lobby-error'), 'external bare-DID registration is denied');
     assert.ok(ext.close, 'connection is closed on denial');
 
+    const signedConn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default' };
+    const signed = await coord.handle(signedConn, {
+      type: 'lobby-register',
+      display_name: 'signed local agent',
+      agent_identity_ref: DID,
+      join_token: issueSessionToken('did:ccd:mainnet:3verifiedacct', lobby.lobby_id),
+    });
+    assert.equal(find(signed.out, 'lobby-agent-joined')?.agent.identity_status, 'registry_verified');
+
+    const wrongConn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default' };
+    const wrong = await coord.handle(wrongConn, {
+      type: 'lobby-register',
+      display_name: 'different wallet',
+      agent_identity_ref: DID,
+      join_token: issueSessionToken('did:ccd:mainnet:wrong-wallet', lobby.lobby_id),
+    });
+    assert.ok(wrong.close, 'another wallet cannot use the agent DID');
+
     // A trusted internal connection (a hosted agent on a virtual socket, spawned by the already
     // authenticated LobbyOwner) presenting the same DID is admitted AND gets the verified badge.
     const intConn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default', trusted: true };
@@ -174,6 +194,29 @@ async function main(): Promise<void> {
     const r = await coord.handle(conn, { type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'everyone hi' });
     assert.deepEqual(types(r.out), ['lobby-error']);
     assert.match(find(r.out, 'lobby-error')?.error ?? '', /floor control/i);
+  });
+
+  await check('production public guests can observe but cannot speak or appoint a Boss', async () => {
+    const previous = process.env.NODE_ENV;
+    process.env.NODE_ENV = 'production';
+    try {
+      const { store, coord, lobbyId } = await unitSetup();
+      const owner = 'fixture-wallet';
+      await store.updateLobby(lobbyId, { created_by: owner });
+      const guest = await register(coord, lobbyId, 'guest', {}, true);
+      assert.ok(guest.conn.agentId, 'guest can observe');
+      assert.equal(guest.conn.isHuman, false, 'a guest cannot claim human privileges');
+      const guestAppointment = await coord.handle(guest.conn, { type: 'lobby-boss-appoint', agent_id: guest.conn.agentId });
+      assert.match(find(guestAppointment.out, 'lobby-error')?.error ?? '', /wallet session/);
+      const guestChat = await coord.handle(guest.conn, { type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'dispatch' });
+      assert.match(find(guestChat.out, 'lobby-error')?.error ?? '', /wallet session/);
+      const signed = await register(coord, lobbyId, 'owner', { join_token: issueSessionToken(owner, lobbyId) }, true);
+      const appointment = await coord.handle(signed.conn, { type: 'lobby-boss-appoint', agent_id: signed.conn.agentId! });
+      assert.ok(find(appointment.out, 'lobby-boss-appointed'));
+    } finally {
+      if (previous === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = previous;
+    }
   });
 
   await check('the Boss may broadcast; fan-out is lobby-scoped', async () => {
@@ -234,7 +277,8 @@ async function main(): Promise<void> {
     const denied = await register(coord, lobbyId, 'intruder');
     assert.equal(denied.r.close, true);
     assert.deepEqual(types(denied.r.out), ['lobby-error']);
-    const admitted = await register(coord, lobbyId, 'frontend');
+    assert.equal((await register(coord, lobbyId, 'frontend')).r.close, true, 'display name is not proof');
+    const admitted = await register(coord, lobbyId, 'frontend', { join_token: issueSessionToken('frontend', lobbyId) });
     assert.ok(!admitted.r.close);
     assert.ok(types(admitted.r.out).includes('lobby-registered'));
   });
@@ -317,6 +361,115 @@ async function main(): Promise<void> {
       a.send({ type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'lobby1 only' });
       await sleep(400);
       assert.equal(leaked, false, 'lobby 2 must not receive lobby 1 traffic');
+    });
+
+    await check('private lobby management requires proof, and revocation and closure disconnect agents', async () => {
+      const owner = 'test-owner';
+      const member = 'test-member';
+      const lobby = { ...makeLobby('private'), created_by: owner };
+      await server.store.createLobby(lobby);
+      const path = `${lobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}`;
+      const request = (suffix: string, method = 'GET', identity?: string, body?: unknown) => fetch(path + suffix, {
+        method,
+        headers: {
+          'content-type': 'application/json',
+          ...(identity ? { authorization: `Bearer ${issueSessionToken(identity, lobby.lobby_id)}` } : {}),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      assert.equal((await request('', 'PATCH', undefined, { status: 'closed' })).status, 401);
+      assert.equal((await request('/members', 'POST', undefined, { identity_ref: member, role: 'admin' })).status, 401);
+      assert.equal((await request('/events', 'GET', member)).status, 403);
+      for (const route of ['/members', '/roster', '/messages', '/events', '/tasks', '/integrations/github']) {
+        assert.equal((await request(route)).status, 401, route);
+      }
+      const invited = await request('/members', 'POST', owner, { identity_ref: member, role: 'contributor' });
+      assert.equal(invited.status, 201);
+      const { member: record } = await invited.json();
+      const status = `/members/${record.id}/status`;
+      assert.equal((await request(status, 'POST', owner, { status: 'active' })).status, 200);
+      assert.equal((await request('/messages', 'GET', member)).status, 200);
+      assert.equal((await request('', 'PATCH', member, { status: 'closed' })).status, 403);
+
+      const wsUrl = new URL('/api/v1/agent-lobby/ws/agent', lobbyUrl.replace(/^http/, 'ws'));
+      wsUrl.searchParams.set('lobby_id', lobby.lobby_id);
+      const socket = new WebSocket(wsUrl);
+      try {
+        const registered = new Promise<void>((resolve, reject) => {
+          socket.on('error', reject);
+          socket.on('message', (data) => {
+            const frame = JSON.parse(data.toString());
+            if (frame.type === 'lobby-error') reject(new Error(frame.error));
+            if (frame.type === 'lobby-registered') resolve();
+          });
+          socket.once('open', () => socket.send(JSON.stringify({
+            type: 'lobby-register', display_name: 'Member', join_token: issueSessionToken(member, lobby.lobby_id),
+          })));
+        });
+        await registered;
+        const closed = new Promise((resolve) => socket.once('close', resolve));
+        assert.equal((await request(status, 'POST', owner, { status: 'revoked', actor: 'spoofed' })).status, 200);
+        assert.equal(await closed, 1008);
+        const events = await (await request('/events', 'GET', owner)).json();
+        assert.equal(events.events.find((event: { type: string }) => event.type === 'member_revoked')?.actor_id, owner);
+        assert.equal((await request('', 'PATCH', owner, { status: 'closed' })).status, 200);
+      } finally {
+        socket.terminate();
+      }
+      const denied = mk('closed lobby probe', lobby.lobby_id);
+      const error = waitForMessage(denied, (message) => message.type === 'lobby-error');
+      await denied.connect();
+      assert.match((await error as Extract<LobbyToAgentMessage, { type: 'lobby-error' }>).error, /not active/);
+    });
+
+    await check('test admin uses its configured key and is confined to a private test lobby', async () => {
+      const key = randomBytes(32).toString('hex');
+      const oldDigest = process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256;
+      const oldMode = process.env.NODE_ENV;
+      const api = `${lobbyUrl}/api/v1/agent-lobby`;
+      const request = (path: string, method: string, body: unknown, token?: string) => fetch(api + path, {
+        method,
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      try {
+        delete process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256;
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 404);
+        assert.equal((await request('/auth/test-admin', 'POST', { key })).status, 404);
+        process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256 = createHash('sha256').update(key).digest('hex');
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 200);
+        assert.equal((await request('/auth/test-admin', 'POST', { key: randomBytes(32).toString('hex') })).status, 401);
+        const login = await request('/auth/test-admin', 'POST', { key });
+        assert.equal(login.status, 200);
+        const { lobby, token } = await login.json();
+        const path = `/lobbies/${lobby.lobby_id}`;
+        assert.equal((await request(path, 'PATCH', { name: 'Test admin can manage' }, token)).status, 200);
+        assert.equal((await request(path, 'PATCH', { visibility: 'public' }, token)).status, 403);
+        const otherLobby = (await server.store.listLobbies()).find((entry) => entry.visibility === 'public')!;
+        assert.equal((await request(`/lobbies/${otherLobby.lobby_id}`, 'PATCH', { status: 'closed' }, token)).status, 401);
+        assert.equal((await request('/lobbies', 'POST', { auth_lobby_id: lobby.lobby_id, visibility: 'private' }, token)).status, 403);
+        const admin = new LobbyClient({
+          lobbyUrl, lobbyId: lobby.lobby_id, reconnect: false, heartbeatMs: 0,
+          register: { type: 'lobby-register', display_name: 'Test admin', participant_type: 'human', join_token: token },
+        });
+        clients.push(admin);
+        const registered = waitForMessage(admin, (message) => message.type === 'lobby-registered');
+        await admin.connect();
+        await registered;
+        const delivered = waitForMessage(admin, (message) => message.type === 'lobby-message-received');
+        admin.send({ type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'Test admin can coordinate' });
+        await delivered;
+        admin.close();
+        process.env.NODE_ENV = 'production';
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 404);
+        assert.equal((await request('/auth/test-admin', 'POST', { key })).status, 404);
+        assert.equal((await request(path, 'PATCH', { status: 'closed' }, token)).status, 401);
+      } finally {
+        if (oldMode === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = oldMode;
+        if (oldDigest === undefined) delete process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256;
+        else process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256 = oldDigest;
+      }
     });
 
     await check('the event log is queryable over HTTP', async () => {
@@ -702,8 +855,12 @@ async function main(): Promise<void> {
       const testLobbyUrl = `http://localhost:${testServer.port}`;
 
       try {
-        const lobby = makeLobby('private');
+        const lobby = { ...makeLobby('private'), created_by: 'did:ccd:bob' };
         await mockStore.createLobby(lobby);
+        const marketplaceHeaders = {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${issueSessionToken(lobby.created_by, lobby.lobby_id)}`,
+        };
 
         // Register human issuer in mock store
         await mockStore.registerIssuer({
@@ -716,7 +873,7 @@ async function main(): Promise<void> {
         // 1. Post a task
         const postRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: marketplaceHeaders,
           body: JSON.stringify({
             title: 'Write custom parser',
             description: 'Implement a TS AST model parser',
@@ -733,7 +890,7 @@ async function main(): Promise<void> {
         // 2. Try to bid with an untrusted issuer -> Rejected (401)
         const badBidRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/bid`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: marketplaceHeaders,
           body: JSON.stringify({
             agent_did: 'did:ccd:untrusted-agent',
             bidder_identity_ref: 'agent-identity-1'
@@ -746,7 +903,7 @@ async function main(): Promise<void> {
         // 3. Bid with a trusted human issuer -> Accepted (201)
         const goodBidRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/bid`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: marketplaceHeaders,
           body: JSON.stringify({
             agent_did: 'did:ccd:trusted-agent',
             bidder_identity_ref: 'agent-identity-2'
@@ -763,7 +920,7 @@ async function main(): Promise<void> {
         // 4. Assign task
         const assignRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/assign`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: marketplaceHeaders,
           body: JSON.stringify({
             assigned_agent_id: 'did:ccd:trusted-agent',
             assigned_agent_ref: 'agent-identity-2'
@@ -777,7 +934,7 @@ async function main(): Promise<void> {
         // 5. Complete task & record payment Tx
         const completeRes = await fetch(`${testLobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/tasks/${task.id}/complete`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: marketplaceHeaders,
           body: JSON.stringify({
             tx_hash: '0xabc1239999'
           })

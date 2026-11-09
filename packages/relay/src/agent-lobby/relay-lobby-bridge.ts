@@ -11,10 +11,7 @@ export interface BridgeOptions {
   lobbyId?: string;
   orgId?: string;
   agentName: string;
-  cwd: string;
   branch: string;
-  pid: number;
-  relayPort: number;
   agentRole?: string;
   /** The runtime this relay ACTUALLY drives (adapter label) — reported truthfully to the lobby. */
   runtime?: string;
@@ -22,6 +19,8 @@ export interface BridgeOptions {
   model?: string;
   /** Identity reference (e.g. Concordium agent DID) presented as the lobby join token. */
   joinToken?: string;
+  agentIdentityRef?: string;
+  allowLobbyInvites?: boolean;
   onLobbyMessage: (msg: any) => Promise<void>;
   log?: (level: string, message: string) => void;
 }
@@ -42,14 +41,12 @@ export class RelayLobbyBridge {
       register: {
         type: 'lobby-register',
         display_name: options.agentName,
-        cwd: options.cwd,
         branch: options.branch,
-        pid: options.pid,
-        relay_port: options.relayPort,
         agent_role: options.agentRole,
         model: options.model || '—',
         runtime: options.runtime || '—',
         join_token: options.joinToken,
+        agent_identity_ref: options.agentIdentityRef,
       },
       reconnect: true,
     });
@@ -58,7 +55,7 @@ export class RelayLobbyBridge {
       if (msg.type === 'lobby-message-received') {
         const lobbyMsg = msg.message;
         if (
-          lobbyMsg.to_agent_id === this.currentAgentId &&
+          options.allowLobbyInvites && lobbyMsg.to_agent_id === this.currentAgentId &&
           lobbyMsg.message_type === 'coordination' &&
           lobbyMsg.content.startsWith('INVITE|')
         ) {
@@ -138,6 +135,10 @@ export class RelayLobbyBridge {
       `\n--- END OF BUFFERED MESSAGES ---`;
     this.messageBuffer = [];
     return ctx;
+  }
+
+  acceptTask(taskId: string): void {
+    this.client.send({ type: 'lobby-task-update', task_id: taskId, status: 'accepted' });
   }
 
   updateTaskProgress(taskId: string, progress: string, progressPct: number): void {

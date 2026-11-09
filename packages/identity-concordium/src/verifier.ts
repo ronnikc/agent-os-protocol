@@ -61,7 +61,7 @@ export class IdentityVerifier {
       const status = orgLinked ? 'org_linked' : humanLinked ? 'human_linked' : 'registry_verified';
       return {
         status,
-        ref,
+        ref: record.account ? { ...ref, account: record.account } : ref,
         humanLinked,
         orgLinked,
         domain: record.domain,
