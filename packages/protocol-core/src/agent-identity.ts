@@ -159,6 +159,7 @@ export type VerificationSource = 'indexer' | 'api' | 'cache' | 'none';
 /** The outcome of resolving a reference read-only. Carries only non-secret, public facts. */
 export interface IdentityVerificationResult {
   status: IdentityVerificationStatus;
+  registryLinks?: { registration: string; explorer: string };
   /** The reference that was checked (echoed back, non-secret). */
   ref?: ConcordiumAgentRef;
   /** True when a verified human owner stands behind the agent (Concordium VCK). */

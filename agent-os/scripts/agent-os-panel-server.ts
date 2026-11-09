@@ -2074,6 +2074,12 @@ const server = createServer(async (req, res) => {
     return out;
   };
 
+  if (path === '/api/v1/agent-lobby/lobbies' && method === 'GET' && DEFAULT_LOBBY_URL) {
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, path, 'GET', undefined, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
   if (path === '/api/v1/agent-lobby/auth/test-admin' && (method === 'GET' || method === 'POST')) {
     res.setHeader('Cache-Control', 'no-store');
     const body = method === 'POST' ? JSON.stringify(await parseBody(req)) : undefined;

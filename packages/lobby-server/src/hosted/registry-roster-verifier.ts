@@ -3,6 +3,8 @@
 
 import { createHash } from 'node:crypto';
 import { parseConcordiumRef } from '@agent-os/identity-concordium';
+import { ContractAddress } from '@concordium/web-sdk';
+import { tokenAddressToBase58 } from '@concordium/web-sdk/cis2';
 import type { VerifyIdentityFn } from '../coordinator.js';
 import type { RegistryMcpClient } from '../registry-mcp.js';
 
@@ -56,10 +58,26 @@ export function createRegistryRosterVerifier(
     try {
       const records = await lookup.records;
       const cardHash = createHash('sha256').update(JSON.stringify(card)).digest('hex');
-      const match = records.some((record) => record && record.status === 'Active' &&
+      const match = records.find((record) => record && record.status === 'Active' &&
         record.network === ref.network && record.owner_account === owner &&
         record.metadata_hash_hex === cardHash && matchesCardUri(record.agent_uri, cardOrigin, did));
-      return { ...result, status: match ? 'registry_verified' : 'unverified' };
+      if (!match) return { ...result, status: 'unverified' };
+      const token = match.token_id;
+      const validToken = typeof token === 'number' ? Number.isSafeInteger(token) && token >= 0
+        : typeof token === 'string' && /^\d{1,20}$/.test(token) && BigInt(token) <= 0xffffffffffffffffn;
+      let registryLinks;
+      if (ref.network === 'mainnet' && validToken) {
+        const bytes = Buffer.alloc(8);
+        bytes.writeBigUInt64LE(BigInt(token as string | number));
+        const id = bytes.toString('hex');
+        const contract = ContractAddress.create(10082n, 0n);
+        const badge = tokenAddressToBase58({ contract, id });
+        registryLinks = {
+          registration: `https://agent-registry-mcp.concordium.com/v1/badge-check/${badge}`,
+          explorer: `https://ccdexplorer.io/mainnet/token/${contract.index}/${contract.subindex}/${id}`,
+        };
+      }
+      return { ...result, ref: { ...ref, account: owner }, status: 'registry_verified', registryLinks };
     } catch {
       if (lookups.get(key) === lookup) lookups.delete(key);
       return { ...result, status: 'pending' };

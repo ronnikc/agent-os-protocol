@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
+import { loadEnv, isRegistryResolved, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbyAgent, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore, type HostedAgentSpec, type LobbyWorkSession } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
@@ -34,7 +34,7 @@ import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integr
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
-import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction, devTrustWalletSignatures, isProduction } from './auth/identityProof.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, walletDiscoveryIdentity, issueSessionToken, assertDevBridgeNotInProduction, devTrustWalletSignatures, isProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership, lobbyOwnerRef } from './auth/lobbyAuthz.js';
@@ -70,6 +70,17 @@ function githubErrorMessage(err: unknown): string {
     return 'GitHub API rate limit reached for this installation. Wait a few minutes and retry — the panel now caches reads to avoid this.';
   }
   return raw;
+}
+
+function describeLiveRoster(roster: LobbyAgent[], selfId?: string): string {
+  const online = roster.filter(agent => agent.status !== 'disconnected');
+  const workers = online.filter(agent => agent.participant_type !== 'human' && agent.role !== 'human' && agent.agent_role !== 'panel');
+  const ready = workers.filter(agent => agent.status === 'idle' && agent.execution_enabled !== false);
+  const lines = online.map(agent => {
+    const did = agent.identity_status && isRegistryResolved(agent.identity_status) ? agent.identity_ref : undefined;
+    return `- ${agent.display_name || agent.agent_id} | role: ${agent.agent_role || 'none'} | status: ${agent.status} | agent_id: ${agent.agent_id}${agent.agent_id === selfId ? ' | this is you' : ''}${agent.execution_enabled === false ? ' | observation only' : ''}${did ? ` | verified DID: ${did}` : ''}${agent.current_work ? ` | working on: ${agent.current_work.slice(0, 80)}` : ''}`;
+  });
+  return `${online.length} online participants; ${workers.length} runtime agents online; ${ready.length} runtime agents ready to work (idle, includes the Boss if eligible, excludes humans, panels, and observation-only relays).\n${lines.join('\n')}`;
 }
 
 function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
@@ -816,10 +827,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         // Give the Boss full operational context: the live roster, open coordination tasks, and
         // pending human-approval requests — without these it coordinated blind (it could not
         // answer "what is in flight?" or notice work stuck in assigned/in_progress).
-        const rosterSummary = roster
-          .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
-          .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
-          .join('\n');
+        const rosterSummary = describeLiveRoster(roster, myId);
         let opsSummary = '';
         try {
           // Working-repo state — without it the Boss invented "repository initialization" tasks
@@ -854,7 +862,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
               .join('\n');
           }
         } catch { /* ops summary is best-effort */ }
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
+        enrichedContent = `${header}\n[LOBBY ROSTER]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -1143,12 +1151,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const connRef: { conn?: Connection } = {};
     const lobbyTools: LobbyToolsProvider = {
       async getRoster(): Promise<string> {
-        const roster = await store.roster(params.lobbyId);
-        const online = roster.filter(a => a.status !== 'disconnected');
-        const lines = online.map(a =>
-          `- ${a.display_name || a.agent_id} | role: ${a.agent_role || 'none'} | status: ${a.status || 'idle'} | agent_id: ${a.agent_id}${a.current_work ? ` | working on: ${a.current_work.slice(0, 80)}` : ''}`
-        );
-        return `${online.length} agents online:\n${lines.join('\n')}`;
+        return describeLiveRoster(await store.roster(params.lobbyId), connRef.conn?.agentId);
       },
       async sendMessage(toAgentId: string, content: string): Promise<string> {
         if (!connRef.conn) return 'Error: agent not yet registered in lobby.';
@@ -1407,12 +1410,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // Extract + validate a Bearer session token (HMAC-signed by /auth/verify) for a given lobby.
     // Returns the wallet identity_ref the token is bound to, or null. This is the wallet-lock: a
     // request may only act as the wallet it proved control of. (Exposed to gated endpoints below.)
+    const authorization = req.headers.authorization;
+    const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     const sessionIdentity = (lobbyId: string): string | null => {
-      const h = req.headers['authorization'];
-      const token = typeof h === 'string' && h.startsWith('Bearer ') ? h.slice(7).trim() : '';
-      if (!token) return null;
-      const payload = validateSessionToken(token, lobbyId);
+      if (!bearer) return null;
+      const payload = validateSessionToken(bearer, lobbyId);
       return payload ? payload.identityRef : null;
+    };
+    const hasPrivateMembership = async (lobby: LobbySession, identity: string): Promise<boolean> => {
+      const member = await store.getMember(lobby.lobby_id, identity);
+      if (member) return member.status === 'active' && (!member.expires_at || Date.parse(member.expires_at) > Date.now());
+      return (lobby.join_policy ?? 'allowlisted') === 'allowlisted' && Boolean(lobby.allowlist?.includes(identity));
     };
 
     const scopedLobbyId = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)/)?.[1];
@@ -1420,10 +1428,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (scopedLobby?.visibility === 'private') {
       const identity = sessionIdentity(scopedLobby.lobby_id);
       if (!identity) return json({ error: 'authentication required' }, 401);
-      const member = await store.getMember(scopedLobby.lobby_id, identity);
-      const active = member?.status === 'active' &&
-        (!member.expires_at || Date.parse(member.expires_at) > Date.now());
-      if (!active && !(await isLobbyManager(store, scopedLobby.lobby_id, identity))) {
+      if (!(await hasPrivateMembership(scopedLobby, identity)) && !(await isLobbyManager(store, scopedLobby.lobby_id, identity))) {
         return json({ error: 'private lobby membership required' }, 403);
       }
     }
@@ -2858,13 +2863,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'GET') {
       const visible: Partial<LobbySession>[] = [];
+      const walletIdentity = walletDiscoveryIdentity(bearer);
       for (const lobby of await store.listLobbies()) {
-        const identity = sessionIdentity(lobby.lobby_id);
-        if (identity && await isLobbyManager(store, lobby.lobby_id, identity)) visible.push(lobby);
+        const scopedIdentity = sessionIdentity(lobby.lobby_id);
+        const identity = scopedIdentity ?? walletIdentity;
+        if (scopedIdentity && await isLobbyManager(store, lobby.lobby_id, scopedIdentity)) visible.push(lobby);
         else if (lobby.status === 'active') {
-          const member = identity ? await store.getMember(lobby.lobby_id, identity) : undefined;
-          if (lobby.visibility === 'public' || member?.status === 'active' &&
-              (!member.expires_at || Date.parse(member.expires_at) > Date.now())) {
+          if (lobby.visibility === 'public' || identity &&
+              (await hasPrivateMembership(lobby, identity) || await isLobbyManager(store, lobby.lobby_id, identity))) {
             visible.push({ ...lobby, allowlist: undefined, created_by: undefined });
           }
         }

@@ -196,6 +196,7 @@ async function main(): Promise<void> {
     const card = { did, network: 'mainnet', ownerAddress: 'fixture-owner', name: 'Original' };
     const record = {
       network: 'mainnet', owner_account: card.ownerAddress, status: 'Active',
+      token_id: 669,
       agent_uri: `http://lobby.example.test/agent-cards/${encodeURIComponent(did)}`,
       metadata_hash_hex: createHash('sha256').update(JSON.stringify(card)).digest('hex'),
     };
@@ -214,8 +215,22 @@ async function main(): Promise<void> {
     const connection = () => ({ connId: randomUUID(), lobbyId, orgId: 'default' });
     const hosted = await coord.handle({ ...connection(), trusted: true }, message);
     assert.equal(find(hosted.out, 'lobby-agent-joined')?.agent.identity_status, 'registry_verified');
+    assert.equal(find(hosted.out, 'lobby-agent-joined')?.agent.identity_registry_links?.explorer,
+      'https://ccdexplorer.io/mainnet/token/10082/0/9d02000000000000');
     const external = await coord.handle(connection(), message);
     assert.equal(find(external.out, 'lobby-agent-joined')?.agent.identity_status, 'unverified');
+    const owner = `did:ccd:mainnet:${card.ownerAddress}`;
+    await store.updateLobby(lobbyId, { visibility: 'private', join_policy: 'allowlisted', allowlist: [did] });
+    const registerRelay = (identity: string) => coord.handle(connection(), {
+      ...message, join_token: issueSessionToken(identity, lobbyId), agent_identity_ref: did,
+    });
+    const first = find((await registerRelay(owner)).out, 'lobby-agent-joined')?.agent;
+    const restarted = find((await registerRelay(owner)).out, 'lobby-agent-joined')?.agent;
+    assert.equal(first?.identity_ref, did);
+    assert.equal(restarted?.identity_ref, did);
+    assert.notEqual(first?.agent_id, restarted?.agent_id);
+    assert.deepEqual(restarted?.identity_registry_links, first?.identity_registry_links);
+    assert.match(find((await registerRelay('did:ccd:mainnet:other')).out, 'lobby-error')?.error ?? '', /impersonation protection/);
     card.name = 'Modified';
     assert.equal((await verify(did)).status, 'unverified');
     card.name = 'Original';
@@ -420,6 +435,33 @@ async function main(): Promise<void> {
       assert.equal((await resolveProviderKey(server.store, second.lobby_id, 'openai', undefined, env))?.apiKey, 'synthetic-key');
       assert.equal((await revoke(second)).status, 200);
       assert.equal(await resolveProviderKey(server.store, second.lobby_id, 'openai', undefined, env), null);
+    });
+
+    await check('private lobby discovery shows invitations across wallet sessions without granting cross-lobby access', async () => {
+      const owner = 'did:ccd:mainnet:fixture-owner';
+      const invited = 'did:ccd:mainnet:fixture-invite';
+      const publicLobby = makeLobby('public');
+      const lobby = { ...makeLobby('private'), created_by: owner, allowlist: [invited] };
+      await server.store.createLobby(publicLobby);
+      await server.store.createLobby(lobby);
+      const endpoint = `${lobbyUrl}/api/v1/agent-lobby/lobbies`;
+      const headers = (identity: string, id = publicLobby.lobby_id) => ({
+        authorization: `Bearer ${issueSessionToken(identity, id)}`,
+      });
+      const discover = async (identity?: string) => {
+        const response = await fetch(endpoint, { headers: identity ? headers(identity) : {} });
+        return (await response.json()).lobbies.find((item: LobbySession) => item.lobby_id === lobby.lobby_id);
+      };
+      assert.equal(await discover(), undefined);
+      assert.equal(await discover('did:ccd:mainnet:uninvited'), undefined);
+      assert.equal((await discover(owner)).visibility, 'private');
+      const invitation = await discover(invited);
+      assert.equal(invitation.visibility, 'private');
+      assert.equal(invitation.allowlist, undefined);
+      assert.equal(invitation.created_by, undefined);
+      const roster = `${endpoint}/${lobby.lobby_id}/roster`;
+      assert.equal((await fetch(roster, { headers: headers(invited) })).status, 401);
+      assert.equal((await fetch(roster, { headers: headers(invited, lobby.lobby_id) })).status, 200);
     });
 
     await check('private lobby management requires proof, and revocation and closure disconnect agents', async () => {
