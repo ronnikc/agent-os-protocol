@@ -795,7 +795,7 @@ function init() {
     if (!btn) return;
     if (btn.dataset.action === 'agent-id-card') {
       const agent = remoteAgents.find(a => a.agent_id === btn.dataset.agentId);
-      if (agent) showAgentIdCard(agent.display_name, agent.agent_role, agent.identity_ref, agent.identity_registry_links);
+      if (agent) showAgentIdCard(agent);
       return;
     }
     if (btn.dataset.action === 'toggle-create-lobby') {

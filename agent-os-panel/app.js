@@ -628,7 +628,7 @@ async function updateStatusBar() {
 }
 
 // ── Modal System ──
-export function showModal(html, { wide = false } = {}) {
+export function showModal(html, { wide = false, agentIdCard = false } = {}) {
   let overlay = document.getElementById('modal-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -636,7 +636,7 @@ export function showModal(html, { wide = false } = {}) {
     overlay.className = 'modal-overlay';
     document.body.appendChild(overlay);
   }
-  overlay.innerHTML = `<div class="modal${wide ? ' modal-wide' : ''}">${html}</div>`;
+  overlay.innerHTML = `<div class="modal${wide ? ' modal-wide' : ''}${agentIdCard ? ' agent-id-card-modal' : ''}">${html}</div>`;
   overlay.style.display = 'flex';
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
 }
@@ -669,13 +669,30 @@ export function showHtmlAlert(title, html) {
   `);
 }
 
-export function showAgentIdCard(name, role, did, links) {
+export function showAgentIdCard(agent) {
+  const did = agent.identity_ref || agent.identity;
+  const links = agent.identity_registry_links;
   if (!did || !links) return;
-  showHtmlAlert('Agent ID Card', `
-    <p><strong>${escapeHtml(name)}</strong> · ${escapeHtml(role || 'Generalist')}</p>
-    <p><a href="${escapeHtml(links.registration)}" target="_blank" rel="noopener">${escapeHtml(did)} ↗</a></p>
-    <p><a href="${escapeHtml(links.explorer)}" target="_blank" rel="noopener">View on CCDExplorer ↗</a></p>
-  `);
+  const row = (label, value) => `<div><dt>${label}</dt><dd>${value}</dd></div>`;
+  const name = escapeHtml(agent.display_name || agent.name);
+  showModal(`
+    <section role="dialog" aria-modal="true" aria-labelledby="agent-id-card-title">
+      <h2 id="agent-id-card-title"><span aria-hidden="true">✓</span> Agent ID Card</h2>
+      <dl class="agent-id-card-details">
+        ${row('Name', `<strong>${name}</strong>${agent.is_boss ? ' <span class="badge badge-warning">★ Boss</span>' : ''}`)}
+        ${row('Role', escapeHtml(agent.agent_role || agent.slug || 'Generalist'))}
+        ${row('Status', escapeHtml(agent.roster_status || agent.status || 'idle'))}
+        ${row('Identity', `<strong class="agent-id-card-verified">Verified · ${escapeHtml(agent.identity_status || 'registry_verified')}</strong>`)}
+        ${row('Agent ID', `<a href="${escapeHtml(links.registration)}" target="_blank" rel="noopener">${escapeHtml(did)} ↗</a>`)}
+        ${row('Explorer', `<a href="${escapeHtml(links.explorer)}" target="_blank" rel="noopener">View on CCDExplorer ↗</a>`)}
+        ${row('Runtime', escapeHtml(agent.runtime || '—'))}
+        ${row('Model', escapeHtml(agent.model || '—'))}
+      </dl>
+      <p class="agent-id-card-note">A Concordium Agent ID cryptographically links this agent to an accountable human or organization.</p>
+      <div class="agent-id-card-actions"><button type="button" class="btn btn-primary btn-sm" onclick="closeModal()">Close</button></div>
+    </section>
+  `, { agentIdCard: true });
+  document.querySelector('.agent-id-card-actions button')?.focus();
 }
 if (typeof window !== 'undefined') {
   window.showHtmlAlert = showHtmlAlert;

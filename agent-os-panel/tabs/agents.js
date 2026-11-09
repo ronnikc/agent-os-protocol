@@ -574,6 +574,8 @@ async function refresh() {
         return {
           ...la,
           status: activeRemote ? 'running' : 'stopped',
+          roster_status: activeRemote?.status,
+          is_boss: activeRemote?.is_boss,
           identity_status: activeRemote?.identity_status || la.identity_status,
           runtime: activeRemote?.runtime || la.runtime,
           model: activeRemote?.model || la.model,
@@ -617,7 +619,7 @@ function init() {
     const slug = btn.dataset.slug;
     if (btn.dataset.action === 'agent-id-card') {
       const agent = state.agents.find(a => a.slug === slug);
-      if (agent) showAgentIdCard(agent.name, slug, agent.identity, agent.identity_registry_links);
+      if (agent) showAgentIdCard(agent);
       return;
     }
     if (btn.dataset.action === 'start') startOne(slug);
