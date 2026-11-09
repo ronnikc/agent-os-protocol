@@ -107,13 +107,13 @@ async function main(): Promise<void> {
   });
 
   // 5. Verify apps/website static files and assets
-  await check('website index.html exists and contains sections for problem, solution, modes, competitive, showcase, and docs-detail', () => {
+  await check('website index.html exists and contains sections for problem, solution, modes, workflows, showcase, and docs-detail', () => {
     assert.ok(existsSync(R('apps/website/index.html')), 'website index.html is missing');
     const html = read('apps/website/index.html');
     assert.ok(html.includes('id="problem"'), 'website index.html is missing the problem section');
     assert.ok(html.includes('id="solution"'), 'website index.html is missing the solution section');
     assert.ok(html.includes('id="modes"'), 'website index.html is missing the modes section');
-    assert.ok(html.includes('id="competitive"'), 'website index.html is missing the competitive section');
+    assert.ok(html.includes('id="workflows"'), 'website index.html is missing the workflows section');
     assert.ok(html.includes('id="showcase"'), 'website index.html is missing the showcase gallery section');
     assert.ok(html.includes('id="docs-detail"'), 'website index.html is missing the docs-detail section');
     assert.ok(html.includes('https://concordium.com'), 'website index.html is missing the link to Concordium');
