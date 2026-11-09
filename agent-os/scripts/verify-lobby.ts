@@ -448,6 +448,18 @@ async function main(): Promise<void> {
         const otherLobby = (await server.store.listLobbies()).find((entry) => entry.visibility === 'public')!;
         assert.equal((await request(`/lobbies/${otherLobby.lobby_id}`, 'PATCH', { status: 'closed' }, token)).status, 401);
         assert.equal((await request('/lobbies', 'POST', { auth_lobby_id: lobby.lobby_id, visibility: 'private' }, token)).status, 403);
+        const admin = new LobbyClient({
+          lobbyUrl, lobbyId: lobby.lobby_id, reconnect: false, heartbeatMs: 0,
+          register: { type: 'lobby-register', display_name: 'Test admin', participant_type: 'human', join_token: token },
+        });
+        clients.push(admin);
+        const registered = waitForMessage(admin, (message) => message.type === 'lobby-registered');
+        await admin.connect();
+        await registered;
+        const delivered = waitForMessage(admin, (message) => message.type === 'lobby-message-received');
+        admin.send({ type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'Test admin can coordinate' });
+        await delivered;
+        admin.close();
         process.env.NODE_ENV = 'production';
         assert.equal((await fetch(api + '/auth/test-admin')).status, 404);
         assert.equal((await request('/auth/test-admin', 'POST', { key })).status, 404);
