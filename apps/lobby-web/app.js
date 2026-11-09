@@ -508,7 +508,7 @@ function renderTelemetry() {
 
 // ── Select Lobby Action ──
 
-window.selectLobby = function(lobbyId) {
+window.selectLobby = async function(lobbyId) {
   state.activeLobbyId = lobbyId;
   state.agents = [];
   state.messages = [];
@@ -518,6 +518,10 @@ window.selectLobby = function(lobbyId) {
   renderMessages();
   renderEvents();
   renderTelemetry();
+  if (state.lobbies.find(lobby => lobby.lobby_id === lobbyId)?.visibility === 'private' && !isSignedIn()) {
+    await signInToLobby();
+    if (!isSignedIn() || state.activeLobbyId !== lobbyId) return;
+  }
   pollLobbyDetails();
 };
 
@@ -680,6 +684,7 @@ async function signInToLobby() {
     state.session = { token: verified.token, identityRef: verified.identity_ref, lobbyId };
     persistSession();
     setStatus('');
+    void pollLobbies();
     renderHostedCard();
   } catch (err) {
     console.error('[Hosted] sign-in failed:', err);
