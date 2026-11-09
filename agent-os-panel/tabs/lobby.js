@@ -775,7 +775,7 @@ function init() {
           role: 'product-owner',
           type: 'human',
           joinedAt: new Date().toISOString(),
-          identity_status: 'registry_verified',
+          identity_status: s.identityRef === 'test-admin' ? 'unverified' : 'registry_verified',
           agent_id: s.identityRef,
           join_token: s.identityRef
         };

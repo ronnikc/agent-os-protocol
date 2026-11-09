@@ -116,7 +116,8 @@ share the dashboard URL with `?lobby=<lobby-id>`. They can select that lobby by 
 and signing in with the matching wallet.
 
 On an isolated local or staging lobby server, set `AGENT_OS_TEST_ADMIN_KEY_SHA256` to the
-SHA-256 hex digest of a randomly generated 32-byte key. Send the original key as
+SHA-256 hex digest of a randomly generated 32-byte key. Open the server's `/panel/` and enter
+the key in the Test Lobby sign-in form. For scripted tests, send the original key as
 `{"key":"<key>"}` in a POST to `/api/v1/agent-lobby/auth/test-admin`. The response includes a
 dedicated private lobby and a one-hour bearer token. Use the token with that lobby's HTTP API
 or set `AGENT_OS_LOBBY_SESSION_TOKEN` and `AGENT_OS_LOBBY_ID` for a test relay. Use a separate

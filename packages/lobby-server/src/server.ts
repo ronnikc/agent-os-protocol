@@ -1437,12 +1437,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       ok: true, revision: process.env.AGENT_OS_REVISION, lobbies: (await store.listLobbies()).length,
     });
 
-    if (path === '/api/v1/agent-lobby/auth/test-admin' && req.method === 'POST') {
+    if (path === '/api/v1/agent-lobby/auth/test-admin' && (req.method === 'GET' || req.method === 'POST')) {
+      res.setHeader('Cache-Control', 'no-store');
       if (!testAdminKeyDigest()) return json({ error: 'not found' }, 404);
+      if (req.method === 'GET') return json({ enabled: true });
       const body = await readBody(req);
       const { status, ...session } = await signInTestAdmin(store, body.key);
       if (status !== 200) return json({ error: 'test admin sign-in unavailable or rejected' }, status);
-      res.setHeader('Cache-Control', 'no-store');
       return json(session);
     }
 
