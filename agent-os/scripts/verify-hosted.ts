@@ -136,7 +136,7 @@ async function main(): Promise<void> {
   await check('revoke removes a key from resolution and from the active list', async () => {
     const store = new InMemoryLobbyStore();
     const v = await setProviderKey(store, { lobbyId: 'L1', provider: 'anthropic', apiKey: 'sk-ant-REV', identityRef: 'o', env: ENV });
-    await revokeProviderKey(store, v.id);
+    await revokeProviderKey(store, v.lobby_id, v.id);
     assert.equal(await resolveProviderKey(store, 'L1', 'anthropic', undefined, ENV), null);
     assert.equal((await listProviderKeys(store, 'L1')).length, 0);
   });
