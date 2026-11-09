@@ -855,6 +855,37 @@ body {
 .modal.modal-wide {
   width: 800px;
 }
+.modal.agent-id-card-modal {
+  width: 420px;
+  padding: 24px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 14px;
+  background: linear-gradient(145deg, rgba(18, 20, 32, 0.92), rgba(26, 28, 44, 0.88));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55), 0 0 80px rgba(0, 229, 117, 0.04);
+}
+.modal.agent-id-card-modal h2,
+.agent-id-card-verified { color: var(--color-green); }
+.agent-id-card-modal h2 { text-align: center; }
+.agent-id-card-modal h2 span { margin-right: 8px; }
+.agent-id-card-details { margin: 20px 0; font-size: 13px; line-height: 1.5; }
+.agent-id-card-details > div {
+  display: grid;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px 0;
+}
+.agent-id-card-details dt,
+.agent-id-card-note { color: var(--color-text-soft); }
+.agent-id-card-details dd { margin: 0; overflow-wrap: anywhere; }
+.agent-id-card-details a { color: var(--color-cyan); text-decoration: underline; }
+.agent-id-card-note {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  padding-top: 12px;
+  font-size: 11px;
+  line-height: 1.5;
+}
+.agent-id-card-actions { margin-top: 18px; text-align: center; }
+.agent-id-card-actions button { min-width: 100px; }
 .modal h2 {
   font-family: var(--display);
   font-size: 16px;

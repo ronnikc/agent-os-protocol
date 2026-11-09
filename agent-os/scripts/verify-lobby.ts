@@ -400,6 +400,27 @@ async function main(): Promise<void> {
       assert.match(((await bErr) as Extract<LobbyToAgentMessage, { type: 'lobby-error' }>).error, /floor control/i);
     });
 
+    await check('live roster excludes a persisted stale session and reports the authoritative Boss', async () => {
+      const [boss] = clients;
+      const lobbyId = boss.lobbyId!;
+      const live = (await server.store.getAgent(lobbyId, boss.agentId!))!;
+      const stale = { ...live, agent_id: randomUUID(), display_name: 'Stale Boss session' };
+      await server.store.addAgent(lobbyId, stale);
+      try {
+        const observer = mk('Roster verifier', lobbyId);
+        const update = waitForMessage(observer, m => m.type === 'lobby-roster');
+        await observer.connect();
+        const snapshot = await update as Extract<LobbyToAgentMessage, { type: 'lobby-roster' }>;
+        assert.equal(snapshot.boss_agent_id, boss.agentId);
+        const response = await fetch(`${lobbyUrl}/api/v1/agent-lobby/lobbies/${lobbyId}/roster`);
+        const { agents } = await response.json();
+        assert.ok(agents.some((agent: { agent_id: string }) => agent.agent_id === boss.agentId));
+        assert.ok(!agents.some((agent: { agent_id: string }) => agent.agent_id === stale.agent_id));
+      } finally {
+        await server.store.removeAgent(lobbyId, stale.agent_id);
+      }
+    });
+
     await check('LOBBY-SCOPING: a second lobby never receives the first lobby messages', async () => {
       // create a separate lobby and connect a client C to it
       const res = await fetch(new URL('/api/v1/agent-lobby/lobbies', lobbyUrl), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name: 'lobby2' }) });

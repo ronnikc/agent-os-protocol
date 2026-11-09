@@ -77,10 +77,13 @@ export class RelayLobbyBridge {
       }
       if (msg.type === 'lobby-roster') {
         this.roster = msg.agents || [];
-        const boss = this.roster.find(a => a.is_boss || a.role === 'boss_agent');
-        if (boss) {
-          this.currentBossAgentId = boss.agent_id;
-        }
+        this.currentBossAgentId = msg.boss_agent_id !== undefined
+          ? msg.boss_agent_id
+          : this.roster.find(a => a.status !== 'disconnected' && (a.is_boss || a.role === 'boss_agent'))?.agent_id ?? null;
+      }
+      if (msg.type === 'lobby-agent-left') {
+        this.roster = this.roster.filter(agent => agent.agent_id !== msg.agent_id);
+        if (this.currentBossAgentId === msg.agent_id) this.currentBossAgentId = null;
       }
       if (msg.type === 'lobby-boss-appointed') {
         this.currentBossAgentId = msg.agent_id;
