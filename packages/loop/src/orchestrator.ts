@@ -239,6 +239,12 @@ export class LoopOrchestrator {
       return { status, iterations: iteration, converged: status === 'converged', results, passing, total, budgetUsed, events, pendingAction, attended };
     };
 
+    const finishKilled = (): LoopResult => {
+      record({ type: 'killed', iteration });
+      return finish('killed');
+    };
+
+    if (isKilled()) return finishKilled();
     if (countPassing(results) === total) {
       record({ type: 'converged', iteration, passing: total, total });
       return finish('converged');
@@ -247,10 +253,7 @@ export class LoopOrchestrator {
     let noProgress = 0;
 
     while (iteration < spec.maxIterations) {
-      if (isKilled()) {
-        record({ type: 'killed', iteration });
-        return finish('killed');
-      }
+      if (isKilled()) return finishKilled();
       if (overBudget()) {
         record({ type: 'budget_exceeded', iteration, data: { ...budgetUsed } });
         record({ type: 'exhausted', iteration, message: 'budget' });
@@ -268,6 +271,7 @@ export class LoopOrchestrator {
       budgetUsed.tokens += work.tokensUsed ?? 0;
       budgetUsed.costUSD += work.costUSD ?? 0;
       record({ type: 'delegated', iteration, message: work.summary, data: { tokensUsed: work.tokensUsed ?? 0, costUSD: work.costUSD ?? 0 } });
+      if (isKilled()) return finishKilled();
 
       // ── Checkpoint gating: irreversible actions need approval (unless unattended + allowlisted) ──
       const gated = (work.requestedActions ?? []).filter((a) => (spec.approvalCheckpoints ?? []).includes(a));
@@ -279,6 +283,7 @@ export class LoopOrchestrator {
         }
         record({ type: 'checkpoint_requested', iteration, message: action });
         const ok = await approve(ctx(), action);
+        if (isKilled()) return finishKilled();
         if (!ok) {
           record({ type: 'checkpoint_rejected', iteration, message: action });
           return finish('awaiting_checkpoint', action);
@@ -288,6 +293,7 @@ export class LoopOrchestrator {
 
       // ── Verify: re-evaluate every criterion ──
       const verified = [...(await this.seams.evaluate(ctx()))];
+      if (isKilled()) return finishKilled();
       record({ type: 'verified', iteration, passing: countPassing(verified), total });
 
       // ── Regression guard: never adopt a result that flips a passing criterion to failing ──

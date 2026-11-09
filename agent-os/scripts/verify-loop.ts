@@ -168,6 +168,23 @@ async function main(): Promise<void> {
   });
 
   // ── H. Checkpoint gating (attended) ──
+  await check('stopping during a checkpoint finishes as killed', async () => {
+    const w = makeWorld(1, 0);
+    let killed = false;
+    const res = await new LoopOrchestrator({
+      evaluate: w.evaluate,
+      delegate: () => ({ requestedActions: ['commit'] }),
+      approveCheckpoint: () => {
+        killed = true;
+        return false;
+      },
+      isKilled: () => killed,
+    }).run(specFor(w.criteria, { approvalCheckpoints: ['commit'] }));
+    assert.equal(res.status, 'killed');
+    assert.equal(res.pendingAction, undefined);
+    assert.equal(res.iterations, 1);
+  });
+
   await check('attended: a gated irreversible action pauses without approval', async () => {
     const w = makeWorld(1, 0);
     const seams: LoopSeams = {
