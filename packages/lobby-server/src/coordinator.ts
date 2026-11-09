@@ -320,6 +320,10 @@ export class LobbyCoordinator {
       if (!verification && presentedRef) {
         verification = await this.verifyIdentity(presentedRef).catch(() => undefined);
       }
+      if (msg.agent_identity_ref && session && this.verifyHostedRosterIdentity &&
+          (!verification || !isRegistryResolved(verification.status))) {
+        verification = await this.verifyHostedRosterIdentity(msg.agent_identity_ref);
+      }
 
       // To prevent identity/DID impersonation abuse, verify that the connecting client is authorized
       // by the DID owner. Server-internal (trusted) connections are exempt: a hosted agent runs on a
@@ -370,6 +374,7 @@ export class LobbyCoordinator {
       model: msg.model,
       runtime: msg.runtime,
       ...(verification ? { identity_status: verification.status } : {}),
+      ...(verification?.registryLinks ? { identity_registry_links: verification.registryLinks } : {}),
       ...(presentedRef ? { identity_ref: verification?.ref?.did ?? presentedRef } : {}),
     };
     await this.store.addAgent(conn.lobbyId, agent);
@@ -399,13 +404,16 @@ export class LobbyCoordinator {
     // Non-blocking background verification check, limited to once per 60s per agent to prevent lag/heartbeat timeouts.
     const now = Date.now();
     const lastCheck = this.lastIdentityCheck.get(conn.agentId) ?? 0;
-    const hostedVerifier = conn.trusted ? this.verifyHostedRosterIdentity : undefined;
+    const hostedVerifier = conn.trusted || agent.identity_registry_links ? this.verifyHostedRosterIdentity : undefined;
     if (agent.identity_ref && (hostedVerifier || !agent.identity_status || agent.identity_status === 'unverified') && (now - lastCheck > 60_000)) {
       this.lastIdentityCheck.set(conn.agentId, now);
       (hostedVerifier ?? this.verifyIdentity)(agent.identity_ref)
         .then(async (verification) => {
-          if (verification.status !== agent.identity_status && (hostedVerifier || verification.status !== 'unverified')) {
-            await this.store.updateAgent(conn.lobbyId, conn.agentId!, { identity_status: verification.status });
+          if ((verification.status !== agent.identity_status || verification.registryLinks?.explorer !== agent.identity_registry_links?.explorer)
+              && (hostedVerifier || verification.status !== 'unverified')) {
+            await this.store.updateAgent(conn.lobbyId, agent.agent_id, {
+              identity_status: verification.status, identity_registry_links: verification.registryLinks,
+            });
           }
         })
         .catch(() => {});

@@ -252,6 +252,9 @@ function renderLobby() {
               <span class="status-dot status-running"></span>
               <strong>${escapeHtml(a.display_name || a.name || a.agent_id)}</strong>
               ${identityBadge(a)}
+              ${a.identity_registry_links && a.identity_ref ? `
+                <button type="button" class="btn btn-sm btn-secondary" data-action="agent-id-card" data-agent-id="${escapeHtml(a.agent_id)}">Agent ID Card</button>
+              ` : ''}
               ${isPanel
                 ? `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="Panel is a UI connection only, not a Claude session">panel (UI only)</span>`
                 : `<select data-action="change-role" data-agent-id="${a.agent_id}" style="margin-left:6px;font-size:10px;padding:2px 4px;background:var(--bg-base);color:var(--text-secondary);border:1px solid var(--border);border-radius:3px;">
@@ -790,6 +793,17 @@ function init() {
   document.getElementById('lobby-content')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    if (btn.dataset.action === 'agent-id-card') {
+      const agent = remoteAgents.find(a => a.agent_id === btn.dataset.agentId);
+      if (!agent?.identity_registry_links || !agent.identity_ref) return;
+      const { registration, explorer } = agent.identity_registry_links;
+      showHtmlAlert('Agent ID Card', `
+        <p><strong>${escapeHtml(agent.display_name)}</strong> · ${escapeHtml(agent.agent_role || 'Generalist')}</p>
+        <p><a href="${escapeHtml(registration)}" target="_blank" rel="noopener">${escapeHtml(agent.identity_ref)} ↗</a></p>
+        <p><a href="${escapeHtml(explorer)}" target="_blank" rel="noopener">View on CCDExplorer ↗</a></p>
+      `);
+      return;
+    }
     if (btn.dataset.action === 'toggle-create-lobby') {
       createLobbyFormOpen = !createLobbyFormOpen;
       renderLobby();
