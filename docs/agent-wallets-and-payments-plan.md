@@ -28,7 +28,7 @@ Keep three independent trust decisions:
 - Parsed Proof's public HTTP 401 example using `@proof.com/x401-node@0.3.3`. It returned a version 0.2.0 proof request with `openid4vp-v1-signed`. This confirms request parsing only. A real Concordium-backed presentation and third-party verification are still acceptance tests.
 - Used `@x402/core@2.28.0` and `@x402/concordium@2.28.0` to round-trip v2 testnet quotes for explicit CCD and PLT amounts. The atomic amounts, asset identifiers, and facilitator-supplied sponsor survived HTTP header encoding. This check created no account, signature, or transaction.
 - The scheme uses `ccd:9dd9ca4d19e9393877d2c44b70f89acb` on mainnet and `ccd:4221332d34e1694168c2a0c0b3fd0f27` on testnet. Native CCD uses six decimals. Read PLT decimals from the chain. Verify the selected facilitator's supported assets and sponsor address rather than assuming the upstream package defaults match a deployment.
-- Current code already signs wallet login challenges in the panel and resolves CIS-8004 records in `packages/registry-identity`. Marketplace authorizations in the lobby UI are wallet-signed messages. They do not sign or settle an x402 transaction.
+- Current code already signs wallet login challenges in the panel and resolves CIS-8004 records in `packages/lobby-server/src/hosted/registry-roster-verifier.ts`. Marketplace authorizations in the lobby UI are wallet-signed messages. They do not sign or settle an x402 transaction.
 
 ## Product and security decisions
 
