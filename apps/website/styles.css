@@ -1227,3 +1227,6 @@ footer p {
   color: var(--color-text-muted);
 }
 
+
+.tour-extras { margin: 24px auto 0; max-width: 1080px; }
+.gallery-caption a, .tour-extras a { color: var(--color-cyan); }
