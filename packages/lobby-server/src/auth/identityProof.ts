@@ -11,6 +11,16 @@ export const TEST_ADMIN_IDENTITY = 'test-admin';
 export const TEST_ADMIN_LOBBY_ID = 'd47340a1-af18-4e77-aeb2-40dc86fb9810';
 const TEST_ADMIN_SESSION_TTL_MS = 60 * 60 * 1000;
 
+export function liveTestAdminConfig(env: NodeJS.ProcessEnv = process.env) {
+  const config = env.AGENT_OS_LIVE_TEST_ADMIN?.match(/^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):([0-9a-f]{64}):(\d{13})$/i);
+  if (!config || !isProduction(env)) return;
+  const [, lobbyId, digest, deadline] = config;
+  const expiresAt = Number(deadline);
+  const now = Date.now();
+  if (expiresAt <= now || expiresAt - now > 24 * TEST_ADMIN_SESSION_TTL_MS) return;
+  return { lobbyId, digest, expiresAt };
+}
+
 export function testAdminKeyDigest(env: NodeJS.ProcessEnv = process.env): string | undefined {
   const digest = env.AGENT_OS_TEST_ADMIN_KEY_SHA256?.trim();
   if (!isProduction(env) && digest && /^[a-f0-9]{64}$/i.test(digest)) return digest;
@@ -126,7 +136,9 @@ export async function verifyProofAndIssueToken(
  */
 export function issueSessionToken(identityRef: string, lobbyId: string): string {
   const ttlMs = identityRef === TEST_ADMIN_IDENTITY ? TEST_ADMIN_SESSION_TTL_MS : SESSION_EXPIRY_MS;
-  const payload: SessionTokenPayload = { identityRef, lobbyId, expiresAt: Date.now() + ttlMs };
+  const liveAdmin = identityRef === TEST_ADMIN_IDENTITY ? liveTestAdminConfig() : undefined;
+  const expiresAt = Math.min(Date.now() + ttlMs, liveAdmin?.expiresAt ?? Infinity);
+  const payload: SessionTokenPayload = { identityRef, lobbyId, expiresAt };
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
   return `${payloadB64}.${signPayload(payloadB64)}`;
 }
@@ -163,8 +175,10 @@ export function validateSessionToken(token: string, lobbyId: string, env: NodeJS
 
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8')) as SessionTokenPayload;
     if (!payload.identityRef || payload.lobbyId !== lobbyId) return null;
-    if (payload.identityRef === TEST_ADMIN_IDENTITY &&
-        (lobbyId !== TEST_ADMIN_LOBBY_ID || !testAdminKeyDigest(env))) return null;
+    if (payload.identityRef === TEST_ADMIN_IDENTITY) {
+      const allowedLobby = liveTestAdminConfig(env)?.lobbyId ?? (testAdminKeyDigest(env) ? TEST_ADMIN_LOBBY_ID : undefined);
+      if (lobbyId !== allowedLobby) return null;
+    }
     if (Date.now() > payload.expiresAt) return null;
     return payload;
   } catch {
