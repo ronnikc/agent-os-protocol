@@ -580,7 +580,7 @@ function startRelayServer(port: number): void {
     });
   });
 
-  httpServer.listen(port, () => {
+  httpServer.listen(port, '127.0.0.1', () => {
     log('info', '═══════════════════════════════════════════════════');
     log('info', '  UI Assist Relay Server');
     log('info', `  WebSocket: ws://localhost:${port}`);
@@ -622,6 +622,7 @@ interface ParsedArgs {
   port: number;
   cwd: string;
   lobbyBaseUrl?: string;
+  lobbyId?: string;
   agentName?: string;
   agentRole?: string;
   /** Runtime adapter id to drive (`--runtime codex-cli`); defaults to claude-cli. */
@@ -638,6 +639,7 @@ function parseArgs(): ParsedArgs {
   let port = Number(process.env.AGENT_OS_RELAY_PORT) || DEFAULT_PORT;
   let cwd = process.cwd();
   let lobbyBaseUrl: string | undefined = process.env.AGENT_OS_LOBBY_URL?.replace(/\/+$/, '') || undefined;
+  let lobbyId = process.env.AGENT_OS_LOBBY_ID?.trim();
   let agentName: string | undefined;
   let agentRole: string | undefined;
   let runtimeId: string | undefined = process.env.AGENT_OS_RUNTIME || undefined;
@@ -654,6 +656,8 @@ function parseArgs(): ParsedArgs {
     } else if (args[i] === '--lobby' && args[i + 1]) {
       lobbyBaseUrl = args[i + 1].replace(/\/+$/, ''); // strip trailing slash
       i++;
+    } else if (args[i] === '--lobby-id' && args[i + 1]) {
+      lobbyId = args[++i];
     } else if (args[i] === '--agent-name' && args[i + 1]) {
       agentName = args[i + 1];
       i++;
@@ -672,7 +676,7 @@ function parseArgs(): ParsedArgs {
     }
   }
 
-  return { port, cwd, lobbyBaseUrl, agentName, agentRole, runtimeId, model, joinToken };
+  return { port, cwd, lobbyBaseUrl, lobbyId, agentName, agentRole, runtimeId, model, joinToken };
 }
 
 /** Auto-discover the active lobby via the public /discover endpoint (no auth required). */
@@ -705,7 +709,7 @@ async function discoverActiveLobby(
   }
 }
 
-const { port, cwd, lobbyBaseUrl, agentName, agentRole, runtimeId: cliRuntimeId, model: agentModel, joinToken } = parseArgs();
+const { port, cwd, lobbyBaseUrl, lobbyId, agentName, agentRole, runtimeId: cliRuntimeId, model: agentModel, joinToken } = parseArgs();
 relayCwd = cwd;
 // The runtime this relay actually drives — precedence: --runtime flag → AGENT_OS_RUNTIME → claude-cli.
 activeRuntimeId = (cliRuntimeId as RuntimeId) || activeRuntimeId;
@@ -748,8 +752,8 @@ if (lobbyBaseUrl) {
   (async () => {
     try {
       log('info', `Discovering active lobby on ${lobbyBaseUrl}...`);
-      const lobby = await discoverActiveLobby(lobbyBaseUrl);
-      if (!lobby) {
+      const lobby = lobbyId ? null : await discoverActiveLobby(lobbyBaseUrl);
+      if (!lobbyId && !lobby) {
         log('warn', 'No active lobby — relay running without lobby connection.');
         log('warn', 'Create a lobby in the staging UI Lobby tab, then restart the relay.');
         return;
@@ -769,22 +773,28 @@ if (lobbyBaseUrl) {
         (agentRole ? `${hostname}-${agentRole}-${port}` : `${hostname}-${branch}-${port}`);
 
       const { RelayLobbyBridge } = await import('./agent-lobby/relay-lobby-bridge.js');
+      const lobbyHost = new URL(lobbyBaseUrl).hostname;
+      const localLobby = ['localhost', '127.0.0.1', '[::1]'].includes(lobbyHost);
+      const remoteExecution = process.env.AGENT_OS_ALLOW_REMOTE_EXECUTION === '1';
+      const lobbySessionToken = process.env.AGENT_OS_LOBBY_SESSION_TOKEN?.trim();
+      if (!localLobby && !remoteExecution) {
+        log('info', 'Remote lobby observation enabled. Local runtime execution requires AGENT_OS_ALLOW_REMOTE_EXECUTION=1.');
+      }
       // Pass the clean BASE URL + ids — LobbyClient builds the WS URL itself. (The old code
       // handed it a fully-composed ws URL with ?lobby_id= baked in, so the client's own path
       // + query got appended on top and the server kept reading the stale pre-discovered id.)
       const bridge = (lobbyBridge = new RelayLobbyBridge({
         lobbyUrl: lobbyBaseUrl,
-        lobbyId: lobby.lobbyId,
-        orgId: lobby.orgId,
+        lobbyId,
+        orgId: lobby?.orgId,
         agentName: name,
-        cwd,
         branch,
-        pid: process.pid,
-        relayPort: port,
         agentRole,
         runtime: activeAdapter.label,
         model: activeModel,
-        joinToken,
+        joinToken: lobbySessionToken || joinToken,
+        agentIdentityRef: lobbySessionToken && joinToken?.startsWith('did:ccd:') ? joinToken : undefined,
+        allowLobbyInvites: localLobby || remoteExecution,
         onLobbyMessage: (() => {
           // Persistent lobby session ID for conversation continuity (--resume)
           const lobbySessionId = `lobby-${name}-${Date.now().toString(36)}`;
@@ -794,6 +804,8 @@ if (lobbyBaseUrl) {
               'info',
               `[lobby] ${msg.type}${msg.type === 'lobby-registered' ? ` — agent_id: ${msg.agent_id}` : ''}`,
             );
+            if (!localLobby && !remoteExecution &&
+                (msg.type === 'lobby-task-assigned' || msg.type === 'lobby-message-received')) return;
 
             // ── Task-based coordination ──
             if (msg.type === 'lobby-task-assigned') {
@@ -826,7 +838,7 @@ if (lobbyBaseUrl) {
                 prompt += `- If blocked, describe the blocker clearly.\n`;
 
                 // Notify coordinator we accepted the task
-                bridge.updateTaskProgress(task.task_id, 'Accepted — waiting for agent', 0);
+                bridge.acceptTask(task.task_id);
 
                 let fullResponse = '';
                 let chunkCount = 0;
@@ -837,11 +849,8 @@ if (lobbyBaseUrl) {
                   sessionId: lobbySessionId,
                   cwd,
                 })) {
-                  if (chunk.type === 'done' || chunk.type === 'status') {
-                    if (chunk.content && chunk.content !== 'Thinking…') {
-                      fullResponse = chunk.content;
-                    }
-                  }
+                  if (chunk.type === 'error') throw new Error(chunk.content || 'Runtime failed');
+                  if (chunk.type === 'done' && chunk.content) fullResponse = chunk.content;
 
                   chunkCount++;
 
@@ -865,7 +874,7 @@ if (lobbyBaseUrl) {
                   bridge.completeTask(task.task_id, result);
                   log('info', `[lobby] Task ${task.task_id} completed (${result.length} chars)`);
                 } else {
-                  bridge.completeTask(task.task_id, '(No output produced)');
+                  bridge.failTask(task.task_id, 'Runtime finished without a result');
                 }
               } catch (err) {
                 const errMsg = err instanceof Error ? err.message : 'Internal error';
@@ -1235,7 +1244,7 @@ if (lobbyBaseUrl) {
         log: (level, message) => log(level, `[lobby-bridge] ${message}`),
       }));
       bridge.connect();
-      log('info', `Lobby bridge connecting: lobby=${lobby.lobbyId}, agent=${name}`);
+      log('info', `Lobby bridge connecting: lobby=${lobbyId ?? lobby?.lobbyId}, agent=${name}`);
 
       // NOTE: Periodic awareness check removed (PR #952). It caused a HAND cascade —
       // each agent raised a hand every 30s, others buffered the hands, saw them in

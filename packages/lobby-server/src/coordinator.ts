@@ -34,7 +34,8 @@ import type {
 import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
 import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
-import { validateSessionToken } from './auth/identityProof.js';
+import { isProduction, validateSessionToken, type SessionTokenPayload } from './auth/identityProof.js';
+import { isLobbyManager } from './auth/lobbyAuthz.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 
 /**
@@ -53,6 +54,7 @@ export interface Connection {
   agentId?: string;
   /** Browser human participant — exempt from floor control (LOBBY-PROTOCOL.md). */
   isHuman?: boolean;
+  session?: SessionTokenPayload;
   /**
    * Server-internal connection (a hosted agent on a virtual socket, spawned by the authenticated
    * LobbyOwner). The server itself asserts this agent's identity, so the impersonation-protection
@@ -129,6 +131,15 @@ export class LobbyCoordinator {
 
   // ── Entry point ──
   async handle(conn: Connection, msg: AgentToLobbyMessage): Promise<HandleResult> {
+    if (msg.type === 'lobby-register' && conn.agentId) return { out: [] };
+    if (msg.type !== 'lobby-register' && msg.type !== 'lobby-unregister') {
+      const lobby = await this.store.getLobby(conn.lobbyId);
+      if (!conn.agentId || lobby?.status !== 'active') return { out: [], close: true };
+      if (isProduction() && !conn.trusted && msg.type !== 'lobby-heartbeat' &&
+          (!conn.session || conn.session.expiresAt <= Date.now())) {
+        return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'wallet session required to participate' } }] };
+      }
+    }
     switch (msg.type) {
       case 'lobby-register':
         return this.onRegister(conn, msg);
@@ -230,34 +241,33 @@ export class LobbyCoordinator {
   // ── Register ──
   private async onRegister(conn: Connection, msg: Extract<AgentToLobbyMessage, { type: 'lobby-register' }>): Promise<HandleResult> {
     const lobby = await this.store.getLobby(conn.lobbyId);
-    if (!lobby) {
-      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: `unknown lobby: ${conn.lobbyId}` } }], close: true };
+    if (!lobby || lobby.status !== 'active') {
+      const error = lobby ? 'lobby is not active' : `unknown lobby: ${conn.lobbyId}`;
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error } }], close: true };
     }
 
     let verification: IdentityVerificationResult | undefined;
     const policy = effectiveJoinPolicy(lobby);
 
-    let presentedRef = msg.join_token;
+    const session = msg.join_token ? validateSessionToken(msg.join_token, conn.lobbyId) : null;
+    const registryRef = msg.join_token?.startsWith('did:ccd:') ? msg.join_token : undefined;
+    let presentedRef = msg.agent_identity_ref ?? session?.identityRef ?? registryRef;
     let isTokenVerified = false;
 
     // Enforce private lobby signature-token check
     if (lobby.visibility === 'private') {
-      const isDirectDidTest = msg.join_token?.startsWith('did:ccd:');
-      if (!isDirectDidTest) {
-        const joinResult = await verifyLobbyJoinPolicy(conn.lobbyId, msg.join_token, this.store, msg.display_name);
+      const trustedDid = conn.trusted && msg.join_token?.startsWith('did:ccd:');
+      if (!trustedDid) {
+        const joinResult = await verifyLobbyJoinPolicy(conn.lobbyId, msg.join_token, this.store, msg.agent_identity_ref);
         if (!joinResult.allowed) {
           await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, reason: joinResult.reason });
           return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: joinResult.reason || 'unauthorized' } }], close: true };
         }
-        msg.join_token = joinResult.identityRef;
         presentedRef = joinResult.identityRef;
-        verification = {
-          status: 'registry_verified',
-          ref: { did: joinResult.identityRef || '', registry: 'mock-registry', network: 'testnet' },
-          source: 'none',
-          checkedAt: new Date().toISOString()
-        };
-        isTokenVerified = true;
+        if (!msg.agent_identity_ref && msg.participant_type !== 'human' && policy !== 'none' && policy !== 'allowlisted') {
+          return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'agent identity proof is required' } }], close: true };
+        }
+        isTokenVerified = !msg.agent_identity_ref;
       }
     }
 
@@ -271,8 +281,8 @@ export class LobbyCoordinator {
 
       if (policy === 'allowlisted') {
         const allow = lobby.allowlist ?? [];
-        const key = msg.join_token ?? msg.display_name;
-        if (!allow.includes(key)) return deny('private lobby: not on the allowlist');
+        if (!presentedRef || !allow.includes(presentedRef)) return deny('private lobby: not on the allowlist');
+        if (!conn.trusted && !session) return deny('private lobby: authenticated identity is required');
       } else if (policy === 'registered') {
         if (!presentedRef) return deny('private lobby: a registered identity reference is required to join');
         verification = await this.verifyIdentity(presentedRef);
@@ -305,29 +315,27 @@ export class LobbyCoordinator {
       // the identity — there is no external client to impersonate. Without this exemption a hosted
       // agent whose DID *does* resolve on-chain would be DENIED (it presents a bare DID, not a
       // session token), so hosted agents could never show as verified.
-      if (!conn.trusted && presentedRef && verification && isRegistryResolved(verification.status)) {
-        const ownerAccount = verification.ref?.account;
-        if (ownerAccount) {
-          const token = msg.join_token;
-          if (!token || !token.includes('.')) {
-            return deny('impersonation protection: a valid connection session token is required when registering with an Agent ID (DID)');
-          }
-          const payload = validateSessionToken(token, conn.lobbyId);
-          if (!payload) {
-            return deny('impersonation protection: invalid or expired session token');
-          }
-          if (payload.identityRef.toLowerCase() !== ownerAccount.toLowerCase()) {
-            return deny('impersonation protection: session token owner does not match Agent ID (DID) owner account');
-          }
+      if (!conn.trusted && (msg.agent_identity_ref || verification && isRegistryResolved(verification.status))) {
+        const account = verification?.ref?.account;
+        const network = verification?.ref?.network;
+        if (!verification || !isRegistryResolved(verification.status) || !account || !network ||
+            session?.identityRef !== `did:ccd:${network}:${account}`) {
+          return deny('impersonation protection: Agent ID requires a session for its registered wallet');
         }
       }
     }
 
+    const member = presentedRef ? await this.store.getMember(conn.lobbyId, presentedRef) : undefined;
+    if (member?.status === 'revoked') {
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'lobby membership is revoked' } }], close: true };
+    }
     const now = new Date().toISOString();
     const agentId = randomUUID();
-    const isHuman = msg.participant_type === 'human';
+    const isHuman = msg.participant_type === 'human' && !msg.agent_identity_ref &&
+      (!isProduction() || !!session || !!conn.trusted);
     conn.agentId = agentId;
     conn.isHuman = isHuman;
+    conn.session = session ?? undefined;
     const agent: LobbyAgent = {
       agent_id: agentId,
       display_name: msg.display_name,
@@ -459,7 +467,10 @@ export class LobbyCoordinator {
     const lobby = await this.store.getLobby(conn.lobbyId);
     if (!lobby) return { out: [] };
     // Only the current Boss, a human, or the first appointer (when no boss yet) may appoint.
-    const allowed = !lobby.boss_agent_id || lobby.boss_agent_id === conn.agentId || conn.isHuman;
+    const manager = conn.session && await isLobbyManager(this.store, conn.lobbyId, conn.session.identityRef);
+    const allowed = isProduction()
+      ? conn.trusted || manager || lobby.boss_agent_id === conn.agentId
+      : !lobby.boss_agent_id || lobby.boss_agent_id === conn.agentId || conn.isHuman;
     if (!allowed) {
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'only the current Boss or a human may appoint the Boss' } }] };
     }

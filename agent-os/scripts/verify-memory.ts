@@ -20,7 +20,7 @@ import assert from 'node:assert/strict';
 import { existsSync, statSync, readFileSync, readdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { fileToAgents, protoOwners } from './process-spawn-requests.mjs';
 import { run as runSelfLearning } from './self-learning-review.mjs';
 
@@ -31,7 +31,12 @@ async function check(name: string, fn: () => void | Promise<void>): Promise<void
   try { await fn(); passed++; console.log(`  ✓ ${name}`); }
   catch (err) { failures.push(name); console.log(`  ✗ ${name}\n      ${(err as Error).message}`); }
 }
-const isExec = (p: string) => { try { return (statSync(p).mode & 0o111) !== 0; } catch { return false; } };
+function isExec(path: string): boolean {
+  if (process.platform === 'win32') {
+    return execFileSync('git', ['ls-files', '--stage', '--', path], { encoding: 'utf8' }).startsWith('100755 ');
+  }
+  return (statSync(path).mode & 0o111) !== 0;
+}
 const agentDefExists = (slug: string) => existsSync(join(ROOT, `agent-os/sub-agents/agents/${slug}.md`));
 
 async function main(): Promise<void> {

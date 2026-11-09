@@ -21,8 +21,9 @@ How a release is cut. The project versions the **repository as a whole** (a git 
    version section whose number equals `package.json`'s version.
 4. **Green the gates** from a clean tree:
    ```bash
-   npm install
-   npm run verify-all      # adapters + providers + lobby + identity + ui-assist + launch
+   npm ci
+   npx tsc -b
+   npm run verify-all
    npm run smoke           # fresh clone boots Panel + Lobby + Relay end-to-end
    ```
    `verify-launch` also re-checks the brand/domain gates, license, and changelog↔version match.
@@ -38,6 +39,22 @@ How a release is cut. The project versions the **repository as a whole** (a git 
 > The tag points at the **merge commit on `main`**, not a feature-branch commit — so cut it after
 > the release PR is merged.
 
+Before opening the repository to the public, verify these flows on the release candidate:
+
+- A fresh Windows and Linux checkout can boot the local panel and complete one task with a local
+  agent. On a test lobby, repeat the task across the WebSocket and verify disconnect and reconnect.
+- The live GitHub App can open a reviewable canary PR against the demo repository. Verify that
+  guests cannot dispatch work or manage the lobby.
+- On a wallet-enabled machine, create a disposable private lobby, activate a member, admit an agent
+  with its registered DID, then revoke access and confirm that the connection closes and rejoin is
+  denied. Check that the public roster's verification badges agree with the registry.
+- Compare both deployments' `/health` revisions with the tested SHA. Check the Git history and
+  public demo content for credentials, private workspace data, and references that need redaction.
+  In particular, review the historical `lobby-store-db.json` before publishing the commit history.
+
+Set `AGENT_OS_PUBLIC_LOBBY_OWNER` before deploying if the production lobby has no owner. Use the
+operator's full Concordium wallet DID. A wallet already recorded as the owner retains control.
+
 ## What a release contains
 
 A clone at a release tag runs **Local Mode** (`npm run agent-os-panel`), connects to a **lobby**
@@ -52,7 +69,7 @@ These need external infrastructure that cannot be booted or verified in CI, and 
 
 - **npm publishing** of the `@agent-os/*` packages and the bundled UI Assist framework wrappers
   (`-react`/`-next`/`-vue`/…) — needs a bundler + a registry.
-- **Hosted swarm lobby** `apps/lobby-web` (Vercel + Upstash) — a deploy, not a tag artifact.
+- **Hosted swarm lobby** `apps/lobby-web` and its server are deployed through the SSH/PM2 workflow.
 - **Live Concordium indexer** wiring and on-chain (wallet-side) registration.
 
 When npm publishing is introduced, this file gains a per-package `npm version` + `npm publish

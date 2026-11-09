@@ -7,6 +7,15 @@ All notable changes to **Agent OS Protocol** are documented here. The format fol
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project aims to follow
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Add an opt-in, wallet-free admin account scoped to a dedicated private test lobby.
+- Require signed sessions for private lobby creation and enforce membership and manager access at
+  the server. Record moderation under the authenticated identity and disconnect revoked members.
+- Require explicit consent before a remote lobby can trigger local relay execution.
+- Verify Linux and Windows changes in CI, gate deployments on the build and test suite, and expose
+  the deployed revision in health checks.
+
 ## [0.2.0] — 2026-06-30
 
 The first beta release of the independent platform. Integrates autonomous Loop Mode, a fully responsive glassmorphism control panel redesign, a public landing website, and a local swarm lobby preview dashboard with stats telemetry.

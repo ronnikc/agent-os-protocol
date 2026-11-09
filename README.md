@@ -9,7 +9,7 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 &nbsp;Status: **v0.2.0 Beta Released**
 [![Deploy sites](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml/badge.svg)](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml)
 
-> 🚀 **Project status.** The platform is fully released and stable. It includes the browser control panel and relay (`npm run agent-os-panel`), generic agent rosters with `/train` capability, runtime-adapter abstractions for Claude CLI and Codex CLI, an independent WebSocket/HTTP lobby server with Concordium registry identity verification, the autonomous execution engine (**Loop Mode**), and the public website and swarm telemetry web dashboard (`npm run lobby-web`).
+> **Project status.** Agent OS Protocol is in beta. The local panel and relay, independent lobby server, and hosted swarm demo are available for evaluation. The [release checklist](RELEASING.md) tracks the checks for opening the repository to the public.
 
 ---
 
@@ -54,7 +54,7 @@ agents** instead of a single chat session. It gives you:
   generic **Domain Specialist** you teach with `/train`.
 - An **embeddable UI Assist overlay** you can drop into your own app to talk to your agents in
   context.
-- **Runtime freedom** — drive Claude Code, Codex CLI, OpenCode, Cursor, and others through a
+- **Runtime freedom** — drive Claude Code and Codex CLI through a
   stable adapter interface, or fuel agents directly via OpenAI/Anthropic-compatible APIs
   (bring your own key).
 - **Accountability** — optional verified agent identity (Concordium Agent Registry) so private

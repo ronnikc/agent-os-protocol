@@ -1,0 +1,26 @@
+name: Verify
+
+on:
+  pull_request:
+  workflow_call:
+
+jobs:
+  verify:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -b
+      - run: npm run verify-all
+        env:
+          AGENT_OS_LOBBY_STORE_FILE: ${{ runner.temp }}/agent-os-verification-lobby.json

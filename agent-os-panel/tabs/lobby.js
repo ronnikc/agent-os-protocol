@@ -157,11 +157,11 @@ function renderLobby() {
 
   // Membership Control picker — the set of connected participants (agents + humans) that are not
   // already members of this lobby. Lets the owner invite anyone in the roster directly instead of
-  // hand-typing a DID. Humans carry their DID as agent_id; agents carry their agent_id.
+  // hand-typing a DID.
   const memberRefs = new Set((lobbyMembers || []).map(m => m.identity_ref));
   const invitableParticipants = [
-    ...onlineHumans.map(h => ({ id: h.agent_id, label: `${h.display_name || h.name || h.agent_id} (human)` })),
-    ...onlineAgents.map(a => ({ id: a.agent_id, label: `${a.display_name || a.name || a.agent_id}${a.agent_role ? ` · ${a.agent_role}` : ''}` })),
+    ...onlineHumans.map(h => ({ id: h.identity_ref, label: `${h.display_name || h.name || h.agent_id} (human)` })),
+    ...onlineAgents.map(a => ({ id: a.identity_ref, label: `${a.display_name || a.name || a.agent_id}${a.agent_role ? ` · ${a.agent_role}` : ''}` })),
   ].filter(p => p.id && !memberRefs.has(p.id));
   const invitePickerOptions = invitableParticipants
     .map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.label)}</option>`)
@@ -364,10 +364,13 @@ function renderLobby() {
                     <span style="font-family:monospace; color:var(--text-primary);" title="${escapeHtml(m.identity_ref)}">${escapeHtml(m.identity_ref.slice(0, 15))}...</span>
                     <span style="color:var(--text-muted); font-size:9px;">Role: ${m.role} (${m.status})</span>
                   </div>
-                  ${m.status !== 'revoked' ? `
-                    <button class="btn btn-danger btn-sm" style="padding:2px 6px; font-size:9px; height:auto; line-height:1;" data-revoke-member="${escapeHtml(m.id)}">Kick</button>
-                  ` : `
+                  ${m.role === 'owner' ? '' : m.status === 'revoked' ? `
                     <span style="color:var(--color-red); font-weight:600; font-size:9px; text-transform:uppercase;">Kicked</span>
+                  ` : `
+                    <div>
+                      ${m.status === 'invited' ? `<button class="btn btn-secondary btn-sm" data-member-status="active" data-member-id="${escapeHtml(m.id)}">Activate</button>` : ''}
+                      <button class="btn btn-danger btn-sm" data-member-status="revoked" data-member-id="${escapeHtml(m.id)}">Kick</button>
+                    </div>
                   `}
                 </div>
               `).join('') || '<div style="padding:12px; text-align:center; color:var(--text-muted); font-size:11px;">No members invited.</div>'}
@@ -487,10 +490,9 @@ function renderLobby() {
         || document.getElementById('invite-member-picker')?.value?.trim();
       const role = document.getElementById('invite-member-role')?.value;
       if (!identity_ref) return;
-      const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
       const res = await fetchJson('/api/lobby/remote/members', {
         method: 'POST',
-        body: JSON.stringify({ identity_ref, role, invited_by_identity_ref: s?.identityRef })
+        body: JSON.stringify({ identity_ref, role })
       });
       if (res && !res.error) {
         showAlert('Member Invited', 'Successfully invited member DID to join this remote swarm.');
@@ -500,19 +502,17 @@ function renderLobby() {
       }
     });
 
-    el.querySelectorAll('[data-revoke-member]').forEach(b => {
+    el.querySelectorAll('[data-member-status]').forEach(b => {
       b.addEventListener('click', async () => {
-        const memberId = b.getAttribute('data-revoke-member');
-        const s = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+        const { memberId, memberStatus } = b.dataset;
         const res = await fetchJson(`/api/lobby/remote/members/${memberId}/status`, {
           method: 'POST',
-          body: JSON.stringify({ status: 'revoked', actor: s?.identityRef })
+          body: JSON.stringify({ status: memberStatus })
         });
         if (res && !res.error) {
-          showAlert('Member Revoked', 'Member access revoked successfully.');
           refresh();
         } else {
-          showAlert('Failed to Revoke Member', res?.error || 'Unknown error');
+          showAlert('Could Not Update Member', res?.error || 'Unknown error');
         }
       });
     });
@@ -811,10 +811,16 @@ function init() {
         visibility,
         join_policy: policy,
         allowlist: invitees,
-        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:mainnet:${state.wallet.address}` : undefined,
+        auth_lobby_id: JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null')?.lobbyId,
       }).then(async res => {
         if (res && res.lobby) {
           const newLobbyId = res.lobby.lobby_id;
+          if (res.token) {
+            localStorage.setItem('agentos.hosted.session', JSON.stringify({
+              token: res.token, identityRef: res.lobby.created_by, lobbyId: newLobbyId,
+            }));
+            localStorage.setItem('agent-os-lobby-token', res.token);
+          }
           for (const agentId of invitees) {
             await postJson('/api/messages', {
               to: agentId,
@@ -840,10 +846,12 @@ function init() {
         renderLobby();
       });
     }
-    if (btn.dataset.action === 'pause-lobby') { await postJson('/api/lobby/remote/status', { status: 'paused' }); refresh(); }
-    if (btn.dataset.action === 'close-lobby') {
-      if (!confirm('Close the lobby?')) return;
-      await postJson('/api/lobby/remote/status', { status: 'closed' }); refresh();
+    if (btn.dataset.action === 'pause-lobby' || btn.dataset.action === 'close-lobby') {
+      const closing = btn.dataset.action === 'close-lobby';
+      if (closing && !confirm('Close the lobby and disconnect its agents?')) return;
+      const res = await postJson('/api/lobby/remote/status', { status: closing ? 'closed' : 'paused' });
+      if (res?.error) showAlert('Could Not Update Lobby', res.error);
+      await refresh();
     }
     if (btn.dataset.action === 'appoint-boss') {
       const agentId = btn.dataset.agentId;

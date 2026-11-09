@@ -3,6 +3,7 @@
 
 import type { LobbyStore } from '../store.js';
 import { validateSessionToken } from './identityProof.js';
+import { lobbyOwnerRef } from './lobbyAuthz.js';
 
 export interface JoinPolicyResult {
   allowed: boolean;
@@ -15,7 +16,7 @@ export async function verifyLobbyJoinPolicy(
   lobbyId: string,
   token: string | undefined,
   store: LobbyStore,
-  displayName?: string
+  agentRef?: string
 ): Promise<JoinPolicyResult> {
   const lobby = await store.getLobby(lobbyId);
   if (!lobby) {
@@ -29,15 +30,6 @@ export async function verifyLobbyJoinPolicy(
 
   const policy = lobby.join_policy || (lobby.visibility === 'private' ? 'allowlisted' : 'none');
 
-  if (policy === 'allowlisted') {
-    const allow = lobby.allowlist ?? [];
-    const key = token || displayName || '';
-    if (allow.includes(key)) {
-      return { allowed: true, identityRef: key };
-    }
-    return { allowed: false, reason: 'private lobby: not on the allowlist' };
-  }
-
   // Private lobbies require a valid token
   if (!token) {
     return { allowed: false, reason: 'authentication token is required' };
@@ -49,7 +41,15 @@ export async function verifyLobbyJoinPolicy(
   }
 
   // Verify membership record in database
-  const member = await store.getMember(lobbyId, payload.identityRef);
+  const identityRef = agentRef ?? payload.identityRef;
+  const member = await store.getMember(lobbyId, identityRef);
+  if (policy === 'allowlisted' && identityRef !== lobbyOwnerRef(lobby) &&
+      !(lobby.allowlist ?? []).includes(identityRef)) {
+    return { allowed: false, reason: 'private lobby: not on the allowlist' };
+  }
+  if (policy === 'allowlisted' && !member) {
+    return { allowed: true, identityRef };
+  }
   if (!member) {
     return { allowed: false, reason: 'not a member of this private lobby' };
   }
@@ -62,5 +62,5 @@ export async function verifyLobbyJoinPolicy(
     return { allowed: false, reason: 'membership has expired' };
   }
 
-  return { allowed: true, identityRef: payload.identityRef };
+  return { allowed: true, identityRef };
 }
