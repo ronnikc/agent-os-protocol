@@ -1,10 +1,12 @@
 /**
  * Messages Tab — Enhanced message bus viewer with filtering, threading, send
  */
-import { state, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate, renderMarkdownSafe, agentName, refreshAgentNameMap, showAlert } from '../app.js';
+import { state, hostedSession, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate, renderMarkdownSafe, agentName, refreshAgentNameMap, showAlert } from '../app.js';
 
 let messages = [];
 let wsMessages = []; // lobby messages received via WebSocket (persist across refresh)
+let messageLobbyId = null;
+let refreshVersion = 0;
 let lastSource = '';
 let filters = { agent: '', type: '', limit: 50 };
 
@@ -185,8 +187,16 @@ async function uploadStaged() {
 }
 
 async function refresh() {
+  const version = ++refreshVersion;
   const modeData = await fetchJson('/api/mode');
+  if (version !== refreshVersion) return;
   lobbyMode = modeData?.mode || 'local';
+  const lobbyId = hostedSession()?.lobbyId || state.session.lobbyId || modeData?.lobby_id || null;
+  if (lobbyId !== messageLobbyId) {
+    messageLobbyId = lobbyId;
+    wsMessages = [];
+    messages = [];
+  }
   if (lobbyMode === 'swarm') await refreshAgentNameMap();
 
   const params = new URLSearchParams();
@@ -203,17 +213,20 @@ async function refresh() {
     data = await fetchJson(`/api/messages?${params}`);
   }
 
-  if (data) {
+  if (data && version === refreshVersion) {
     const apiMessages = data.messages || [];
-    // Merge API messages with WS-received lobby messages (dedup by content+from)
-    const apiKeys = new Set(apiMessages.map(m => `${m.content || ''}::${m.from_agent_id || m.from || ''}`));
-    const uniqueWs = wsMessages.filter(m => !apiKeys.has(`${m.content || ''}::${m.from_agent_id || m.from || ''}`));
+    const apiKeys = new Set(apiMessages.map(messageKey));
+    const uniqueWs = wsMessages.filter(m => !apiKeys.has(messageKey(m)));
     messages = [...apiMessages, ...uniqueWs]
       .sort((a, b) => (a.created_at || a.timestamp || '').localeCompare(b.created_at || b.timestamp || ''));
     lastSource = data.source || '';
     renderMessages();
     renderFilterBar();
   }
+}
+
+function messageKey(message) {
+  return message.message_id || message.id || `${message.content || ''}::${message.from_agent_id || message.from || ''}`;
 }
 
 async function populateToDropdown() {
@@ -321,7 +334,11 @@ function init() {
     // Add lobby message to the display immediately
     const msg = data?.message || data || raw?.message;
     if (msg && (msg.content || msg.from_agent_id)) {
+      const selectedLobby = hostedSession()?.lobbyId || state.session.lobbyId || messageLobbyId;
+      if ((msg.lobby_id && msg.lobby_id !== selectedLobby) ||
+          (lobbyMode === 'swarm' && !window.AGENT_OS_HOSTED && !msg.lobby_id)) return;
       const formatted = {
+        message_id: msg.message_id || msg.id,
         timestamp: msg.created_at || msg.timestamp || new Date().toISOString(),
         from: msg.from_display_name || msg.from_agent_id || msg.from || '?',
         from_agent_id: msg.from_agent_id,
@@ -336,9 +353,7 @@ function init() {
         source: 'staging',
       };
       // Avoid duplicates (check last few messages)
-      const isDupe = messages.slice(-5).some(m =>
-        (m.content || '') === formatted.content && (m.from || m.from_agent_id || '') === formatted.from
-      );
+      const isDupe = messages.some(m => messageKey(m) === messageKey(formatted));
       if (!isDupe) {
         wsMessages.push(formatted); // persist across refresh cycles
         messages.push(formatted);
