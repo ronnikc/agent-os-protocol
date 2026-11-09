@@ -8,11 +8,10 @@
 export class GitHubRepoClient {
   /**
    * The branch reads default to and writes commit to when a caller doesn't pass one explicitly.
-   * The agent's repo tools (read_file/write_file) pass no branch, so this is how the branch/PR
-   * workflow redirects a task's writes onto a per-task branch: set activeBranch for the task, run
-   * the agent, then reset. Defaults to the connected working branch.
+   * The default for callers that do not pass a ref. Hosted task tools pass their
+   * authorized work-session branch explicitly.
    */
-  public activeBranch: string;
+  public readonly activeBranch: string;
 
   /**
    * The auth token, or a provider that returns a FRESH one. Long-lived clients (a hosted agent's
@@ -86,7 +85,7 @@ export class GitHubRepoClient {
 
   /**
    * Create or update a file and commit it, resolving the current file SHA if it exists. Commits to
-   * `branch` when given, else `activeBranch` (the branch/PR workflow sets activeBranch per task).
+   * `branch` when given, else `activeBranch`.
    */
   async writeFile(path: string, content: string, message: string, branch?: string): Promise<string> {
     const target = branch ?? this.activeBranch;
@@ -294,8 +293,8 @@ export class GitHubRepoClient {
   }
 
   /** List file paths inside a directory path in the repository. */
-  async listFiles(path: string = ''): Promise<string[]> {
-    const data = await this.request(`/contents/${path}`);
+  async listFiles(path: string = '', ref = this.activeBranch): Promise<string[]> {
+    const data = await this.request(`/contents/${path}?ref=${encodeURIComponent(ref)}`);
     if (!Array.isArray(data)) {
       return [data.path];
     }

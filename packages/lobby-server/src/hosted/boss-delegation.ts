@@ -18,9 +18,13 @@
 
 export const BOSS_DELEGATION_GUIDE = [
   '[DELEGATION] To act on a specific agent, put each directive on its OWN line, starting with @ and',
-  'the agent\'s exact name from the roster above. Two kinds:',
+  'the agent\'s exact name from the roster above:',
   '  • Ask for input / coordinate (no task):  `@<Agent Name>: <your question or request>`',
-  '  • Assign a tracked task (unit of work):  `@<Agent Name> [task]: <what to do>`',
+  '  • Assign a tracked repository task: `@<Agent Name> [task]: <what to do>`',
+  '  • Assign tracked work delivered in text: `@<Agent Name> [task text]: <what to do>`',
+  'For dependent work, assign prerequisites first. On each task handoff, inspect the recorded statuses and results.',
+  'Assign the next stage once all prerequisites succeeded and that stage has not already been assigned.',
+  'On a confirmed merge notice, tell the owner what merged. Only report a merge supported by GitHub status.',
   'Only lines in these exact forms are dispatched — a plain sentence naming an agent is NOT. Use',
   '[task] ONLY for real work worth tracking (e.g. part of a sprint or phase plan); use the plain',
   'form for questions, reviews-of-input, and coordination. Write any human-facing summary as normal',
@@ -37,19 +41,20 @@ export interface BossDirective {
   instruction: string;
   /** 'task' creates a tracked Task; 'message' is a plain coordination/request direct message. */
   kind: 'task' | 'message';
+  outputMode?: 'text';
 }
 
 /** Extract `@Name: instruction` / `@Name [task]: instruction` directives from a Boss reply. */
 export function parseBossDelegations(reply: string): BossDirective[] {
   const out: BossDirective[] = [];
   // group1: agent name (no ':' or '['); group2: optional [task] marker; group3: instruction.
-  const re = /^\s*@([^\n:[]+?)\s*(\[task\])?\s*:\s*(\S.*?)\s*$/gim;
+  const re = /^[ \t]*@([^\n:[]+?)[ \t]*(\[task( text)?\])?[ \t]*:[ \t]*(\S.*?)[ \t]*$/gim;
   let m: RegExpExecArray | null;
   while ((m = re.exec(reply)) !== null) {
     const target = m[1].trim();
     const kind: 'task' | 'message' = m[2] ? 'task' : 'message';
     const instruction = m[3].trim();
-    if (target && instruction) out.push({ target, instruction, kind });
+    if (target && instruction) out.push({ target, instruction, kind, ...(m[3] ? { outputMode: 'text' as const } : {}) });
   }
   return out;
 }

@@ -15,6 +15,8 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { TaskRepository } from './hosted/task-repository.js';
+import type { GitHubRepoClient } from './hosted/github-repo-client.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
@@ -481,7 +483,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
-  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: any; workingBranch?: string }>();
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string }>();
   // Per-agent throttle for broadcast observation (see observeBroadcast) — bounds LLM cost so a
   // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
   const lastObservation = new Map<string, number>();
@@ -563,7 +565,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // run one API-runtime turn and post the reply back through the coordinator (broadcast if Boss,
   // else a direct reply to the sender). Self-echoes and unrelated messages are ignored to prevent
   // cascades. Also handles boss-appointed notifications so the agent becomes aware of its role.
-  async function onHostedInbound(conn: Connection, data: string): Promise<void> {
+  async function onHostedInbound(
+    conn: Connection, data: string, queuedBossTurn?: (content: string) => Promise<string>,
+  ): Promise<void> {
     let msg: { type?: string; message?: Record<string, unknown>; agent_id?: string };
     try { msg = JSON.parse(data); } catch { return; }
     const myId = conn.agentId;
@@ -604,7 +608,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // (the runner has repo tools when a GitHub repo is connected) → mark completed/failed with the
     // result → report to the assigner (falling back to the Boss, then the lobby log).
     if (msg?.type === 'lobby-task-assigned') {
-      const task = (msg as unknown as { task?: { task_id?: string; title?: string; description?: string; assigned_to?: string; assigned_by?: string } }).task;
+      const task = (msg as unknown as { task?: LobbyTask }).task;
       if (!task?.task_id || task.assigned_to !== myId) return;
       const taskId = task.task_id;
       const entry = hostedAgents.get(myId);
@@ -625,57 +629,72 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         // begins only after that PR merges/closes. Direct mode (AGENT_OS_AGENT_WRITES=direct) keeps
         // writing straight to the working branch.
         const workingBranch = entry.workingBranch || 'main';
-        const prMode = AGENT_WRITES_MODE === 'pr' && !!entry.repoClient;
+        const repositoryTask = (task.output_mode ?? (entry.repoClient ? 'repository' : 'text')) === 'repository';
+        const prMode = AGENT_WRITES_MODE === 'pr' && repositoryTask;
         let session: LobbyWorkSession | null = null;
         let sessionBranch = workingBranch;
-        let writeGuidance = 'writes commit directly to the working branch';
-        if (prMode) {
-          try {
-            session = await getOrCreateSessionBranch(conn.lobbyId, entry.repoClient, workingBranch);
-            sessionBranch = session.branch;
-            entry.repoClient.activeBranch = sessionBranch; // redirect this task's writes to the session branch
-            writeGuidance = `write_file commits go to the shared work-session branch "${sessionBranch}" — every task in this session stacks onto ONE Pull Request for human review; you cannot merge`;
-          } catch (e) {
-            console.warn('[Lobby Server] Failed to resolve session branch, falling back to direct writes:', (e as Error)?.message ?? e);
-          }
-        }
-
         let result = '';
+        const commits: string[] = [];
         try {
-          result = await respond(
-            `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files) — ${writeGuidance}. Do NOT call create_pr yourself; the lobby opens the PR for you. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests), say so plainly as the blocker — do NOT fabricate work you did not do.`,
-          );
-        } catch { /* fall through to failed */ }
-        const failed = !result || result.startsWith('⚠');
+          const prompt = `[TASK ASSIGNED] ${task.title}\n${task.description}\n\n`;
+          if (repositoryTask) {
+            if (!entry.repoClient || !entry.taskRepository) throw new Error('Connect a repository before assigning repository work.');
+            if (prMode) {
+              session = await getOrCreateSessionBranch(conn.lobbyId, entry.repoClient, workingBranch);
+              sessionBranch = session.branch;
+              if (sessionBranch === workingBranch) throw new Error('The work-session branch must differ from the working branch.');
+            }
+            result = await entry.taskRepository.run({ branch: sessionBranch, commits }, () => respond(
+              prompt + `Use the repository tools to deliver the requested files on ${sessionBranch}. Report the files and tool-confirmed commit SHAs. If blocked, start your reply with BLOCKED: and explain why. The lobby manages pull requests.`,
+            ));
+          } else {
+            result = await respond(prompt + 'Deliver the requested work in this reply. Begin with RESULT: followed by the actual deliverable, or BLOCKED: followed by the reason. Repository writes are disabled for this task.');
+          }
+        } catch (e) {
+          console.warn('[Lobby Server] Hosted task could not run:', (e as Error)?.message ?? e);
+          result = 'BLOCKED: Could not prepare or run the assigned task.';
+        }
+        const deliveredText = /^RESULT:\s*\S/i.test(result);
+        let failed = !result || /^(⚠|BLOCKED:)/i.test(result) || (repositoryTask ? commits.length === 0 : !deliveredText);
+        if (failed && !/^(⚠|BLOCKED:)/i.test(result)) {
+          result = `BLOCKED: ${repositoryTask ? 'No repository write was verified.' : 'No text deliverable was returned.'}\n${result}`.trim();
+        } else if (!repositoryTask && deliveredText) {
+          result = result.replace(/^RESULT:\s*/i, '');
+        }
 
         // Open the session's single PR once the branch is actually ahead of the working branch. If a PR
         // already exists for this session, the agent's push has already updated it — no second PR. The
         // empty-branch case is left intact: a later task in the same session may add the first commit.
         let prUrl = session?.pr_url || '';
-        if (prMode && entry.repoClient && sessionBranch !== workingBranch) {
+        if (prMode && entry.repoClient && commits.length && sessionBranch !== workingBranch) {
+          const rc = entry.repoClient;
           try {
             await withLobbyLock(conn.lobbyId, async () => {
               // Re-read under the lock so concurrent agents converge on a single PR.
-              const cur = await store.getLobbySession(conn.lobbyId).catch(() => session);
+              const cur = await store.getLobbySession(conn.lobbyId);
+              if (cur?.branch !== sessionBranch) throw new Error('Work session changed before PR creation.');
               if (cur?.pr_url) { prUrl = cur.pr_url; return; }
-              const ahead = await entry.repoClient.aheadBy(workingBranch, sessionBranch);
+              const ahead = await rc.aheadBy(workingBranch, sessionBranch);
               if (ahead > 0) {
-                prUrl = await entry.repoClient.createPullRequest(
+                prUrl = await rc.createPullRequest(
                   '[agent-os] Lobby work session'.slice(0, 120),
                   sessionBranch, workingBranch,
                   `Automated changes from the Agent OS lobby work session. Every task in this session stacks onto this branch — review the whole diff and merge; the agents cannot merge.\n\nOpened for task **${task.title ?? task.task_id}** by ${(await store.getAgent(conn.lobbyId, myId))?.display_name || myId}.\n\n${(result || '').slice(0, 3000)}`,
                 );
                 const prNumber = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]) || null;
                 session = { branch: sessionBranch, pr_url: prUrl, pr_number: prNumber };
-                await store.setLobbySession(conn.lobbyId, session).catch(() => {});
+                await store.setLobbySession(conn.lobbyId, session);
               }
             });
           } catch (e) {
             console.warn('[Lobby Server] Session PR creation failed:', (e as Error)?.message ?? e);
-          } finally {
-            entry.repoClient.activeBranch = workingBranch; // always restore
+          }
+          if (!prUrl) {
+            failed = true;
+            result = `BLOCKED: Changes were committed to ${sessionBranch}, but the lobby could not open a pull request.\n${result}`;
           }
         }
+        if (!commits.length) prUrl = '';
 
         // ── Phase 2b: CI feedback loop ── When CI is configured, wait for the session PR's checks; on a
         // red run, hand the failing logs back to the agent to fix and re-push to the SAME branch (which
@@ -699,14 +718,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             while (check.conclusion === 'failure' && fixes < 2) {
               fixes++;
               const logs = await rc.getFailingCheckLogs(sessionBranch).catch(() => '');
-              rc.activeBranch = sessionBranch; // the fix turn's write_file commits update the PR branch
-              try {
-                await respond(
+              await entry.taskRepository!.run({ branch: sessionBranch, commits }, () => respond(
                   `[CI FAILED] The Pull Request for this work session failed its checks on GitHub. Fix the cause and write the corrected files with write_file — they commit to the same session branch and update the PR. Do NOT open a new PR. Failing checks:\n\n${logs || '(no log summary captured — inspect the workflow)'}\n\nReport exactly what you changed.`,
-                ).catch(() => {});
-              } finally {
-                rc.activeBranch = workingBranch;
-              }
+              )).catch(() => {});
               check = await waitForChecks();
             }
             ciStatus = check.conclusion === 'success' ? 'passing'
@@ -724,7 +738,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
         // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
         const storedTask = await store.getTask(conn.lobbyId, taskId).catch(() => null);
-        if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus } as any).catch(() => {});
+        if (storedTask && prUrl) {
+          const samePr = storedTask.result_pr_url === prUrl;
+          await store.upsertTask({
+            ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus,
+            result_pr_state: samePr ? storedTask.result_pr_state : undefined,
+            result_memory_written: samePr ? storedTask.result_memory_written : undefined,
+          });
+        }
         await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
 
         // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
@@ -753,6 +774,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const isBoss = lobby?.boss_agent_id === myId;
     const isBroadcast = ['all', '*', 'broadcast'].includes(String(m.to_agent_id ?? '').toLowerCase());
     const addressedToMe = m.to_agent_id === myId;
+    if (isBoss && (addressedToMe || isBroadcast) && !queuedBossTurn) {
+      // Rebuild context when this turn runs. Concurrent specialist handoffs must not be
+      // dropped while the Boss is processing the preceding result.
+      await entry.runner.runTask(respond => onHostedInbound(conn, data, respond));
+      return;
+    }
     // Routing: reply to direct messages addressed to us, or (as Boss) to broadcasts. A non-boss
     // agent does not reply to broadcasts — floor control forbids it — but it DOES silently observe
     // them and may raise a hand via the Requests system. Everything else (chatter between other
@@ -804,13 +831,21 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           } else {
             opsSummary += `\n[WORKING REPO] none connected — repository work is impossible until the LobbyOwner connects the GitHub App in the Lobby tab. Do not assign repository tasks.`;
           }
-          const openTasks = (await store.listTasks(conn.lobbyId))
-            .filter(t => !['completed', 'cancelled'].includes(t.status));
+          const tasks = await store.listTasks(conn.lobbyId);
+          const openTasks = tasks.filter(t => !['completed', 'failed', 'cancelled'].includes(t.status));
           if (openTasks.length) {
             const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
             opsSummary += `\n[OPEN TASKS — ${openTasks.length}]\n` + openTasks.slice(-10)
               .map(t => `  - "${t.title}" → ${nameOf(t.assigned_to)} [${t.status}]${t.progress ? ` — ${String(t.progress).slice(0, 50)}` : ''}`)
               .join('\n');
+          }
+          const recentResults = tasks.filter(t => t.status === 'completed' || t.status === 'failed')
+            .sort((a, b) => (b.completed_at ?? b.assigned_at).localeCompare(a.completed_at ?? a.assigned_at))
+            .slice(0, 12);
+          if (recentResults.length) {
+            opsSummary += '\n[RECENT TASK OUTCOMES]\n' + recentResults.map(t =>
+              `  - "${t.title}" [${t.status}]${t.result_pr_url ? ` ${t.result_pr_url} (${t.result_pr_state ?? 'merge unconfirmed'})` : ''}${t.result ? ` — ${t.result.slice(0, 600)}` : ''}`,
+            ).join('\n');
           }
           const pendingReqs = (await store.listLobbyRequests(conn.lobbyId)).filter(r => r.status === 'pending');
           if (pendingReqs.length) {
@@ -826,7 +861,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     } catch { /* roster fetch failed, pass raw content */ }
 
     let reply = '';
-    try { reply = await entry.runner.respondTo(enrichedContent); } catch { return; }
+    try { reply = await (queuedBossTurn ?? ((content: string) => entry.runner.respondTo(content)))(enrichedContent); } catch { return; }
     if (!reply) return;
 
     // Boss delegation: the Boss emits directive lines. A plain `@Name: msg` is a direct request/
@@ -863,6 +898,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             assigned_to: target.agent_id,
             title,
             description: d.instruction,
+            output_mode: d.outputMode,
           } as AgentToLobbyMessage);
           dispatch(conn, taskRes.out);
         } else {
@@ -963,30 +999,31 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     const notes = updated.decision_notes ? ` — ${updated.decision_notes}` : '';
     const by = decidedBy && decidedBy !== 'panel' ? ` by ${decidedBy}` : '';
-    const announce = async (to: string, content: string) => {
-      const seq = await store.nextSeq(lobbyId);
-      const message: LobbyMessage = {
-        message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
-        message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
-      };
-      await store.appendMessage(lobbyId, message);
-      const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
-      for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
-    };
-    await announce('all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${updated.status}${by}${notes}`);
+    await announceSystem(lobbyId, 'all', `📋 Request "${updated.title}" from ${updated.agent_display_name} was ${updated.status}${by}${notes}`);
     if (updated.agent_id && updated.agent_id !== 'anonymous') {
-      await announce(updated.agent_id, updated.status === 'approved'
+      await announceSystem(lobbyId, updated.agent_id, updated.status === 'approved'
         ? `Your request "${updated.title}" was APPROVED${by}${notes}. Go ahead — share your contribution or proceed with what you proposed. Your reply will be routed to the Boss.`
         : `Your request "${updated.title}" was ${String(updated.status).toUpperCase()}${by}${notes}.`);
     }
     return updated;
   }
 
+  async function announceSystem(lobbyId: string, to: string, content: string): Promise<void> {
+    const seq = await store.nextSeq(lobbyId);
+    const message: LobbyMessage = {
+      message_id: randomUUID(), seq, from_agent_id: 'system', to_agent_id: to,
+      message_type: 'system', content, created_at: new Date().toISOString(), delivered: false,
+    };
+    await store.appendMessage(lobbyId, message);
+    const wsOut: LobbyToAgentMessage = { type: 'lobby-message-received', message };
+    for (const cid of lobbyConns.get(lobbyId) ?? []) send(cid, wsOut);
+  }
+
   // Boss request triage (opt-out: AGENT_OS_BOSS_TRIAGE=off). The Boss DECIDES hand-raises itself
   // (floor-control coordination) and only RECOMMENDS on authority categories — those stay pending
   // for the LobbyOwner with the recommendation attached (boss-agent.md: "no autonomous approvals").
   const BOSS_TRIAGE_ENABLED = (process.env.AGENT_OS_BOSS_TRIAGE ?? 'on') !== 'off';
-  // How hosted agents land task changes: 'pr' (default) = per-task branch + Pull Request for human
+  // How hosted agents land task changes: 'pr' (default) = work-session branch + Pull Request for human
   // review; 'direct' = commit straight to the working branch (the pre-PR-workflow behavior).
   const AGENT_WRITES_MODE = (process.env.AGENT_OS_AGENT_WRITES ?? 'pr').toLowerCase() === 'direct' ? 'direct' : 'pr';
 
@@ -1007,25 +1044,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // exists), and starting a fresh `agent-os/session/<lobby>-<ts>` branch once the previous PR has
   // merged/closed. Persisted so the next task — and the next deploy — reuse the same branch/PR.
   async function getOrCreateSessionBranch(
-    lobbyId: string, repoClient: any, workingBranch: string,
+    lobbyId: string, repoClient: GitHubRepoClient, workingBranch: string,
   ): Promise<LobbyWorkSession> {
     return withLobbyLock(lobbyId, async () => {
-      const existing = await store.getLobbySession(lobbyId).catch(() => undefined);
+      const existing = await store.getLobbySession(lobbyId);
       if (existing?.branch) {
         if (existing.pr_number) {
           // Reuse while the PR is genuinely open; a merged/closed PR ends the session.
-          const pr = await repoClient.getPullRequest(existing.pr_number).catch(() => null);
-          if (pr && !pr.merged && pr.state === 'open') return existing;
+          const pr = await repoClient.getPullRequest(existing.pr_number);
+          if (!pr.merged && pr.state === 'open') return existing;
         } else {
           // Branch exists but no PR yet — reuse it if the branch is still present so writes stack.
           try { await repoClient.aheadBy(workingBranch, existing.branch); return existing; }
           catch { /* branch gone (base moved on) — start fresh below */ }
         }
       }
-      const sessionBranch = `agent-os/session/${lobbyId.slice(0, 8)}-${Date.now().toString(36)}`;
+      const sessionBranch = `agent-os/session/${lobbyId.slice(0, 8)}-${Date.now().toString(36)}-${randomUUID().slice(0, 8)}`;
       await repoClient.createBranch(sessionBranch, workingBranch);
       const session = { branch: sessionBranch, pr_url: '', pr_number: null };
-      await store.setLobbySession(lobbyId, session).catch(() => {});
+      await store.setLobbySession(lobbyId, session);
       return session;
     });
   }
@@ -1073,7 +1110,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // when configured, else the GitHub App integration's selected repo. Previously only the KB
     // path was wired, so agents in a lobby with a connected GitHub repo (but no KB) had no way to
     // actually do repository work. Token is minted fresh — never the stored (expiring) copy.
-    let repoClient: any = undefined;
+    let repoClient: GitHubRepoClient | undefined;
     const kb = await store.getKnowledgeBase(params.lobbyId);
     const integration = await store.getIntegration(params.lobbyId, 'github');
     const repoRefUrl = (kb && kb.repository_url) || (integration?.status === 'active' && integration.repo_full_name) || '';
@@ -1120,11 +1157,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     };
 
+    const taskRepository = repoClient ? new TaskRepository(repoClient) : undefined;
     const adapter = createApiRuntimeAdapter({
       provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
       apiKey: params.apiKey,
       fetchFn: options.apiRuntimeFetch,
-      repoClient,
+      repoClient: taskRepository,
       lobbyTools,
     });
     // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
@@ -1133,7 +1171,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // repository file tools when a repo is connected, and NOTHING that executes code.
     const workingBranch = integration?.branch || 'main';
     const writeDest = AGENT_WRITES_MODE === 'pr'
-      ? `write_file commits go to a per-task branch the lobby manages and are opened as a Pull Request for the LobbyOwner to review (you never merge, and never call create_pr yourself)`
+      ? 'Only an assigned repository task can write, and its commits go to the work-session branch for review in a pull request'
       : `write_file commits go DIRECTLY to the working branch "${workingBranch}"`;
     const capabilities = repoClient
       ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file, list_files. ${writeDest}. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches yourself. Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names, commit SHAs, or timestamps — if a task demands command execution, state that limitation as the blocker.`
@@ -1208,7 +1246,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }, Math.max(Math.floor(STALE_MS / 3), 15_000)); // heartbeat at 1/3 of stale threshold, min 15s
     if (typeof heartbeatInterval.unref === 'function') heartbeatInterval.unref();
 
-    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, workingBranch: integration?.branch || 'main' });
+    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, taskRepository, workingBranch: integration?.branch || 'main' });
     return agentId;
   }
 
@@ -3213,6 +3251,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           const creatorIdentity = sessionIdentity(lobbyId);
           const creatorIsManager = creatorIdentity ? await isLobbyManager(store, lobbyId, creatorIdentity) : false;
           if (!creatorIsManager) return json({ error: 'lobby manager required to assign tasks' }, creatorIdentity ? 403 : 401);
+          const outputMode = body.output_mode;
+          if (outputMode !== undefined && outputMode !== 'text' && outputMode !== 'repository') {
+            return json({ error: 'output_mode must be text or repository' }, 400);
+          }
           const seq = await store.nextSeq(lobbyId);
           const task = {
             task_id: randomUUID(),
@@ -3223,6 +3265,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             assigned_at: new Date().toISOString(),
             title: String(body.title).slice(0, 200),
             description,
+            output_mode: outputMode,
             priority: (['critical', 'high', 'normal', 'low'].includes(body.priority) ? body.priority : 'normal') as 'critical' | 'high' | 'normal' | 'low',
             category: typeof body.category === 'string' ? body.category : 'general',
             status: 'assigned' as const,
@@ -3783,8 +3826,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   // ── Self-learning: memory on task-PR merge ── Webhooks aren't wired, so poll the PRs the lobby
   // opened for merges and record a memory for each newly-merged task. Idempotent per task
-  // (result_memory_written). Runs every 2 min, bounded per pass to protect the GitHub rate limit.
+  // Poll once per PR, independently of the optional self-learning work.
+  let mergeSweepRunning = false;
   const memorySweep = setInterval(() => {
+    if (mergeSweepRunning) return;
+    mergeSweepRunning = true;
     void (async () => {
       try {
         let budget = 8; // cap PR lookups per pass
@@ -3796,31 +3842,52 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           if (!parsed) continue;
           const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
           const client = new GitHubRepoClient(parsed.owner, parsed.repo, token!, undefined, integ.branch || 'main');
-          const tasks = (await store.listTasks(lobby.lobby_id).catch(() => [] as LobbyTask[]))
-            .filter(t => t.result_pr_url && !t.result_memory_written);
-          for (const t of tasks) {
+          const tasks = await store.listTasks(lobby.lobby_id);
+          const groups = new Map<string, LobbyTask[]>();
+          const prefix = `https://github.com/${parsed.owner}/${parsed.repo}/pull/`.toLowerCase();
+          for (const task of tasks) {
+            const url = task.result_pr_url;
+            if (!url?.toLowerCase().startsWith(prefix)) continue;
+            const group = groups.get(url) ?? [];
+            group.push(task);
+            groups.set(url, group);
+          }
+          for (const [url, group] of groups) {
+            const pending = group.filter(t => !t.result_pr_state && !t.result_memory_written);
+            if (!pending.length) continue;
             if (budget-- <= 0) return;
-            const num = prNumberFromUrl(t.result_pr_url);
+            const num = prNumberFromUrl(url);
             if (!num) continue;
             const pr = await client.getPullRequest(num).catch(() => null);
             if (!pr) continue;
-            if (pr.merged) {
-              const agentDisplay = (await store.getAgent(lobby.lobby_id, t.assigned_to || '').catch(() => null))?.display_name || t.assigned_to || 'agent';
-              // Distill durable lessons with one LLM turn (best-effort — null if no provider key).
-              const lessons = await reflectOnMergedTask(lobby.lobby_id, t).catch(() => null);
-              const ok = await recordTaskMergeMemory(store, lobby.lobby_id, t, agentDisplay, pr, lessons);
-              if (ok) {
-                await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
-                await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', { task_id: t.task_id, pr: t.result_pr_url });
+            const state = pr.merged ? 'merged' : pr.state === 'closed' ? 'closed' : undefined;
+            if (!state) continue;
+            for (const task of pending) {
+              const current = await store.getTask(lobby.lobby_id, task.task_id);
+              if (current?.result_pr_url !== url) continue;
+              await store.upsertTask({ ...current, result_pr_state: state });
+            }
+            if (state === 'merged' && !group.some(t => t.result_pr_state === 'merged' || t.result_memory_written)) {
+              await announceSystem(lobby.lobby_id, 'all',
+                `GitHub confirmed that ${url} merged${pr.merge_commit_sha ? ` at ${pr.merge_commit_sha}` : ''}. Acknowledge the completed delivery to the LobbyOwner.`);
+              for (const task of pending) {
+                const lessons = await reflectOnMergedTask(lobby.lobby_id, task).catch(() => null);
+                if (AGENT_WRITES_MODE === 'direct') {
+                  const agent = await store.getAgent(lobby.lobby_id, task.assigned_to);
+                  await recordTaskMergeMemory(store, lobby.lobby_id, task, agent?.display_name || task.assigned_to, pr, lessons);
+                }
+                // In PR mode the durable lesson belongs in the lobby log, without a bot commit to the base branch.
+                await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', {
+                  task_id: task.task_id, pr: url, merge_commit_sha: pr.merge_commit_sha, lessons,
+                });
               }
-            } else if (pr.state === 'closed') {
-              // Closed unmerged — nothing to learn; mark so we stop polling it.
-              await store.upsertTask({ ...t, result_memory_written: true } as any).catch(() => {});
             }
           }
         }
       } catch (e) {
         console.warn('[lobby-server] memory sweep failed:', (e as Error)?.message ?? e);
+      } finally {
+        mergeSweepRunning = false;
       }
     })();
   }, 120_000);

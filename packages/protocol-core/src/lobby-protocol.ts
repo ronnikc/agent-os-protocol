@@ -267,6 +267,7 @@ export type AgentToLobbyMessage =
       priority?: 'critical' | 'high' | 'normal' | 'low';
       category?: LobbyTaskCategory;
       files?: string[];
+      output_mode?: 'text' | 'repository';
     }
   | { type: 'lobby-boss-appoint'; agent_id: string }
   | { type: 'lobby-role-change'; agent_id: string; agent_role: string };
@@ -351,6 +352,8 @@ export interface LobbyTask {
   title: string;
   /** Markdown: what to do, expected output. */
   description: string;
+  /** Expected deliverable for hosted execution. Older tasks use the lobby's default. */
+  output_mode?: 'text' | 'repository';
   /** Priority level. */
   priority: 'critical' | 'high' | 'normal' | 'low';
   /** Task category. */
@@ -375,6 +378,8 @@ export interface LobbyTask {
   result?: string;
   /** URL of the Pull Request opened for this task's changes (branch/PR workflow). */
   result_pr_url?: string;
+  /** Confirmed by GitHub independently of merge-memory generation. */
+  result_pr_state?: 'merged' | 'closed';
   /** The per-task branch the PR was opened from (used to read that PR's CI check results). */
   result_branch?: string;
   /** Outcome of the PR's CI checks after the build/test feedback loop. */
