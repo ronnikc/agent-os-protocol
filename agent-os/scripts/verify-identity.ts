@@ -115,7 +115,7 @@ function makeLobby(join_policy: LobbySession['join_policy'], allowlist?: string[
 }
 async function registerInto(coord: LobbyCoordinator, store: InMemoryLobbyStore, lobby: LobbySession, joinToken?: string) {
   await store.createLobby(lobby);
-  const conn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default' };
+  const conn: Connection = { connId: randomUUID(), lobbyId: lobby.lobby_id, orgId: 'default', trusted: true };
   const reg: Extract<AgentToLobbyMessage, { type: 'lobby-register' }> = {
     type: 'lobby-register',
     display_name: 'candidate',

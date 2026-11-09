@@ -11,6 +11,7 @@
 import type { LobbyStore } from '../store.js';
 import type { LobbySession } from '@agent-os/protocol-core';
 import { randomUUID } from 'node:crypto';
+import { isProduction } from './identityProof.js';
 
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 
@@ -32,12 +33,13 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
   if (!identityRef) return false;
   const lobby = await store.getLobby(lobbyId);
   const member = await store.getMember(lobbyId, identityRef);
-  if (member && member.status === 'revoked') return false;
+  if (member && (member.status === 'revoked' ||
+      (member.expires_at && Date.parse(member.expires_at) <= Date.now()))) return false;
 
   const owner = lobbyOwnerRef(lobby);
   if (owner && owner === identityRef) return true;
 
-  return !!member && member.status !== 'revoked' && MANAGER_ROLES.has(member.role);
+  return member?.status === 'active' && MANAGER_ROLES.has(member.role);
 }
 
 /**
@@ -49,19 +51,14 @@ export async function isLobbyManager(store: LobbyStore, lobbyId: string, identit
  */
 export async function claimLobbyOwnership(store: LobbyStore, lobbyId: string, identityRef: string): Promise<boolean> {
   if (!identityRef) return false;
-  const lobby = await store.getLobby(lobbyId);
-  if (!lobby) return false;
-  const owner = lobby.created_by;
-  if (owner && owner !== 'system' && owner !== 'web-user') return false; // already owned — do not reassign
-  await store.updateLobby(lobbyId, { created_by: identityRef });
-  await store.addMember({
+  if (isProduction() && identityRef !== process.env.AGENT_OS_PUBLIC_LOBBY_OWNER?.trim()) return false;
+  return store.claimLobbyOwner(lobbyId, {
     id: `mem_${randomUUID()}`,
     lobby_id: lobbyId,
     identity_ref: identityRef,
     role: 'owner',
     status: 'active',
   });
-  return true;
 }
 
 /**
@@ -78,7 +75,7 @@ export async function authorizeLobbyManager(store: LobbyStore, lobbyId: string, 
   const owner = lobby.created_by;
   if (!owner || owner === 'system' || owner === 'web-user') {
     await claimLobbyOwnership(store, lobbyId, identityRef);
-    return true;
+    return isLobbyManager(store, lobbyId, identityRef);
   }
   return isLobbyManager(store, lobbyId, identityRef);
 }

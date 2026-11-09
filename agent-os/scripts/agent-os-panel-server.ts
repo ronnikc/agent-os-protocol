@@ -265,9 +265,9 @@ async function connectLobbyWs(): Promise<void> {
   console.log(`Lobby WS: found lobby ${lobbyId}, connecting...`);
 
   try {
-    let joinToken: string | undefined = undefined;
+    let joinToken = process.env.AGENT_OS_LOBBY_SESSION_TOKEN?.trim();
     const cardPath = join(REPO_ROOT, 'agent-card.json');
-    if (existsSync(cardPath)) {
+    if (!joinToken && existsSync(cardPath)) {
       try {
         const card = JSON.parse(readFileSync(cardPath, 'utf-8'));
         if (card.ref) joinToken = card.ref;
@@ -285,10 +285,6 @@ async function connectLobbyWs(): Promise<void> {
         // The panel is the human's control plane — registering as a human participant
         // exempts it from floor control and allows Boss (re)appointment (coordinator rules).
         participant_type: 'human',
-        cwd: REPO_ROOT,
-        branch: 'main',
-        pid: process.pid,
-        relay_port: PORT,
         join_token: joinToken,
       },
       reconnect: true,
@@ -2399,7 +2395,7 @@ const server = createServer(async (req, res) => {
     if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
     const data = await proxyToStaging(DEFAULT_LOBBY_URL,
       `/api/v1/agent-lobby/lobbies/${lobbyId}`,
-      'PATCH', JSON.stringify(body));
+      'PATCH', JSON.stringify(body), reqHeaders(req));
     cachedLobbyId = null; // Invalidate cache on status change
     sendJson(res, data);
     return;
@@ -2407,7 +2403,8 @@ const server = createServer(async (req, res) => {
 
   if (path === '/api/lobby/remote/create' && method === 'POST') {
     const body = await parseBody(req);
-    const result = await postRemoteJson(DEFAULT_LOBBY_URL, '/api/v1/agent-lobby/lobbies', body);
+    const result = await proxyToStaging(DEFAULT_LOBBY_URL, '/api/v1/agent-lobby/lobbies',
+      'POST', JSON.stringify(body), reqHeaders(req));
     sendJson(res, result);
     return;
   }

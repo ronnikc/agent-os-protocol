@@ -6,6 +6,15 @@ import type { LobbyStore } from '../store.js';
 
 const NONCE_EXPIRY_MS = 5 * 60 * 1000; // Nonces expire in 5 minutes
 const SESSION_EXPIRY_MS = 7 * 24 * 60 * 60 * 1000; // Session tokens expire in 7 days
+const ephemeralSigningMaterial = randomBytes(32).toString('hex');
+export const TEST_ADMIN_IDENTITY = 'test-admin';
+export const TEST_ADMIN_LOBBY_ID = 'd47340a1-af18-4e77-aeb2-40dc86fb9810';
+const TEST_ADMIN_SESSION_TTL_MS = 60 * 60 * 1000;
+
+export function testAdminKeyDigest(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const digest = env.AGENT_OS_TEST_ADMIN_KEY_SHA256?.trim();
+  if (!isProduction(env) && digest && /^[a-f0-9]{64}$/i.test(digest)) return digest;
+}
 
 // Session tokens are HMAC-signed with a server secret so they cannot be forged. Before this,
 // the token was plain base64 of the payload — anyone could mint a session for ANY wallet, which
@@ -15,7 +24,7 @@ function sessionSigningKey(env: NodeJS.ProcessEnv = process.env): Buffer {
   const material =
     env.AGENT_OS_SECRET_ENCRYPTION_KEY ||
     env.INTEGRATION_SECRET_KEY ||
-    'default-secret-key-do-not-use-in-production';
+    ephemeralSigningMaterial;
   return createHash('sha256').update(`session:${material}`).digest();
 }
 
@@ -48,6 +57,10 @@ let devTrustWarned = false;
 /** True when the dev wallet-signature bridge is enabled (demo/testnet only). */
 export function devTrustWalletSignatures(env: NodeJS.ProcessEnv = process.env): boolean {
   return /^(1|on|true)$/i.test(env.AGENT_OS_DEV_TRUST_WALLET_SIGNATURES ?? '');
+}
+
+export function isProduction(env: NodeJS.ProcessEnv = process.env): boolean {
+  return [env.NODE_ENV, env.AGENT_OS_ENV].some((value) => /^prod(uction)?$/i.test(value ?? ''));
 }
 
 /**
@@ -86,6 +99,7 @@ export async function verifyProofAndIssueToken(
   lobbyId: string,
   store: LobbyStore
 ): Promise<string | null> {
+  if (identityRef === TEST_ADMIN_IDENTITY || lobbyId === TEST_ADMIN_LOBBY_ID) return null;
   const challenge = await store.getNonce(identityRef);
   if (!challenge) return null;
 
@@ -111,7 +125,8 @@ export async function verifyProofAndIssueToken(
  * is proven (nonce/challenge signature verified) — this function does no verification itself.
  */
 export function issueSessionToken(identityRef: string, lobbyId: string): string {
-  const payload: SessionTokenPayload = { identityRef, lobbyId, expiresAt: Date.now() + SESSION_EXPIRY_MS };
+  const ttlMs = identityRef === TEST_ADMIN_IDENTITY ? TEST_ADMIN_SESSION_TTL_MS : SESSION_EXPIRY_MS;
+  const payload: SessionTokenPayload = { identityRef, lobbyId, expiresAt: Date.now() + ttlMs };
   const payloadB64 = Buffer.from(JSON.stringify(payload), 'utf-8').toString('base64url');
   return `${payloadB64}.${signPayload(payloadB64)}`;
 }
@@ -123,8 +138,7 @@ export function issueSessionToken(identityRef: string, lobbyId: string): string 
  */
 export function assertDevBridgeNotInProduction(env: NodeJS.ProcessEnv = process.env): void {
   if (!devTrustWalletSignatures(env)) return;
-  const isProd = /^prod(uction)?$/i.test(env.NODE_ENV ?? '') || /^prod(uction)?$/i.test(env.AGENT_OS_ENV ?? '');
-  if (isProd) {
+  if (isProduction(env)) {
     throw new Error(
       'AGENT_OS_DEV_TRUST_WALLET_SIGNATURES is enabled in a production environment — refusing to start. ' +
       'This bridge disables wallet-signature verification and is for local/testnet only. Unset it in production.',
@@ -149,6 +163,8 @@ export function validateSessionToken(token: string, lobbyId: string, env: NodeJS
 
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8')) as SessionTokenPayload;
     if (!payload.identityRef || payload.lobbyId !== lobbyId) return null;
+    if (payload.identityRef === TEST_ADMIN_IDENTITY &&
+        (lobbyId !== TEST_ADMIN_LOBBY_ID || !testAdminKeyDigest(env))) return null;
     if (Date.now() > payload.expiresAt) return null;
     return payload;
   } catch {

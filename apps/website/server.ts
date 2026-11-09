@@ -23,6 +23,11 @@ const MIME: Record<string, string> = {
 
 const server = createServer((req, res) => {
   let urlPath = req.url?.split('?')[0] || '/';
+  if (urlPath === '/health') {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, revision: process.env.AGENT_OS_REVISION }));
+    return;
+  }
   if (urlPath === '/') urlPath = '/index.html';
 
   const file = join(DIR, urlPath);

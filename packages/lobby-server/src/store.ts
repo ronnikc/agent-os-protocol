@@ -51,10 +51,11 @@ export interface LobbyWorkSession {
 }
 
 export interface LobbyStore {
-  createLobby(lobby: LobbySession): Promise<LobbySession>;
+  createLobby(lobby: LobbySession, overwrite?: boolean): Promise<LobbySession>;
   getLobby(lobbyId: string): Promise<LobbySession | undefined>;
   listLobbies(): Promise<LobbySession[]>;
   updateLobby(lobbyId: string, patch: Partial<LobbySession>): Promise<LobbySession | undefined>;
+  claimLobbyOwner(lobbyId: string, owner: LobbyMember): Promise<boolean>;
 
   addAgent(lobbyId: string, agent: LobbyAgent): Promise<void>;
   getAgent(lobbyId: string, agentId: string): Promise<LobbyAgent | undefined>;
@@ -288,7 +289,9 @@ export class InMemoryLobbyStore implements LobbyStore {
     return this.lobbies.get(lobbyId);
   }
 
-  async createLobby(lobby: LobbySession): Promise<LobbySession> {
+  async createLobby(lobby: LobbySession, overwrite = true): Promise<LobbySession> {
+    const existing = this.bucket(lobby.lobby_id);
+    if (existing && !overwrite) return existing.lobby;
     this.lobbies.set(lobby.lobby_id, {
       lobby,
       agents: new Map(),
@@ -315,6 +318,17 @@ export class InMemoryLobbyStore implements LobbyStore {
     b.lobby = { ...b.lobby, ...patch, updated_at: new Date().toISOString() };
     this.queueSave();
     return b.lobby;
+  }
+
+  async claimLobbyOwner(lobbyId: string, owner: LobbyMember): Promise<boolean> {
+    const bucket = this.bucket(lobbyId);
+    if (!bucket) return false;
+    const current = bucket.lobby.created_by;
+    if (current && current !== 'system' && current !== 'web-user') return false;
+    bucket.lobby = { ...bucket.lobby, created_by: owner.identity_ref, updated_at: new Date().toISOString() };
+    this.members.set(owner.id, owner);
+    this.queueSave();
+    return true;
   }
 
   async addAgent(lobbyId: string, agent: LobbyAgent): Promise<void> {

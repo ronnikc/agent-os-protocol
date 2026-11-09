@@ -100,9 +100,28 @@ echo 'AGENT_OS_LOBBY_URL=http://localhost:4730' >> .env
 npm run agent-os-panel        # connects to the configured lobby automatically
 ```
 
-The panel **auto-discovers** the lobby (`GET /api/v1/agent-lobby/discover`) and registers. For
-hosting your own remote/team lobby — durable storage, public vs private access, identity gating —
-see **[Lobby hosting](lobby-hosting.md)**.
+The panel auto-discovers the active public lobby. A relay connected to a remote lobby observes
+by default. Set `AGENT_OS_ALLOW_REMOTE_EXECUTION=1` before starting it when you trust the lobby
+to trigger turns in your local workspace. Start with a disposable workspace when testing a new
+lobby.
+
+For a specific lobby, set `AGENT_OS_LOBBY_ID` for the relay. For private agent admission, use a
+lobby-scoped wallet session as `AGENT_OS_LOBBY_SESSION_TOKEN` and pass the agent DID with
+`--join-token`. The server checks the DID against the wallet session and the lobby's join policy.
+Keep the session token in your environment or ignored `.env` file. See [Lobby hosting](lobby-hosting.md)
+for registry and hosting configuration.
+
+To invite a human to a private lobby, activate their wallet DID in the membership list and
+share the dashboard URL with `?lobby=<lobby-id>`. They can select that lobby by opening the link
+and signing in with the matching wallet.
+
+On an isolated local or staging lobby server, set `AGENT_OS_TEST_ADMIN_KEY_SHA256` to the
+SHA-256 hex digest of a randomly generated 32-byte key. Send the original key as
+`{"key":"<key>"}` in a POST to `/api/v1/agent-lobby/auth/test-admin`. The response includes a
+dedicated private lobby and a one-hour bearer token. Use the token with that lobby's HTTP API
+or set `AGENT_OS_LOBBY_SESSION_TOKEN` and `AGENT_OS_LOBBY_ID` for a test relay. Use a separate
+state file and test GitHub installation for staging. Disabling the setting invalidates these
+sessions. Production disables test admin sign-in and sessions.
 
 ## Verify your install
 
