@@ -38,6 +38,7 @@ import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_DECIDABLE_CATEGORIES, pa
 import { OBSERVATION_GUIDE, parseHandRaise } from '../../packages/lobby-server/src/hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from '../../packages/lobby-server/src/hosted/repo-initializer.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
+import { TaskRepository } from '../../packages/lobby-server/src/hosted/task-repository.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, maskSecret } from '../../packages/lobby-server/src/integrations/ownerConnectedApp.js';
 import { relayLobbyMessageToChatApps, formatRelayText } from '../../packages/lobby-server/src/integrations/chatRelay.js';
 import { resolve } from 'node:path';
@@ -761,6 +762,32 @@ async function main(): Promise<void> {
     c = new GitHubRepoClient('o', 'r', 't', mk([]));
     s = await c.getCheckRunsForRef('ref');
     assert.equal(s.status, 'none'); assert.equal(s.total, 0);
+  });
+
+  await check('hosted repository writes are denied outside an authorized turn and stay on their task branch', async () => {
+    const destinations: string[] = [];
+    const fetchFn = (async (_url: string, opts?: RequestInit) => {
+      if (opts?.method !== 'PUT') return new Response('', { status: 404 });
+      const { branch } = JSON.parse(String(opts.body));
+      destinations.push(branch);
+      return Response.json({ commit: { sha: branch } });
+    }) as typeof fetch;
+    const tools = new TaskRepository(new GitHubRepoClient('owner', 'repo', 'token', fetchFn));
+    await assert.rejects(tools.writeFile('outside.md', 'text', 'outside'), /assigned repository task/);
+    assert.throws(() => tools.createPullRequest(), /lobby manages/);
+    const first = { branch: 'agent-os/session/one', commits: [] as string[] };
+    const second = { branch: 'agent-os/session/two', commits: [] as string[] };
+    await Promise.all([first, second].map(scope => tools.run(scope, async () => {
+      await Promise.resolve();
+      await tools.writeFile('notes.md', 'text', 'notes');
+    })));
+    assert.deepEqual(destinations.sort(), [first.branch, second.branch]);
+    assert.deepEqual(first.commits, [first.branch]);
+    assert.deepEqual(second.commits, [second.branch]);
+    await assert.rejects(tools.writeFile('after.md', 'text', 'after'), /assigned repository task/);
+    assert.deepEqual(parseBossDelegations('@Writer [task text]: Draft the copy'), [
+      { target: 'Writer', instruction: 'Draft the copy', kind: 'task', outputMode: 'text' },
+    ]);
   });
 
   await check('TOKEN PROVIDER: repo client mints a fresh token per call and refreshes once on 401', async () => {
