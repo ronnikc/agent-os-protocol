@@ -34,7 +34,7 @@ import type {
 import { isRegistryResolved } from '@agent-os/protocol-core';
 import type { LobbyStore } from './store.js';
 import { verifyLobbyJoinPolicy } from './auth/joinPolicy.js';
-import { isProduction, validateSessionToken, testAdminKeyDigest, TEST_ADMIN_IDENTITY, type SessionTokenPayload } from './auth/identityProof.js';
+import { isProduction, validateSessionToken, liveTestAdminConfig, testAdminKeyDigest, TEST_ADMIN_IDENTITY, type SessionTokenPayload } from './auth/identityProof.js';
 import { isLobbyManager, lobbyOwnerRef } from './auth/lobbyAuthz.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
 
@@ -140,7 +140,8 @@ export class LobbyCoordinator {
       const lobby = await this.store.getLobby(conn.lobbyId);
       if (!conn.agentId || lobby?.status !== 'active') return { out: [], close: true };
       if (conn.session?.identityRef === TEST_ADMIN_IDENTITY &&
-          (!testAdminKeyDigest() || conn.session.expiresAt <= Date.now())) return { out: [], close: true };
+          ((!testAdminKeyDigest() && liveTestAdminConfig()?.lobbyId !== conn.lobbyId) ||
+            conn.session.expiresAt <= Date.now())) return { out: [], close: true };
       if (isProduction() && !conn.trusted && msg.type !== 'lobby-heartbeat' &&
           (!conn.session || conn.session.expiresAt <= Date.now())) {
         return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'wallet session required to participate' } }] };

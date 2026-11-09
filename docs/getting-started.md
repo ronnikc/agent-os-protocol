@@ -122,7 +122,13 @@ the key in the Test Lobby sign-in form. For scripted tests, send the original ke
 dedicated private lobby and a one-hour bearer token. Use the token with that lobby's HTTP API
 or set `AGENT_OS_LOBBY_SESSION_TOKEN` and `AGENT_OS_LOBBY_ID` for a test relay. Use a separate
 state file and test GitHub installation for staging. Disabling the setting invalidates these
-sessions. Production disables test admin sign-in and sessions.
+sessions. The local test-admin setting is ignored in production.
+
+For a temporary live QA session, set the deployment secret `AGENT_OS_LIVE_TEST_ADMIN` to
+`lobby-uuid:sha256-of-random-32-byte-key:expiry-unix-milliseconds`. Use an existing test lobby
+and a deadline within 24 hours. The same sign-in form issues a session for that one lobby,
+expiring at the deadline or after one hour, whichever comes first. Delete the secret and
+redeploy to disable access immediately. Keep the original key outside the repository.
 
 ## Verify your install
 

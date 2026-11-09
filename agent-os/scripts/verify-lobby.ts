@@ -531,6 +531,46 @@ async function main(): Promise<void> {
       }
     });
 
+    await check('live test admin can send commands only in the configured lobby before expiry', async () => {
+      const lobby = { ...makeLobby('public'), created_by: 'live-qa-owner' };
+      const other = { ...makeLobby('public'), created_by: 'other-qa-owner' };
+      await server.store.createLobby(lobby);
+      await server.store.createLobby(other);
+      const key = randomBytes(32).toString('hex');
+      const digest = createHash('sha256').update(key).digest('hex');
+      const oldMode = process.env.NODE_ENV;
+      const oldConfig = process.env.AGENT_OS_LIVE_TEST_ADMIN;
+      const api = `${lobbyUrl}/api/v1/agent-lobby`;
+      const post = (path: string, body: unknown, token?: string) => fetch(api + path, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', ...(token ? { authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify(body),
+      });
+      const send = (target: LobbySession, token: string) =>
+        post(`/lobbies/${target.lobby_id}/messages`, { content: 'Live QA fixture' }, token);
+      try {
+        process.env.NODE_ENV = 'production';
+        process.env.AGENT_OS_LIVE_TEST_ADMIN = `${lobby.lobby_id}:${digest}:${Date.now() + 60_000}`;
+        assert.equal((await post('/auth/test-admin', { key: randomBytes(32).toString('hex') })).status, 401);
+        const login = await post('/auth/test-admin', { key });
+        assert.equal(login.status, 200);
+        const { token } = await login.json();
+        assert.equal((await send(other, token)).status, 401);
+        const allowed = await send(lobby, token);
+        assert.equal(allowed.status, 201);
+        assert.equal((await allowed.json()).message.from_agent_id, 'LobbyOwner');
+        assert.equal((await server.store.getLobby(lobby.lobby_id))?.created_by, lobby.created_by);
+        process.env.AGENT_OS_LIVE_TEST_ADMIN = `${lobby.lobby_id}:${digest}:${Date.now() - 1}`;
+        assert.equal((await post('/auth/test-admin', { key })).status, 404);
+        assert.equal((await send(lobby, token)).status, 401);
+      } finally {
+        if (oldMode === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = oldMode;
+        if (oldConfig === undefined) delete process.env.AGENT_OS_LIVE_TEST_ADMIN;
+        else process.env.AGENT_OS_LIVE_TEST_ADMIN = oldConfig;
+      }
+    });
+
     await check('the event log is queryable over HTTP', async () => {
       const lobby = (await (await fetch(new URL('/api/v1/agent-lobby/discover', lobbyUrl))).json()) as { lobby: { lobby_id: string } };
       const events = (await (await fetch(new URL(`/api/v1/agent-lobby/lobbies/${lobby.lobby.lobby_id}/events`, lobbyUrl))).json()) as { events: unknown[] };
