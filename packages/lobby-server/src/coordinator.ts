@@ -88,6 +88,8 @@ export interface CoordinatorOptions {
    * closed — the safe default. Inject a real verifier to actually admit verified agents.
    */
   verifyIdentity?: VerifyIdentityFn;
+  /** Registry checks for badges on server-hosted agents, without granting join privileges. */
+  verifyHostedRosterIdentity?: VerifyIdentityFn;
   /**
    * Auto-appoint a successor Boss when the Boss is lost (disconnect or stale reap). OFF by default
    * — Phase 1 keeps a human in the loop. Enable for unattended swarms that must not stall on Boss
@@ -112,6 +114,7 @@ export class LobbyCoordinator {
   private autoFailover: boolean;
   private handRaiseCooldownMs: number;
   public readonly verifyIdentity: VerifyIdentityFn;
+  private readonly verifyHostedRosterIdentity?: VerifyIdentityFn;
   /** agentId → recent send timestamps (ms), trimmed to the window. */
   private sendTimes = new Map<string, number[]>();
   /** agentId → last hand-raise timestamp (ms), for server-side hand-raise cooldown. */
@@ -124,6 +127,7 @@ export class LobbyCoordinator {
     this.rateWindowMs = options.rateWindowMs ?? 10_000;
     this.autoFailover = options.autoFailover ?? false;
     this.handRaiseCooldownMs = options.handRaiseCooldownMs ?? 60_000;
+    this.verifyHostedRosterIdentity = options.verifyHostedRosterIdentity;
     this.verifyIdentity =
       options.verifyIdentity ??
       (async () => ({ status: 'unverified', source: 'none', checkedAt: new Date().toISOString() }));
@@ -175,6 +179,7 @@ export class LobbyCoordinator {
     await this.store.removeAgent(conn.lobbyId, conn.agentId);
     this.sendTimes.delete(conn.agentId);
     this.lastHandRaise.delete(conn.agentId);
+    this.lastIdentityCheck.delete(conn.agentId);
     await this.event(conn.lobbyId, 'agent_left', conn.agentId);
     const out: Outbound[] = [{ target: { kind: 'lobby' }, message: { type: 'lobby-agent-left', agent_id: conn.agentId } }];
     if (wasBoss) {
@@ -331,6 +336,10 @@ export class LobbyCoordinator {
     if (member?.status === 'revoked') {
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'lobby membership is revoked' } }], close: true };
     }
+    if (conn.trusted && presentedRef && this.verifyHostedRosterIdentity &&
+        (!verification || verification.status === 'unverified' || verification.status === 'pending')) {
+      verification = await this.verifyHostedRosterIdentity(presentedRef);
+    }
     const now = new Date().toISOString();
     const agentId = randomUUID();
     const isHuman = msg.participant_type === 'human' && !msg.agent_identity_ref &&
@@ -385,11 +394,12 @@ export class LobbyCoordinator {
     // Non-blocking background verification check, limited to once per 60s per agent to prevent lag/heartbeat timeouts.
     const now = Date.now();
     const lastCheck = this.lastIdentityCheck.get(conn.agentId) ?? 0;
-    if (agent.identity_ref && (!agent.identity_status || agent.identity_status === 'unverified') && (now - lastCheck > 60_000)) {
+    const hostedVerifier = conn.trusted ? this.verifyHostedRosterIdentity : undefined;
+    if (agent.identity_ref && (hostedVerifier || !agent.identity_status || agent.identity_status === 'unverified') && (now - lastCheck > 60_000)) {
       this.lastIdentityCheck.set(conn.agentId, now);
-      this.verifyIdentity(agent.identity_ref)
+      (hostedVerifier ?? this.verifyIdentity)(agent.identity_ref)
         .then(async (verification) => {
-          if (verification && verification.status !== 'unverified') {
+          if (verification.status !== agent.identity_status && (hostedVerifier || verification.status !== 'unverified')) {
             await this.store.updateAgent(conn.lobbyId, conn.agentId!, { identity_status: verification.status });
           }
         })

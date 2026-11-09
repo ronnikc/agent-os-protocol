@@ -46,6 +46,7 @@ export class RegistryMcpClient {
     const res = await fetch(this.endpoint, {
       method: 'POST',
       headers: this.headers(),
+      signal: AbortSignal.timeout(10_000),
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     });
     const sid = res.headers.get('mcp-session-id');
@@ -89,6 +90,7 @@ export class RegistryMcpClient {
       await fetch(this.endpoint, {
         method: 'POST',
         headers: this.headers(),
+        signal: AbortSignal.timeout(10_000),
         body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
       });
     } catch {
