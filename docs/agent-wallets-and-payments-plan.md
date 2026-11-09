@@ -53,3 +53,7 @@ Keep three independent trust decisions:
 - [CIS-8004](https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/cis-8004.html), [registry transaction builders](https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/mcp-service.html), and [Concordium proof verification](https://docs.concordium.com/en/mainnet/how-to/web3-id/create-proofs.html)
 - [Wallet connection](https://docs.concordium.com/en/mainnet/docs/browser-wallet/connect-app.html), [Wallet for Web account creation](https://docs.concordium.com/en/mainnet/docs/browser-wallet/setup-browser-wallet.html), and [Wallet SDK credential deployment](https://docs.concordium.com/en/mainnet/how-to/integrations/wallet-sdk/wallet-sdk-credential-deployment.html)
 - [Where to get CCD](https://www.concordium.com/ccd-token) and [how to send CCD](https://docs.concordium.com/en/mainnet/technical-reference/wallets/guides/send-ccd-wallets.html)
+
+## Final release review
+
+After agent wallet deployment and both protocol flows pass the release gates, update the live website and its Visual Tour to show the verified wallet, x401 proof, and x402 payment experience. Keep the Marketplace and PLL marked according to their actual release status. Review the root README against the finished Phase 1 baseline and shipped Phase 2 capabilities, update setup and funding links, and remove obsolete website design specs after checking references. Verify the deployed website and a clean setup before the repository is made public.
