@@ -99,7 +99,6 @@ function init() {
     btn.disabled = true;
     const result = await postJson(`${requestsPath()}/${encodeURIComponent(id)}/decide`, {
       decision,
-      decided_by: 'panel',
       decision_notes: notes,
     });
     if (!result?.ok) {
