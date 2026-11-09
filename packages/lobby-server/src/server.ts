@@ -3495,8 +3495,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (decideRequestMatch && req.method === 'POST') {
       const lobbyId = decideRequestMatch[1];
       const requestId = decideRequestMatch[2];
+      if (!scopedLobby) return json({ error: 'lobby not found' }, 404);
+      const identity = sessionIdentity(lobbyId);
+      if (!identity) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, identity))) {
+        return json({ error: 'lobby manager required to decide requests' }, 403);
+      }
       const body = await readBody(req);
-      const updated = await applyRequestDecision(lobbyId, requestId, body.decision || 'approved', body.decided_by || 'panel', body.decision_notes || '');
+      if (!['approved', 'rejected', 'deferred'].includes(body.decision)) {
+        return json({ error: 'decision must be approved, rejected, or deferred' }, 400);
+      }
+      const updated = await applyRequestDecision(lobbyId, requestId, body.decision, 'Lobby manager',
+        typeof body.decision_notes === 'string' ? body.decision_notes : '');
       if (updated === 'not-found') return json({ error: 'request not found' }, 404);
       if (!updated) return json({ error: 'failed to update request' }, 500);
       return json({ ok: true, request: updated });
