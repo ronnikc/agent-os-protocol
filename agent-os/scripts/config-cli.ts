@@ -7,7 +7,7 @@
  *
  * This is the "CLI or API configuration" surface: everything here is a thin, scriptable wrapper
  * over the same wallet-gated endpoints the hosted panel uses. Authentication is a Bearer session
- * token (obtain it from the panel's wallet sign-in, or the auth/nonce + auth/verify flow) passed
+ * token (obtain it from the panel's wallet sign-in) passed
  * via --token or AGENT_OS_SESSION_TOKEN. The lobby base URL comes from --lobby-url or
  * AGENT_OS_LOBBY_URL. Provider API keys are sent to the lobby over TLS and stored encrypted;
  * they are never written to disk by this CLI.
@@ -18,7 +18,7 @@
  *   npm run config -- set-key       --lobby <id> --provider anthropic --key sk-ant-... \
  *                                   [--agent <ref>] [--base-url <url>] [--model <id>]
  *   npm run config -- revoke-key    --lobby <id> --id <keyId>
- *   npm run config -- nonce         --lobby <id> --identity did:ccd:...   (challenge for signing)
+ *   npm run config -- nonce         --lobby <id> --identity did:ccd:...   (dev bridge only)
  *
  * Global flags: --lobby-url <url> (or AGENT_OS_LOBBY_URL), --token <t> (or AGENT_OS_SESSION_TOKEN).
  */
@@ -46,7 +46,7 @@ Commands:
   launch-agent --lobby <id> --name <n> [--role <r>] [--provider <p>] [--model <m>] [--agent <ref>] [--system <prompt>]
   list-agents  --lobby <id>                          list running hosted agents
   stop-agent   --lobby <id> --id <agentId>
-  nonce        --lobby <id> --identity <ref>         get a challenge to sign (login flow)
+  nonce        --lobby <id> --identity <ref>         get a nonce from the opt-in dev bridge
 
 Global: --lobby-url <url> (or AGENT_OS_LOBBY_URL), --token <t> (or AGENT_OS_SESSION_TOKEN)`);
   process.exit(msg ? 1 : 0);

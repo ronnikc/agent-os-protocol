@@ -31,10 +31,12 @@ import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integr
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
-import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction } from './auth/identityProof.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction, devTrustWalletSignatures, isProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
-import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership } from './auth/lobbyAuthz.js';
+import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership, lobbyOwnerRef } from './auth/lobbyAuthz.js';
+import { TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID, testAdminKeyDigest } from './auth/identityProof.js';
+import { signInTestAdmin } from './auth/testAdmin.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
@@ -432,7 +434,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   let defaultLobbyId: string | undefined;
 
   async function ensureDefaultLobby(): Promise<LobbySession> {
-    const existing = (await store.listLobbies()).find((l) => l.status === 'active');
+    const existing = (await store.listLobbies()).find((l) => l.status === 'active' && l.visibility === 'public');
     if (existing) return existing;
     const now = new Date().toISOString();
     const lobby: LobbySession = {
@@ -461,7 +463,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   function dispatch(conn: Connection, out: Outbound[]): void {
     for (const o of out) {
       if (o.target.kind === 'self') send(conn.connId, o.message);
-      else if (o.target.kind === 'agent') send(agentConn.get(o.target.agentId), o.message);
+      else if (o.target.kind === 'agent') {
+        const targetConn = agentConn.get(o.target.agentId);
+        if (targetConn && lobbyConns.get(conn.lobbyId)?.has(targetConn)) send(targetConn, o.message);
+      }
       else for (const cid of lobbyConns.get(conn.lobbyId) ?? []) send(cid, o.message); // lobby-scoped
     }
   }
@@ -1151,10 +1156,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       model: params.model,
       join_token: params.joinToken,
     } as AgentToLobbyMessage);
-    if (conn.agentId) agentConn.set(conn.agentId, connId);
+    if (!conn.agentId) {
+      sockets.delete(connId);
+      lobbyConns.get(params.lobbyId)?.delete(connId);
+      await runner.stop();
+      const failure = reg.out.find(({ message }) => message.type === 'lobby-error')?.message;
+      throw new Error(failure?.type === 'lobby-error' ? failure.error : 'hosted agent registration failed');
+    }
+    agentConn.set(conn.agentId, connId);
     connRef.conn = conn; // Wire up sendMessage lobby tool now that the connection is registered
     dispatch(conn, reg.out);
-    const agentId = conn.agentId ?? connId;
+    const agentId = conn.agentId;
 
     // Auto-appoint a boss-role agent as the Boss when the lobby has none. Relaunching agents mints
     // new agent ids, so the previous appointment always dies with the old id — and with no Boss,
@@ -1204,6 +1216,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     hostedAgents.delete(agentId);
     lastObservation.delete(agentId);
     return true;
+  }
+
+  async function disconnectLobbyAgents(lobbyId: string, identityRef?: string): Promise<void> {
+    const agents = await store.roster(lobbyId);
+    for (const agent of agents) {
+      if (identityRef && agent.identity_ref !== identityRef) continue;
+      const connId = agentConn.get(agent.agent_id);
+      if (connId) lobbyConns.get(lobbyId)?.delete(connId);
+      if (!(await stopHostedAgent(agent.agent_id)) && connId) sockets.get(connId)?.close(1008);
+    }
   }
 
   // Re-launch a hosted agent from its persisted spec (used to restore the swarm after a
@@ -1340,6 +1362,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return payload ? payload.identityRef : null;
     };
 
+    const scopedLobbyId = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)/)?.[1];
+    const scopedLobby = scopedLobbyId ? await store.getLobby(scopedLobbyId) : undefined;
+    if (scopedLobby?.visibility === 'private') {
+      const identity = sessionIdentity(scopedLobby.lobby_id);
+      if (!identity) return json({ error: 'authentication required' }, 401);
+      const member = await store.getMember(scopedLobby.lobby_id, identity);
+      const active = member?.status === 'active' &&
+        (!member.expires_at || Date.parse(member.expires_at) > Date.now());
+      if (!active && !(await isLobbyManager(store, scopedLobby.lobby_id, identity))) {
+        return json({ error: 'private lobby membership required' }, 403);
+      }
+    }
+
+    const managementRequest = req.method === 'PATCH' && /^\/api\/v1\/agent-lobby\/lobbies\/[^/]+$/.test(path) ||
+      req.method === 'POST' && /^\/api\/v1\/agent-lobby\/lobbies\/[^/]+\/members(?:\/[^/]+\/status)?$/.test(path);
+    const managementActor = managementRequest && scopedLobbyId ? sessionIdentity(scopedLobbyId) : null;
+    if (managementRequest && scopedLobbyId) {
+      if (!scopedLobby) return json({ error: 'lobby not found' }, 404);
+      if (!managementActor) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, scopedLobbyId, managementActor))) {
+        return json({ error: 'not authorized to manage this lobby' }, 403);
+      }
+    }
+
     const ghToken = (lobbyId: string): Promise<string | null> => githubTokenForLobby(lobbyId, store);
 
     // Adopt an existing GitHub App installation for a lobby that has none recorded yet — the recovery
@@ -1387,11 +1433,24 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       return { connected: true, account, repo: integration!.repo_full_name, branch: integration!.branch, repos };
     };
 
-    if (path === '/health') return json({ ok: true, lobbies: (await store.listLobbies()).length });
+    if (path === '/health') return json({
+      ok: true, revision: process.env.AGENT_OS_REVISION, lobbies: (await store.listLobbies()).length,
+    });
+
+    if (path === '/api/v1/agent-lobby/auth/test-admin' && (req.method === 'GET' || req.method === 'POST')) {
+      res.setHeader('Cache-Control', 'no-store');
+      if (!testAdminKeyDigest()) return json({ error: 'not found' }, 404);
+      if (req.method === 'GET') return json({ enabled: true });
+      const body = await readBody(req);
+      const { status, ...session } = await signInTestAdmin(store, body.key);
+      if (status !== 200) return json({ error: 'test admin sign-in unavailable or rejected' }, status);
+      return json(session);
+    }
 
     // ── Wallet session auth (Hosted Mode) — nonce challenge → wallet signature → session token ──
     // POST /api/v1/agent-lobby/auth/nonce  { identity_ref, lobby_id } → { nonce, expires_at }
     if (path === '/api/v1/agent-lobby/auth/nonce' && req.method === 'POST') {
+      if (!devTrustWalletSignatures()) return json({ error: 'use wallet challenge sign-in' }, 410);
       const body = await readBody(req);
       const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
       const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id.trim() : '';
@@ -1403,6 +1462,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // POST /api/v1/agent-lobby/auth/verify  { identity_ref, lobby_id, signature, public_key }
     //   → { token, expires_at }  (401 on bad proof). The wallet signs the nonce from /auth/nonce.
     if (path === '/api/v1/agent-lobby/auth/verify' && req.method === 'POST') {
+      if (!devTrustWalletSignatures()) return json({ error: 'use wallet challenge sign-in' }, 410);
       const body = await readBody(req);
       const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
       const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id.trim() : '';
@@ -1777,7 +1837,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           toWrite.push({ path: AGENT_OS_MANIFEST_PATH, content: buildManifest(identityRef) });
         }
         await client.commitFiles(toWrite, 'chore: set up Agent OS scheduled self-learning (config, prompts, agents)', branchName);
-        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now(), ok: true });
         invalidateAgentDefs(lobbyId);
 
         await recordEvent(lobbyId, 'scheduled_tasks_configured', identityRef, { repo: integration.repo_full_name, branch: branchName });
@@ -1994,7 +2054,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           'chore: initialize Agent OS structure (agents, skills, prompts, memory + training scaffold)',
           branchName,
         );
-        repoInitializedCache.set(lobbyId, { value: true, at: Date.now() });
+        repoInitializedCache.set(lobbyId, { value: true, at: Date.now(), ok: true });
         invalidateAgentDefs(lobbyId);
         await recordEvent(lobbyId, 'repo_initialized', identityRef, {
           repo: integ.repo_full_name, branch: branchName, files_committed: toWrite.length, skipped_existing: seed.length - (toWrite.length - 1), commit_sha: commitSha,
@@ -2737,12 +2797,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     // Public discovery — shape matches what the Panel/relay parse.
     if (path === '/api/v1/agent-lobby/discover' && req.method === 'GET') {
-      const lobby = autoDefault ? await ensureDefaultLobby() : (await store.listLobbies()).find((l) => l.status === 'active');
+      const lobby = autoDefault ? await ensureDefaultLobby() :
+        (await store.listLobbies()).find((l) => l.status === 'active' && l.visibility === 'public');
       return json({ lobby: lobby ? { lobby_id: lobby.lobby_id, org_id: lobby.org_id, name: lobby.name, visibility: lobby.visibility, join_policy: lobby.join_policy } : null });
     }
 
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'GET') {
-      return json({ lobbies: await store.listLobbies() });
+      const visible: Partial<LobbySession>[] = [];
+      for (const lobby of await store.listLobbies()) {
+        const identity = sessionIdentity(lobby.lobby_id);
+        if (identity && await isLobbyManager(store, lobby.lobby_id, identity)) visible.push(lobby);
+        else if (lobby.status === 'active') {
+          const member = identity ? await store.getMember(lobby.lobby_id, identity) : undefined;
+          if (lobby.visibility === 'public' || member?.status === 'active' &&
+              (!member.expires_at || Date.parse(member.expires_at) > Date.now())) {
+            visible.push({ ...lobby, allowlist: undefined, created_by: undefined });
+          }
+        }
+      }
+      return json({ lobbies: visible });
     }
 
     if (path === '/api/v1/agent-lobby/stats' && req.method === 'GET') {
@@ -2755,7 +2828,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       for (const lobby of lobbies) {
         const roster = await store.roster(lobby.lobby_id);
         for (const agent of roster) {
-          if (seenAgents.has(agent.agent_id)) continue;
+          if (agent.status === 'disconnected' || seenAgents.has(agent.agent_id)) continue;
           seenAgents.add(agent.agent_id);
 
           if (agent.participant_type === 'human' || agent.role === 'human') {
@@ -2783,19 +2856,18 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const body = await readBody(req);
       // Validate enums — these values flow into stored lobby records and dashboard markup.
       const visibility = body.visibility === 'private' ? 'private' : 'public';
+      const creatingIdentity = typeof body.auth_lobby_id === 'string' ? sessionIdentity(body.auth_lobby_id) : null;
+      if (creatingIdentity === TEST_ADMIN_IDENTITY) return json({ error: 'test admin is scoped to the test lobby' }, 403);
+      if ((visibility === 'private' || isProduction()) && !creatingIdentity) {
+        return json({ error: 'wallet sign-in is required to create this lobby' }, 401);
+      }
       const JOIN_POLICIES = new Set(['none', 'registered', 'allowlisted', 'verified_human_link']);
       const joinPolicy = JOIN_POLICIES.has(body.join_policy) ? body.join_policy : undefined;
       const allowlist = Array.isArray(body.allowlist)
         ? body.allowlist.filter((x: unknown) => typeof x === 'string').slice(0, 200)
         : undefined;
       const now = new Date().toISOString();
-      // Hosted Mode: bind the lobby to the creating wallet so it (and only it) can manage config
-      // later. `owner_identity_ref` is trusted at creation as first-writer — claiming a wallet you
-      // don't control only locks YOU out, since managing the lobby later requires proving that
-      // wallet (auth/verify). Legacy/local callers omit it and get the unowned 'system' default.
-      const ownerRef = typeof body.owner_identity_ref === 'string' && body.owner_identity_ref.trim()
-        ? body.owner_identity_ref.trim()
-        : (typeof body.created_by === 'string' ? body.created_by : 'system');
+      const ownerRef = creatingIdentity ?? 'system';
       const lobbyId = randomUUID();
       const lobby: LobbySession = {
         lobby_id: lobbyId,
@@ -2822,7 +2894,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           status: 'active',
         });
       }
-      return json({ lobby }, 201);
+      return json({ lobby, token: creatingIdentity ? issueSessionToken(creatingIdentity, lobbyId) : undefined }, 201);
     }
 
     const lobbyMatch = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)(\/(roster|events|messages|members))?$/);
@@ -2832,9 +2904,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (sub === 'roster') return json({ agents: await store.roster(lobbyId) });
       if (sub === 'events') return json({ events: await store.listEvents(lobbyId) });
       if (sub === 'messages') return json({ messages: await store.listMessages(lobbyId) });
-      if (sub === 'members') return json({ members: await store.listMembers(lobbyId) });
+      if (sub === 'members') {
+        const identity = sessionIdentity(lobbyId);
+        if (!identity) return json({ error: 'authentication required' }, 401);
+        if (!(await isLobbyManager(store, lobbyId, identity))) return json({ error: 'not authorized to list members' }, 403);
+        return json({ members: await store.listMembers(lobbyId) });
+      }
       const lobby = await store.getLobby(lobbyId);
-      return lobby ? json({ lobby }) : json({ error: 'not found' }, 404);
+      if (!lobby) return json({ error: 'not found' }, 404);
+      const identity = sessionIdentity(lobbyId);
+      if (identity && await isLobbyManager(store, lobbyId, identity)) return json({ lobby });
+      return json({ lobby: { ...lobby, allowlist: undefined, created_by: undefined } });
     }
 
     // ── Lobby management (Manage view): settings + membership ──
@@ -2847,6 +2927,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (!lobby) return json({ error: 'lobby not found' }, 404);
       const body = await readBody(req);
       const patch: Record<string, unknown> = {};
+      if (lobbyId === TEST_ADMIN_LOBBY_ID && body.visibility === 'public') {
+        return json({ error: 'the test lobby must stay private' }, 403);
+      }
       if (typeof body.name === 'string') patch.name = body.name.slice(0, 120);
       if (body.visibility === 'public' || body.visibility === 'private') patch.visibility = body.visibility;
       const JOIN_POLICIES = new Set(['none', 'registered', 'allowlisted', 'verified_human_link']);
@@ -2858,7 +2941,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         patch.status = body.status;
       }
       const updated = await store.updateLobby(lobbyId, patch);
-      await recordEvent(lobbyId, 'lobby_settings_updated', String(body.actor ?? 'web-user'), { changed: Object.keys(patch) });
+      if (updated?.status !== 'active' || patch.visibility !== undefined && patch.visibility !== lobby.visibility ||
+          patch.join_policy !== undefined && patch.join_policy !== lobby.join_policy || patch.allowlist !== undefined) {
+        await disconnectLobbyAgents(lobbyId);
+      }
+      await recordEvent(lobbyId, 'lobby_settings_updated', managementActor!, { changed: Object.keys(patch) });
       return json({ lobby: updated });
     }
 
@@ -2946,12 +3033,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const body = await readBody(req);
       const identityRef = typeof body.identity_ref === 'string' ? body.identity_ref.trim() : '';
       if (!identityRef) return json({ error: 'identity_ref is required' }, 400);
-      const ROLES = new Set(['owner', 'admin', 'boss', 'contributor', 'observer', 'agent']);
+      const ROLES = new Set(['admin', 'boss', 'contributor', 'observer', 'agent']);
+      if (body.role !== undefined && !ROLES.has(body.role)) return json({ error: 'invalid member role' }, 400);
       const role = ROLES.has(body.role) ? body.role : 'contributor';
       const existing = await store.getMember(lobbyId, identityRef);
+      const owner = lobbyOwnerRef(lobby);
+      if (identityRef === owner || existing?.role === 'owner' ||
+          ((role === 'admin' || existing?.role === 'admin') && managementActor !== owner)) {
+        return json({ error: 'not authorized to change this role' }, 403);
+      }
       if (existing) {
+        if (existing.status === 'active') return json({ error: 'member is already active' }, 409);
         // Re-inviting a revoked member re-activates the invite.
         const reinvited = await store.updateMember(lobbyId, existing.id, { status: 'invited', role });
+        await recordEvent(lobbyId, 'member_invited', managementActor!, { identity_ref: identityRef, role });
         return json({ member: reinvited });
       }
       const member = await store.addMember({
@@ -2960,13 +3055,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         identity_ref: identityRef,
         role,
         status: 'invited',
-        invited_by_identity_ref: typeof body.invited_by_identity_ref === 'string' ? body.invited_by_identity_ref : undefined,
+        invited_by_identity_ref: managementActor!,
       });
       // Keep the lobby allowlist in sync so the join policy actually admits the invitee.
       const allowlist = new Set(lobby.allowlist ?? []);
       allowlist.add(identityRef);
       await store.updateLobby(lobbyId, { allowlist: [...allowlist] });
-      await recordEvent(lobbyId, 'member_invited', String(body.invited_by_identity_ref ?? 'web-user'), { identity_ref: identityRef, role });
+      await recordEvent(lobbyId, 'member_invited', managementActor!, { identity_ref: identityRef, role });
       return json({ member }, 201);
     }
 
@@ -2980,16 +3075,30 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (status !== 'active' && status !== 'revoked' && status !== 'invited') {
         return json({ error: 'status must be active, invited, or revoked' }, 400);
       }
+      const member = (await store.listMembers(lobbyId)).find((entry) => entry.id === memberId);
+      if (!member) return json({ error: 'member not found' }, 404);
+      const owner = lobbyOwnerRef(scopedLobby);
+      if (member.identity_ref === owner || member.role === 'owner' || (member.role === 'admin' && managementActor !== owner)) {
+        return json({ error: 'not authorized to change this role' }, 403);
+      }
       const updated = await store.updateMember(lobbyId, memberId, { status });
       if (!updated) return json({ error: 'member not found' }, 404);
-      if (status === 'revoked') {
+      if (status === 'active' && scopedLobby) {
+        const lobby = await store.getLobby(lobbyId);
+        if (lobby && !(lobby.allowlist ?? []).includes(updated.identity_ref)) {
+          await store.updateLobby(lobbyId, { allowlist: [...(lobby.allowlist ?? []), updated.identity_ref] });
+        }
+      } else if (status === 'revoked') {
         // Kicking: drop the member from the allowlist so they can no longer (re)join.
         const lobby = await store.getLobby(lobbyId);
         if (lobby?.allowlist?.length) {
           await store.updateLobby(lobbyId, { allowlist: lobby.allowlist.filter((r) => r !== updated.identity_ref) });
         }
-        await recordEvent(lobbyId, 'member_revoked', String(body.actor ?? 'web-user'), { identity_ref: updated.identity_ref });
+        await disconnectLobbyAgents(lobbyId, updated.identity_ref);
       }
+      await recordEvent(lobbyId, status === 'revoked' ? 'member_revoked' : 'member_status_updated', managementActor!, {
+        identity_ref: updated.identity_ref, status,
+      });
       return json({ member: updated });
     }
 
@@ -3000,25 +3109,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const body = await readBody(req);
         const lobby = await store.getLobby(lobbyId);
         if (!lobby) return json({ error: 'Lobby not found' }, 404);
+        if (lobby.status !== 'active') return json({ error: 'lobby is not active' }, 409);
 
-        // Sender attribution: a wallet-authenticated lobby manager speaks as LobbyOwner — the
-        // accountable human running this lobby — not as an anonymous "WebUser". The generic
-        // default only applies to unauthenticated visitors, and a client-supplied name can never
-        // claim the LobbyOwner label without holding a manager session (anti-spoofing).
-        let fromId = typeof body.from_agent_id === 'string' && body.from_agent_id.trim() ? body.from_agent_id.trim() : '';
+        // Derive sender attribution from the wallet session rather than the request body.
         const senderIdentity = sessionIdentity(lobbyId);
-        const senderIsManager = senderIdentity ? await isLobbyManager(store, lobbyId, senderIdentity) : false;
-        if (senderIsManager && (!fromId || fromId === 'WebUser' || fromId === 'LobbyOwner')) {
-          fromId = 'LobbyOwner';
-        } else if (!senderIsManager && fromId === 'LobbyOwner') {
-          fromId = 'WebUser';
-        } else if (!fromId) {
-          fromId = 'WebUser';
-        }
-        const roster = await store.roster(lobbyId);
-        if (roster.some((a) => a.agent_id === fromId && a.status !== 'disconnected')) {
-          return json({ error: 'from_agent_id belongs to a connected agent — send via the agent WebSocket instead' }, 403);
-        }
+        if (!senderIdentity) return json({ error: 'authentication required' }, 401);
+        const senderIsManager = await isLobbyManager(store, lobbyId, senderIdentity);
+        const member = await store.getMember(lobbyId, senderIdentity);
+        if (member?.status === 'revoked') return json({ error: 'lobby membership is revoked' }, 403);
+        const fromId = senderIsManager ? 'LobbyOwner' : senderIdentity;
 
         const seq = await store.nextSeq(lobbyId);
         const message: LobbyMessage = {
@@ -3054,17 +3153,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // POST /api/v1/agent-lobby/issuers
     if (path === '/api/v1/agent-lobby/issuers' && req.method === 'POST') {
       const body = await readBody(req);
-      if (!body.issuer_did || !body.identity_ref) {
-        return json({ error: 'missing issuer_did or identity_ref' }, 400);
-      }
+      const identity = typeof body.lobby_id === 'string' ? sessionIdentity(body.lobby_id) : null;
+      if (!identity) return json({ error: 'wallet sign-in is required to register an issuer' }, 401);
+      if (identity === TEST_ADMIN_IDENTITY) return json({ error: 'a Concordium wallet is required to register an issuer' }, 403);
+      if (body.issuer_did !== identity) return json({ error: 'issuer must match the signed-in wallet' }, 403);
+      if (!(await store.getLobby(body.lobby_id))) return json({ error: 'lobby not found' }, 404);
       const record = await store.registerIssuer({
-        issuer_did: body.issuer_did,
-        identity_ref: body.identity_ref,
+        issuer_did: identity,
+        identity_ref: identity,
         registered_at: new Date().toISOString(),
         revoked: false
       });
       if (typeof body.lobby_id === 'string') {
-        await recordEvent(body.lobby_id, 'owner_registered', body.identity_ref, {
+        await recordEvent(body.lobby_id, 'owner_registered', identity, {
           issuer_did: body.issuer_did,
           owner_name: body.owner_name,
           signed: Boolean(body.signature),
@@ -3083,6 +3184,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (taskListMatch) {
       const lobbyId = taskListMatch[1];
       if (req.method === 'POST') {
+        if (!scopedLobby) return json({ error: 'lobby not found' }, 404);
+        if (scopedLobby.status !== 'active') return json({ error: 'lobby is not active' }, 409);
         const body = await readBody(req);
         if (!body.title) {
           return json({ error: 'missing title' }, 400);
@@ -3099,12 +3202,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           // Attribute the assigner: an authenticated lobby manager is the LobbyOwner.
           const creatorIdentity = sessionIdentity(lobbyId);
           const creatorIsManager = creatorIdentity ? await isLobbyManager(store, lobbyId, creatorIdentity) : false;
+          if (!creatorIsManager) return json({ error: 'lobby manager required to assign tasks' }, creatorIdentity ? 403 : 401);
           const seq = await store.nextSeq(lobbyId);
           const task = {
             task_id: randomUUID(),
             lobby_id: lobbyId,
             org_id: lobby.org_id,
-            assigned_by: (typeof body.assigned_by === 'string' && body.assigned_by.trim()) || (creatorIsManager ? 'LobbyOwner' : 'WebUser'),
+            assigned_by: 'LobbyOwner',
             assigned_to: assignedTo,
             assigned_at: new Date().toISOString(),
             title: String(body.title).slice(0, 200),
@@ -3160,6 +3264,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const body = await readBody(req);
       const coordTask = await store.getTask(lobbyId, taskId);
       if (coordTask) {
+        if (scopedLobby?.status !== 'active') return json({ error: 'lobby is not active' }, 409);
+        const patchIdentity = sessionIdentity(lobbyId);
+        if (!patchIdentity) return json({ error: 'authentication required' }, 401);
+        if (!(await isLobbyManager(store, lobbyId, patchIdentity))) {
+          return json({ error: 'lobby manager required to update tasks' }, 403);
+        }
         const STATUSES = new Set(['pending', 'assigned', 'accepted', 'in_progress', 'completed', 'failed', 'cancelled']);
         const updatedTask = {
           ...coordTask,
@@ -3168,9 +3278,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           ...(typeof body.result === 'string' ? { result: body.result } : {}),
         };
         await store.upsertTask(updatedTask);
-        const patchIdentity = sessionIdentity(lobbyId);
-        const patchIsManager = patchIdentity ? await isLobbyManager(store, lobbyId, patchIdentity) : false;
-        await recordEvent(lobbyId, 'task_updated', patchIsManager ? 'LobbyOwner' : 'WebUser', { task_id: taskId, status: updatedTask.status });
+        await recordEvent(lobbyId, 'task_updated', patchIdentity, { task_id: taskId, status: updatedTask.status });
         for (const cid of lobbyConns.get(lobbyId) ?? []) {
           send(cid, { type: 'lobby-task-updated', task: updatedTask } as LobbyToAgentMessage);
         }
@@ -3573,8 +3681,6 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const orgId = url.searchParams.get('org_id') ?? 'default';
     const conn: Connection = { connId: randomUUID(), lobbyId, orgId };
     sockets.set(conn.connId, socket);
-    if (!lobbyConns.has(lobbyId)) lobbyConns.set(lobbyId, new Set());
-    lobbyConns.get(lobbyId)!.add(conn.connId);
 
     socket.on('message', async (data: Buffer) => {
       let msg: AgentToLobbyMessage;
@@ -3586,7 +3692,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       const before = conn.agentId;
       const result = await coordinator.handle(conn, msg);
-      if (conn.agentId && conn.agentId !== before) agentConn.set(conn.agentId, conn.connId); // learn id on register
+      if (conn.agentId && conn.agentId !== before) {
+        agentConn.set(conn.agentId, conn.connId);
+        if (!lobbyConns.has(lobbyId)) lobbyConns.set(lobbyId, new Set());
+        lobbyConns.get(lobbyId)!.add(conn.connId);
+      }
       dispatch(conn, result.out);
       if (result.close) socket.close();
     });

@@ -88,7 +88,7 @@ export class LobbyClient {
       });
       ws.on('message', (data: Buffer) => this.onData(data));
       ws.on('error', (err) => reject(err));
-      ws.on('close', () => this.onClose());
+      ws.on('close', (code) => this.onClose(code));
     });
   }
 
@@ -103,7 +103,7 @@ export class LobbyClient {
       this.agentId = msg.agent_id;
       this.lobbyId = msg.lobby_id;
     }
-    if (msg.type === 'lobby-error' && typeof msg.error === 'string' && msg.error.startsWith('unknown lobby')) {
+    if (!this.options.lobbyId && msg.type === 'lobby-error' && typeof msg.error === 'string' && msg.error.startsWith('unknown lobby')) {
       // The lobby we were pinned to no longer exists — typically the server restarted and its
       // in-memory store minted a fresh default lobby. Drop the stale id so the reconnect path
       // re-discovers instead of looping on the dead one forever.
@@ -112,10 +112,11 @@ export class LobbyClient {
     for (const l of this.listeners) l(msg);
   }
 
-  private onClose(): void {
+  private onClose(code: number): void {
     this.stopHeartbeat();
-    if (this.closedByUser || this.options.reconnect === false) return;
+    if (this.closedByUser || this.options.reconnect === false || code === 1008) return;
     setTimeout(() => {
+      if (this.closedByUser) return;
       this.connect().catch(() => {
         /* keep retrying on the next close */
       });

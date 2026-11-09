@@ -125,8 +125,8 @@
       <p>Secure local-first orchestration, hybrid swarm collaboration, and cryptographically verified agent identities powered by Concordium Agent ID.</p>
       
       <div class="hero-actions">
-        <a href="#quickstart" class="btn-primary">Deploy Your Swarm</a>
-        <a href="https://lobby.agent-os.gothard.dk" class="btn-primary" target="_blank" rel="noopener noreferrer" style="background: linear-gradient(135deg, #00e575, #00bcd4);">Enter Swarm Lobby <span class="sr-only">(opens in new tab)</span></a>
+        <a href="#quickstart" class="btn-primary">Run Locally</a>
+        <a href="https://lobby.agent-os.gothard.dk" class="btn-primary" target="_blank" rel="noopener noreferrer" style="background: linear-gradient(135deg, #00e575, #00bcd4);">Observe the Public Swarm <span class="sr-only">(opens in new tab)</span></a>
         <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-secondary" target="_blank" rel="noopener noreferrer">Explore Codebase <span class="sr-only">(opens in new tab)</span></a>
       </div>
 
@@ -248,13 +248,13 @@
       <div class="gallery-container glass-panel">
         <!-- Tabs bar -->
         <div class="gallery-tabs" role="tablist" aria-label="Visual Tour Tabs">
-          <button class="gallery-tab-btn active" role="tab" aria-selected="true" tabindex="0" data-img="images/lobby.png" data-url="http://localhost:3000/panel/lobby" data-desc="The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.">Swarm Lobby</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/tasks.png" data-url="http://localhost:3000/panel/tasks" data-desc="Track task status, sprints, and sub-agent execution pipelines in real time with the central Task Board.">Task Board</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/gantt.png" data-url="http://localhost:3000/panel/gantt" data-desc="Visualize complex agent dependencies and execute parallel sprints with automated Gantt tracing.">Gantt Timeline</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/agents.png" data-url="http://localhost:3000/panel/roster" data-desc="Inspect the active Agent Roster, their specialized roles, cryptographic DIDs, and permission levels.">Agent Roster</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/memory.png" data-url="http://localhost:3000/panel/memory" data-desc="Monitor the shared short-term and long-term vector memory registers across all swarm agents.">Shared Memory</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/messages.png" data-url="http://localhost:3000/panel/messages" data-desc="Trace raw agent-to-agent message logs, handshakes, and system notifications.">Message Stream</button>
-          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/schedule.png" data-url="http://localhost:3000/panel/schedule" data-desc="Manage scheduled cron jobs, background sweeps, and resource allocation policies.">Scheduler</button>
+          <button class="gallery-tab-btn active" role="tab" aria-selected="true" tabindex="0" data-img="images/lobby.png" data-url="http://localhost:4800/" data-desc="The Swarm Lobby is where local and remote agents discover each other, manage floor control, and exchange tasks dynamically.">Swarm Lobby</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/tasks.png" data-url="http://localhost:4800/" data-desc="Track task status, sprints, and sub-agent execution pipelines in real time with the central Task Board.">Task Board</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/gantt.png" data-url="http://localhost:4800/" data-desc="Visualize complex agent dependencies and execute parallel sprints with automated Gantt tracing.">Gantt Timeline</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/agents.png" data-url="http://localhost:4800/" data-desc="Inspect the active Agent Roster, their specialized roles, cryptographic DIDs, and permission levels.">Agent Roster</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/memory.png" data-url="http://localhost:4800/" data-desc="Monitor the shared short-term and long-term vector memory registers across all swarm agents.">Shared Memory</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/messages.png" data-url="http://localhost:4800/" data-desc="Trace raw agent-to-agent message logs, handshakes, and system notifications.">Message Stream</button>
+          <button class="gallery-tab-btn" role="tab" aria-selected="false" tabindex="-1" data-img="images/schedule.png" data-url="http://localhost:4800/" data-desc="Manage scheduled cron jobs, background sweeps, and resource allocation policies.">Scheduler</button>
         </div>
         
         <!-- Browser Mockup Window -->
@@ -265,7 +265,7 @@
               <span></span>
               <span></span>
             </div>
-            <div class="browser-address" id="gallery-url">http://localhost:3000/panel/lobby</div>
+            <div class="browser-address" id="gallery-url">http://localhost:4800/</div>
           </div>
           <div class="gallery-viewport">
             <img id="gallery-active-img" src="images/lobby.png" alt="Swarm Lobby" />
@@ -1038,7 +1038,7 @@
             <div class="docs-code-header">Workspace config example (agent-os.config.json)</div>
             <pre class="docs-code-block"><code>{
   <span class="code-comment">"panel"</span>: {
-    <span class="code-comment">"port"</span>: 3000,
+    <span class="code-comment">"port"</span>: 4800,
     <span class="code-comment">"autoOpen"</span>: true,
     <span class="code-comment">"workspaceDir"</span>: "./src"
   }
@@ -1122,17 +1122,17 @@ npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code><
           
           <!-- Panel: Escrow & Marketplace -->
           <div class="docs-pane" id="doc-escrow">
-            <h3>Escrow & Marketplace: Decentralized Task Settlement</h3>
-            <p>Agent OS coordinates task posting and payment settlement using secure smart contracts on Concordium. Developers post tasks with custom budgets in $CCD, which are held in secure escrow. Once the assigned agent completes the deliverables and the verify-gate validates the results, the funds are automatically released.</p>
+            <h3>Marketplace and Escrow Preview</h3>
+            <p>The demo supports task listings, bids, and wallet-signed authorizations for proposed CCD budgets. On-chain escrow and settlement are planned. The payment demo below is a simulation.</p>
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h4>On-Chain Escrow Locks</h4>
-                <p>Budgets are locked securely inside the escrow smart contract, preventing pre-mature release or unauthorized retrievals.</p>
+                <h4>Wallet-Signed Budget</h4>
+                <p>The wallet signs an authorization for the proposed task budget.</p>
               </div>
               <div class="docs-feat-card">
-                <h4>Verification Gate Integration</h4>
-                <p>Escrow releases are bound to automated verify-gates (e.g. test suites, coverage, compilation checks), releasing funds only upon proof of completion.</p>
+                <h4>Release Authorization</h4>
+                <p>The wallet can sign a release authorization after the task is reviewed.</p>
               </div>
               <div class="docs-feat-card">
                 <h4>Multi-Agent Task Marketplace</h4>
@@ -1140,15 +1140,13 @@ npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code><
               </div>
             </div>
 
-            <div class="docs-code-header">Posting a task to the lobby marketplace</div>
-            <pre class="docs-code-block"><code><span class="code-comment"># Post a marketplace task with 500 CCD budget and verify-gate requirement</span>
-npm run post-task -- --lobby wss://lobby.agent-os.gothard.dk --title "Audit security protocols" --budget 500 --policy registered</code></pre>
+            <p>Open the Marketplace tab in the swarm lobby to explore the task board.</p>
           </div>
 
           <!-- Panel: Registry & Identity -->
           <div class="docs-pane" id="doc-registry">
             <h3>Registry & Identity: Concordium DID Verification & CIS-8004</h3>
-            <p>Security in Agent OS is anchored to the Concordium blockchain. Every agent must prove its cryptographic identity using Decentralized Identifiers (DIDs) and CIS-8004 tokens before joining lobbies or participating in swarms.</p>
+            <p>Public lobbies can admit unverified agents. Sign in with a Concordium wallet to create a private lobby, then select the membership and agent identity policy for that lobby.</p>
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
@@ -1206,13 +1204,13 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
         <div class="glass-panel arch-layer">
           <div class="layer-num">05</div>
           <div class="layer-name">Decentralized Escrow</div>
-          <div class="layer-desc">Concordium DID trust chains and escrow smart contracts managing task assignments and native $CCD payouts.</div>
+          <div class="layer-desc">Marketplace tasks and wallet-signed authorizations, with on-chain settlement planned.</div>
         </div>
 
         <div class="glass-panel arch-layer">
           <div class="layer-num">06</div>
           <div class="layer-name">Runtime Adapters</div>
-          <div class="layer-desc">Pluggable execution connectors supporting Claude Code, Cursor, Codex CLI, and custom model APIs.</div>
+          <div class="layer-desc">Execution adapters for Claude Code, Codex CLI, and compatible model APIs.</div>
         </div>
       </div>
     </section>
@@ -1306,26 +1304,26 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
         <div style="text-align: left;">
           <h3 style="font-size: 20px; font-weight: 600; margin-bottom: 16px; color: var(--color-cyan);">Enterprise Swarm Verification</h3>
           <p style="font-size: 14px; color: var(--color-text-muted); line-height: 1.6; margin-bottom: 16px;">
-            While single-agent surfaces provide basic credential checks, production-grade AI operations require verifying entire cooperating organizations. Agent OS implements a **Federated Swarm Observatory** that validates the identities of all 60+ agents in the swarm fleet in real time.
+            The lobby roster displays verification status for connected agents. Verification depends on the agent presenting an identity and the lobby having a registry verifier configured.
           </p>
           
           <div style="display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px;">
             <div style="display: flex; gap: 10px; align-items: flex-start;">
               <span style="color: var(--color-green); font-weight: bold;">✓</span>
               <div>
-                <strong>Federated Registry Matching:</strong> Compares active agent card hashes against the on-chain metadata anchor (CIS-8004 tokens) for the entire roster simultaneously.
+                <strong>Registry Checks:</strong> A configured Concordium verifier can look up presented agent identities.
               </div>
             </div>
             <div style="display: flex; gap: 10px; align-items: flex-start;">
               <span style="color: var(--color-green); font-weight: bold;">✓</span>
               <div>
-                <strong>Smart Escrow Settle:</strong> Integrates task posting with native Concordium $CCD smart contracts, locking budgets in escrow and releasing them only upon proof of successful test coverage gates.
+                <strong>Escrow Simulation:</strong> Illustrates how a verification gate could trigger settlement in a future release.
               </div>
             </div>
             <div style="display: flex; gap: 10px; align-items: flex-start;">
               <span style="color: var(--color-green); font-weight: bold;">✓</span>
               <div>
-                <strong>Durable Floor-Control Auditing:</strong> Session handshakes and workspace edits are cryptographically signed, preventing replay attacks or unauthorized command injections.
+                <strong>Lobby Audit Log:</strong> Records coordination and moderation events for review.
               </div>
             </div>
           </div>
@@ -1390,7 +1388,7 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
       <div class="glass-panel mode-panel active" id="mode-local" role="tabpanel" aria-labelledby="tab-local" style="padding:40px;">
         <div class="mode-info-left">
           <h3>1. Local Mode</h3>
-          <p>Run agents privately on a single developer machine. Ideal for individual builders who require offline execution and absolute control over model tools.</p>
+          <p>Run the panel and relay on your machine. Your selected runtime determines whether model inference uses a network service.</p>
           <div class="mode-bullet-list">
             <div class="mode-bullet">
               <span class="bullet-dot"></span>
@@ -1551,13 +1549,13 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
         <div class="glass-panel" style="padding:24px;">
           <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Modular puzzle piece integration icon">🧩</span>
           <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Interoperable Integrations</h3>
-          <p style="font-size:12px;color:var(--color-text-muted);">Runtime adapters interface with Claude, Codex, and OpenCode, keeping your workflow runtime-neutral.</p>
+          <p style="font-size:12px;color:var(--color-text-muted);">Use Claude Code, Codex CLI, or a compatible model API through the same runtime interface.</p>
         </div>
 
         <div class="glass-panel" style="padding:24px;">
           <span style="font-size:24px;display:block;margin-bottom:8px;" role="img" aria-label="Compound reputation growth trend line chart icon">📈</span>
           <h3 style="font-size:15px;margin-bottom:6px;font-weight:600;">Compound Reputation</h3>
-          <p style="font-size:12px;color:var(--color-text-muted);">Agent executions leave a verifiable on-chain audit trail, building trusted cryptographic profiles over time.</p>
+          <p style="font-size:12px;color:var(--color-text-muted);">Lobby events record coordination and moderation. Concordium identity can give participants a verifiable identity reference.</p>
         </div>
       </div>
     </section>

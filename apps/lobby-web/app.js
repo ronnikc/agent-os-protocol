@@ -292,7 +292,7 @@ window.alert = function(message) {
 
 async function fetchJson(url) {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url, { headers: lobbySessionHeaders() });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return await res.json();
   } catch (err) {
@@ -600,7 +600,7 @@ async function postJson(url, data) {
   try {
     const res = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...lobbySessionHeaders() },
       body: JSON.stringify(data)
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -616,6 +616,10 @@ async function postJson(url, data) {
 /** True when we hold a live session token for the active lobby. */
 function isSignedIn() {
   return !!(state.session.token && state.session.lobbyId && state.session.lobbyId === state.activeLobbyId);
+}
+
+function lobbySessionHeaders() {
+  return state.session.token ? { Authorization: `Bearer ${state.session.token}` } : {};
 }
 
 /**
@@ -1391,6 +1395,14 @@ function updateWalletUI() {
 // ── Init ──
 
 function init() {
+  const requestedLobby = new URLSearchParams(location.search).get('lobby');
+  try {
+    const saved = JSON.parse(localStorage.getItem('agentos.hosted.session') || 'null');
+    if (saved?.token && saved.lobbyId) state.session = saved;
+  } catch { /* continue without the previous session */ }
+  if (requestedLobby && /^[\da-f-]{36}$/i.test(requestedLobby)) {
+    selectLobby(requestedLobby);
+  }
   const issueAgentRole = document.getElementById('issue-agent-role');
   if (issueAgentRole) {
     issueAgentRole.innerHTML = AGENT_ROLES.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
@@ -1436,6 +1448,14 @@ function init() {
       }
       const visibility = visibilityEl?.value || 'public';
       const policy = policyEl?.value || 'none';
+      if (!isSignedIn()) {
+        if (!state.wallet.connected) {
+          alert('Connect your Concordium wallet to create a lobby.');
+          return;
+        }
+        await signInToLobby();
+        if (!isSignedIn()) return;
+      }
       
       // Parse allowlist safely only if visibility/policy requires it
       let allowlist = [];
@@ -1451,12 +1471,14 @@ function init() {
         visibility,
         join_policy: policy,
         allowlist,
-        // Bind the lobby to the connected wallet so it (and only it) can manage Hosted-Mode config.
-        owner_identity_ref: state.wallet.connected && state.wallet.address ? `did:ccd:${CCD_NETWORK}:${state.wallet.address}` : undefined,
-        created_by: 'web-user'
+        auth_lobby_id: state.session.lobbyId,
       });
 
       if (res && res.lobby) {
+        if (res.token) {
+          state.session = { token: res.token, identityRef: res.lobby.created_by, lobbyId: res.lobby.lobby_id };
+          persistSession();
+        }
         if (nameEl) nameEl.value = '';
         if (allowlistInput) allowlistInput.value = '';
         if (allowlistContainer) allowlistContainer.style.display = 'none';
@@ -1471,7 +1493,6 @@ function init() {
   // Wire up Send Message button
   const btnSendMessage = document.getElementById('btn-send-message');
   const chatInputText = document.getElementById('chat-input-text');
-  const chatUsername = document.getElementById('chat-username');
 
   async function handleSendMessage() {
     if (!state.activeLobbyId) {
@@ -1480,15 +1501,18 @@ function init() {
     }
     const content = chatInputText?.value?.trim();
     if (!content) return;
-    // A signed-in wallet session speaks as the LobbyOwner; the server verifies the manager session
-    // and enforces the label (an unauthenticated sender can never claim it). The Bearer token is
-    // what lets the server recognize the owner — without it every message was an anonymous WebUser.
-    const signedIn = !!state.session?.token;
-    const username = chatUsername?.value?.trim() || (signedIn ? 'LobbyOwner' : 'WebUser');
-    const payload = { from_agent_id: username, content, message_type: 'chat' };
-    const res = signedIn
-      ? (await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, payload))?.data
-      : await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, payload);
+    if (!isSignedIn()) {
+      if (!state.wallet.connected) {
+        alert('Connect your Concordium wallet to send messages.');
+        return;
+      }
+      await signInToLobby();
+      if (!isSignedIn()) return;
+    }
+    const sent = await authRequest('POST', `/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/messages`, {
+      content, message_type: 'chat',
+    });
+    const res = sent?.data;
 
     if (res && res.message) {
       if (chatInputText) chatInputText.value = '';
@@ -1542,6 +1566,8 @@ function init() {
       btnRegisterOwnerAction.textContent = "Signing in Wallet...";
 
       try {
+        if (!isSignedIn()) await signInToLobby();
+        if (!isSignedIn()) throw new Error('Sign in to this lobby first.');
         const message = `Register Owner ID in Agent OS Swarm Lobby: ${name} (${did})`;
         const signature = normalizeSignature(await provider.signMessage(state.wallet.address, message));
         console.log('[Owner Register] Wallet signature:', signature?.slice(0, 40) + '...');
