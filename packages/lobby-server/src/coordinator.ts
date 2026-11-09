@@ -75,6 +75,8 @@ export interface HandleResult {
   out: Outbound[];
   /** When true, the server should close this connection (e.g. private-lobby denial). */
   close?: boolean;
+  /** Policy violations require new authorization before reconnecting. */
+  closeCode?: 1008;
 }
 
 export interface CoordinatorOptions {
@@ -286,15 +288,15 @@ export class LobbyCoordinator {
     if (!isTokenVerified) {
       // ── Private-lobby access ladder (Phase 8): none → registered → allowlisted → verified_human_link.
       // A display name is never an identity — only `join_token` (a non-secret registry ref/DID) is.
-      const deny = async (error: string): Promise<HandleResult> => {
+      const deny = async (error: string, closeCode?: 1008): Promise<HandleResult> => {
         await this.event(conn.lobbyId, 'join_denied', 'system', { display_name: msg.display_name, policy, reason: error, status: verification?.status });
-        return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: error } }], close: true };
+        return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error } }], close: true, closeCode };
       };
 
       if (policy === 'allowlisted') {
         const allow = lobby.allowlist ?? [];
         if (!presentedRef || !allow.includes(presentedRef)) return deny('private lobby: not on the allowlist');
-        if (!conn.trusted && !session) return deny('private lobby: authenticated identity is required');
+        if (!conn.trusted && !session) return deny('private lobby: authenticated identity is required', 1008);
       } else if (policy === 'registered') {
         if (!presentedRef) return deny('private lobby: a registered identity reference is required to join');
         verification = await this.verifyIdentity(presentedRef);
@@ -336,7 +338,9 @@ export class LobbyCoordinator {
         const network = verification?.ref?.network;
         if (!verification || !isRegistryResolved(verification.status) || !account || !network ||
             session?.identityRef !== `did:ccd:${network}:${account}`) {
-          return deny('impersonation protection: Agent ID requires a session for its registered wallet');
+          const wrongWallet = account && network && session?.identityRef !== `did:ccd:${network}:${account}`;
+          return deny('impersonation protection: Agent ID requires a session for its registered wallet',
+            !session || wrongWallet ? 1008 : undefined);
         }
       }
     }
