@@ -791,6 +791,7 @@ if (lobbyBaseUrl) {
         branch,
         agentRole,
         runtime: activeAdapter.label,
+        executionEnabled: localLobby || remoteExecution,
         model: activeModel,
         joinToken: lobbySessionToken || joinToken,
         agentIdentityRef: lobbySessionToken && joinToken?.startsWith('did:ccd:') ? joinToken : undefined,
@@ -805,7 +806,7 @@ if (lobbyBaseUrl) {
               `[lobby] ${msg.type}${msg.type === 'lobby-registered' ? ` — agent_id: ${msg.agent_id}` : ''}`,
             );
             if (!localLobby && !remoteExecution &&
-                (msg.type === 'lobby-task-assigned' || msg.type === 'lobby-message-received')) return;
+                (msg.type === 'lobby-task-assigned' || msg.type === 'lobby-message-received' || msg.type === 'lobby-request-decided')) return;
 
             // ── Task-based coordination ──
             if (msg.type === 'lobby-task-assigned') {
@@ -890,6 +891,7 @@ if (lobbyBaseUrl) {
             // ── Hand-raise / request decisions (invoke agent on approval) ──
             if (msg.type === 'lobby-request-decided') {
               const req = msg.request;
+              if (req.agent_id !== bridge.currentAgentId) return;
               if (req.status === 'approved') {
                 bridge.updateStatus(`Request approved: ${req.title.slice(0, 50)}`, 'working');
                 try {

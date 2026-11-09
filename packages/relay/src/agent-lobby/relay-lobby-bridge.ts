@@ -15,6 +15,7 @@ export interface BridgeOptions {
   agentRole?: string;
   /** The runtime this relay ACTUALLY drives (adapter label) — reported truthfully to the lobby. */
   runtime?: string;
+  executionEnabled?: boolean;
   /** Model override in effect, if any. */
   model?: string;
   /** Identity reference (e.g. Concordium agent DID) presented as the lobby join token. */
@@ -47,6 +48,7 @@ export class RelayLobbyBridge {
         runtime: options.runtime || '—',
         join_token: options.joinToken,
         agent_identity_ref: options.agentIdentityRef,
+        execution_enabled: options.executionEnabled,
       },
       reconnect: true,
     });

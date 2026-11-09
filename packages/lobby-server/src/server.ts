@@ -75,12 +75,12 @@ function githubErrorMessage(err: unknown): string {
 function describeLiveRoster(roster: LobbyAgent[], selfId?: string): string {
   const online = roster.filter(agent => agent.status !== 'disconnected');
   const workers = online.filter(agent => agent.participant_type !== 'human' && agent.role !== 'human' && agent.agent_role !== 'panel');
-  const ready = workers.filter(agent => agent.status === 'idle');
+  const ready = workers.filter(agent => agent.status === 'idle' && agent.execution_enabled !== false);
   const lines = online.map(agent => {
     const did = agent.identity_status && isRegistryResolved(agent.identity_status) ? agent.identity_ref : undefined;
-    return `- ${agent.display_name || agent.agent_id} | role: ${agent.agent_role || 'none'} | status: ${agent.status} | agent_id: ${agent.agent_id}${agent.agent_id === selfId ? ' | this is you' : ''}${did ? ` | verified DID: ${did}` : ''}${agent.current_work ? ` | working on: ${agent.current_work.slice(0, 80)}` : ''}`;
+    return `- ${agent.display_name || agent.agent_id} | role: ${agent.agent_role || 'none'} | status: ${agent.status} | agent_id: ${agent.agent_id}${agent.agent_id === selfId ? ' | this is you' : ''}${agent.execution_enabled === false ? ' | observation only' : ''}${did ? ` | verified DID: ${did}` : ''}${agent.current_work ? ` | working on: ${agent.current_work.slice(0, 80)}` : ''}`;
   });
-  return `${online.length} online participants; ${workers.length} runtime agents online; ${ready.length} idle runtime agents ready to work (includes the Boss if idle, excludes humans and panels).\n${lines.join('\n')}`;
+  return `${online.length} online participants; ${workers.length} runtime agents online; ${ready.length} runtime agents ready to work (idle, includes the Boss if eligible, excludes humans, panels, and observation-only relays).\n${lines.join('\n')}`;
 }
 
 function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
