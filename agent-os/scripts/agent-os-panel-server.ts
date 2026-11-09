@@ -118,6 +118,7 @@ let loopRunSeq = 0;
 
 const pausedResolvers = new Map<string, () => void>();
 const pendingApprovals = new Map<string, (approved: boolean) => void>();
+const stopDelegates = new Map<string, () => Promise<void>>();
 
 function checkPause(runId: string): Promise<void> {
   const run = loopRuns.get(runId);
@@ -141,6 +142,7 @@ function startLoopRun(presetName: string, unattended: boolean): { ok: boolean; i
   const orchestrator = new LoopOrchestrator({
     evaluate: async (ctx): Promise<CriterionResult[]> => {
       await checkPause(id);
+      if (run.killed) return [...ctx.results];
       const results: CriterionResult[] = [];
       for (const c of spec.exitCriteria) {
         let passed = false;
@@ -168,6 +170,7 @@ function startLoopRun(presetName: string, unattended: boolean): { ok: boolean; i
     },
     delegate: async (ctx, gap): Promise<IterationWork> => {
       await checkPause(id);
+      if (run.killed) return {};
       const runtimeId = (process.env.AGENT_OS_RUNTIME as any) || 'claude-cli';
       const adapter = runtimeRegistry.get(runtimeId) || runtimeRegistry.get('claude-cli')!;
       let summary = '';
@@ -183,19 +186,24 @@ ${gap.map(g => `- Type: ${g.type}, Detail: ${JSON.stringify(g)}`).join('\n')}
 Fix the issues in the workspace files directly and exit once resolved.`,
         });
 
-        await adapter.sendInput(handle, { type: 'user', content: '' });
-
-        for await (const message of adapter.readOutput(handle)) {
-          await checkPause(id);
-          if (run.killed) {
-            await adapter.stopAgent(handle).catch(() => {});
-            break;
+        let stopping: Promise<void> | undefined;
+        const stop = () => stopping ??= adapter.stopAgent(handle).then(() => {}, () => {});
+        stopDelegates.set(id, stop);
+        try {
+          if (!run.killed) {
+            await adapter.sendInput(handle, { type: 'user', content: '' });
+            for await (const message of adapter.readOutput(handle)) {
+              await checkPause(id);
+              if (run.killed) break;
+              if (message.type === 'output' && message.content) {
+                summary += message.content;
+              }
+            }
           }
-          if (message.type === 'output' && message.content) {
-            summary += message.content;
-          }
+        } finally {
+          await stop();
+          stopDelegates.delete(id);
         }
-        await adapter.stopAgent(handle).catch(() => {});
       } catch (err: any) {
         summary = `Delegation failed: ${err.message || err}`;
       }
@@ -801,7 +809,18 @@ const scheduledState: Record<string, ScheduledProcess> = {};
 
 function getScheduledConfig(): Record<string, unknown> {
   if (!existsSync(SCHEDULED_CONFIG)) return {};
-  try { return JSON.parse(readFileSync(SCHEDULED_CONFIG, 'utf-8')); } catch { return {}; }
+  try {
+    const config = JSON.parse(readFileSync(SCHEDULED_CONFIG, 'utf-8'));
+    for (const task of Object.values(config.schedules ?? {}) as { time_local?: string; time_utc?: string }[]) {
+      // Legacy schedules used Bangkok time (UTC+7). Explicit UTC edits take precedence.
+      const legacy = task.time_local?.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+      if (!task.time_utc && legacy) {
+        const hour = String((Number(legacy[1]) + 17) % 24).padStart(2, '0');
+        task.time_utc = `${hour}:${legacy[2]}`;
+      }
+    }
+    return config;
+  } catch { return {}; }
 }
 
 function getScheduledTaskState(name: string): Record<string, unknown> | null {
@@ -1516,6 +1535,12 @@ const server = createServer(async (req, res) => {
     const run = loopRuns.get(body.id as string);
     if (!run) { sendJson(res, { error: 'unknown loop id' }, 404); return; }
     run.killed = true;
+    run.paused = false;
+    pausedResolvers.get(run.id)?.();
+    pausedResolvers.delete(run.id);
+    pendingApprovals.get(run.id)?.(false);
+    pendingApprovals.delete(run.id);
+    void stopDelegates.get(run.id)?.();
     sendJson(res, { ok: true, id: run.id });
     return;
   }
