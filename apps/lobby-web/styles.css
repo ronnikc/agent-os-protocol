@@ -280,6 +280,33 @@ body {
   white-space: nowrap;
 }
 
+.lobby-discovery {
+  color: var(--color-text-soft);
+  font-size: 11px;
+  line-height: 1.45;
+  margin-bottom: 12px;
+}
+.lobby-discovery p { margin: 6px 0 0; }
+.lobby-discovery p:empty { display: none; }
+
+.agent-card-link {
+  border: 1px solid rgba(0, 214, 214, 0.32);
+  border-radius: 99px;
+  background: rgba(0, 214, 214, 0.08);
+  color: var(--color-cyan);
+  cursor: pointer;
+  font: 600 10px/1.4 var(--display);
+  padding: 3px 9px;
+}
+.agent-card-link:hover {
+  background: rgba(0, 214, 214, 0.16);
+  border-color: var(--color-cyan);
+}
+.agent-card-link:focus-visible {
+  outline: 2px solid var(--color-cyan);
+  outline-offset: 2px;
+}
+
 /* Agent Card Item */
 .agent-card-item {
   background: rgba(11, 19, 38, 0.4);

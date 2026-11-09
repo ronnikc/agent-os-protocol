@@ -54,6 +54,7 @@ export class RelayLobbyBridge {
     });
 
     this.client.onMessage(async (msg) => {
+      if (msg.type === 'lobby-error') options.log?.('warn', msg.error);
       if (msg.type === 'lobby-message-received') {
         const lobbyMsg = msg.message;
         if (

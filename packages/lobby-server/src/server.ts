@@ -3777,7 +3777,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         lobbyConns.get(lobbyId)!.add(conn.connId);
       }
       dispatch(conn, result.out);
-      if (result.close) socket.close();
+      if (result.close) socket.close(result.closeCode);
     });
 
     socket.on('close', async () => {
