@@ -245,45 +245,4 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
   });
-
-  // Escrow and Observatory Simulator
-  const btnTriggerSim = document.getElementById('btn-trigger-escrow-sim');
-  const simEscrowStatus = document.getElementById('sim-escrow-status');
-  const simGateBullet = document.getElementById('sim-gate-bullet');
-  const simGateText = document.getElementById('sim-gate-text');
-
-  if (btnTriggerSim) {
-    btnTriggerSim.addEventListener('click', () => {
-      btnTriggerSim.disabled = true;
-      btnTriggerSim.textContent = 'Running verify-gate checks...';
-      if (simGateBullet) {
-        simGateBullet.textContent = '⟳';
-        simGateBullet.style.color = 'var(--color-yellow)';
-      }
-      if (simGateText) simGateText.textContent = 'Executing task verify-all suite inside runtime...';
-
-      setTimeout(() => {
-        if (simGateBullet) {
-          simGateBullet.textContent = '✓';
-          simGateBullet.style.color = 'var(--color-green)';
-        }
-        if (simGateText) simGateText.textContent = 'Verify-gate validation passed successfully!';
-        btnTriggerSim.textContent = 'Signing escrow settlement...';
-
-        setTimeout(() => {
-          if (simEscrowStatus) {
-            simEscrowStatus.textContent = '✓ ESCROW SETTLED';
-            simEscrowStatus.style.background = 'rgba(53, 242, 138, 0.1)';
-            simEscrowStatus.style.color = 'var(--color-green)';
-            simEscrowStatus.style.borderColor = 'rgba(53, 242, 138, 0.2)';
-          }
-          btnTriggerSim.textContent = 'Released & Paid (500 CCD to did:ccd:agent)';
-          btnTriggerSim.style.background = 'rgba(53, 242, 138, 0.1)';
-          btnTriggerSim.style.color = 'var(--color-green)';
-          btnTriggerSim.style.border = '1px solid rgba(53, 242, 138, 0.2)';
-        }, 1200);
-      }, 1500);
-    });
-  }
 });
-
