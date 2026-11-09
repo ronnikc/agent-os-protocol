@@ -339,6 +339,8 @@ export async function fetchJson(url, opts) {
             ...(finalOpts.headers || {}),
             'Authorization': `Bearer ${token}`
           };
+          const lobbyId = hostedSession()?.lobbyId;
+          if (lobbyId) finalOpts.headers['X-Lobby-Id'] = lobbyId;
         }
       }
     }
@@ -717,6 +719,7 @@ export async function init() {
       return;
     }
     updateHeaderUI();
+    void enableTestAdminButton();
     loadLobbies();
 
     if (state.wallet.connected && state.wallet.address) {
@@ -1053,7 +1056,9 @@ export async function loadLobbies() {
   if (!select) return;
 
   try {
-    const data = await fetchJson('/api/v1/agent-lobby/lobbies');
+    const data = state.session?.identityRef === 'test-admin' && state.session.lobbies
+      ? { lobbies: state.session.lobbies }
+      : await fetchJson('/api/v1/agent-lobby/lobbies');
     if (data && data.lobbies) {
       // Guests may only see/select PUBLIC lobbies — private lobbies require a Verified Agent ID.
       const guest = isGuest();
@@ -1119,6 +1124,11 @@ export function updateHeaderUI() {
     select.onchange = async () => {
       const newLobbyId = select.value;
       if (newLobbyId && state.session.lobbyId !== newLobbyId) {
+        if (state.session.identityRef === 'test-admin' && state.session.lobbies) {
+          select.value = state.session.lobbyId;
+          showTestAdminSignIn(newLobbyId);
+          return;
+        }
         state.session.lobbyId = newLobbyId;
         const stored = localStorage.getItem('agentos.hosted.session');
         if (stored) {
@@ -1184,12 +1194,7 @@ function renderAuthOverlay() {
           <button class="btn btn-primary" id="btn-auth-action" style="padding:12px; border-radius:8px; font-size:14px; font-weight:600; width:100%; cursor:pointer; height:auto; line-height:1.2; text-transform:none; border:none; display:block;">Connect Wallet</button>
           <button id="btn-auth-guest" style="padding:11px; border-radius:8px; font-size:13px; font-weight:500; width:100%; cursor:pointer; background:transparent; color:#c7d4ea; border:1px solid rgba(49,140,255,0.3);">Continue as Guest — explore public lobbies (read-only)</button>
         </div>
-        <form id="test-admin-sign-in" hidden style="margin-top:16px;text-align:left;">
-          <label for="test-admin-key">Test admin key</label>
-          <input id="test-admin-key" type="password" required autocomplete="off" style="width:100%;box-sizing:border-box;">
-          <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Sign in to Test Lobby</button>
-          <p id="test-admin-status" role="status"></p>
-        </form>
+        ${testAdminForm()}
 
         <div style="margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); text-align:left;">
           <p style="font-size:11px; color:#7c8db0; line-height:1.6; margin:0 0 8px 0;">
@@ -1211,16 +1216,45 @@ function renderAuthOverlay() {
   void enableTestAdminSignIn();
 }
 
+function testAdminForm() {
+  return `<form id="test-admin-sign-in" hidden style="margin-top:16px;text-align:left;">
+    <label for="test-admin-key">Test admin key</label>
+    <input id="test-admin-key" type="password" required autocomplete="off" style="width:100%;box-sizing:border-box;">
+    <label id="test-admin-lobby-option" hidden>Lobby ID (optional)
+      <input id="test-admin-lobby-id" type="text" autocomplete="off">
+    </label>
+    <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Sign in as test admin</button>
+    <p id="test-admin-status" role="status"></p>
+  </form>`;
+}
+
+async function enableTestAdminButton() {
+  const button = document.getElementById('btn-header-test-admin');
+  if (!button) return;
+  const availability = await fetch('/api/v1/agent-lobby/auth/test-admin').catch(() => null);
+  if (!availability?.ok) return;
+  button.hidden = false;
+  button.onclick = () => showTestAdminSignIn();
+}
+
+function showTestAdminSignIn(lobbyId = '') {
+  showModal(`<h2>Test admin sign-in</h2>${testAdminForm()}`);
+  document.getElementById('test-admin-lobby-id').value = lobbyId;
+  void enableTestAdminSignIn();
+}
+
 async function enableTestAdminSignIn() {
   const path = '/api/v1/agent-lobby/auth/test-admin';
   const availability = await fetch(path).catch(() => null);
   if (!availability?.ok) return;
   const form = document.getElementById('test-admin-sign-in');
   if (!form) return;
+  const config = await availability.json();
   const input = document.getElementById('test-admin-key');
   const status = document.getElementById('test-admin-status');
   const submit = form.querySelector('button');
   form.hidden = false;
+  document.getElementById('test-admin-lobby-option').hidden = !config.allLobbies;
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     submit.disabled = true;
@@ -1229,7 +1263,9 @@ async function enableTestAdminSignIn() {
       const response = await fetch(path, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ key: input.value }),
+        body: JSON.stringify({ key: input.value, lobby_id: config.allLobbies
+          ? document.getElementById('test-admin-lobby-id').value.trim() || undefined
+          : undefined }),
       });
       if (!response.ok) throw new Error('Test admin sign-in rejected.');
       const session = await response.json();
@@ -1237,7 +1273,9 @@ async function enableTestAdminSignIn() {
         token: session.token,
         identityRef: session.identity_ref,
         lobbyId: session.lobby.lobby_id,
+        lobbies: session.lobbies,
       }));
+      localStorage.setItem('agent-os-lobby-token', session.token);
       window.location.reload();
     } catch {
       status.textContent = 'Could not sign in to the test lobby. Check the key and try again.';

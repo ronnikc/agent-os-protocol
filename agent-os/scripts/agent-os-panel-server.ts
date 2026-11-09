@@ -2088,6 +2088,14 @@ const server = createServer(async (req, res) => {
     return out;
   };
 
+  if (path === '/api/v1/agent-lobby/auth/test-admin' && (method === 'GET' || method === 'POST')) {
+    res.setHeader('Cache-Control', 'no-store');
+    const body = method === 'POST' ? JSON.stringify(await parseBody(req)) : undefined;
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, path, method, body) as { error?: string; enabled?: boolean; token?: string };
+    sendJson(res, data, data.enabled || data.token ? 200 : method === 'GET' ? 404 : 401);
+    return;
+  }
+
   // Start remote hosted agent
   if (path === '/api/lobby/remote/agents/start' && method === 'POST') {
     const lobbyId = await resolveLobbyId(req);
@@ -2165,11 +2173,11 @@ const server = createServer(async (req, res) => {
     }
     // Try REST proxy first
     if (lobbyId) {
-      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/roster`);
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/roster`, 'GET', undefined, reqHeaders(req));
       const agents = (data as any)?.agents;
-      if (agents?.length) {
+      if (agents?.length || req.headers.authorization) {
         // Update cache from REST response
-        for (const a of agents) {
+        for (const a of agents ?? []) {
           if (a.agent_id) {
             if (a.display_name) stagingAgentNames.set(a.agent_id, a.display_name);
             stagingAgentRoster.set(a.agent_id, a);
@@ -2192,7 +2200,7 @@ const server = createServer(async (req, res) => {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { messages: [], error: 'No active lobby' }); return; }
     const limit = url.searchParams.get('limit') || '100';
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/messages?limit=${limit}`);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/messages?limit=${limit}`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2307,7 +2315,7 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/tasks' && method === 'GET') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { tasks: [], error: 'No active lobby' }); return; }
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/tasks`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2528,6 +2536,15 @@ const server = createServer(async (req, res) => {
 
   if (path === '/api/messages' && method === 'POST') {
     const body = await parseBody(req);
+    const toAgent = body.to === '*' ? 'all' : String(body.to ?? 'all');
+    if (DEFAULT_LOBBY_URL && req.headers.authorization) {
+      const lobbyId = await resolveLobbyId(req);
+      if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 404); return; }
+      const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/messages`, 'POST',
+        JSON.stringify({ to_agent_id: toAgent, message_type: body.message_type ?? 'chat', content: body.content }), reqHeaders(req));
+      sendJson(res, data);
+      return;
+    }
     const msg = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       timestamp: new Date().toISOString(),
@@ -2538,7 +2555,6 @@ const server = createServer(async (req, res) => {
     };
 
     // Send to staging lobby via WebSocket bridge (REST POST requires auth)
-    const toAgent = body.to === '*' ? 'all' : String(body.to ?? 'all');
     const sentToStaging = sendLobbyMessage(String(body.content ?? ''), toAgent, body.message_type ?? 'chat');
 
     // Always write to local bus.jsonl as mirror

@@ -608,139 +608,138 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (!task?.task_id || task.assigned_to !== myId) return;
       const entry = hostedAgents.get(myId);
       if (!entry) return;
-      const upd = async (status: string, result?: string) => {
-        const r = await coordinator.handle(conn, {
-          type: 'lobby-task-update', task_id: task.task_id, status, ...(result ? { result } : {}),
-        } as AgentToLobbyMessage);
-        dispatch(conn, r.out);
-      };
-      await upd('in_progress').catch(() => {});
-      // Wait (bounded) for any in-flight chat turn to finish — respondTo drops overlapping calls,
-      // and a dropped task turn would spuriously fail the task.
-      for (let i = 0; i < 60 && entry.runner.busy; i++) await new Promise(r => setTimeout(r, 1000));
-
-      // ── Branch/PR workflow (shared session branch) ── In PR mode (default), every task's writes in
-      // this lobby stack onto ONE shared "work session" branch off the working branch, and we open a
-      // single PR for the LobbyOwner to review — so the whole session is one reviewable diff, never
-      // multiple conflicting PRs for the same work, and never silent commits to main. A new session
-      // begins only after that PR merges/closes. Direct mode (AGENT_OS_AGENT_WRITES=direct) keeps
-      // writing straight to the working branch.
-      const workingBranch = entry.workingBranch || 'main';
-      const prMode = AGENT_WRITES_MODE === 'pr' && !!entry.repoClient;
-      let session: LobbyWorkSession | null = null;
-      let sessionBranch = workingBranch;
-      let writeGuidance = 'writes commit directly to the working branch';
-      if (prMode) {
-        try {
-          session = await getOrCreateSessionBranch(conn.lobbyId, entry.repoClient, workingBranch);
-          sessionBranch = session.branch;
-          entry.repoClient.activeBranch = sessionBranch; // redirect this task's writes to the session branch
-          writeGuidance = `write_file commits go to the shared work-session branch "${sessionBranch}" — every task in this session stacks onto ONE Pull Request for human review; you cannot merge`;
-        } catch (e) {
-          console.warn('[Lobby Server] Failed to resolve session branch, falling back to direct writes:', (e as Error)?.message ?? e);
-        }
-      }
-
-      let result = '';
-      try {
-        result = await entry.runner.respondTo(
-          `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files) — ${writeGuidance}. Do NOT call create_pr yourself; the lobby opens the PR for you. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests), say so plainly as the blocker — do NOT fabricate work you did not do.`,
-        );
-      } catch { /* fall through to failed */ }
-      const failed = !result || result.startsWith('⚠');
-
-      // Open the session's single PR once the branch is actually ahead of the working branch. If a PR
-      // already exists for this session, the agent's push has already updated it — no second PR. The
-      // empty-branch case is left intact: a later task in the same session may add the first commit.
-      let prUrl = session?.pr_url || '';
-      if (prMode && entry.repoClient && sessionBranch !== workingBranch) {
-        try {
-          await withLobbyLock(conn.lobbyId, async () => {
-            // Re-read under the lock so concurrent agents converge on a single PR.
-            const cur = await store.getLobbySession(conn.lobbyId).catch(() => session);
-            if (cur?.pr_url) { prUrl = cur.pr_url; return; }
-            const ahead = await entry.repoClient.aheadBy(workingBranch, sessionBranch);
-            if (ahead > 0) {
-              prUrl = await entry.repoClient.createPullRequest(
-                '[agent-os] Lobby work session'.slice(0, 120),
-                sessionBranch, workingBranch,
-                `Automated changes from the Agent OS lobby work session. Every task in this session stacks onto this branch — review the whole diff and merge; the agents cannot merge.\n\nOpened for task **${task.title ?? task.task_id}** by ${(await store.getAgent(conn.lobbyId, myId))?.display_name || myId}.\n\n${(result || '').slice(0, 3000)}`,
-              );
-              const prNumber = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]) || null;
-              session = { branch: sessionBranch, pr_url: prUrl, pr_number: prNumber };
-              await store.setLobbySession(conn.lobbyId, session).catch(() => {});
-            }
-          });
-        } catch (e) {
-          console.warn('[Lobby Server] Session PR creation failed:', (e as Error)?.message ?? e);
-        } finally {
-          entry.repoClient.activeBranch = workingBranch; // always restore
-        }
-      }
-
-      // ── Phase 2b: CI feedback loop ── When CI is configured, wait for the session PR's checks; on a
-      // red run, hand the failing logs back to the agent to fix and re-push to the SAME branch (which
-      // updates the PR), bounded to a couple of iterations. Turns "I can't run tests" into an
-      // actionable fix. Entirely best-effort — it never prevents the task from finishing.
-      let ciStatus: 'passing' | 'failing' | 'pending' | 'none' = 'none';
-      if (prUrl && prMode && entry.repoClient && sessionBranch !== workingBranch) {
-        const rc = entry.repoClient;
-        const waitForChecks = async (): Promise<{ done: boolean; conclusion: string | null; none: boolean }> => {
-          for (let i = 0; i < 6; i++) {
-            const s = await rc.getCheckRunsForRef(sessionBranch).catch(() => ({ status: 'none', conclusion: null, total: 0 }));
-            if (s.total === 0) { if (i >= 2) return { done: false, conclusion: null, none: true }; }
-            else if (s.status === 'completed') return { done: true, conclusion: s.conclusion, none: false };
-            await new Promise(r => setTimeout(r, Math.min(15_000, 6_000 * (i + 1))));
-          }
-          return { done: false, conclusion: null, none: false };
+      await entry.runner.runTask(async (respond) => {
+        const upd = async (status: string, result?: string) => {
+          const r = await coordinator.handle(conn, {
+            type: 'lobby-task-update', task_id: task.task_id, status, ...(result ? { result } : {}),
+          } as AgentToLobbyMessage);
+          dispatch(conn, r.out);
         };
-        try {
-          let check = await waitForChecks();
-          let fixes = 0;
-          while (check.conclusion === 'failure' && fixes < 2) {
-            fixes++;
-            const logs = await rc.getFailingCheckLogs(sessionBranch).catch(() => '');
-            rc.activeBranch = sessionBranch; // the fix turn's write_file commits update the PR branch
-            try {
-              await entry.runner.respondTo(
-                `[CI FAILED] The Pull Request for this work session failed its checks on GitHub. Fix the cause and write the corrected files with write_file — they commit to the same session branch and update the PR. Do NOT open a new PR. Failing checks:\n\n${logs || '(no log summary captured — inspect the workflow)'}\n\nReport exactly what you changed.`,
-              ).catch(() => {});
-            } finally {
-              rc.activeBranch = workingBranch;
-            }
-            check = await waitForChecks();
+        await upd('in_progress').catch(() => {});
+
+        // ── Branch/PR workflow (shared session branch) ── In PR mode (default), every task's writes in
+        // this lobby stack onto ONE shared "work session" branch off the working branch, and we open a
+        // single PR for the LobbyOwner to review — so the whole session is one reviewable diff, never
+        // multiple conflicting PRs for the same work, and never silent commits to main. A new session
+        // begins only after that PR merges/closes. Direct mode (AGENT_OS_AGENT_WRITES=direct) keeps
+        // writing straight to the working branch.
+        const workingBranch = entry.workingBranch || 'main';
+        const prMode = AGENT_WRITES_MODE === 'pr' && !!entry.repoClient;
+        let session: LobbyWorkSession | null = null;
+        let sessionBranch = workingBranch;
+        let writeGuidance = 'writes commit directly to the working branch';
+        if (prMode) {
+          try {
+            session = await getOrCreateSessionBranch(conn.lobbyId, entry.repoClient, workingBranch);
+            sessionBranch = session.branch;
+            entry.repoClient.activeBranch = sessionBranch; // redirect this task's writes to the session branch
+            writeGuidance = `write_file commits go to the shared work-session branch "${sessionBranch}" — every task in this session stacks onto ONE Pull Request for human review; you cannot merge`;
+          } catch (e) {
+            console.warn('[Lobby Server] Failed to resolve session branch, falling back to direct writes:', (e as Error)?.message ?? e);
           }
-          ciStatus = check.conclusion === 'success' ? 'passing'
-            : check.conclusion === 'failure' ? 'failing'
-            : check.none ? 'none' : 'pending';
-        } catch (e) {
-          console.warn('[Lobby Server] CI feedback loop error:', (e as Error)?.message ?? e);
         }
-      }
 
-      const ciNote = ciStatus === 'passing' ? '\n\n✅ CI passed on the PR.'
-        : ciStatus === 'failing' ? '\n\n❌ CI is still failing after fixes — needs a human.'
-        : ciStatus === 'pending' ? '\n\n⏳ CI was still running when the task finished.'
-        : '';
-      const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
-      // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
-      const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
-      if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus } as any).catch(() => {});
-      await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
+        let result = '';
+        try {
+          result = await respond(
+            `[TASK ASSIGNED] ${task.title ?? ''}\n${task.description ?? ''}\n\nDo this work NOW using your repository tools (read_file/write_file/list_files) — ${writeGuidance}. Do NOT call create_pr yourself; the lobby opens the PR for you. Reply with a concise, HONEST report naming exactly the files you read/wrote. If the task needs capabilities you don't have (running commands, builds, tests), say so plainly as the blocker — do NOT fabricate work you did not do.`,
+          );
+        } catch { /* fall through to failed */ }
+        const failed = !result || result.startsWith('⚠');
 
-      // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
-      // reply in message history, and the Boss is CC'd so coordination continues.
-      const lobbyNow = await store.getLobby(conn.lobbyId);
-      const recipients = new Set<string>();
-      if (task.assigned_by) recipients.add(task.assigned_by);
-      if (lobbyNow?.boss_agent_id && lobbyNow.boss_agent_id !== myId) recipients.add(lobbyNow.boss_agent_id);
-      for (const to of recipients) {
-        const r = await coordinator.handle(conn, {
-          type: 'lobby-message', to_agent_id: to, message_type: 'handoff',
-          content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}]${prUrl ? ` (PR: ${prUrl})` : ''} ${(result || '').slice(0, 2000)}`,
-        } as AgentToLobbyMessage);
-        dispatch(conn, r.out);
-      }
+        // Open the session's single PR once the branch is actually ahead of the working branch. If a PR
+        // already exists for this session, the agent's push has already updated it — no second PR. The
+        // empty-branch case is left intact: a later task in the same session may add the first commit.
+        let prUrl = session?.pr_url || '';
+        if (prMode && entry.repoClient && sessionBranch !== workingBranch) {
+          try {
+            await withLobbyLock(conn.lobbyId, async () => {
+              // Re-read under the lock so concurrent agents converge on a single PR.
+              const cur = await store.getLobbySession(conn.lobbyId).catch(() => session);
+              if (cur?.pr_url) { prUrl = cur.pr_url; return; }
+              const ahead = await entry.repoClient.aheadBy(workingBranch, sessionBranch);
+              if (ahead > 0) {
+                prUrl = await entry.repoClient.createPullRequest(
+                  '[agent-os] Lobby work session'.slice(0, 120),
+                  sessionBranch, workingBranch,
+                  `Automated changes from the Agent OS lobby work session. Every task in this session stacks onto this branch — review the whole diff and merge; the agents cannot merge.\n\nOpened for task **${task.title ?? task.task_id}** by ${(await store.getAgent(conn.lobbyId, myId))?.display_name || myId}.\n\n${(result || '').slice(0, 3000)}`,
+                );
+                const prNumber = Number(prUrl.match(/\/pull\/(\d+)/)?.[1]) || null;
+                session = { branch: sessionBranch, pr_url: prUrl, pr_number: prNumber };
+                await store.setLobbySession(conn.lobbyId, session).catch(() => {});
+              }
+            });
+          } catch (e) {
+            console.warn('[Lobby Server] Session PR creation failed:', (e as Error)?.message ?? e);
+          } finally {
+            entry.repoClient.activeBranch = workingBranch; // always restore
+          }
+        }
+
+        // ── Phase 2b: CI feedback loop ── When CI is configured, wait for the session PR's checks; on a
+        // red run, hand the failing logs back to the agent to fix and re-push to the SAME branch (which
+        // updates the PR), bounded to a couple of iterations. Turns "I can't run tests" into an
+        // actionable fix. Entirely best-effort — it never prevents the task from finishing.
+        let ciStatus: 'passing' | 'failing' | 'pending' | 'none' = 'none';
+        if (prUrl && prMode && entry.repoClient && sessionBranch !== workingBranch) {
+          const rc = entry.repoClient;
+          const waitForChecks = async (): Promise<{ done: boolean; conclusion: string | null; none: boolean }> => {
+            for (let i = 0; i < 6; i++) {
+              const s = await rc.getCheckRunsForRef(sessionBranch).catch(() => ({ status: 'none', conclusion: null, total: 0 }));
+              if (s.total === 0) { if (i >= 2) return { done: false, conclusion: null, none: true }; }
+              else if (s.status === 'completed') return { done: true, conclusion: s.conclusion, none: false };
+              await new Promise(r => setTimeout(r, Math.min(15_000, 6_000 * (i + 1))));
+            }
+            return { done: false, conclusion: null, none: false };
+          };
+          try {
+            let check = await waitForChecks();
+            let fixes = 0;
+            while (check.conclusion === 'failure' && fixes < 2) {
+              fixes++;
+              const logs = await rc.getFailingCheckLogs(sessionBranch).catch(() => '');
+              rc.activeBranch = sessionBranch; // the fix turn's write_file commits update the PR branch
+              try {
+                await respond(
+                  `[CI FAILED] The Pull Request for this work session failed its checks on GitHub. Fix the cause and write the corrected files with write_file — they commit to the same session branch and update the PR. Do NOT open a new PR. Failing checks:\n\n${logs || '(no log summary captured — inspect the workflow)'}\n\nReport exactly what you changed.`,
+                ).catch(() => {});
+              } finally {
+                rc.activeBranch = workingBranch;
+              }
+              check = await waitForChecks();
+            }
+            ciStatus = check.conclusion === 'success' ? 'passing'
+              : check.conclusion === 'failure' ? 'failing'
+              : check.none ? 'none' : 'pending';
+          } catch (e) {
+            console.warn('[Lobby Server] CI feedback loop error:', (e as Error)?.message ?? e);
+          }
+        }
+
+        const ciNote = ciStatus === 'passing' ? '\n\n✅ CI passed on the PR.'
+          : ciStatus === 'failing' ? '\n\n❌ CI is still failing after fixes — needs a human.'
+          : ciStatus === 'pending' ? '\n\n⏳ CI was still running when the task finished.'
+          : '';
+        const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
+        // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
+        const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
+        if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus } as any).catch(() => {});
+        await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
+
+        // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
+        // reply in message history, and the Boss is CC'd so coordination continues.
+        const lobbyNow = await store.getLobby(conn.lobbyId);
+        const recipients = new Set<string>();
+        if (task.assigned_by) recipients.add(task.assigned_by);
+        if (lobbyNow?.boss_agent_id && lobbyNow.boss_agent_id !== myId) recipients.add(lobbyNow.boss_agent_id);
+        for (const to of recipients) {
+          const r = await coordinator.handle(conn, {
+            type: 'lobby-message', to_agent_id: to, message_type: 'handoff',
+            content: `[TASK ${failed ? 'FAILED' : 'COMPLETED'}: ${task.title ?? task.task_id}]${prUrl ? ` (PR: ${prUrl})` : ''} ${(result || '').slice(0, 2000)}`,
+          } as AgentToLobbyMessage);
+          dispatch(conn, r.out);
+        }
+      });
       return;
     }
 
@@ -1449,9 +1448,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (path === '/api/v1/agent-lobby/auth/test-admin' && (req.method === 'GET' || req.method === 'POST')) {
       res.setHeader('Cache-Control', 'no-store');
       if (!testAdminKeyDigest() && !liveTestAdminConfig()) return json({ error: 'not found' }, 404);
-      if (req.method === 'GET') return json({ enabled: true });
+      if (req.method === 'GET') return json({ enabled: true, allLobbies: liveTestAdminConfig()?.lobbyId === 'all' });
       const body = await readBody(req);
-      const { status, ...session } = await signInTestAdmin(store, body.key);
+      const lobbyId = typeof body.lobby_id === 'string' ? body.lobby_id : undefined;
+      const { status, ...session } = await signInTestAdmin(store, body.key, lobbyId);
       if (status !== 200) return json({ error: 'test admin sign-in unavailable or rejected' }, status);
       return json(session);
     }
