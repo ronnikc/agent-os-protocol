@@ -528,9 +528,17 @@ window.selectLobby = async function(lobbyId) {
 // ── Polling Loops ──
 
 async function pollLobbies() {
+  const token = state.session.token;
   const data = await fetchJson('/api/v1/agent-lobby/lobbies');
+  if (token !== state.session.token) return;
   if (data && data.lobbies) {
+    const wasPrivate = state.lobbies.some(lobby => lobby.lobby_id === state.activeLobbyId && lobby.visibility === 'private');
     state.lobbies = data.lobbies;
+    if (wasPrivate && !state.lobbies.some(lobby => lobby.lobby_id === state.activeLobbyId)) {
+      const publicLobby = state.lobbies.find(lobby => lobby.visibility === 'public');
+      selectLobby(publicLobby?.lobby_id ?? null);
+      return;
+    }
     
     if (!state.activeLobbyId && state.lobbies.length > 0) {
       const active = state.lobbies.find(l => l.status === 'active') || state.lobbies[0];
@@ -647,44 +655,38 @@ async function authRequest(method, url, data) {
 async function signInToLobby() {
   const statusEl = document.getElementById('hosted-signin-status');
   const setStatus = (t) => { if (statusEl) statusEl.textContent = t; };
-  if (!state.activeLobbyId) {
-    setStatus('creating default lobby…');
-    const created = await postJson('/api/v1/agent-lobby/lobbies', { name: 'Default Swarm Lobby' });
-    if (created && created.lobby_id) {
-      selectLobby(created.lobby_id);
-    } else {
-      setStatus('select a lobby first');
-      return;
-    }
-  }
+  if (!state.activeLobbyId) await pollLobbies();
+  if (!state.activeLobbyId) { setStatus('Select a lobby first.'); return; }
   if (!state.wallet.connected || !state.wallet.address) { setStatus('connect your wallet first'); return; }
   const provider = window.concordium;
   if (!provider) { setStatus('wallet extension not found'); return; }
 
   const lobbyId = state.activeLobbyId;
+  const address = state.wallet.address;
   try {
     // Production Concordium flow: bound challenge → wallet signMessage → server verifies against
     // the account's fresh on-chain credentials. The wallet returns a signature MAP, which the
     // server passes straight to verifyMessageSignature — do NOT flatten it.
     setStatus('requesting challenge…');
     const ch = await postJson('/api/v1/agent-lobby/auth/challenge', {
-      account: state.wallet.address, lobby_id: lobbyId, network: CCD_NETWORK,
+      account: address, lobby_id: lobbyId, network: CCD_NETWORK,
     });
     if (!ch?.challenge_id) { setStatus('could not get a challenge'); return; }
 
     setStatus('sign in your wallet…');
-    const signature = await provider.signMessage(state.wallet.address, ch.challenge);
+    const signature = await provider.signMessage(address, ch.challenge);
 
     setStatus('verifying…');
     const verified = await postJson('/api/v1/agent-lobby/auth/verify-wallet', {
-      challenge_id: ch.challenge_id, account: state.wallet.address, signature, session_id: ch.session_id,
+      challenge_id: ch.challenge_id, account: address, signature, session_id: ch.session_id,
     });
     if (!verified?.token) { setStatus('sign-in rejected — wallet signature could not be verified on-chain'); return; }
 
+    if (state.wallet.address !== address || state.activeLobbyId !== lobbyId) return;
     state.session = { token: verified.token, identityRef: verified.identity_ref, lobbyId };
     persistSession();
-    setStatus('');
-    void pollLobbies();
+    setStatus('Signed in. Private lobbies you can access appear below.');
+    await pollLobbies();
     renderHostedCard();
   } catch (err) {
     console.error('[Hosted] sign-in failed:', err);
@@ -1392,6 +1394,10 @@ function init() {
   if (requestedLobby && /^[\da-f-]{36}$/i.test(requestedLobby)) {
     selectLobby(requestedLobby);
   }
+  document.getElementById('btn-discover-private-lobbies')?.addEventListener('click', () => {
+    if (!state.wallet.connected) void window.connectConcordiumWallet();
+    else void signInToLobby();
+  });
   const issueAgentRole = document.getElementById('issue-agent-role');
   if (issueAgentRole) {
     issueAgentRole.innerHTML = AGENT_ROLES.map(r => `<option value="${r.value}">${r.label}</option>`).join('');
@@ -1821,7 +1827,15 @@ function init() {
       state.wallet.connected = false;
       state.wallet.address = null;
       state.wallet.balance = null;
+      state.session = { token: null, identityRef: null, lobbyId: null };
+      persistSession();
+      document.getElementById('hosted-signin-status').textContent = '';
+      const active = state.lobbies.find(lobby => lobby.lobby_id === state.activeLobbyId);
+      state.lobbies = state.lobbies.filter(lobby => lobby.visibility !== 'private');
+      if (active?.visibility === 'private') selectLobby(state.lobbies[0]?.lobby_id ?? null);
+      else renderLobbies();
       updateWalletUI();
+      void pollLobbies();
       return;
     }
 
@@ -1848,13 +1862,19 @@ function init() {
 
       console.log('[Wallet] Connected address:', addrStr, '| Raw type:', typeof accountAddress);
 
-      const balanceCcd = await fetchWalletBalance(provider, addrStr);
-
+      if (state.session.identityRef !== `did:ccd:${CCD_NETWORK}:${addrStr}`) {
+        state.session = { token: null, identityRef: null, lobbyId: null };
+        persistSession();
+      }
       state.wallet.connected = true;
       state.wallet.address = addrStr;
-      state.wallet.balance = balanceCcd;
       updateWalletUI();
-      alert(`Connected successfully to Concordium Wallet!\nAddress: ${addrStr}`);
+      await signInToLobby();
+      const balanceCcd = await fetchWalletBalance(provider, addrStr);
+      if (state.wallet.address === addrStr) {
+        state.wallet.balance = balanceCcd;
+        updateWalletUI();
+      }
     } catch (err) {
       console.error('Concordium Wallet connection failed:', err);
       alert(`Concordium Wallet Connection Failed: ${err.message || err}`);

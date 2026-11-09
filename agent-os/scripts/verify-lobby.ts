@@ -230,7 +230,9 @@ async function main(): Promise<void> {
     assert.equal(restarted?.identity_ref, did);
     assert.notEqual(first?.agent_id, restarted?.agent_id);
     assert.deepEqual(restarted?.identity_registry_links, first?.identity_registry_links);
-    assert.match(find((await registerRelay('did:ccd:mainnet:other')).out, 'lobby-error')?.error ?? '', /impersonation protection/);
+    const wrongWallet = await registerRelay('did:ccd:mainnet:other');
+    assert.match(find(wrongWallet.out, 'lobby-error')?.error ?? '', /impersonation protection/);
+    assert.equal(wrongWallet.closeCode, 1008, 'the relay must wait for a valid wallet session');
     card.name = 'Modified';
     assert.equal((await verify(did)).status, 'unverified');
     card.name = 'Original';

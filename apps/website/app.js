@@ -51,6 +51,9 @@ document.addEventListener('DOMContentLoaded', () => {
         }, 150);
       }
 
+      document.getElementById('tour-screenshot')?.setAttribute('aria-labelledby', btn.id);
+      const imageLink = document.getElementById('gallery-image-link');
+      if (imageLink) imageLink.href = newImgSrc;
       if (galleryUrl) galleryUrl.textContent = newUrl;
       if (galleryDesc) galleryDesc.textContent = newDesc;
     });

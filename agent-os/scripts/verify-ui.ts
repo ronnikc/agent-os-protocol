@@ -121,6 +121,17 @@ async function main(): Promise<void> {
     assert.ok(html.includes('styles.css'), 'website index.html does not link styles.css');
   });
 
+  await check('the website tour covers each panel tab in order and serves its screenshot', () => {
+    const panel = read('agent-os-panel/index.html');
+    const website = read('apps/website/index.html');
+    const tabs = [...panel.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
+    const tour = [...website.matchAll(/id="tour-tab-([^"]+)"[^>]*data-img="([^"]+)"/g)];
+    assert.deepEqual(tour.map(match => match[1]), tabs);
+    for (const [, , image] of tour) {
+      assert.ok(existsSync(R(join('apps/website', image))), `Missing tour screenshot: ${image}`);
+    }
+  });
+
   await check('website styles.css exists and contains design tokens', () => {
     assert.ok(existsSync(R('apps/website/styles.css')), 'website styles.css is missing');
     const css = read('apps/website/styles.css');
