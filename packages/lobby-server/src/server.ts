@@ -606,12 +606,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (msg?.type === 'lobby-task-assigned') {
       const task = (msg as unknown as { task?: { task_id?: string; title?: string; description?: string; assigned_to?: string; assigned_by?: string } }).task;
       if (!task?.task_id || task.assigned_to !== myId) return;
+      const taskId = task.task_id;
       const entry = hostedAgents.get(myId);
       if (!entry) return;
       await entry.runner.runTask(async (respond) => {
         const upd = async (status: string, result?: string) => {
           const r = await coordinator.handle(conn, {
-            type: 'lobby-task-update', task_id: task.task_id, status, ...(result ? { result } : {}),
+            type: 'lobby-task-update', task_id: taskId, status, ...(result ? { result } : {}),
           } as AgentToLobbyMessage);
           dispatch(conn, r.out);
         };
@@ -722,7 +723,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           : '';
         const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
         // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
-        const storedTask = await store.getTask(conn.lobbyId, task.task_id).catch(() => null);
+        const storedTask = await store.getTask(conn.lobbyId, taskId).catch(() => null);
         if (storedTask && prUrl) await store.upsertTask({ ...storedTask, result_pr_url: prUrl, result_branch: sessionBranch, result_ci_status: ciStatus } as any).catch(() => {});
         await upd(failed ? 'failed' : 'completed', resultWithPr || 'no result produced').catch(() => {});
 
