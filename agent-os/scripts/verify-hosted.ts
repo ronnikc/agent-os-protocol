@@ -785,7 +785,9 @@ async function main(): Promise<void> {
     assert.deepEqual(first.commits, [first.branch]);
     assert.deepEqual(second.commits, [second.branch]);
     await assert.rejects(tools.writeFile('after.md', 'text', 'after'), /assigned repository task/);
-    assert.equal(parseBossDelegations('@Writer [task text]: Draft the copy')[0]?.outputMode, 'text');
+    assert.deepEqual(parseBossDelegations('@Writer [task text]: Draft the copy'), [
+      { target: 'Writer', instruction: 'Draft the copy', kind: 'task', outputMode: 'text' },
+    ]);
   });
 
   await check('TOKEN PROVIDER: repo client mints a fresh token per call and refreshes once on 401', async () => {

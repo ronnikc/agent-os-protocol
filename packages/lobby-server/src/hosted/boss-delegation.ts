@@ -56,7 +56,7 @@ export function parseBossDelegations(reply: string): BossDirective[] {
   while ((m = re.exec(reply)) !== null) {
     const target = m[1].trim();
     const kind: 'task' | 'message' = m[2] ? 'task' : 'message';
-    const instruction = m[3].trim();
+    const instruction = m[4].trim();
     if (target && instruction) out.push({ target, instruction, kind, ...(m[3] ? { outputMode: 'text' as const } : {}) });
   }
   return out;
