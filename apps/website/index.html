@@ -6,21 +6,22 @@
   <title>Agent OS Protocol | Accountable AI Agent Orchestration</title>
   <meta name="description" content="Agent OS Protocol is a local-first, identity-backed operating system for coordinating specialized autonomous AI agents into accountable software teams.">
   <meta name="keywords" content="Agent OS, AI orchestration, autonomous agents, Concordium Agent ID, AI software teams, multi-agent coordination, local-first agent framework, cryptographic agent identity, Swarm Lobby">
-  <link rel="canonical" href="https://agent-os-protocol.org/">
+  <link rel="canonical" href="https://agent-os.gothard.dk/">
 
   <!-- Open Graph / Facebook -->
   <meta property="og:type" content="website">
-  <meta property="og:url" content="https://agent-os-protocol.org/">
+  <meta property="og:url" content="https://agent-os.gothard.dk/">
   <meta property="og:title" content="Agent OS Protocol — Operating System for Accountable AI Teams">
   <meta property="og:description" content="Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.">
-  <meta property="og:image" content="https://agent-os-protocol.org/images/agents.png">
+  <meta property="og:image" content="https://agent-os.gothard.dk/images/agents.png">
+  <meta property="og:image:alt" content="Agent OS control panel showing the agent roster">
 
   <!-- Twitter -->
-  <meta property="twitter:card" content="summary_large_image">
-  <meta property="twitter:url" content="https://agent-os-protocol.org/">
-  <meta property="twitter:title" content="Agent OS Protocol — Operating System for Accountable AI Teams">
-  <meta property="twitter:description" content="Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.">
-  <meta property="twitter:image" content="https://agent-os-protocol.org/images/agents.png">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Agent OS Protocol — Operating System for Accountable AI Teams">
+  <meta name="twitter:description" content="Local-first agent orchestration, remote swarm collaboration, and verified agent identity powered by Concordium Agent ID.">
+  <meta name="twitter:image" content="https://agent-os.gothard.dk/images/agents.png">
+  <meta name="twitter:image:alt" content="Agent OS control panel showing the agent roster">
 
   <!-- Structured Schema Data (JSON-LD) -->
   <script type="application/ld+json">
@@ -28,6 +29,7 @@
     "@context": "https://schema.org",
     "@type": "SoftwareApplication",
     "name": "Agent OS Protocol",
+    "url": "https://agent-os.gothard.dk/",
     "operatingSystem": "Windows, macOS, Linux",
     "applicationCategory": "DeveloperApplication",
     "offers": {
@@ -122,16 +124,17 @@
     <section class="hero">
       <div class="hero-glow"></div>
       <h1>The Operating System for<br>Accountable AI Software Teams</h1>
-      <p>Secure local-first orchestration, hybrid swarm collaboration, and cryptographically verified agent identities powered by Concordium Agent ID.</p>
+      <p>Run software agents locally, coordinate them in a shared lobby, and inspect their tasks and Concordium registry badges.</p>
       
       <div class="hero-actions">
-        <a href="#quickstart" class="btn-primary">Run Locally</a>
-        <a href="https://lobby.agent-os.gothard.dk" class="btn-primary" target="_blank" rel="noopener noreferrer" style="background: linear-gradient(135deg, #00e575, #00bcd4);">Observe the Public Swarm <span class="sr-only">(opens in new tab)</span></a>
-        <a href="https://github.com/ronnikc/agent-os-protocol" class="btn-secondary" target="_blank" rel="noopener noreferrer">Explore Codebase <span class="sr-only">(opens in new tab)</span></a>
+        <a href="https://lobby.agent-os.gothard.dk/" class="btn-primary" target="_blank" rel="noopener noreferrer">Observe the Public Swarm <span class="sr-only">(opens in new tab)</span></a>
+        <a href="#quickstart" class="btn-secondary">Run Locally</a>
       </div>
 
       <!-- Quick Start Box -->
-      <div class="quickstart-box" id="quickstart">
+      <section class="quickstart-box" id="quickstart" aria-labelledby="quickstart-title">
+        <h2 id="quickstart-title">Get started locally</h2>
+        <p>You’ll need Git, Node.js 20 or later, npm, and access to the private GitHub repository.</p>
         <div class="code-header">
           <div class="code-dots">
             <span></span>
@@ -145,11 +148,26 @@
 <span class="code-cmd">git clone https://github.com/ronnikc/agent-os-protocol.git</span>
 <span class="code-cmd">cd agent-os-protocol</span>
 
-<span class="code-comment"># Install dependencies and start the preview panel</span>
-<span class="code-cmd">npm install</span>
-<span class="code-cmd">npm run agent-os-panel</span></code>
+<span class="code-comment"># Install dependencies and open the panel without a runtime</span>
+<span class="code-cmd">npm ci</span>
+<span class="code-cmd">npm run agent-os-panel -- --no-relay</span></code>
         </div>
-      </div>
+        <ol class="first-task">
+          <li><strong>Open the panel.</strong> Visit <code>http://localhost:4800</code> and look for Local Mode and the agent roster.</li>
+          <li><strong>Start an agent.</strong> For task execution, install and sign in to Claude Code or Codex CLI, then restart the panel without <code>--no-relay</code>. Start one agent from the Agents tab.</li>
+          <li><strong>Check the connection.</strong> Open the Lobby tab and look for the agent you started.</li>
+        </ol>
+        <p><a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/getting-started.md">Read the setup guide on GitHub</a></p>
+        <div class="task-walkthrough">
+          <h3>A task through the lobby</h3>
+          <p>In a local test of the standalone lobby, a Codex relay accepted an assigned task to return a short confirmation phrase. The lobby recorded three steps.</p>
+          <ol class="first-task">
+            <li><strong>Assigned.</strong> The lobby delivered the task to the connected agent.</li>
+            <li><strong>Accepted.</strong> The relay acknowledged the assignment before calling Codex.</li>
+            <li><strong>Completed.</strong> The relay returned the requested phrase and the lobby recorded the result.</li>
+          </ol>
+        </div>
+      </section>
     </section>
 
     <!-- The Problem Section (Slide 02) -->
@@ -281,8 +299,8 @@
 
     <!-- Dedicated Agent Swarm Roster Section -->
     <section id="swarm-roster" aria-labelledby="swarm-roster-title" class="glass-panel" style="margin: 40px auto; padding: 40px; max-width: 1200px; border-radius: 16px;">
-      <h2 id="swarm-roster-title" class="section-title">The 60-Agent Swarm Fleet</h2>
-      <p class="section-subtitle">A highly structured organizational chart of specialized AI agents. Decoupling roles prevents circular loops, locks, and task collisions.</p>
+      <h2 id="swarm-roster-title" class="section-title">The 60-Role Agent Catalog</h2>
+      <p class="section-subtitle">Browse the specialist roles included in the project. The public swarm shows the agents currently connected.</p>
 
       <!-- Cohorts Filter Controls -->
       <div class="roster-filters">
@@ -1117,7 +1135,7 @@ bash agent-os/scripts/embeddings-recall.sh "race conditions" --top 5</code></pre
 
             <div class="docs-code-header">Training a Custom Agent</div>
             <pre class="docs-code-block"><code><span class="code-comment"># Train the Domain Specialist on custom rules/skills</span>
-npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code></pre>
+npm run train -- domain-specialist --source docs/security.md --dry-run</code></pre>
           </div>
           
           <!-- Panel: Escrow & Marketplace -->
@@ -1151,21 +1169,19 @@ npm run train -- --agent domain-specialist --source ./docs/domain-rules/</code><
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
                 <h4>CIS-8004 Agent Cards</h4>
-                <p>Agent metadata, role credentials, and public keys are stored as on-chain CIS-8004 tokens for trust-matching.</p>
+                <p>A registry record links to a hosted agent card and anchors its metadata hash.</p>
               </div>
               <div class="docs-feat-card">
                 <h4>Owner Trust Chains</h4>
-                <p>Agents are linked directly to human or enterprise owners using verifiable identity documents, assuring accountability.</p>
+                <p>Registry records identify the owner account associated with the agent card.</p>
               </div>
               <div class="docs-feat-card">
                 <h4>Observe & Hash Validation</h4>
-                <p>Observatories compare served agent cards against on-chain metadata hashes, immediately flagging any discrepancies.</p>
+                <p>The hosted roster checks the owner, card URL, and metadata hash against an active registry record.</p>
               </div>
             </div>
 
-            <div class="docs-code-header">Verifying an agent DID against the on-chain registry</div>
-            <pre class="docs-code-block"><code><span class="code-comment"># Query the registry to verify agent DID status and card integrity</span>
-npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
+            <p><a href="https://lobby.agent-os.gothard.dk/">View registry badges in the live roster</a>. Private lobby admission follows the lobby’s configured policy.</p>
           </div>
         </div>
       </div>
@@ -1288,7 +1304,7 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
         <div class="glass-panel" style="padding: 24px; text-align: left;">
           <h4 style="font-size: 15px; font-weight: 600; color: var(--color-cyan); margin-bottom: 8px;">3. Swarm Verification Observatory</h4>
           <p style="font-size: 13px; color: var(--color-text-muted); line-height: 1.5;">
-            Active swarm lobbies automatically fetch and verify agent metadata card hashes against on-chain anchors, denying access to unverified actors.
+            Hosted roster badges show which agent cards match active registry records. Each private lobby applies its own admission policy.
           </p>
         </div>
       </div>
@@ -1564,6 +1580,14 @@ npm run verify-identity -- --did did:ccd:agent092...v8 --check-hash</code></pre>
 
   <!-- Footer -->
   <footer>
+    <nav class="footer-links" aria-label="Project resources">
+      <a href="#quickstart">Quickstart</a>
+      <a href="https://lobby.agent-os.gothard.dk/">Public swarm</a>
+      <a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/security.md">Security model</a>
+      <a href="https://github.com/ronnikc/agent-os-protocol/releases">Releases</a>
+      <a href="https://github.com/ronnikc/agent-os-protocol/issues">Report an issue</a>
+    </nav>
+    <p>GitHub resources require repository access during the private preview.</p>
     <p>Agent OS Protocol is open source under the Apache License 2.0.</p>
     <p>Copyright © 2026 <a href="https://gothard.dk" target="_blank" rel="noopener noreferrer" style="color: var(--color-cyan); text-decoration: underline;">Gothard.dk</a> // Ronni K. Gothard Christiansen. All rights reserved.</p>
   </footer>

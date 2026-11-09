@@ -204,21 +204,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const codeBlock = document.querySelector('.code-block code');
 
   if (copyBtn && codeBlock) {
-    copyBtn.addEventListener('click', () => {
+    copyBtn.addEventListener('click', async () => {
       const text = codeBlock.textContent;
-      navigator.clipboard.writeText(text).then(() => {
+      try {
+        await navigator.clipboard.writeText(text);
         copyBtn.textContent = 'Copied!';
-        copyBtn.style.background = 'var(--color-green)';
-        copyBtn.style.color = '#000';
         setTimeout(() => {
           copyBtn.textContent = 'Copy';
-          copyBtn.style.background = 'rgba(255, 255, 255, 0.1)';
-          copyBtn.style.color = 'var(--color-text)';
         }, 2000);
-      }).catch(() => {
-        // Fallback
-        alert('Could not copy code. Please select and copy manually.');
-      });
+      } catch {
+        const commands = document.createRange();
+        commands.selectNodeContents(codeBlock);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(commands);
+        copyBtn.textContent = 'Selected. Copy manually.';
+      }
     });
   }
 
