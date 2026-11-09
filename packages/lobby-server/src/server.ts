@@ -1581,8 +1581,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       // DELETE .../provider-keys/:id — revoke a key
       if (req.method === 'DELETE' && keyId) {
-        const view = await revokeProviderKey(store, keyId);
-        if (!view || view.lobby_id !== lobbyId) return json({ error: 'provider key not found' }, 404);
+        const view = await revokeProviderKey(store, lobbyId, keyId);
+        if (!view) return json({ error: 'provider key not found' }, 404);
         await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
         return json({ revoked: view });
       }

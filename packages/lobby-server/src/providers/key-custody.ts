@@ -134,8 +134,8 @@ export async function listProviderKeys(store: LobbyStore, lobbyId: string): Prom
   return (await store.listProviderKeys(lobbyId)).map(toPublicView);
 }
 
-/** Revoke a stored key by id. Returns the public view of the revoked config, or null if absent. */
-export async function revokeProviderKey(store: LobbyStore, id: string): Promise<ProviderKeyView | null> {
-  const revoked = await store.revokeProviderKey(id);
+/** Revoke a key in the given lobby, returning its public view if found there. */
+export async function revokeProviderKey(store: LobbyStore, lobbyId: string, id: string): Promise<ProviderKeyView | null> {
+  const revoked = await store.revokeProviderKey(lobbyId, id);
   return revoked ? toPublicView(revoked) : null;
 }

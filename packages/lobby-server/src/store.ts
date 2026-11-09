@@ -99,7 +99,7 @@ export interface LobbyStore {
   /** Resolve the effective config: a per-agent override wins over the lobby default. */
   getProviderKey(lobbyId: string, provider: string, agentRef?: string | null): Promise<ProviderKeyConfig | undefined>;
   listProviderKeys(lobbyId: string): Promise<ProviderKeyConfig[]>;
-  revokeProviderKey(id: string): Promise<ProviderKeyConfig | undefined>;
+  revokeProviderKey(lobbyId: string, id: string): Promise<ProviderKeyConfig | undefined>;
 
   linkExternalIdentity(link: ExternalIdentityLink): Promise<ExternalIdentityLink>;
   getExternalIdentityLink(provider: string, externalUserId: string): Promise<ExternalIdentityLink | undefined>;
@@ -506,9 +506,9 @@ export class InMemoryLobbyStore implements LobbyStore {
     return [...this.providerKeys.values()].filter((k) => k.lobby_id === lobbyId && !k.revoked_at);
   }
 
-  async revokeProviderKey(id: string): Promise<ProviderKeyConfig | undefined> {
+  async revokeProviderKey(lobbyId: string, id: string): Promise<ProviderKeyConfig | undefined> {
     const k = this.providerKeys.get(id);
-    if (!k) return undefined;
+    if (!k || k.lobby_id !== lobbyId) return undefined;
     const updated = { ...k, revoked_at: new Date().toISOString() };
     this.providerKeys.set(id, updated);
     this.queueSave();
