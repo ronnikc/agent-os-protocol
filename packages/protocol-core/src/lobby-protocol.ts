@@ -285,7 +285,7 @@ export type LobbyToAgentMessage =
   | { type: 'lobby-message-received'; message: LobbyMessage }
   | { type: 'lobby-request-created'; request: LobbyRequest }
   | { type: 'lobby-request-decided'; request: LobbyRequest }
-  | { type: 'lobby-roster'; agents: LobbyAgent[] }
+  | { type: 'lobby-roster'; agents: LobbyAgent[]; boss_agent_id?: string | null }
   | { type: 'lobby-boss-appointed'; agent_id: string }
   | { type: 'lobby-boss-lost'; lost_agent_id: string; connected_agents: LobbyAgent[] }
   | { type: 'lobby-hand-raised'; hand: HandRaise }

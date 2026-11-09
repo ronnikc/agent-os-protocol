@@ -384,7 +384,7 @@ export class LobbyCoordinator {
     return {
       out: [
         { target: { kind: 'self' }, message: { type: 'lobby-registered', agent_id: agentId, lobby_id: conn.lobbyId } },
-        { target: { kind: 'self' }, message: { type: 'lobby-roster', agents: roster } },
+        { target: { kind: 'self' }, message: { type: 'lobby-roster', agents: roster, boss_agent_id: lobby.boss_agent_id || null } },
         { target: { kind: 'lobby' }, message: { type: 'lobby-agent-joined', agent } },
       ],
     };
