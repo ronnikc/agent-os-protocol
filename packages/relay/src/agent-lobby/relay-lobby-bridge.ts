@@ -127,7 +127,8 @@ export class RelayLobbyBridge {
   }
 
   bufferMessage(from: string, content: string): void {
-    this.messageBuffer.push({ from, content });
+    this.messageBuffer.push({ from, content: content.slice(0, 2000) });
+    if (this.messageBuffer.length > 30) this.messageBuffer.shift();
   }
 
   drainBufferContext(): string {
