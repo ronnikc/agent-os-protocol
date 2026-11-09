@@ -259,6 +259,8 @@ Fix the issues in the workspace files directly and exit once resolved.`,
 // Sends messages via WebSocket (REST POST requires auth, but WS doesn't).
 let lobbyClient: LobbyClient | null = null;
 let lobbyWsConnected = false;
+let panelCredential: { did: string; token: string; lobbyId: string } | undefined;
+let panelIdentityUpdating = false;
 
 async function connectLobbyWs(): Promise<void> {
   if (!DEFAULT_LOBBY_URL || lobbyWsConnected) return;
@@ -282,7 +284,8 @@ async function connectLobbyWs(): Promise<void> {
       } catch {}
     }
 
-    lobbyClient = new LobbyClient({
+    const credential = panelCredential?.lobbyId === lobbyId ? panelCredential : undefined;
+    const client = new LobbyClient({
       lobbyUrl: DEFAULT_LOBBY_URL,
       lobbyId: lobbyId,
       orgId: cachedOrgId || 'default',
@@ -293,12 +296,16 @@ async function connectLobbyWs(): Promise<void> {
         // The panel is the human's control plane — registering as a human participant
         // exempts it from floor control and allows Boss (re)appointment (coordinator rules).
         participant_type: 'human',
-        join_token: joinToken,
+        join_token: credential?.token ?? joinToken,
+        agent_identity_ref: credential?.did,
+        execution_enabled: false,
       },
       reconnect: true,
     });
 
-    lobbyClient.onMessage((msg) => {
+    lobbyClient = client;
+    client.onMessage((msg) => {
+      if (lobbyClient !== client) return;
       try {
         if (msg.type === 'lobby-registered') {
           panelAgentId = msg.agent_id;
@@ -426,9 +433,8 @@ async function connectLobbyWs(): Promise<void> {
       } catch { /* ignore */ }
     });
 
-    await lobbyClient.connect();
-    lobbyWsConnected = true;
-    console.log('Lobby WS: connected via LobbyClient');
+    await client.connect();
+    if (lobbyClient === client) console.log('Lobby WS: connected via LobbyClient');
   } catch (err) {
     console.error('Lobby WS: failed to connect:', err);
     lobbyWsConnected = false;
@@ -2449,9 +2455,60 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  if (path === '/api/lobby/remote/panel-identity' && method === 'POST') {
+    if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) {
+      return sendJson(res, { error: 'same-origin panel request required' }, 403);
+    }
+    const { did } = await parseBody(req);
+    const lobbyId = await resolveLobbyId(req);
+    const token = req.headers.authorization?.match(/^Bearer (\S{1,8192})$/)?.[1];
+    if (!DEFAULT_LOBBY_URL || !lobbyId || (did !== null &&
+        (typeof did !== 'string' || !/^did:ccd:(mainnet|testnet):agent-[a-zA-Z0-9-]{1,128}$/.test(did) || !token))) {
+      return sendJson(res, { error: 'select a lobby and sign in with the registered wallet to link a Panel Agent ID' }, 400);
+    }
+    if (panelIdentityUpdating) return sendJson(res, { error: 'panel identity update in progress' }, 409);
+    if (did === null && !panelCredential) return sendJson(res, { ok: true });
+    if (panelCredential && panelCredential.did === did && panelCredential.token === token &&
+        panelCredential.lobbyId === lobbyId && panelAgentId &&
+        stagingAgentRoster.get(panelAgentId)?.identity_status === 'registry_verified') {
+      return sendJson(res, { ok: true, did });
+    }
+    panelIdentityUpdating = true;
+    const previousCredential = panelCredential;
+    const previousLobby = activeLobbyId;
+    try {
+      panelCredential = typeof did === 'string' && token ? { did, token, lobbyId } : undefined;
+      activeLobbyId = lobbyId;
+      lobbyClient?.close();
+      lobbyClient = null;
+      lobbyWsConnected = false;
+      panelAgentId = null;
+      await connectLobbyWs();
+      if (!did) return sendJson(res, { ok: true });
+      for (let attempt = 0; attempt < 20; attempt++) {
+        const agent = panelAgentId ? stagingAgentRoster.get(panelAgentId) : undefined;
+        if (agent?.identity_ref === did && agent.identity_status === 'registry_verified') {
+          return sendJson(res, { ok: true, did });
+        }
+        await new Promise(resolve => setTimeout(resolve, 250));
+      }
+      panelCredential = previousCredential;
+      activeLobbyId = previousLobby;
+      lobbyClient?.close();
+      lobbyClient = null;
+      lobbyWsConnected = false;
+      panelAgentId = null;
+      void connectLobbyWs();
+      return sendJson(res, { error: 'the lobby could not verify this Panel Agent ID with the current wallet session' }, 403);
+    } finally {
+      panelIdentityUpdating = false;
+    }
+  }
+
   if (path === '/api/lobby/remote/join' && method === 'POST') {
     const body = await parseBody(req);
     const newLobbyId = body.lobby_id as string || null;
+    if (panelIdentityUpdating) return sendJson(res, { error: 'panel identity update in progress' }, 409);
     activeLobbyId = newLobbyId;
     console.log(`Lobby WS: switching active lobby to ${activeLobbyId || 'default (discovered)'}`);
     stagingAgentRoster.clear();

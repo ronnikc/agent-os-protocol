@@ -1,4 +1,4 @@
-import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert, showHtmlAlert } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert, showHtmlAlert, hostedSession, signInToLobby, savedPanelIdentity, linkPanelIdentity } from '../app.js';
 
 let draftCard = null;
 let validationResult = null;
@@ -521,6 +521,57 @@ function readFormValues() {
   draftCard.allowedScopes = scopeStr.split(',').map(s => s.trim()).filter(Boolean);
 }
 
+async function configurePanelIdentity(action) {
+  const input = document.getElementById('panel-identity-did');
+  const status = document.getElementById('panel-identity-status');
+  const controls = document.querySelectorAll('[data-panel-identity]');
+  controls.forEach(button => { button.disabled = true; });
+  try {
+    if (action === 'unlink') {
+      if (!(await linkPanelIdentity(null))?.ok) throw new Error('Could not unlink the Panel Agent ID.');
+      input.value = '';
+      status.textContent = 'Panel Agent ID unlinked.';
+      return;
+    }
+
+    const selectedLobby = document.getElementById('header-lobby-select')?.value;
+    let session = hostedSession();
+    if (!session?.token || session.lobbyId !== selectedLobby) {
+      await signInToLobby({ reload: false });
+      session = hostedSession();
+    }
+    if (!session?.token || !session.identityRef?.startsWith('did:ccd:') || session.lobbyId !== selectedLobby) {
+      throw new Error('Sign in with the registered Concordium wallet for this lobby.');
+    }
+
+    if (action === 'mint') {
+      const [, , network, owner] = session.identityRef.split(':');
+      const { mintAgentId } = await import('../mint-agent-id.js');
+      const config = await fetchJson('/api/mode');
+      const result = await mintAgentId({
+        provider: window.concordium,
+        owner,
+        network,
+        lobbyUrl: config?.lobbyUrl,
+        agentName: 'Agent OS Local Panel',
+        agentRole: 'panel',
+        onStatus: message => { status.textContent = message; },
+      });
+      if (!result?.outcome?.success) throw new Error(result?.anchorError || 'Registry registration did not finalize.');
+      input.value = result.did;
+    }
+
+    status.textContent = 'Checking the Agent ID with the lobby…';
+    const result = await linkPanelIdentity(input.value.trim());
+    if (!result?.ok) throw new Error(result?.error || 'The lobby could not verify the Panel Agent ID. Check the registered wallet and try Link again.');
+    status.textContent = 'Verified. The lobby roster now shows this Panel Agent ID.';
+  } catch (error) {
+    status.textContent = error.message;
+  } finally {
+    controls.forEach(button => { button.disabled = false; });
+  }
+}
+
 function render() {
   const el = document.getElementById('identity-content');
   if (!el) return;
@@ -535,6 +586,15 @@ function render() {
   const scopeVal = draftCard.allowedScopes ? draftCard.allowedScopes.join(', ') : '';
 
   el.innerHTML = `
+    ${lobbyMode === 'swarm' && !window.AGENT_OS_HOSTED ? `
+      <div class="toolbar" style="flex-wrap:wrap;height:auto;padding:12px;gap:8px;">
+        <label for="panel-identity-did">Local Panel Agent ID</label>
+        <input id="panel-identity-did" value="${escapeHtml(savedPanelIdentity())}" placeholder="did:ccd:mainnet:agent-…" style="flex:1;min-width:220px;">
+        <button class="btn btn-secondary btn-sm" data-panel-identity="link">Link Existing ID</button>
+        <button class="btn btn-primary btn-sm" data-panel-identity="mint">Create Panel ID</button>
+        <button class="btn btn-secondary btn-sm" data-panel-identity="unlink">Unlink</button>
+        <p id="panel-identity-status" role="status" style="flex-basis:100%;margin:0;">The panel uses this identity for its own connection. It does not take agent assignments.</p>
+      </div>` : ''}
     <div style="display:flex;gap:20px;height:100%;flex-wrap:wrap;">
       
       <!-- Left Column: Draft Form -->
@@ -702,6 +762,9 @@ function render() {
   `;
 
   // Wire up event listeners
+  el.querySelectorAll('[data-panel-identity]').forEach(button => {
+    button.addEventListener('click', () => void configurePanelIdentity(button.dataset.panelIdentity));
+  });
   document.getElementById('identity-agent-select')?.addEventListener('change', (e) => {
     const slug = e.target.value;
     selectedSlug = slug;

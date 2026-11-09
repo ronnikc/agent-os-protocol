@@ -873,6 +873,7 @@ export async function init() {
 
   // Activate default tab
   switchTab('agents');
+  void restorePanelIdentity();
 
   // Periodic refresh
   setInterval(async () => {
@@ -917,7 +918,32 @@ function fetchWalletBalance(provider, addrStr) {
   });
 }
 
+const PANEL_IDENTITY_STORAGE = 'agentos.local-panel.did';
+
+export function savedPanelIdentity() {
+  return localStorage.getItem(PANEL_IDENTITY_STORAGE) || '';
+}
+
+export async function linkPanelIdentity(did) {
+  const result = await postJson('/api/lobby/remote/panel-identity', { did });
+  if (result?.ok) {
+    if (did) localStorage.setItem(PANEL_IDENTITY_STORAGE, did);
+    else localStorage.removeItem(PANEL_IDENTITY_STORAGE);
+  }
+  return result;
+}
+
+async function restorePanelIdentity() {
+  if (window.AGENT_OS_HOSTED || !hostedSession()?.token) return;
+  const did = savedPanelIdentity();
+  if (did) await postJson('/api/lobby/remote/panel-identity', { did });
+}
+
 export async function disconnectWallet() {
+  if (!window.AGENT_OS_HOSTED && savedPanelIdentity()) {
+    await postJson('/api/lobby/remote/panel-identity', { did: null });
+  }
+  localStorage.removeItem('agent-os-lobby-token');
   state.wallet.connected = false;
   state.wallet.address = null;
   state.wallet.balance = null;
@@ -1067,6 +1093,7 @@ export async function signInToLobby(options = {}) {
     }));
 
     updateHeaderUI();
+    if (!shouldReload) await restorePanelIdentity();
 
     if (shouldReload) {
       window.location.reload();
