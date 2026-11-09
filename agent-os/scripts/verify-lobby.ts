@@ -434,8 +434,10 @@ async function main(): Promise<void> {
       });
       try {
         delete process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256;
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 404);
         assert.equal((await request('/auth/test-admin', 'POST', { key })).status, 404);
         process.env.AGENT_OS_TEST_ADMIN_KEY_SHA256 = createHash('sha256').update(key).digest('hex');
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 200);
         assert.equal((await request('/auth/test-admin', 'POST', { key: randomBytes(32).toString('hex') })).status, 401);
         const login = await request('/auth/test-admin', 'POST', { key });
         assert.equal(login.status, 200);
@@ -447,6 +449,7 @@ async function main(): Promise<void> {
         assert.equal((await request(`/lobbies/${otherLobby.lobby_id}`, 'PATCH', { status: 'closed' }, token)).status, 401);
         assert.equal((await request('/lobbies', 'POST', { auth_lobby_id: lobby.lobby_id, visibility: 'private' }, token)).status, 403);
         process.env.NODE_ENV = 'production';
+        assert.equal((await fetch(api + '/auth/test-admin')).status, 404);
         assert.equal((await request('/auth/test-admin', 'POST', { key })).status, 404);
         assert.equal((await request(path, 'PATCH', { status: 'closed' }, token)).status, 401);
       } finally {

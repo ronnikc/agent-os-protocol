@@ -698,7 +698,7 @@ export async function init() {
   const session = hostedSession();
   if (session) {
     state.session = session;
-    if (session.identityRef) {
+    if (session.identityRef && session.identityRef !== 'test-admin') {
       const parts = session.identityRef.split(':');
       const address = parts[parts.length - 1];
       state.wallet.connected = true;
@@ -730,7 +730,7 @@ export async function init() {
           }).catch(console.error);
         }
       }, 500);
-    } else if (localStorage.getItem('agentos.wallet.connected') === 'true') {
+    } else if (session?.identityRef !== 'test-admin' && localStorage.getItem('agentos.wallet.connected') === 'true') {
       setTimeout(() => {
         if (window.concordium) {
           connectWallet({ silent: true }).catch(() => {});
@@ -1092,7 +1092,12 @@ export function updateHeaderUI() {
   const walletBtn = document.getElementById('btn-header-connect-wallet');
 
   if (walletStatus && walletBtn) {
-    if (state.wallet.connected) {
+    if (state.session?.identityRef === 'test-admin') {
+      walletStatus.textContent = 'Test admin';
+      walletStatus.style.color = 'var(--color-green)';
+      walletBtn.textContent = 'Sign out';
+      walletBtn.onclick = disconnectWallet;
+    } else if (state.wallet.connected) {
       const shortAddr = state.wallet.address.slice(0, 6) + '...' + state.wallet.address.slice(-4);
       const balanceText = Number.isFinite(state.wallet.balance)
         ? ` (${state.wallet.balance.toLocaleString(undefined, { maximumFractionDigits: 4 })} CCD)`
@@ -1179,6 +1184,12 @@ function renderAuthOverlay() {
           <button class="btn btn-primary" id="btn-auth-action" style="padding:12px; border-radius:8px; font-size:14px; font-weight:600; width:100%; cursor:pointer; height:auto; line-height:1.2; text-transform:none; border:none; display:block;">Connect Wallet</button>
           <button id="btn-auth-guest" style="padding:11px; border-radius:8px; font-size:13px; font-weight:500; width:100%; cursor:pointer; background:transparent; color:#c7d4ea; border:1px solid rgba(49,140,255,0.3);">Continue as Guest — explore public lobbies (read-only)</button>
         </div>
+        <form id="test-admin-sign-in" hidden style="margin-top:16px;text-align:left;">
+          <label for="test-admin-key">Test admin key</label>
+          <input id="test-admin-key" type="password" required autocomplete="off" style="width:100%;box-sizing:border-box;">
+          <button class="btn btn-secondary" type="submit" style="margin-top:8px;">Sign in to Test Lobby</button>
+          <p id="test-admin-status" role="status"></p>
+        </form>
 
         <div style="margin-top:18px; padding-top:16px; border-top:1px solid rgba(255,255,255,0.06); text-align:left;">
           <p style="font-size:11px; color:#7c8db0; line-height:1.6; margin:0 0 8px 0;">
@@ -1197,6 +1208,44 @@ function renderAuthOverlay() {
   if (guestBtn) guestBtn.onclick = continueAsGuest;
   const createIdBtn = document.getElementById('btn-auth-create-id');
   if (createIdBtn) createIdBtn.onclick = showCreateConcordiumIdInstructions;
+  void enableTestAdminSignIn();
+}
+
+async function enableTestAdminSignIn() {
+  const path = '/api/v1/agent-lobby/auth/test-admin';
+  const availability = await fetch(path).catch(() => null);
+  if (!availability?.ok) return;
+  const form = document.getElementById('test-admin-sign-in');
+  if (!form) return;
+  const input = document.getElementById('test-admin-key');
+  const status = document.getElementById('test-admin-status');
+  const submit = form.querySelector('button');
+  form.hidden = false;
+  form.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    submit.disabled = true;
+    status.textContent = '';
+    try {
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key: input.value }),
+      });
+      if (!response.ok) throw new Error('Test admin sign-in rejected.');
+      const session = await response.json();
+      localStorage.setItem('agentos.hosted.session', JSON.stringify({
+        token: session.token,
+        identityRef: session.identity_ref,
+        lobbyId: session.lobby.lobby_id,
+      }));
+      window.location.reload();
+    } catch {
+      status.textContent = 'Could not sign in to the test lobby. Check the key and try again.';
+    } finally {
+      input.value = '';
+      submit.disabled = false;
+    }
+  });
 }
 
 /**
