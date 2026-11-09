@@ -34,7 +34,7 @@ import { listInstallationRepos, listTree, getFile, parseRepoRef } from './integr
 import { saveIntegrationSecret, getDecryptedSecret } from './integrations/githubApp.js';
 import { connectOwnerIntegration, ownerIntegrationStatus, revokeOwnerIntegration, type OwnerConnectedProvider } from './integrations/ownerConnectedApp.js';
 import { relayLobbyMessageToChatApps } from './integrations/chatRelay.js';
-import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, issueSessionToken, assertDevBridgeNotInProduction, devTrustWalletSignatures, isProduction } from './auth/identityProof.js';
+import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken, walletDiscoveryIdentity, issueSessionToken, assertDevBridgeNotInProduction, devTrustWalletSignatures, isProduction } from './auth/identityProof.js';
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership, lobbyOwnerRef } from './auth/lobbyAuthz.js';
@@ -1407,12 +1407,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // Extract + validate a Bearer session token (HMAC-signed by /auth/verify) for a given lobby.
     // Returns the wallet identity_ref the token is bound to, or null. This is the wallet-lock: a
     // request may only act as the wallet it proved control of. (Exposed to gated endpoints below.)
+    const authorization = req.headers.authorization;
+    const bearer = authorization?.startsWith('Bearer ') ? authorization.slice(7).trim() : '';
     const sessionIdentity = (lobbyId: string): string | null => {
-      const h = req.headers['authorization'];
-      const token = typeof h === 'string' && h.startsWith('Bearer ') ? h.slice(7).trim() : '';
-      if (!token) return null;
-      const payload = validateSessionToken(token, lobbyId);
+      if (!bearer) return null;
+      const payload = validateSessionToken(bearer, lobbyId);
       return payload ? payload.identityRef : null;
+    };
+    const hasPrivateMembership = async (lobby: LobbySession, identity: string): Promise<boolean> => {
+      const member = await store.getMember(lobby.lobby_id, identity);
+      if (member) return member.status === 'active' && (!member.expires_at || Date.parse(member.expires_at) > Date.now());
+      return (lobby.join_policy ?? 'allowlisted') === 'allowlisted' && Boolean(lobby.allowlist?.includes(identity));
     };
 
     const scopedLobbyId = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)/)?.[1];
@@ -1420,10 +1425,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (scopedLobby?.visibility === 'private') {
       const identity = sessionIdentity(scopedLobby.lobby_id);
       if (!identity) return json({ error: 'authentication required' }, 401);
-      const member = await store.getMember(scopedLobby.lobby_id, identity);
-      const active = member?.status === 'active' &&
-        (!member.expires_at || Date.parse(member.expires_at) > Date.now());
-      if (!active && !(await isLobbyManager(store, scopedLobby.lobby_id, identity))) {
+      if (!(await hasPrivateMembership(scopedLobby, identity)) && !(await isLobbyManager(store, scopedLobby.lobby_id, identity))) {
         return json({ error: 'private lobby membership required' }, 403);
       }
     }
@@ -2858,13 +2860,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     if (path === '/api/v1/agent-lobby/lobbies' && req.method === 'GET') {
       const visible: Partial<LobbySession>[] = [];
+      const walletIdentity = walletDiscoveryIdentity(bearer);
       for (const lobby of await store.listLobbies()) {
-        const identity = sessionIdentity(lobby.lobby_id);
-        if (identity && await isLobbyManager(store, lobby.lobby_id, identity)) visible.push(lobby);
+        const scopedIdentity = sessionIdentity(lobby.lobby_id);
+        const identity = scopedIdentity ?? walletIdentity;
+        if (scopedIdentity && await isLobbyManager(store, lobby.lobby_id, scopedIdentity)) visible.push(lobby);
         else if (lobby.status === 'active') {
-          const member = identity ? await store.getMember(lobby.lobby_id, identity) : undefined;
-          if (lobby.visibility === 'public' || member?.status === 'active' &&
-              (!member.expires_at || Date.parse(member.expires_at) > Date.now())) {
+          if (lobby.visibility === 'public' || identity &&
+              (await hasPrivateMembership(lobby, identity) || await isLobbyManager(store, lobby.lobby_id, identity))) {
             visible.push({ ...lobby, allowlist: undefined, created_by: undefined });
           }
         }

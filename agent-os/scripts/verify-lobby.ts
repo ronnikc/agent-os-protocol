@@ -437,6 +437,33 @@ async function main(): Promise<void> {
       assert.equal(await resolveProviderKey(server.store, second.lobby_id, 'openai', undefined, env), null);
     });
 
+    await check('private lobby discovery shows invitations across wallet sessions without granting cross-lobby access', async () => {
+      const owner = 'did:ccd:mainnet:fixture-owner';
+      const invited = 'did:ccd:mainnet:fixture-invite';
+      const publicLobby = makeLobby('public');
+      const lobby = { ...makeLobby('private'), created_by: owner, allowlist: [invited] };
+      await server.store.createLobby(publicLobby);
+      await server.store.createLobby(lobby);
+      const endpoint = `${lobbyUrl}/api/v1/agent-lobby/lobbies`;
+      const headers = (identity: string, id = publicLobby.lobby_id) => ({
+        authorization: `Bearer ${issueSessionToken(identity, id)}`,
+      });
+      const discover = async (identity?: string) => {
+        const response = await fetch(endpoint, { headers: identity ? headers(identity) : {} });
+        return (await response.json()).lobbies.find((item: LobbySession) => item.lobby_id === lobby.lobby_id);
+      };
+      assert.equal(await discover(), undefined);
+      assert.equal(await discover('did:ccd:mainnet:uninvited'), undefined);
+      assert.equal((await discover(owner)).visibility, 'private');
+      const invitation = await discover(invited);
+      assert.equal(invitation.visibility, 'private');
+      assert.equal(invitation.allowlist, undefined);
+      assert.equal(invitation.created_by, undefined);
+      const roster = `${endpoint}/${lobby.lobby_id}/roster`;
+      assert.equal((await fetch(roster, { headers: headers(invited) })).status, 401);
+      assert.equal((await fetch(roster, { headers: headers(invited, lobby.lobby_id) })).status, 200);
+    });
+
     await check('private lobby management requires proof, and revocation and closure disconnect agents', async () => {
       const owner = 'test-owner';
       const member = 'test-member';
