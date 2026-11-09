@@ -1,0 +1,18 @@
+{
+  "name": "@agent-os/concordium-commerce",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Bounded x401 proof and x402 payment requests on Concordium.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@concordium/web-sdk": "^12.0.2",
+    "@proof.com/x401-node": "0.3.3",
+    "@x402/concordium": "2.28.0",
+    "@x402/core": "2.28.0"
+  }
+}

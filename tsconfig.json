@@ -12,6 +12,7 @@
     { "path": "packages/relay" },
     { "path": "packages/knowledge-engine" },
     { "path": "packages/slack-relay" },
-    { "path": "packages/registry-identity" }
+    { "path": "packages/registry-identity" },
+    { "path": "packages/concordium-commerce" }
   ]
 }
