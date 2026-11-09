@@ -35,6 +35,7 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         AGENT_OS_REVISION: process.env.AGENT_OS_REVISION || '',
+        AGENT_OS_LIVE_TEST_ADMIN: process.env.AGENT_OS_LIVE_TEST_ADMIN || '',
         AGENT_OS_LOBBY_PORT: '4730',
         // Persistent store path — survives deploys (git reset --hard) because it is in $HOME,
         // not the checkout. Override by exporting AGENT_OS_LOBBY_STORE_FILE before pm2 start.

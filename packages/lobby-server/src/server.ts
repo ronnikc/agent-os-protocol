@@ -36,7 +36,7 @@ import { generateNonceChallenge, verifyProofAndIssueToken, validateSessionToken,
 import { createWalletChallenge, verifyWalletChallenge } from './auth/wallet-signin.js';
 import { GrpcAccountInfoSource, type AccountInfoSource } from './auth/concordium-verifier.js';
 import { authorizeLobbyManager, isLobbyManager, claimLobbyOwnership, lobbyOwnerRef } from './auth/lobbyAuthz.js';
-import { TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID, testAdminKeyDigest } from './auth/identityProof.js';
+import { TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID, liveTestAdminConfig, testAdminKeyDigest } from './auth/identityProof.js';
 import { signInTestAdmin } from './auth/testAdmin.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
@@ -1448,7 +1448,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     if (path === '/api/v1/agent-lobby/auth/test-admin' && (req.method === 'GET' || req.method === 'POST')) {
       res.setHeader('Cache-Control', 'no-store');
-      if (!testAdminKeyDigest()) return json({ error: 'not found' }, 404);
+      if (!testAdminKeyDigest() && !liveTestAdminConfig()) return json({ error: 'not found' }, 404);
       if (req.method === 'GET') return json({ enabled: true });
       const body = await readBody(req);
       const { status, ...session } = await signInTestAdmin(store, body.key);
@@ -3140,7 +3140,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           delivered: false,
         };
         await store.appendMessage(lobbyId, message);
-        await recordEvent(lobbyId, 'message_sent', message.from_agent_id, {
+        await recordEvent(lobbyId, 'message_sent', senderIdentity === TEST_ADMIN_IDENTITY ? senderIdentity : message.from_agent_id, {
           to: message.to_agent_id,
           content: message.content,
         });

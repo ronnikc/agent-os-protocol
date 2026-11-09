@@ -96,7 +96,13 @@ jobs:
       # come from the same commit (no skew). See deploy/apache-lobby.conf.
 
       - name: Deploy lobby backend (Node server)
+        env:
+          LIVE_TEST_ADMIN: ${{ secrets.AGENT_OS_LIVE_TEST_ADMIN }}
         run: |
+          if [[ -n "$LIVE_TEST_ADMIN" && ! "$LIVE_TEST_ADMIN" =~ ^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}:[0-9a-f]{64}:[0-9]{13}$ ]]; then
+            echo "Invalid live test-admin configuration" >&2
+            exit 1
+          fi
           SSH="ssh -i ~/.ssh/lobby_key -p ${{ secrets.SSH_PORT }} ${{ secrets.SSH_USER_LOBBY }}@${{ secrets.SSH_HOST }}"
           # The server keeps a git checkout at SSH_PATH_LOBBY.
           # Pull the pushed commit, install deps, restart under pm2, verify health.
@@ -110,7 +116,7 @@ jobs:
             git fetch --depth 1 origin ${{ github.sha }}; \
             git reset --hard ${{ github.sha }}; \
             npm ci; \
-            AGENT_OS_REVISION=${{ github.sha }} pm2 startOrReload deploy/ecosystem.config.cjs --only lobby-server --update-env; \
+            AGENT_OS_REVISION=${{ github.sha }} AGENT_OS_LIVE_TEST_ADMIN='$LIVE_TEST_ADMIN' pm2 startOrReload deploy/ecosystem.config.cjs --only lobby-server --update-env; \
             pm2 save; \
             for i in \$(seq 1 10); do curl -fsS http://127.0.0.1:4730/health | grep -q '${{ github.sha }}' && exit 0; sleep 2; done; \
             echo 'health check failed' >&2; exit 1"
