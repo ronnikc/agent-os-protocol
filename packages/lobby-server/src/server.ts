@@ -3505,7 +3505,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (!['approved', 'rejected', 'deferred'].includes(body.decision)) {
         return json({ error: 'decision must be approved, rejected, or deferred' }, 400);
       }
-      const updated = await applyRequestDecision(lobbyId, requestId, body.decision, identity,
+      const updated = await applyRequestDecision(lobbyId, requestId, body.decision, 'Lobby manager',
         typeof body.decision_notes === 'string' ? body.decision_notes : '');
       if (updated === 'not-found') return json({ error: 'request not found' }, 404);
       if (!updated) return json({ error: 'failed to update request' }, 500);
