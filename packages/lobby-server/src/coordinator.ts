@@ -555,6 +555,7 @@ export class LobbyCoordinator {
       priority: msg.priority ?? 'normal',
       category: msg.category ?? 'general',
       files: msg.files,
+      output_mode: msg.output_mode === 'text' || msg.output_mode === 'repository' ? msg.output_mode : undefined,
       status: 'assigned',
       seq,
     };
