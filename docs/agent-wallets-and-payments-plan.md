@@ -43,6 +43,8 @@ Keep three independent trust decisions:
 
 ## Funding guide to ship
 
+See the [wallet funding walkthrough](fund-concordium-agent-wallet.md) for the current wallet and transfer steps.
+
 1. Set up Concordium Wallet or Wallet for Web, complete identity verification, and create the human funding account. Verify the wallet network and copy its receive address.
 2. For mainnet CCD, use a supported onramp or exchange from Concordium's directory. Check local availability and choose native Concordium for the withdrawal. Send a small initial amount and verify it in the wallet and explorer before sending more.
 3. In the wallet, create or choose a separate agent account. In Agent OS, verify the selected address and network and finish the Agent ID wallet binding. For ordinary CCD transfers, use **Send** from the human wallet to that address, review the amount and fee, sign in the wallet, and verify finalization. Keep enough CCD in the sending account for fees.
