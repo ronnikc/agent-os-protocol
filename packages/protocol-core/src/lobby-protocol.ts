@@ -68,6 +68,7 @@ export interface LobbyAgent {
   identity_status?: IdentityVerificationStatus;
   /** Non-secret registry reference (the DID) the agent presented, when any. Never a key. */
   identity_ref?: string;
+  identity_registry_links?: { registration: string; explorer: string };
   /** API / Model used by the agent (e.g. "gpt-4o-mini"). */
   model?: string;
   /** Runtime environment (e.g. "Claude CLI", "Codex CLI", "API"). */

@@ -6,7 +6,6 @@ const CCD_EXPLORER_BASE = `https://ccdexplorer.io/${CCD_NETWORK}`;
 // Concordium Agent Registry contract instance <index,subindex> — used for explorer links only.
 // Set this to the live registry instance for your network before relying on the links
 // (see https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/index.html).
-const CCD_AGENT_REGISTRY_CONTRACT = '9458,0';
 // Concordium-hosted public REST/GraphQL endpoints for balance lookup (per network).
 const CCD_WALLET_PROXY_BASE = {
   mainnet: 'https://wallet-proxy.mainnet.concordium.software',
@@ -122,25 +121,13 @@ function getExplorerLink(did) {
   if (parts.length < 4) return null;
   const network = parts[2]; // 'mainnet' or 'testnet'
   const id = parts.slice(3).join(':'); // token ID, address, or agent sub-ID
-  const [registryIndex, registrySubindex] = CCD_AGENT_REGISTRY_CONTRACT.split(',');
-  const registryInstanceUrl = `https://ccdexplorer.io/${encodeURIComponent(network)}/instance/${registryIndex}/${registrySubindex}`;
   // If the ID is a wallet address (long base58), link to the account page.
   // Every interpolated segment is user-controlled (agents register arbitrary DIDs), so
   // encode them — unencoded values enabled stored XSS via crafted DIDs in href attributes.
-  if (id.length >= 40 && !id.startsWith('agent-')) {
+  if (/^(mainnet|testnet)$/.test(network) && /^[1-9A-HJ-NP-Za-km-z]{40,55}$/.test(id)) {
     return `https://ccdexplorer.io/${encodeURIComponent(network)}/account/${encodeURIComponent(id)}`;
   }
-  // If it is a numeric token index, link to the Agent Registry contract instance holding it
-  if (/^\d+$/.test(id)) {
-    return registryInstanceUrl;
-  }
-  // For agent sub-IDs (agent-XXXX), link to the owner's wallet account page
-  // where they can see all their registered agent tokens
-  if (id.startsWith('agent-') && state.wallet.address) {
-    return `https://ccdexplorer.io/${encodeURIComponent(network)}/account/${encodeURIComponent(state.wallet.address)}`;
-  }
-  // Fallback: link to the agent registry contract instance on the right network
-  return registryInstanceUrl;
+  return null;
 }
 
 const MODAL_TYPES = {
@@ -207,7 +194,7 @@ window.showAgentCard = function(agentId) {
   const titleEl = document.getElementById('styled-modal-title');
   const msgEl = document.getElementById('styled-modal-message');
   const buttonsEl = document.getElementById('styled-modal-buttons');
-  if (!agent || !overlay) return;
+  if (!agent?.identity_registry_links || !overlay) return;
 
   const isVerified = ['verified', 'registry_verified', 'human_linked', 'org_linked'].includes(agent.identity_status);
   const hasDid = !!agent.identity_ref;
@@ -217,14 +204,11 @@ window.showAgentCard = function(agentId) {
   let didHtml = '<span style="color:var(--color-text-soft);">none</span>';
   let explorerHtml = '';
   if (did) {
-    // Reuse the SAME resolver the ID-creation flow uses (getExplorerLink) so the CCDExplorer link is
-    // always valid — an agent DID is often did:ccd:<net>:agent-XXXX or a token index, NOT an account
-    // address, and the old hand-built `/account/<sub-id>` URL pointed at a non-existent page.
-    const link = getExplorerLink(did);
+    const { registration: link, explorer } = agent.identity_registry_links;
     didHtml = link
-      ? `<a href="${escapeHtml(link)}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;word-break:break-all;">${escapeHtml(did)} ↗</a>`
+      ? `<a href="${escapeHtml(link)}" target="_blank" rel="noopener" style="color:var(--color-cyan);text-decoration:underline;word-break:break-all;">${escapeHtml(did)} ↗</a>`
       : `<span style="word-break:break-all;">${escapeHtml(did)}</span>`;
-    if (link) explorerHtml = `<a href="${escapeHtml(link)}" target="_blank" style="color:var(--color-cyan);text-decoration:underline;">View on CCDExplorer ↗</a>`;
+    if (explorer) explorerHtml = `<a href="${escapeHtml(explorer)}" target="_blank" rel="noopener" style="color:var(--color-cyan);text-decoration:underline;">View on CCDExplorer ↗</a>`;
   }
   const row = (k, v) => `<div style="display:flex;gap:8px;margin-bottom:6px;"><span style="min-width:96px;color:var(--color-text-soft);">${k}</span><span style="flex:1;">${v}</span></div>`;
 
@@ -402,13 +386,13 @@ function renderRoster() {
         
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Agent ID:</span></div>
-          <div class="agent-meta-val" style="cursor:pointer;" title="View agent card" data-agent-card="${escapeHtml(agent.agent_id)}">${idHtml}</div>
+          <div class="agent-meta-val">${idHtml}</div>
         </div>
         <div class="agent-meta-row">
           <div><span class="agent-meta-label">Identity:</span></div>
           <div class="agent-meta-val" style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span style="color: ${idColor}; font-weight:600;">${escapeHtml(idLabel)}</span>
-            <a role="button" tabindex="0" class="agent-card-link" title="Open the Agent ID Card" data-agent-card="${escapeHtml(agent.agent_id)}" style="color:var(--color-cyan); cursor:pointer; text-decoration:underline; font-size:12px;">Agent ID Card</a>
+            ${agent.identity_registry_links ? `<button type="button" class="agent-card-link" data-agent-card="${escapeHtml(agent.agent_id)}">Agent ID Card</button>` : ''}
           </div>
         </div>
         <div class="agent-meta-row">
