@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AccountAddress, buildAccountSigner, SequenceNumber } from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient } from '@concordium/web-sdk/nodejs';
 import { HEADER, verifier } from '@proof.com/x401-node';
 import { CONCORDIUM_TESTNET_CAIP2 } from '@x402/concordium';
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import type { PaymentRequirements } from '@x402/core/types';
-import { requestCommerceResource, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
+import { requestCommerceResource, requestWithSpendingLimit, SpendingLedger, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
 
 const account = (fill: number) => AccountAddress.fromBuffer(Buffer.alloc(32, fill));
 const policy: CommercePolicy = {
@@ -105,10 +108,42 @@ async function main() {
     });
     assert.equal(uncertain.state, 'unconfirmed');
     assert.equal(timeoutRequests, 2, 'a failed payment response must not trigger another payment attempt');
+
+    const directory = mkdtempSync(join(tmpdir(), 'agent-os-spending-'));
+    const path = join(directory, 'reservations.json');
+    try {
+      let payments = 0;
+      const merchant: typeof fetch = async (_url, init) => {
+        if (!new Headers(init?.headers).has('PAYMENT-SIGNATURE')) return paymentRequired();
+        payments++;
+        throw new Error('connection lost after authorization');
+      };
+      const first = await requestWithSpendingLimit(policy, authorization, new SpendingLedger(path), 'order-1', 15_000n, merchant);
+      assert.equal(first.result.state, 'unconfirmed');
+      assert.ok(first.reservationId);
+      const reopened = new SpendingLedger(path);
+      assert.throws(() => reopened.releaseUnsigned(first.reservationId!), /Only an unsigned reservation/);
+      await assert.rejects(requestWithSpendingLimit(policy, authorization, reopened, 'order-1', 15_000n, merchant), /already has a reservation/);
+      const alias = AccountAddress.getAlias(account(3), 1).address;
+      await assert.rejects(requestWithSpendingLimit({ ...policy, payer: alias }, authorization, reopened, 'order-2', 15_000n, merchant), /daily limit/);
+      assert.equal(payments, 1, 'unknown settlement and aliases must not authorize another charge');
+
+      const rejected = { ...authorization, async authorize() { throw new Error('owner declined'); } };
+      await assert.rejects(requestWithSpendingLimit(policy, rejected, reopened, 'order-3', 20_000n, merchant), /owner declined/);
+      const second = await requestWithSpendingLimit(policy, authorization, reopened, 'order-4', 20_000n, async (_url, init) => {
+        if (!new Headers(init?.headers).has('PAYMENT-SIGNATURE')) return paymentRequired();
+        return new Response('resource', { headers: { 'PAYMENT-RESPONSE': encodePaymentResponseHeader(receipt) } });
+      });
+      assert.equal(second.result.state, 'settled');
+      await assert.rejects(requestWithSpendingLimit(policy, authorization, reopened, 'order-5', 20_000n, merchant), /daily limit/);
+    } finally {
+      rmSync(path, { force: true });
+      rmdirSync(directory);
+    }
   } finally {
     ConcordiumGRPCNodeClient.prototype.getNextAccountNonce = originalNonce;
   }
-  console.log('Commerce verification passed: proof gating, policy, official sponsored signing, settlement, and uncertain retry.');
+  console.log('Commerce verification passed: proof gating, policy, official sponsored signing, settlement, uncertain retry, and durable spending limits.');
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1; });
