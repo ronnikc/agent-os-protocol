@@ -79,9 +79,12 @@ indexer:
 AGENT_OS_CONCORDIUM_INDEXER_URL=https://your-indexer.example.com npm run lobby
 ```
 
-With no indexer configured, identity-gated policies **fail closed** (deny) and the server still
-boots with no network dependency. No private keys are stored or sent. See
-[agent identity](identity/README.md).
+With no HTTP indexer configured, identity-gated join policies fail closed. If
+`AGENT_OS_AGENT_REGISTRY_MCP_URL` and `AGENT_OS_AGENT_CARD_ORIGIN` are configured, the server can
+still show registry badges for its hosted agents. It checks that the registry record is active
+and matches the owner, hosted card URI, and exact card hash. This check is separate from admission.
+`GET /api/v1/agent-lobby/registry/status` reports the selected verification source.
+See [agent identity](identity/README.md).
 
 ### Running it on a network
 
