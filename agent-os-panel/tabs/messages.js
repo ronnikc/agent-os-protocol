@@ -1,7 +1,7 @@
 /**
  * Messages Tab — Enhanced message bus viewer with filtering, threading, send
  */
-import { state, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate, renderMarkdownSafe, agentName, refreshAgentNameMap } from '../app.js';
+import { state, fetchJson, postJson, registerTab, onWsMessage, formatTime, escapeHtml, truncate, renderMarkdownSafe, agentName, refreshAgentNameMap, showAlert } from '../app.js';
 
 let messages = [];
 let wsMessages = []; // lobby messages received via WebSocket (persist across refresh)
@@ -274,13 +274,17 @@ function init() {
     const content = contentEl?.value?.trim();
     if (!content) return;
 
-    await postJson('/api/messages', {
+    const sent = await postJson('/api/messages', {
       from: 'panel',
       to: toEl?.value || '*',
       type: typeEl?.value || 'finding',
       content,
     });
 
+    if (!sent || sent.error) {
+      showAlert('Message could not be sent', sent?.error || 'The panel could not reach the lobby.');
+      return;
+    }
     if (contentEl) contentEl.value = '';
     await refresh();
   }

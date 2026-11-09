@@ -21,7 +21,8 @@ export interface HostedAgentOptions {
 
 export class HostedAgentRunner {
   private handle?: AgentProcessHandle;
-  private running = false;
+  private turn?: Promise<string>;
+  private tasks?: Promise<void>;
 
   constructor(private readonly adapter: AgentRuntimeAdapter, private readonly opts: HostedAgentOptions = {}) {}
 
@@ -32,7 +33,18 @@ export class HostedAgentRunner {
   }
 
   /** True while a turn is in flight — callers that must not drop work (task execution) wait on it. */
-  get busy(): boolean { return this.running; }
+  get busy(): boolean { return !!(this.turn || this.tasks); }
+
+  /** Reserve the runner for a task, including preparation and follow-up turns. */
+  runTask(work: (respond: (content: string) => Promise<string>) => Promise<void>): Promise<void> {
+    const pending = this.tasks ?? this.turn?.then(() => {}, () => {});
+    const task = Promise.resolve(pending)
+      .then(() => work(content => this.runTurn(content)))
+      .finally(() => { if (this.tasks === tail) this.tasks = undefined; });
+    const tail = task.then(() => {}, () => {});
+    this.tasks = tail;
+    return task;
+  }
 
   /**
    * Run one turn for an inbound message and return the reply text ('' if none). Serialised: a
@@ -40,20 +52,25 @@ export class HostedAgentRunner {
    * interleave turns on the single session.
    */
   async respondTo(content: string): Promise<string> {
-    if (!this.handle) await this.start();
-    if (this.running) return '';
-    this.running = true;
+    if (this.busy) return '';
+    const turn = this.runTurn(content);
+    this.turn = turn;
     try {
-      await this.adapter.sendInput(this.handle!, { type: 'user', content });
-      let reply = '';
-      for await (const ev of this.adapter.readOutput(this.handle!)) {
-        if (ev.type === 'error') return `⚠ ${ev.content ?? 'runtime error'}`;
-        if (ev.type === 'done') reply = ev.content ?? reply;
-      }
-      return reply.trim();
+      return await turn;
     } finally {
-      this.running = false;
+      this.turn = undefined;
     }
+  }
+
+  private async runTurn(content: string): Promise<string> {
+    if (!this.handle) await this.start();
+    await this.adapter.sendInput(this.handle!, { type: 'user', content });
+    let reply = '';
+    for await (const ev of this.adapter.readOutput(this.handle!)) {
+      if (ev.type === 'error') return `⚠ ${ev.content ?? 'runtime error'}`;
+      if (ev.type === 'done') reply = ev.content ?? reply;
+    }
+    return reply.trim();
   }
 
   async stop(): Promise<void> {

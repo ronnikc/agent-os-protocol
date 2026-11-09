@@ -6,7 +6,7 @@ import type { LobbySession } from '@agent-os/protocol-core';
 import type { LobbyStore } from '../store.js';
 import { issueSessionToken, liveTestAdminConfig, testAdminKeyDigest, TEST_ADMIN_IDENTITY, TEST_ADMIN_LOBBY_ID } from './identityProof.js';
 
-export async function signInTestAdmin(store: LobbyStore, key: unknown) {
+export async function signInTestAdmin(store: LobbyStore, key: unknown, requestedLobbyId?: string) {
   const live = liveTestAdminConfig();
   const digest = live?.digest ?? testAdminKeyDigest();
   if (!digest) return { status: 404 } as const;
@@ -15,7 +15,12 @@ export async function signInTestAdmin(store: LobbyStore, key: unknown) {
     return { status: 401 } as const;
   }
 
-  let lobby = await store.getLobby(live?.lobbyId ?? TEST_ADMIN_LOBBY_ID);
+  const lobbyId = live?.lobbyId === 'all'
+    ? requestedLobbyId ?? (await store.listLobbies()).find(lobby => lobby.status === 'active' && lobby.visibility === 'public')?.lobby_id
+    : live?.lobbyId ?? TEST_ADMIN_LOBBY_ID;
+  if (!lobbyId) return { status: 404 } as const;
+  if (requestedLobbyId && requestedLobbyId !== lobbyId) return { status: 403 } as const;
+  let lobby = await store.getLobby(lobbyId);
   if (live && !lobby) return { status: 404 } as const;
   if (!lobby) {
     const now = new Date().toISOString();
@@ -41,5 +46,8 @@ export async function signInTestAdmin(store: LobbyStore, key: unknown) {
     lobby,
     identity_ref: TEST_ADMIN_IDENTITY,
     token: issueSessionToken(TEST_ADMIN_IDENTITY, lobby.lobby_id),
+    ...(live?.lobbyId === 'all'
+      ? { lobbies: (await store.listLobbies()).map(({ lobby_id, name, visibility }) => ({ lobby_id, name, visibility })) }
+      : {}),
   } as const;
 }

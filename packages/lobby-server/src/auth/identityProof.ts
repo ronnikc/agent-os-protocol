@@ -12,13 +12,18 @@ export const TEST_ADMIN_LOBBY_ID = 'd47340a1-af18-4e77-aeb2-40dc86fb9810';
 const TEST_ADMIN_SESSION_TTL_MS = 60 * 60 * 1000;
 
 export function liveTestAdminConfig(env: NodeJS.ProcessEnv = process.env) {
-  const config = env.AGENT_OS_LIVE_TEST_ADMIN?.match(/^([0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):([0-9a-f]{64}):(\d{13})$/i);
+  const config = env.AGENT_OS_LIVE_TEST_ADMIN?.match(/^(all|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}):([0-9a-f]{64}):(\d{13})$/i);
   if (!config || !isProduction(env)) return;
   const [, lobbyId, digest, deadline] = config;
   const expiresAt = Number(deadline);
   const now = Date.now();
   if (expiresAt <= now || expiresAt - now > 24 * TEST_ADMIN_SESSION_TTL_MS) return;
   return { lobbyId, digest, expiresAt };
+}
+
+export function liveTestAdminAllowsLobby(lobbyId: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const scope = liveTestAdminConfig(env)?.lobbyId;
+  return scope === 'all' || scope === lobbyId;
 }
 
 export function testAdminKeyDigest(env: NodeJS.ProcessEnv = process.env): string | undefined {
@@ -176,8 +181,8 @@ export function validateSessionToken(token: string, lobbyId: string, env: NodeJS
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8')) as SessionTokenPayload;
     if (!payload.identityRef || payload.lobbyId !== lobbyId) return null;
     if (payload.identityRef === TEST_ADMIN_IDENTITY) {
-      const allowedLobby = liveTestAdminConfig(env)?.lobbyId ?? (testAdminKeyDigest(env) ? TEST_ADMIN_LOBBY_ID : undefined);
-      if (lobbyId !== allowedLobby) return null;
+      if (!liveTestAdminAllowsLobby(lobbyId, env) &&
+          !(lobbyId === TEST_ADMIN_LOBBY_ID && testAdminKeyDigest(env))) return null;
     }
     if (Date.now() > payload.expiresAt) return null;
     return payload;
