@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm, signInToLobby } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showAgentIdCard, showConfirm, signInToLobby } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
@@ -795,13 +795,7 @@ function init() {
     if (!btn) return;
     if (btn.dataset.action === 'agent-id-card') {
       const agent = remoteAgents.find(a => a.agent_id === btn.dataset.agentId);
-      if (!agent?.identity_registry_links || !agent.identity_ref) return;
-      const { registration, explorer } = agent.identity_registry_links;
-      showHtmlAlert('Agent ID Card', `
-        <p><strong>${escapeHtml(agent.display_name)}</strong> · ${escapeHtml(agent.agent_role || 'Generalist')}</p>
-        <p><a href="${escapeHtml(registration)}" target="_blank" rel="noopener">${escapeHtml(agent.identity_ref)} ↗</a></p>
-        <p><a href="${escapeHtml(explorer)}" target="_blank" rel="noopener">View on CCDExplorer ↗</a></p>
-      `);
+      if (agent) showAgentIdCard(agent.display_name, agent.agent_role, agent.identity_ref, agent.identity_registry_links);
       return;
     }
     if (btn.dataset.action === 'toggle-create-lobby') {

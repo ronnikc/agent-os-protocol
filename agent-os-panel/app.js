@@ -668,6 +668,15 @@ export function showHtmlAlert(title, html) {
     </div>
   `);
 }
+
+export function showAgentIdCard(name, role, did, links) {
+  if (!did || !links) return;
+  showHtmlAlert('Agent ID Card', `
+    <p><strong>${escapeHtml(name)}</strong> · ${escapeHtml(role || 'Generalist')}</p>
+    <p><a href="${escapeHtml(links.registration)}" target="_blank" rel="noopener">${escapeHtml(did)} ↗</a></p>
+    <p><a href="${escapeHtml(links.explorer)}" target="_blank" rel="noopener">View on CCDExplorer ↗</a></p>
+  `);
+}
 if (typeof window !== 'undefined') {
   window.showHtmlAlert = showHtmlAlert;
 }

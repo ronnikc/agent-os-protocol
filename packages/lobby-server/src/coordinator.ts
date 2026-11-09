@@ -438,7 +438,8 @@ export class LobbyCoordinator {
         const member = await this.store.getMember(conn.lobbyId, senderAgent.identity_ref);
         const active = member
           ? member.status === 'active' && (!member.expires_at || Date.parse(member.expires_at) > Date.now())
-          : senderAgent.identity_ref === lobbyOwnerRef(lobby);
+          : senderAgent.identity_ref === lobbyOwnerRef(lobby) ||
+            effectiveJoinPolicy(lobby) === 'allowlisted' && lobby.allowlist?.includes(senderAgent.identity_ref);
         if (!active) {
           await this.event(conn.lobbyId, 'message_rejected', conn.agentId, { reason: 'membership revoked or expired' });
           return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'your membership to this private lobby has been revoked or expired' } }], close: true };
