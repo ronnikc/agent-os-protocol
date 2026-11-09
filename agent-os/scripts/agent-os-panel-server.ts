@@ -397,23 +397,9 @@ async function connectLobbyWs(): Promise<void> {
             content: `🤚 **${msg.hand?.display_name || msg.hand?.agent_name || msg.agent_id || '?'}** raised hand [${msg.hand?.category || 'general'}]: ${msg.hand?.reason || ''}`,
             created_at: new Date().toISOString(),
           });
-          const handRequest = {
-            request_id: `req-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
-            agent_id: msg.hand?.agent_id || msg.agent_id,
-            agent_display_name: msg.hand?.display_name || msg.hand?.agent_name || msg.agent_id,
-            title: `HAND: ${msg.hand?.display_name || msg.hand?.agent_name || '?'} — ${msg.hand?.category || 'general'}`,
-            description: msg.hand?.reason || '',
-            category: 'hand_raise',
-            status: 'pending',
-            created_at: new Date().toISOString(),
-          };
-          localLobbyRequests.push(handRequest);
-          broadcastWs('lobby-request', handRequest);
         }
         if (msg.type === 'lobby-request-created' || msg.type === 'lobby-request-updated') {
-          const req = msg.request || msg;
-          if (req.request_id) localLobbyRequests.push(req);
-          broadcastWs('lobby-request', req);
+          broadcastWs('lobby-request', msg.request || msg);
         }
         if (msg.type === 'lobby-request-decided') {
           broadcastWs('lobby-request-decided', msg.request || msg);
@@ -2323,7 +2309,7 @@ const server = createServer(async (req, res) => {
   if (path === '/api/lobby/remote/requests' && method === 'GET') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId) { sendJson(res, { requests: [], error: 'No active lobby' }); return; }
-    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/pending`);
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL, `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/requests`, 'GET', undefined, reqHeaders(req));
     sendJson(res, data);
     return;
   }
@@ -2351,8 +2337,8 @@ const server = createServer(async (req, res) => {
       const lobbyId = await resolveLobbyId(req);
       if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
       const data = await proxyToStaging(DEFAULT_LOBBY_URL,
-        `/api/v1/agent-lobby/lobbies/${lobbyId}/requests/${params.id}/decide`,
-        'POST', JSON.stringify(body));
+        `/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/requests/${encodeURIComponent(params.id)}/decide`,
+        'POST', JSON.stringify(body), reqHeaders(req));
       sendJson(res, data);
       return;
     }
@@ -2925,6 +2911,11 @@ const server = createServer(async (req, res) => {
   }
 
   // ── Local Lobby Requests (mirrors staging's requests endpoint) ──
+  if (path === '/api/v1/agent-lobby/lobbies/local/requests' && method === 'GET') {
+    sendJson(res, { requests: [...localLobbyRequests].reverse() });
+    return;
+  }
+
   if (path.match(/^\/api\/v1\/agent-lobby\/lobbies\/[^/]+\/requests\/pending$/) && method === 'GET') {
     const pending = localLobbyRequests.filter(r => r.status === 'pending');
     sendJson(res, { requests: pending });
