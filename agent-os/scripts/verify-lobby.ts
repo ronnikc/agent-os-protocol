@@ -22,6 +22,7 @@ import { InMemoryLobbyStore, LobbyCoordinator, startLobbyServer, RegistrySponsor
 import { LobbyClient } from '@agent-os/lobby-client';
 import { issueSessionToken } from '../../packages/lobby-server/src/auth/identityProof.js';
 import { createRegistryRosterVerifier } from '../../packages/lobby-server/src/hosted/registry-roster-verifier.js';
+import { resolveProviderKey, setProviderKey } from '../../packages/lobby-server/src/providers/key-custody.js';
 import { WebSocket } from 'ws';
 
 let passed = 0;
@@ -399,6 +400,26 @@ async function main(): Promise<void> {
       a.send({ type: 'lobby-message', to_agent_id: 'all', message_type: 'chat', content: 'lobby1 only' });
       await sleep(400);
       assert.equal(leaked, false, 'lobby 2 must not receive lobby 1 traffic');
+    });
+
+    await check('a lobby owner cannot revoke another lobby’s provider key', async () => {
+      const first = { ...makeLobby('private'), created_by: 'provider-key-owner-a' };
+      const second = { ...makeLobby('private'), created_by: 'provider-key-owner-b' };
+      await server.store.createLobby(first);
+      await server.store.createLobby(second);
+      const env = { AGENT_OS_SECRET_ENCRYPTION_KEY: 'verify-lobby-provider-key-fixture' };
+      const key = await setProviderKey(server.store, {
+        lobbyId: second.lobby_id, provider: 'openai', apiKey: 'synthetic-key',
+        identityRef: second.created_by, env,
+      });
+      const revoke = (lobby: LobbySession) => fetch(
+        `${lobbyUrl}/api/v1/agent-lobby/lobbies/${lobby.lobby_id}/provider-keys/${key.id}`,
+        { method: 'DELETE', headers: { authorization: `Bearer ${issueSessionToken(lobby.created_by, lobby.lobby_id)}` } },
+      );
+      assert.equal((await revoke(first)).status, 404);
+      assert.equal((await resolveProviderKey(server.store, second.lobby_id, 'openai', undefined, env))?.apiKey, 'synthetic-key');
+      assert.equal((await revoke(second)).status, 200);
+      assert.equal(await resolveProviderKey(server.store, second.lobby_id, 'openai', undefined, env), null);
     });
 
     await check('private lobby management requires proof, and revocation and closure disconnect agents', async () => {
