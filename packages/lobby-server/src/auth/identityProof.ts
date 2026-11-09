@@ -165,7 +165,7 @@ export function assertDevBridgeNotInProduction(env: NodeJS.ProcessEnv = process.
 
 /** Validate a short-lived, HMAC-signed lobby session token. Returns the payload, or null if the
  *  token is forged, tampered, expired, or bound to a different lobby. */
-export function validateSessionToken(token: string, lobbyId: string, env: NodeJS.ProcessEnv = process.env): SessionTokenPayload | null {
+function readSessionToken(token: string, env: NodeJS.ProcessEnv): SessionTokenPayload | null {
   try {
     const dot = token.lastIndexOf('.');
     if (dot <= 0) return null;
@@ -179,14 +179,23 @@ export function validateSessionToken(token: string, lobbyId: string, env: NodeJS
     if (a.length !== b.length || !timingSafeEqual(a, b)) return null;
 
     const payload = JSON.parse(Buffer.from(payloadB64, 'base64url').toString('utf-8')) as SessionTokenPayload;
-    if (!payload.identityRef || payload.lobbyId !== lobbyId) return null;
-    if (payload.identityRef === TEST_ADMIN_IDENTITY) {
-      if (!liveTestAdminAllowsLobby(lobbyId, env) &&
-          !(lobbyId === TEST_ADMIN_LOBBY_ID && testAdminKeyDigest(env))) return null;
-    }
-    if (Date.now() > payload.expiresAt) return null;
+    if (!payload.identityRef || !payload.lobbyId || !Number.isFinite(payload.expiresAt) || Date.now() > payload.expiresAt) return null;
     return payload;
   } catch {
     return null;
   }
+}
+
+export function validateSessionToken(token: string, lobbyId: string, env: NodeJS.ProcessEnv = process.env): SessionTokenPayload | null {
+  const payload = readSessionToken(token, env);
+  if (payload?.lobbyId !== lobbyId) return null;
+  if (payload.identityRef === TEST_ADMIN_IDENTITY && !liveTestAdminAllowsLobby(lobbyId, env) &&
+      !(lobbyId === TEST_ADMIN_LOBBY_ID && testAdminKeyDigest(env))) return null;
+  return payload;
+}
+
+/** A wallet may discover its own invitations across lobbies using a valid session. */
+export function walletDiscoveryIdentity(token: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const identity = readSessionToken(token, env)?.identityRef;
+  return identity?.startsWith('did:ccd:') ? identity : null;
 }

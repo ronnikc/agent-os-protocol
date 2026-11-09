@@ -68,10 +68,13 @@ export interface LobbyAgent {
   identity_status?: IdentityVerificationStatus;
   /** Non-secret registry reference (the DID) the agent presented, when any. Never a key. */
   identity_ref?: string;
+  identity_registry_links?: { registration: string; explorer: string };
   /** API / Model used by the agent (e.g. "gpt-4o-mini"). */
   model?: string;
   /** Runtime environment (e.g. "Claude CLI", "Codex CLI", "API"). */
   runtime?: string;
+  /** False when a local relay has joined for observation only. */
+  execution_enabled?: boolean;
 }
 
 // ── Lobby Messages (inter-agent communication) ──
@@ -231,6 +234,7 @@ export type AgentToLobbyMessage =
       join_token?: string;
       /** Agent DID presented alongside an external wallet session. */
       agent_identity_ref?: string;
+      execution_enabled?: boolean;
       /** Marks a browser human participant (exempt from floor control). Defaults to cli_agent. */
       participant_type?: LobbyParticipantType;
       /** API / Model used by the agent. */

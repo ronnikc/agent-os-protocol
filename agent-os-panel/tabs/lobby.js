@@ -2,7 +2,7 @@
  * Lobby Tab — Agent roster + floor control + join/leave.
  * No sub-tabs — Messages, Tasks, and Requests are now top-level tabs.
  */
-import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showConfirm, signInToLobby } from '../app.js';
+import { fetchJson, postJson, registerTab, onWsMessage, escapeHtml, formatTime, showModal, closeModal, showAlert, showHtmlAlert, showAgentIdCard, showConfirm, signInToLobby } from '../app.js';
 
 let lobbyState = { bossAgentSlug: null, phase: 'idle', handRaises: [], floorHolder: null, humanUsers: [] };
 let remoteAgents = [];
@@ -252,6 +252,9 @@ function renderLobby() {
               <span class="status-dot status-running"></span>
               <strong>${escapeHtml(a.display_name || a.name || a.agent_id)}</strong>
               ${identityBadge(a)}
+              ${a.identity_registry_links && a.identity_ref ? `
+                <button type="button" class="btn btn-sm btn-secondary" data-action="agent-id-card" data-agent-id="${escapeHtml(a.agent_id)}">Agent ID Card</button>
+              ` : ''}
               ${isPanel
                 ? `<span class="badge badge-muted" style="margin-left:6px;font-size:10px;" title="Panel is a UI connection only, not a Claude session">panel (UI only)</span>`
                 : `<select data-action="change-role" data-agent-id="${a.agent_id}" style="margin-left:6px;font-size:10px;padding:2px 4px;background:var(--bg-base);color:var(--text-secondary);border:1px solid var(--border);border-radius:3px;">
@@ -790,6 +793,11 @@ function init() {
   document.getElementById('lobby-content')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
+    if (btn.dataset.action === 'agent-id-card') {
+      const agent = remoteAgents.find(a => a.agent_id === btn.dataset.agentId);
+      if (agent) showAgentIdCard(agent.display_name, agent.agent_role, agent.identity_ref, agent.identity_registry_links);
+      return;
+    }
     if (btn.dataset.action === 'toggle-create-lobby') {
       createLobbyFormOpen = !createLobbyFormOpen;
       renderLobby();
