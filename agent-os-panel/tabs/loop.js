@@ -28,6 +28,21 @@ function statusColor(s) {
   return 'var(--color-text-soft)';
 }
 
+function criterionLabel(criterion) {
+  switch (criterion.type) {
+    case 'gate':
+      return criterion.threshold == null ? criterion.skill : `${criterion.skill} (threshold: ${criterion.threshold})`;
+    case 'tests':
+      return 'Tests must pass';
+    case 'review':
+      return `Review by ${criterion.approver}`;
+    case 'assertion':
+      return criterion.expr;
+    default:
+      return criterion.type;
+  }
+}
+
 function render() {
   const el = document.getElementById('loop-content');
   if (!el) return;
@@ -92,7 +107,7 @@ function render() {
       return `
         <div class="loop-criterion-item">
           <span class="loop-criterion-check ${cls}">${icon}</span>
-          <span style="color:${isPassed ? 'var(--color-text)' : 'var(--color-text-muted)'}">${escapeHtml(cr.criterion)}</span>
+          <span style="color:${isPassed ? 'var(--color-text)' : 'var(--color-text-muted)'}">${escapeHtml(criterionLabel(cr.criterion))}</span>
         </div>
       `;
     }).join('') : '';
