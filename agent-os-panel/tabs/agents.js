@@ -2,7 +2,7 @@
  * Agents Tab — Agent management (start/stop, presets, bulk operations)
  * Refactored from original index.html inline JS.
  */
-import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby, showIdentitySuccessModal } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby, showAgentIdCard, showIdentitySuccessModal } from '../app.js';
 
 let selected = new Set();
 let lobbyMode = 'local';
@@ -15,7 +15,7 @@ function getIdentityBadge(status) {
     pending: ['badge-identity-pending', 'Pending'],
     // An Agent ID is persisted but the agent is offline, so it hasn't been live-verified against the
     // Concordium registry yet (that happens when it connects). Neutral — not a failure like Unverified.
-    configured: ['badge-identity-verified', 'Verified'],
+    configured: ['badge-identity-pending', 'ID set'],
     failed: ['badge-identity-failed', 'Failed'],
     unverified: ['badge-identity-unverified', 'Unverified']
   };
@@ -62,7 +62,9 @@ function renderAgents() {
     const isRunning = a.status === 'running';
     const hasDid = !!a.identity;
     const didCell = hasDid
-      ? `<div style="font-family:var(--mono);font-size:10px;color:var(--color-text-soft);margin-top:3px;" title="${escapeHtml(a.identity)}">${escapeHtml(shortDid(a.identity))}</div>`
+      ? `<div style="font-family:var(--mono);font-size:10px;color:var(--color-text-soft);margin-top:3px;" title="${escapeHtml(a.identity)}">${a.identity_registry_links
+        ? `<button type="button" class="btn btn-sm btn-secondary" data-action="agent-id-card" data-slug="${escapeHtml(a.slug)}" aria-label="Open Agent ID Card for ${escapeHtml(a.name)}">${escapeHtml(shortDid(a.identity))}</button>`
+        : escapeHtml(shortDid(a.identity))}</div>`
       : '';
     const idBtn = hasDid
       ? `<button class="btn btn-sm" data-action="create-id" data-slug="${a.slug}" title="Mint a NEW on-chain Agent ID (sponsored) and bind it to this agent">Re-mint ID</button>
@@ -576,6 +578,7 @@ async function refresh() {
           runtime: activeRemote?.runtime || la.runtime,
           model: activeRemote?.model || la.model,
           identity: activeRemote?.identity_ref || la.identity,
+          identity_registry_links: activeRemote?.identity_ref ? activeRemote.identity_registry_links : undefined,
         };
       });
     } else {
@@ -612,6 +615,11 @@ function init() {
     const btn = e.target.closest('[data-action]');
     if (!btn) return;
     const slug = btn.dataset.slug;
+    if (btn.dataset.action === 'agent-id-card') {
+      const agent = state.agents.find(a => a.slug === slug);
+      if (agent) showAgentIdCard(agent.name, slug, agent.identity, agent.identity_registry_links);
+      return;
+    }
     if (btn.dataset.action === 'start') startOne(slug);
     if (btn.dataset.action === 'stop') stopOne(slug);
     if (btn.dataset.action === 'set-id') setId(slug);

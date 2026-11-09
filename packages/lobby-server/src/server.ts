@@ -22,7 +22,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { WebSocketServer, WebSocket } from 'ws';
-import { loadEnv, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
+import { loadEnv, isRegistryResolved, type AgentToLobbyMessage, type LobbyToAgentMessage, type LobbyAgent, type LobbySession, type LobbyMessage, type LobbyEventType, type LobbyTask } from '@agent-os/protocol-core';
 import { InMemoryLobbyStore, type LobbyStore, type HostedAgentSpec, type LobbyWorkSession } from './store.js';
 import { LobbyCoordinator, type Connection, type Outbound } from './coordinator.js';
 import { HttpIndexerTransport, IdentityVerifier, makeVerifyIdentityFn } from '@agent-os/identity-concordium';
@@ -70,6 +70,17 @@ function githubErrorMessage(err: unknown): string {
     return 'GitHub API rate limit reached for this installation. Wait a few minutes and retry — the panel now caches reads to avoid this.';
   }
   return raw;
+}
+
+function describeLiveRoster(roster: LobbyAgent[], selfId?: string): string {
+  const online = roster.filter(agent => agent.status !== 'disconnected');
+  const workers = online.filter(agent => agent.participant_type !== 'human' && agent.role !== 'human' && agent.agent_role !== 'panel');
+  const ready = workers.filter(agent => agent.status === 'idle');
+  const lines = online.map(agent => {
+    const did = agent.identity_status && isRegistryResolved(agent.identity_status) ? agent.identity_ref : undefined;
+    return `- ${agent.display_name || agent.agent_id} | role: ${agent.agent_role || 'none'} | status: ${agent.status} | agent_id: ${agent.agent_id}${agent.agent_id === selfId ? ' | this is you' : ''}${did ? ` | verified DID: ${did}` : ''}${agent.current_work ? ` | working on: ${agent.current_work.slice(0, 80)}` : ''}`;
+  });
+  return `${online.length} online participants; ${workers.length} runtime agents online; ${ready.length} idle runtime agents ready to work (includes the Boss if idle, excludes humans and panels).\n${lines.join('\n')}`;
 }
 
 function repoRef(fullName: string | undefined | null): { owner: string; repo: string } | null {
@@ -816,10 +827,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         // Give the Boss full operational context: the live roster, open coordination tasks, and
         // pending human-approval requests — without these it coordinated blind (it could not
         // answer "what is in flight?" or notice work stuck in assigned/in_progress).
-        const rosterSummary = roster
-          .filter(a => a.agent_id !== myId && a.status !== 'disconnected')
-          .map(a => `  - ${a.display_name || a.agent_id} (${a.agent_role || 'no-role'}) [${a.status || 'idle'}]${a.current_work ? ` working on: ${a.current_work.slice(0, 60)}` : ''}`)
-          .join('\n');
+        const rosterSummary = describeLiveRoster(roster, myId);
         let opsSummary = '';
         try {
           // Working-repo state — without it the Boss invented "repository initialization" tasks
@@ -854,7 +862,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
               .join('\n');
           }
         } catch { /* ops summary is best-effort */ }
-        enrichedContent = `${header}\n[ROSTER — ${roster.filter(a => a.status !== 'disconnected').length} agents online]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
+        enrichedContent = `${header}\n[LOBBY ROSTER]\n${rosterSummary}${opsSummary}\n\n${BOSS_DELEGATION_GUIDE}\n\n${enrichedContent}`;
       } else {
         enrichedContent = `${header} ${enrichedContent}`;
       }
@@ -1143,12 +1151,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const connRef: { conn?: Connection } = {};
     const lobbyTools: LobbyToolsProvider = {
       async getRoster(): Promise<string> {
-        const roster = await store.roster(params.lobbyId);
-        const online = roster.filter(a => a.status !== 'disconnected');
-        const lines = online.map(a =>
-          `- ${a.display_name || a.agent_id} | role: ${a.agent_role || 'none'} | status: ${a.status || 'idle'} | agent_id: ${a.agent_id}${a.current_work ? ` | working on: ${a.current_work.slice(0, 80)}` : ''}`
-        );
-        return `${online.length} agents online:\n${lines.join('\n')}`;
+        return describeLiveRoster(await store.roster(params.lobbyId), connRef.conn?.agentId);
       },
       async sendMessage(toAgentId: string, content: string): Promise<string> {
         if (!connRef.conn) return 'Error: agent not yet registered in lobby.';
