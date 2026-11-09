@@ -766,7 +766,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }
 
     if (msg?.type !== 'lobby-message-received' || !msg.message) return;
-    const m = msg.message as { from_agent_id?: string; to_agent_id?: string; content?: string };
+    const m = msg.message as Partial<LobbyMessage>;
     if (m.from_agent_id === myId) return;
     const entry = hostedAgents.get(myId);
     if (!entry) return;
@@ -785,7 +785,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // them and may raise a hand via the Requests system. Everything else (chatter between other
     // agents, system notices) is ignored to prevent cascades.
     if (!addressedToMe && !(isBroadcast && isBoss)) {
-      if (isBroadcast && !isBoss && m.from_agent_id !== 'system') {
+      if (isBroadcast && !isBoss && m.from_agent_id !== 'system' && m.message_type !== 'status_update') {
         await observeBroadcast(conn, entry, myId, m).catch(() => {});
       }
       return;
@@ -862,7 +862,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
     let reply = '';
     try { reply = await (queuedBossTurn ?? ((content: string) => entry.runner.respondTo(content)))(enrichedContent); } catch { return; }
-    if (!reply) return;
+    if (!reply || (isBoss && reply.trim() === '[NO UPDATE]')) return;
 
     // Boss delegation: the Boss emits directive lines. A plain `@Name: msg` is a direct request/
     // coordination message (no task); an explicit `@Name [task]: title` creates a tracked Task.
@@ -872,6 +872,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     // directives ALSO dispatch on agent-originated turns — the Boss legitimately assigns a task
     // after an agent ACKs or reports a result, and tasks are bounded, tracked, and visible rather
     // than loop-prone chatter. Each target is acted on at most once per turn.
+    let dispatchedTask = false;
     if (isBoss && roster.length) {
       if (senderIsHuman) bossAutoTaskBudget.set(myId, BOSS_AUTO_TASK_BUDGET); // human turn resets the loop budget
       const directives = parseBossDelegations(reply);
@@ -901,6 +902,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             output_mode: d.outputMode,
           } as AgentToLobbyMessage);
           dispatch(conn, taskRes.out);
+          dispatchedTask ||= taskRes.out.some(out => out.message.type === 'lobby-task-assigned');
         } else {
           // Just the Boss talking to a sub-agent (asking for input / coordinating) — no task.
           const msgRes = await coordinator.handle(conn, {
@@ -912,6 +914,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           dispatch(conn, msgRes.out);
         }
       }
+      // The task cards and directed messages already show these directives.
+      reply = reply.split('\n').filter(line => parseBossDelegations(line).length === 0).join('\n').trim();
+      if (!reply || reply === '[NO UPDATE]') return;
     }
 
     // Boss broadcasts its prose reply; non-boss agents MUST reply directly to the sender (floor
@@ -927,7 +932,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const res = await coordinator.handle(conn, {
       type: 'lobby-message',
       to_agent_id: replyTo,
-      message_type: 'chat',
+      message_type: isBoss && (dispatchedTask || m.message_type === 'handoff' || m.message_type === 'system')
+        ? 'status_update' : 'chat',
       content: reply.length > 4000 ? reply.slice(0, 4000) + '\n\n_(truncated)_' : reply,
     } as AgentToLobbyMessage);
     dispatch(conn, res.out);
