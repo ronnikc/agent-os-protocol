@@ -2,9 +2,17 @@
  * Requests Tab — Human approval workflow (promoted from lobby sub-tab).
  * Shows pending requests with Approve/Reject/Defer + decision notes.
  */
-import { fetchJson, postJson, registerTab, escapeHtml, formatTime, formatDate, onWsMessage } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, formatDate, onWsMessage } from '../app.js';
 
 let requests = [];
+let error = '';
+let refreshVersion = 0;
+
+function requestsPath() {
+  return state.mode === 'swarm'
+    ? '/api/lobby/remote/requests'
+    : '/api/v1/agent-lobby/lobbies/local/requests';
+}
 
 function renderRequests() {
   const el = document.getElementById('requests-content');
@@ -18,6 +26,7 @@ function renderRequests() {
   if (countEl) countEl.textContent = pending.length ? `${pending.length} pending` : '';
 
   el.innerHTML = `<div style="padding:12px;">
+    ${error ? `<p role="alert">${escapeHtml(error)}</p>` : ''}
     ${pending.length ? `
       <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;margin-bottom:8px;">Pending (${pending.length})</div>
       ${pending.map(r => `
@@ -67,30 +76,11 @@ function renderRequests() {
 }
 
 async function refresh() {
-  let remoteRequests = [];
-  let localRequests = [];
-
-  // Try remote lobby requests (staging proxy — may fail without auth)
-  const remoteData = await fetchJson('/api/lobby/remote/requests');
-  if (remoteData && !remoteData.error) {
-    remoteRequests = remoteData.requests || (Array.isArray(remoteData) ? remoteData : []);
-  }
-
-  // Always try local lobby requests (stores staging WS-received requests + local mode requests).
-  // Fetch ALL (pending + decided) so processed requests remain visible as history.
-  const localData = await fetchJson('/api/v1/agent-lobby/lobbies/local/requests');
-  if (localData?.requests) {
-    localRequests = localData.requests;
-  }
-
-  // Merge and dedup by request_id
-  const seen = new Set();
-  requests = [...remoteRequests, ...localRequests].filter(r => {
-    if (!r.request_id || seen.has(r.request_id)) return false;
-    seen.add(r.request_id);
-    return true;
-  });
-
+  const version = ++refreshVersion;
+  const data = await fetchJson(requestsPath());
+  if (version !== refreshVersion) return;
+  requests = Array.isArray(data?.requests) ? data.requests : [];
+  error = Array.isArray(data?.requests) ? '' : data?.error || 'Could not load requests.';
   renderRequests();
 }
 
@@ -106,18 +96,16 @@ function init() {
     const notesEl = document.getElementById(`request-notes-${id}`);
     const notes = notesEl?.value || '';
 
-    // Try remote first, fall back to local lobby
-    let result = await postJson(`/api/lobby/remote/requests/${id}/decide`, {
+    btn.disabled = true;
+    const result = await postJson(`${requestsPath()}/${encodeURIComponent(id)}/decide`, {
       decision,
       decided_by: 'panel',
       decision_notes: notes,
     });
     if (!result?.ok) {
-      await postJson(`/api/v1/agent-lobby/lobbies/local/requests/${id}/decide`, {
-        decision,
-        decided_by: 'panel',
-        decision_notes: notes,
-      });
+      error = result?.error || 'Could not save the request decision.';
+      renderRequests();
+      return;
     }
     await refresh();
   });
