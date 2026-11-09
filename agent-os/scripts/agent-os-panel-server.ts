@@ -354,7 +354,7 @@ async function connectLobbyWs(): Promise<void> {
         }
         if (msg.type === 'lobby-message-received') {
           const lobbyMsg = msg.message || msg;
-          broadcastWs('lobby-message', lobbyMsg);
+          broadcastWs('lobby-message', { ...lobbyMsg, lobby_id: lobbyClient?.lobbyId ?? lobbyId });
           if (lobbyMsg.content) {
             const fromName = lobbyMsg.from_display_name || stagingAgentNames.get(lobbyMsg.from_agent_id) || lobbyMsg.from_agent_id || '?';
             const toName = lobbyMsg.to_agent_id === 'all' ? '*' : (lobbyMsg.to_display_name || stagingAgentNames.get(lobbyMsg.to_agent_id) || lobbyMsg.to_agent_id || '*');
