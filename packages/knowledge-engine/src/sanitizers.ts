@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /** Clean up converted markdown outputs, removing raw byte sequences or excessive padding. */
 export function sanitizeMarkdown(rawMarkdown: string): string {

@@ -2,7 +2,7 @@
 
 > **Purpose:** How to work in this repository — structure, run commands, governance map, conventions.
 > **Status:** v0.2.0 Beta Released. See [`agent-os/STATE.md`](agent-os/STATE.md) for current state.
-> **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+> **License:** Apache-2.0 · © 2026 R Digital.
 
 ## What this is
 

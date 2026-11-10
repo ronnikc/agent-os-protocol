@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<!-- Copyright (c) 2026 R Digital -->
 
 # Agent OS Protocol — Documentation
 
@@ -53,4 +53,4 @@ wired, brand/domain gates clean, no dangling skill references, license present).
 
 ---
 
-Licensed under **Apache-2.0** · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+Licensed under **Apache-2.0** · © 2026 R Digital.
