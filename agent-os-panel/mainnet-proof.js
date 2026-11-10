@@ -18,7 +18,7 @@ function detectWallet() {
 }
 
 async function requestProofApi(action, body) {
-  const response = await fetch('/api/mainnet-proof/' + action, {
+  const response = await fetch('/api/v1/agent-lobby/mainnet-proof/' + action, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'X-Agent-OS-Proof': '1' },
     body: JSON.stringify(body),

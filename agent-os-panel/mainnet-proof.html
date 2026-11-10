@@ -4,17 +4,17 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Mainnet Proof Pilot · Agent OS Protocol</title>
-  <link rel="stylesheet" href="/styles.css">
-  <script defer src="/mainnet-proof.js?v=wallet-connect"></script>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./mainnet-proof.js"></script>
 </head>
 <body>
   <main>
     <section class="proof-pilot" aria-labelledby="pilot-title">
-      <p><a href="/">← Agent OS Protocol</a></p>
+      <p><a href="https://agent-os.gothard.dk/">← Agent OS Protocol</a> · <a href="./">Open the panel</a></p>
       <h1 class="section-title" id="pilot-title">Mainnet Proof Pilot</h1>
       <p>Use Concordium Wallet for Web on Mainnet to prove you are over 18 without revealing your date of birth.</p>
       <p>Review the age-range request in your wallet. The site sends the resulting proof and its credential identifier to Concordium’s Mainnet verifier for checking. The pilot does not store the presentation or send a transaction.</p>
-      <button class="btn-primary" id="request-proof" type="button">Request proof in Concordium Wallet</button>
+      <button class="btn btn-primary" id="request-proof" type="button">Request proof in Concordium Wallet</button>
       <p id="proof-status" role="status"></p>
       <noscript><p>Enable JavaScript to request a proof from your wallet.</p></noscript>
       <p>This pilot demonstrates native Concordium identity verification. The x401 interoperability test uses a separate OpenID4VP credential exchange.</p>
