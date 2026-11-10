@@ -2,7 +2,7 @@
  * Agents Tab — Agent management (start/stop, presets, bulk operations)
  * Refactored from original index.html inline JS.
  */
-import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, signInToLobby, showAgentIdCard, showIdentitySuccessModal } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, showHtmlAlert, signInToLobby, showAgentIdCard, showIdentitySuccessModal, identityPullRequestNotice } from '../app.js';
 
 let selected = new Set();
 let lobbyMode = 'local';
@@ -442,6 +442,8 @@ async function setId(slug) {
     const result = await postJson('/api/agents/identity', { slug, identity: did });
     if (result && result.ok === false) {
       showAlert('Error', `Could not set Agent ID: ${result.error || 'unknown error'}`);
+    } else if (result?.pullRequestUrl) {
+      showHtmlAlert('Agent ID binding pending', identityPullRequestNotice(result.pullRequestUrl));
     } else if (result && result.restartRequired) {
       showAlert('ID Saved', 'Agent ID saved. Restart the agent (Stop then Start) for it to reconnect with the new identity.');
     }
@@ -491,11 +493,10 @@ async function createId(slug) {
       });
       setBtnText('Saving…');
       const saved = await postJson('/api/agents/identity', { slug, identity: res.did });
-      if (saved && saved.ok === false) throw new Error(saved.error || 'could not persist the Agent ID');
       // Pass the bind outcome — omitting it made the modal claim "GitHub Bind Skipped / Failed"
       // even when the DID was committed to the repo successfully.
-      const githubBound = !!(saved && saved.ok !== false && !saved.error);
-      showIdentitySuccessModal(res, agent.name, owner, githubBound, saved?.error || (saved ? '' : 'the bind endpoint did not respond'));
+      const githubBound = !!(saved && saved.ok !== false && !saved.error && !saved.pullRequestUrl);
+      showIdentitySuccessModal(res, agent.name, owner, githubBound, saved?.error || (saved ? '' : 'the bind endpoint did not respond'), saved?.pullRequestUrl);
     } catch (err) {
       console.error('[Agents] Create ID failed:', err);
       showAlert('Minting Failed', `Could not mint the Agent ID: ${err.message || err}`);
