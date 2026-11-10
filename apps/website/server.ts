@@ -5,6 +5,7 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { handleMainnetProof } from './mainnet-proof.ts';
 
 const PORT = Number(process.env.AGENT_OS_WEBSITE_PORT) || 4802;
 const __filename = fileURLToPath(import.meta.url);
@@ -25,6 +26,18 @@ const MIME: Record<string, string> = {
 
 const server = createServer((req, res) => {
   let urlPath = req.url?.split('?')[0] || '/';
+  if (urlPath.startsWith('/api/mainnet-proof/')) {
+    void handleMainnetProof(req, res, urlPath);
+    return;
+  }
+  if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
+    urlPath = '/mainnet-proof.html';
+    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+  }
+  if (extname(urlPath) === '.ts') {
+    res.writeHead(404).end('404 Not Found');
+    return;
+  }
   if (urlPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, revision: process.env.AGENT_OS_REVISION }));
