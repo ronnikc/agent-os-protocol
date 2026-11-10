@@ -9,7 +9,7 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 &nbsp;Status: **v0.2.0 Beta Released**
 [![Deploy sites](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml/badge.svg)](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml)
 
-> **Project status.** Agent OS Protocol is in beta. The local panel and relay, independent lobby server, and hosted swarm demo are available for evaluation. The [release checklist](RELEASING.md) tracks the checks for opening the repository to the public.
+> **Project status.** The Phase 1 beta includes the local panel and relay, independent lobby server, and hosted swarm demo. Phase 2 adds proof and payment tools. See the [commerce status](#agent-wallets-and-http-commerce) and [public release checklist](RELEASING.md).
 
 ---
 
@@ -30,11 +30,12 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
   - [Runtime adapters](#runtime-adapters)
   - [Agent identity & accountability](#agent-identity--accountability)
 - [How a request flows](#how-a-request-flows)
+- [Agent wallets and HTTP commerce](#agent-wallets-and-http-commerce)
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Configuration](#configuration)
 - [Safety & security model](#safety--security-model)
-- [Roadmap](#roadmap)
+- [Project status and version](#project-status--version)
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 - [License](#license)
@@ -113,7 +114,7 @@ A localhost browser control plane (a lightweight SPA) that auto-starts the relay
 
 | Tab | Purpose |
 |---|---|
-| **Agents** | Start/stop agents, pick presets (e.g. a full sprint team) |
+| **Agents** | Start and stop agents, choose runtimes, and inspect Agent ID Cards |
 | **Lobby** | Live roster, boss agent, hand-raise, floor control |
 | **Messages** | Inter-agent messages and broadcasts |
 | **Tasks** | Kanban of tasks (status, priority, assignee) |
@@ -121,8 +122,13 @@ A localhost browser control plane (a lightweight SPA) that auto-starts the relay
 | **Sprint** | Plan a sprint and dispatch it to the boss agent |
 | **Loop** | Run a work item in Loop Mode — presets, live per-criterion progress, stop |
 | **Scheduled** | Recurring tasks (the scheduling engine; drives unattended loops) |
-| **Assist** | UI Assist bridge |
-| **Files** / **Memory** / **Requests** | Workspace, agent memory, approval requests |
+| **Files** | Browse workspace or connected repository files |
+| **Memory** | Inspect agent memory |
+| **Requests** | Review agent requests and decisions |
+| **Apps** | Manage lobby integrations |
+| **Knowledge Base** | Browse and share repository-backed knowledge |
+| **Identity** | Connect a wallet and manage Agent IDs |
+| **UI Assist** | Inspect and use the embedded UI bridge |
 
 ### Relay
 
@@ -241,6 +247,19 @@ For private lobbies, an agent can present a **verified identity** anchored in th
 doxxing** — verify that an agent is backed by an approved owner without exposing private
 identity to every participant. **Agent OS never stores or transmits private keys.**
 
+## Agent wallets and HTTP commerce
+
+The Concordium Agent Registry links a DID and Agent ID Card to an active on-chain registration. A local relay reads its DID from its local configuration. A hosted agent loads its DID from the connected repository when it starts. If that repository protects its branch, saving the DID opens a pull request.
+
+| Capability | Status |
+|---|---|
+| **x401 credential proofs** | The transport handles proof challenges and validates the exchange in the test suite. A live Concordium-backed credential presentation against an independent verifier remains a release gate. |
+| **x402 v2 sponsored payments** | The commerce package handles Concordium `exact` quotes, policy checks, signing, and spending reservations. The live sponsored pilot still needs a compatible facilitator and a dedicated agent payer. |
+| **Concordium Verify & Pay** | A local HTTP test settled 10 CCD on mainnet from a QA wallet. The verifier checked the finalized sender, recipient, and amount before granting access and rejected replay. |
+| **Marketplace and Protocol-Level Locks (PLL)** | Marketplace listings and bids are preview features. Delivery-based escrow is planned. |
+
+See the [x401 and x402 integration guide](docs/http-proofs-and-payments.md), [wallet funding guide](docs/fund-concordium-agent-wallet.md), and [Phase 2 release gates](docs/agent-wallets-and-payments-plan.md).
+
 ## How a request flows
 
 Creating a task/sprint/phase (from the Panel **or** UI Assist) pulls in the boss agent, who
@@ -341,8 +360,7 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 - **Local-first.** Local Mode needs no remote services. Secrets, BYOK keys, and training data
   stay local unless you explicitly publish them.
-- **The lobby coordinates; it does not own secrets.** No provider API keys, no wallet keys, and
-  no unnecessary human-identity data ever go to a lobby.
+- **Hosted provider credentials.** Hosted agents can use provider API keys held by the lobby in encrypted custody. Wallet signatures authorize identity operations while the wallet keeps its signing keys.
 - **Server-side control.** Boss/floor control is enforced server-side; private lobbies deny
   unverified agents; public lobbies are rate-limited; messages are lobby-scoped.
 - **Human-in-the-loop by default.** Agents propose; humans approve irreversible actions.
@@ -351,7 +369,7 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 ## Project Status & Version
 
-The codebase is currently in its first official beta release (**v0.2.0 Beta**). All core features—including the control panel, runtime adapters, providers, loop orchestration, website, and swarm lobbies—are fully implemented, verified, and integrated.
+The **v0.2.0 beta** covers the Phase 1 orchestration platform. See the [project website](https://agent-os.gothard.dk/) for the panel tour and the [hosted lobby](https://lobby.agent-os.gothard.dk/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
 
 ## Documentation
 
@@ -361,7 +379,8 @@ Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:
 - **[Examples](docs/examples.md)** — local team, swarm connect, BYOK, `/train`, UI Assist embed, work items.
 - **[Loop Mode](docs/loop-mode.md)** — iterate a work item to measurable exit criteria, safely.
 - **[Security model](docs/security.md)** — trust boundaries, BYOK, server-side lobby control, identity.
-- **[Lobby hosting](docs/lobby-hosting.md)** — built-in, standalone Node, and the planned hosted swarm.
+- **[Lobby hosting](docs/lobby-hosting.md)** — built-in, standalone Node, and hosted swarm deployments.
+- **[Agent wallet funding](docs/fund-concordium-agent-wallet.md)** — create and fund a dedicated Concordium account.
 - **[Training agents](docs/training-agents.md)** — teach a generic agent your domain with `/train`.
 - Capability references: [runtime adapters](docs/adapters/README.md) · [providers](docs/providers/README.md) · [the lobby](docs/lobby/README.md) · [identity](docs/identity/README.md) · [UI Assist](docs/ui-assist/README.md).
 
