@@ -409,11 +409,17 @@ export class LobbyCoordinator {
     // Non-blocking background verification check, limited to once per 60s per agent to prevent lag/heartbeat timeouts.
     const now = Date.now();
     const lastCheck = this.lastIdentityCheck.get(conn.agentId) ?? 0;
-    const hostedVerifier = conn.trusted || agent.identity_registry_links ? this.verifyHostedRosterIdentity : undefined;
+    const hostedVerifier = conn.trusted || (conn.session && agent.participant_type === 'cli_agent')
+      ? this.verifyHostedRosterIdentity : undefined;
     if (agent.identity_ref && (hostedVerifier || !agent.identity_status || agent.identity_status === 'unverified') && (now - lastCheck > 60_000)) {
       this.lastIdentityCheck.set(conn.agentId, now);
       (hostedVerifier ?? this.verifyIdentity)(agent.identity_ref)
         .then(async (verification) => {
+          // An unavailable registry must not erase an already confirmed identity.
+          if (verification.status === 'pending') return;
+          if (!conn.trusted && isRegistryResolved(verification.status) &&
+              (!verification.ref?.account || conn.session?.identityRef !==
+                `did:ccd:${verification.ref.network}:${verification.ref.account}`)) return;
           if ((verification.status !== agent.identity_status || verification.registryLinks?.explorer !== agent.identity_registry_links?.explorer)
               && (hostedVerifier || verification.status !== 'unverified')) {
             await this.store.updateAgent(conn.lobbyId, agent.agent_id, {

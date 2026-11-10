@@ -2842,7 +2842,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           signed: Boolean(card?.signature),
         });
       }
-      return json({ ok: true, url: `${url.origin}/agent-cards/${encodeURIComponent(body.did)}` }, 201);
+      return json({ ok: true, url: new URL(`/agent-cards/${encodeURIComponent(body.did)}`, cardOrigin || url.origin).href }, 201);
     }
 
     // GET /api/v1/agent-lobby/agent-cards/:did or /agent-cards/:did
@@ -3084,6 +3084,19 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         invalidateAgentDefs(lobbyId);
         return json({ ok: true, identity: body.identity.trim(), restartRequired: true });
       } catch (err: any) {
+        if (/changes must be made through a pull request/i.test(githubErrorMessage(err))) {
+          try {
+            const head = `agent-os/identity/${randomUUID()}`;
+            const title = `chore: bind Agent ID to ${slug}`;
+            await client.createBranch(head, branchName);
+            await client.writeFile(filePath, newContent, title, head);
+            const pullRequestUrl = await client.createPullRequest(title, head, branchName,
+              'Save the Agent ID to its definition. Restart the agent after merging to reconnect with this identity.');
+            return json({ ok: true, identity: body.identity.trim(), pullRequestUrl });
+          } catch (prErr) {
+            return json({ error: `failed to open GitHub identity pull request: ${githubErrorMessage(prErr)}` }, 500);
+          }
+        }
         return json({ error: `failed to write to GitHub repository: ${githubErrorMessage(err)}` }, 500);
       }
     }

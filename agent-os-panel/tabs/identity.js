@@ -1,4 +1,4 @@
-import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert, showHtmlAlert, hostedSession, signInToLobby, savedPanelIdentity, linkPanelIdentity } from '../app.js';
+import { state, fetchJson, postJson, registerTab, escapeHtml, showIdentitySuccessModal, showAlert, showHtmlAlert, identityPullRequestNotice, hostedSession, signInToLobby, savedPanelIdentity, linkPanelIdentity } from '../app.js';
 
 let draftCard = null;
 let validationResult = null;
@@ -440,7 +440,10 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
       const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: res.did });
       let githubBound = false;
       let bindError = '';
-      if (saved && saved.ok !== false && !saved.error) {
+      if (saved?.pullRequestUrl) {
+        stepStates.bind = 'warning';
+        stepStates.bind_desc = 'Waiting for the GitHub pull request to merge.';
+      } else if (saved && saved.ok !== false && !saved.error) {
         githubBound = true;
         const localAgent = (state.agents || []).find(a => a.slug === selectedSlug);
         if (localAgent) {
@@ -456,7 +459,7 @@ async function runMintFlow(network, selectedSlug, lobbyUrl, isGithubConnected) {
 
       await new Promise(r => setTimeout(r, 600));
       closeModal();
-      showIdentitySuccessModal(res, draftCard.name, owner, githubBound, bindError);
+      showIdentitySuccessModal(res, draftCard.name, owner, githubBound, bindError, saved?.pullRequestUrl);
       render();
     }
   } catch (err) {
@@ -492,10 +495,14 @@ async function handleLinkDid() {
   try {
     localStorage.setItem('agent-os-linked-did', value);
     const saved = await postJson('/api/agents/identity', { slug: selectedSlug, identity: value });
-    if (saved && saved.ok === false) {
-      throw new Error(saved.error || 'Failed to save mapping on server.');
+    if (!saved || saved.ok === false || saved.error) {
+      throw new Error(saved?.error || 'Failed to save mapping on server.');
     }
-    showAlert('Success', `Agent ID reference successfully linked and saved to "${selectedSlug}"!`);
+    if (saved.pullRequestUrl) {
+      showHtmlAlert('Agent ID binding pending', identityPullRequestNotice(saved.pullRequestUrl));
+    } else {
+      showAlert('Success', `Agent ID reference successfully linked and saved to "${selectedSlug}"!`);
+    }
   } catch (err) {
     showAlert('Linking Failed', 'Failed to link DID: ' + err.message);
   }

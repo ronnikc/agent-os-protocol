@@ -1455,7 +1455,13 @@ function updateAuthStatus() {
   }
 }
 
-export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false, bindError = '') {
+export function identityPullRequestNotice(url) {
+  if (!/^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/.test(url || '')) return '';
+  return `<p><a href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">Review the GitHub pull request ↗</a></p>
+    <p>After it merges, restart the agent to reconnect with this identity.</p>`;
+}
+
+export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBound = false, bindError = '', pullRequestUrl = '') {
   const { did, txHash, metadataUrl, anchor, anchorError, cardHash, signatureHex, network = 'mainnet' } = res;
   
   const storedBadge = metadataUrl
@@ -1493,7 +1499,7 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBou
         <div><strong style="color:var(--text-primary); min-width:120px; display:inline-block;">Status:</strong> <span style="color:#22c55e; font-weight:600;">✓ Wallet-signed</span>${anchor ? (anchor.sponsored ? ' · sponsored mint (gasless)' : ' · on-chain mint submitted') : ' · card hosted off-chain by this lobby'}</div>
       </div>
       ${typeof window !== 'undefined' && window.AGENT_OS_HOSTED ? `
-        ${githubBound ? `
+        ${identityPullRequestNotice(pullRequestUrl) || (githubBound ? `
           <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
             <strong style="color:#22c55e; display:block; margin-bottom:4px;">✓ Auto-Bound to GitHub Definition:</strong>
             The Agent ID has been automatically committed and pushed to your agent's definition file in your GitHub repository.
@@ -1505,7 +1511,7 @@ export function showIdentitySuccessModal(res, agentName, ownerAddress, githubBou
             <div style="margin:6px 0; padding:6px 8px; background:rgba(0,0,0,0.25); border-radius:4px; font-family:monospace; font-size:11px; word-break:break-word;">${escapeHtml(bindError || 'no GitHub repository is connected')}</div>
             Fix the cause (Lobby tab → GitHub Swarm Connection) and use <strong>Set ID</strong> on the agent to retry the bind with this DID.
           </div>
-        `}
+        `)}
       ` : `
         <div style="margin-top:16px; padding:12px; background:rgba(34, 197, 94, 0.1); border:1px solid rgba(34, 197, 94, 0.2); border-radius:6px; color:#cbd5e1; font-size:12px; line-height:1.5; text-align:left;">
           <strong style="color:#22c55e; display:block; margin-bottom:4px;">Notice:</strong>
