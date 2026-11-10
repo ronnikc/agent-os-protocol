@@ -2,6 +2,21 @@
 const button = document.querySelector('#request-proof');
 const status = document.querySelector('#proof-status');
 
+function detectWallet() {
+  if (window.concordium) return Promise.resolve(window.concordium);
+
+  return new Promise(resolve => {
+    function finish() {
+      clearTimeout(timeout);
+      window.removeEventListener('concordium#initialized', finish);
+      resolve(window.concordium);
+    }
+
+    const timeout = setTimeout(finish, 5000);
+    window.addEventListener('concordium#initialized', finish);
+  });
+}
+
 async function requestProofApi(action, body) {
   const response = await fetch('/api/mainnet-proof/' + action, {
     method: 'POST',
@@ -16,9 +31,14 @@ async function requestProofApi(action, body) {
 button.addEventListener('click', async () => {
   button.disabled = true;
   try {
-    const wallet = window.concordium;
-    if (typeof wallet?.requestVerifiablePresentation !== 'function') {
-      status.textContent = 'Open this page in a browser profile with Concordium Wallet for Web installed.';
+    status.textContent = 'Looking for Concordium Wallet.';
+    const wallet = await detectWallet();
+    if (!wallet) {
+      status.textContent = 'Concordium Wallet could not connect to this page. In your browser’s extension settings, allow Concordium Wallet to access this site, then reload.';
+      return;
+    }
+    if (typeof wallet.requestVerifiablePresentation !== 'function' || typeof wallet.requestAccounts !== 'function') {
+      status.textContent = 'The connected Concordium Wallet does not expose the proof API. Update the browser extension, then reload.';
       return;
     }
     status.textContent = 'Connect your Mainnet wallet.';
