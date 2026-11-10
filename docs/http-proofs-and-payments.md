@@ -10,7 +10,7 @@ Agent OS uses Concordium Agent IDs for roster accountability. HTTP resources can
 2. Open the Agent ID Card from the roster. Its registry and explorer links identify the same active registration. Keep the DID when restarting or reconnecting an agent.
 3. For payment experiments, [create and fund a dedicated agent account](fund-concordium-agent-wallet.md). The spending signer belongs to the agent's payment service. A recipient only supplies a receiving address.
 
-The wallet binding and rotation workflow is still tracked in the [Phase 2 plan](agent-wallets-and-payments-plan.md).
+The [mainnet operator workflow](fund-concordium-agent-wallet.md#prepare-a-mainnet-binding-or-rotation) reads a finalized wallet binding and prepares a new owner transaction. The [Phase 2 plan](agent-wallets-and-payments-plan.md) tracks panel integration and live rotation.
 
 ## x401 credential exchange
 

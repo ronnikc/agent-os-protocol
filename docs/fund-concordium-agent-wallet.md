@@ -11,6 +11,36 @@ This guide covers wallet setup and ordinary funding transfers. Agent OS payment 
 
 See the official [Wallet for Web setup](https://docs.concordium.com/en/mainnet/docs/browser-wallet/setup-browser-wallet.html) and [Concordium Agent Registry reference](https://docs.concordium.com/en/mainnet/technical-reference/agent-registry/cis-8004.html).
 
+## Prepare a mainnet binding or rotation
+
+Pause the existing signer and reconcile outstanding payments before rotating. Find the registry token number in the Agent ID Card. Read the current wallet and nonce from the finalized chain:
+
+```text
+npm run agent-wallet-binding -- read TOKEN
+```
+
+Prepare the change using a local export of the dedicated **new payer** account. The payer signs the registry proof. The registry owner separately authorizes the contract transaction. On Windows PowerShell, set the four values below to the accounts and token you reviewed:
+
+```powershell
+$token = 'TOKEN'
+$owner = 'OWNER_ADDRESS'
+$current = 'CURRENT_WALLET_ADDRESS'
+$payer = 'NEW_PAYER_ADDRESS'
+$parameter = Join-Path $env:TEMP ('agent-wallet-' + [guid]::NewGuid() + '.bin')
+Get-Content -LiteralPath $payerExportPath -Raw |
+  npm run agent-wallet-binding -- prepare $token $owner $current $payer $parameter
+```
+
+Set `$payerExportPath` to the local account export path. Use `none` for the current address only when the registry read returns `null`. Keep the export out of Git. The preparation command checks mainnet, matches the current binding, verifies the payer signature, and simulates the update as the owner. It writes a new binary parameter file and prints the addresses and proof expiry for review.
+
+The owner can submit the prepared parameter using an owner account configured in `concordium-client`. Review the account, network, fee, and proof deadline before approving:
+
+```powershell
+concordium-client contract update 10082 --entrypoint setAgentWallet --parameter-bin $parameter --sender $owner --energy 110000 --grpc-ip grpc.mainnet.concordium.software --grpc-port 20000 --secure
+```
+
+Wait for finalization and run the read command again. Confirm the new address and increased nonce before enabling the new signer. A failed, expired, or superseded proof requires a fresh read and preparation. The browser panel does not yet prepare the raw payer proof. The current CLI is an operator workflow. [CIS-8004 wallet binding specification](https://proposals.concordium.com/CIS/cis-8004.html#setagentwallet)
+
 ## Get CCD into the main human account
 
 - For mainnet, choose a provider listed in the [Concordium CCD directory](https://www.concordium.com/ccd-token) that serves your region. The wallet may also show a **Buy** option. Provider availability, minimum amounts, and fees vary.

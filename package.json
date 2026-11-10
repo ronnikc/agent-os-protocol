@@ -56,7 +56,8 @@
     "verify-hosted": "tsx agent-os/scripts/verify-hosted.ts",
     "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch && npm run verify-memory && npm run verify-hosted && npm run verify-commerce",
     "smoke": "bash scripts/smoke.sh",
-    "verify-commerce": "tsx agent-os/scripts/verify-commerce.ts"
+    "verify-commerce": "tsx agent-os/scripts/verify-commerce.ts",
+    "agent-wallet-binding": "tsx agent-os/scripts/agent-wallet-binding.ts"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "^0.1.0",
