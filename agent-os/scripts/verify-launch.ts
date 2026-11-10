@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * verify-launch — runnable launch-readiness verification for Phase 10.
@@ -196,7 +196,7 @@ async function main(): Promise<void> {
   });
   await check('NOTICE attributes the copyright holder', () => {
     const notice = read('NOTICE');
-    assert.ok(/Gothard\.dk/.test(notice), 'NOTICE missing the copyright holder');
+    assert.match(notice, /^Copyright \d{4} R Digital$/m, 'NOTICE missing the R Digital copyright notice');
   });
 
   // ── I. Config: .env.example documents the live variables ──

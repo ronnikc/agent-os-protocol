@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<!-- Copyright (c) 2026 R Digital -->
 
 # Releasing Agent OS Protocol
 
@@ -79,4 +79,4 @@ When npm publishing is introduced, this file gains a per-package `npm version` +
 
 ---
 
-Licensed under **Apache-2.0** · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+Licensed under **Apache-2.0** · © 2026 R Digital.

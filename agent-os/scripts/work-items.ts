@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * work-items — the single writer + reader CLI for the canonical Phase / Sprint / Task schema.
