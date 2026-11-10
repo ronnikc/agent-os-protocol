@@ -19,6 +19,7 @@ import { TaskRepository } from './hosted/task-repository.js';
 import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
 import type { GitHubRepoClient } from './hosted/github-repo-client.js';
 import { randomUUID } from 'node:crypto';
+import { loadHostedAgentIdAccess } from './hosted/agent-id-access.js';
 import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
@@ -1169,12 +1170,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     };
 
     const taskRepository = repoClient ? new TaskRepository(repoClient) : undefined;
+    const accessAgentIdResource = loadHostedAgentIdAccess({
+      file: process.env.AGENT_OS_HOSTED_AGENT_ID_PROOF_FILE,
+      lobbyId: params.lobbyId,
+      did: params.joinToken,
+      async isRegistered() {
+        const agentId = connRef.conn?.agentId;
+        if (!agentId || !agentConn.has(agentId)) return false;
+        const roster = await store.roster(params.lobbyId);
+        return roster.some(entry => entry.agent_id === agentId && entry.identity_ref === params.joinToken &&
+          entry.identity_status === 'registry_verified');
+      },
+    });
     const adapter = createApiRuntimeAdapter({
       provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
       apiKey: params.apiKey,
       fetchFn: options.apiRuntimeFetch,
       repoClient: taskRepository,
       lobbyTools,
+      accessAgentIdResource,
     });
     // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
     // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
@@ -1186,8 +1200,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       : `write_file commits go DIRECTLY to the working branch "${workingBranch}"`;
     const capabilities = repoClient
       ? `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with tools that operate on the connected GitHub repository${integration?.repo_full_name ? ` (${integration.repo_full_name})` : ''}: read_file, write_file, list_files. ${writeDest}. You have NO shell, cannot run commands (npm/tsc/tests), have no local workspace, and CANNOT create or switch branches yourself. Report exactly which files you read or wrote and the commit SHAs the tools returned. NEVER claim to have run, built, compiled, or tested anything, and NEVER invent branch names, commit SHAs, or timestamps — if a task demands command execution, state that limitation as the blocker.`
-      : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby with NO tools — no repository access, no shell, no local workspace. This lobby has no GitHub repository connected yet (the LobbyOwner can connect one in the Lobby tab). You can only reason and reply in chat. NEVER claim to have created, edited, run, built, or tested anything.`;
-    const groundedSystemPrompt = params.systemPrompt ? `${params.systemPrompt}\n\n${capabilities}` : capabilities;
+      : `[RUNTIME CAPABILITIES] You run server-side in the hosted lobby without repository access, a shell, or a local workspace. The LobbyOwner can connect a GitHub repository in the Lobby tab. Report only actions confirmed by your available tools.`;
+    const agentIdCapability = accessAgentIdResource
+      ? '\nUse access_agent_id_resource to check access to the operator-configured resource with your Agent ID.'
+      : '';
+    const groundedSystemPrompt = [params.systemPrompt, capabilities + agentIdCapability].filter(Boolean).join('\n\n');
     const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
     await runner.start();
 

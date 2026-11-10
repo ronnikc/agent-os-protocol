@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@agent-os/adapters": "*",
+    "@agent-os/concordium-commerce": "*",
     "@agent-os/identity-concordium": "*",
     "@agent-os/protocol-core": "*",
     "@agent-os/providers": "*",
