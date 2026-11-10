@@ -68,4 +68,4 @@ You (Panel / UI Assist)
 - **Panel UI:** dependency-light vanilla JS + a small Markdown renderer.
 - **Default agent runtime:** Claude Code via `@anthropic-ai/claude-agent-sdk`; other runtimes
   via the adapter interface.
-- **License:** Apache-2.0 · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+- **License:** Apache-2.0 · © 2026 R Digital.

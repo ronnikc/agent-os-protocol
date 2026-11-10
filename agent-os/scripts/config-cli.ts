@@ -1,6 +1,6 @@
 #!/usr/bin/env npx tsx
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * agent-os config — configure Hosted-Mode settings from the CLI, over the lobby's REST API.

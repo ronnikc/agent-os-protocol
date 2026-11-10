@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 //
 // pm2 process config for the Agent OS lobby backend and website — both run
 // entirely as their respective users, NO root / sudo / systemd required. `.cjs`

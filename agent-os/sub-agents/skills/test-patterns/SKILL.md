@@ -54,7 +54,7 @@ This also applies to CSS value changes (rgba → CSS vars) and parameter type ch
 ## Backend Service Test Template
 
 ```typescript
-// Copyright (c) 2026 Gothard.dk All rights reserved.
+// Copyright (c) 2026 R Digital All rights reserved.
 // This source code is proprietary and confidential.
 // See LICENSE.md for licensing terms.
 
@@ -140,7 +140,7 @@ describe('ExampleService', () => {
 ## Frontend Component Test Template
 
 ```typescript
-// Copyright (c) 2026 Gothard.dk All rights reserved.
+// Copyright (c) 2026 R Digital All rights reserved.
 // This source code is proprietary and confidential.
 // See LICENSE.md for licensing terms.
 

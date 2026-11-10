@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<!-- Copyright (c) 2026 R Digital -->
 
 # Loop Mode
 
@@ -124,4 +124,4 @@ infrastructure and are tracked in [`agent-os/STATE.md`](../agent-os/STATE.md):
 
 ---
 
-Licensed under **Apache-2.0** · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+Licensed under **Apache-2.0** · © 2026 R Digital.

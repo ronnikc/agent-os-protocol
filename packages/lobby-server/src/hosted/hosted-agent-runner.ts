@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * HostedAgentRunner — a server-side agent that runs on the lobby host (no local machine, no relay),

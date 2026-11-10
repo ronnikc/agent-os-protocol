@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * Response rendering helper — the canonical implementation of UI-ASSIST.md Rule 1: a **trailing**

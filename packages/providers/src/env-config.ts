@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+// Copyright (c) 2026 R Digital
 
 /**
  * Build per-provider configs from conventional environment variables. This keeps the env-var

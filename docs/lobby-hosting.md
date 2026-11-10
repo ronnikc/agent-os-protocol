@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<!-- Copyright (c) 2026 R Digital -->
 
 # Lobby hosting
 
@@ -117,4 +117,4 @@ infra-gated surfaces. The full plan and current status live in
 
 ---
 
-Licensed under **Apache-2.0** · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+Licensed under **Apache-2.0** · © 2026 R Digital.

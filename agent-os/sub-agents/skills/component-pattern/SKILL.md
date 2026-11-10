@@ -14,7 +14,7 @@ Frontend component implementation pattern for this project. Use `const { t } = u
 Every frontend page follows this exact structure. Copy and adapt — do not invent new patterns.
 
 ```tsx
-// Copyright (c) 2026 Gothard.dk All rights reserved.
+// Copyright (c) 2026 R Digital All rights reserved.
 // This source code is proprietary and confidential.
 // See LICENSE.md for licensing terms.
 
