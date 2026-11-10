@@ -73,14 +73,16 @@ function boundedProof(input: VerifiablePresentation, atom: AgeStatement) {
   };
 }
 
+export const MAINNET_PROOF_PATH = '/api/v1/agent-lobby/mainnet-proof';
+
 export async function handleMainnetProof(req: IncomingMessage, res: ServerResponse, path: string) {
   // A cross-origin browser cannot set this header without an allowed preflight.
   if (req.method !== 'POST' || req.headers['x-agent-os-proof'] !== '1' ||
       req.headers['content-type'] !== 'application/json') {
     return respond(res, 403, { message: 'Use the Mainnet Proof Pilot page to submit a request.' });
   }
-  if (path === '/api/mainnet-proof/challenge') return challenge(res);
-  if (path !== '/api/mainnet-proof/verify') return respond(res, 404, { message: 'Unknown proof endpoint.' });
+  if (path === MAINNET_PROOF_PATH + '/challenge') return challenge(res);
+  if (path !== MAINNET_PROOF_PATH + '/verify') return respond(res, 404, { message: 'Unknown proof endpoint.' });
 
   let proof;
   try {

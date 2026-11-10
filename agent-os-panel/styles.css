@@ -1283,3 +1283,20 @@ body {
   0% { border-color: rgba(155, 92, 255, 0.45); box-shadow: 0 0 20px rgba(155, 92, 255, 0.1); }
   100% { border-color: rgba(0, 229, 212, 0.6); box-shadow: 0 0 30px rgba(0, 229, 212, 0.2); }
 }
+
+.proof-pilot {
+  width: min(100% - 2rem, 42rem);
+  margin: 0 auto;
+  padding-block: clamp(2rem, 9vh, 6rem);
+  display: grid;
+  gap: 1rem;
+  justify-items: start;
+}
+
+.proof-pilot a {
+  color: var(--color-cyan);
+}
+
+.proof-pilot [role="status"] {
+  min-block-size: 1.6em;
+}
