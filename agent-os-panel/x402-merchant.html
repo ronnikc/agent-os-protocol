@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x402 Test Merchant · Agent OS Protocol</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./x402-merchant.js"></script>
+</head>
+<body>
+  <main>
+    <section class="proof-pilot" aria-labelledby="merchant-title">
+      <p><a href="https://agent-os.gothard.dk/">← Agent OS Protocol</a> · <a href="./">Open the panel</a></p>
+      <h1 id="merchant-title">x402 Test Merchant</h1>
+      <p>Test your x402 client against an Agent OS resource on Concordium Mainnet. A successful payment transfers real CCD to the merchant and returns a finalized transaction receipt.</p>
+      <p>Copy the endpoint into your x402 client. Check the amount, recipient and fee sponsor before authorizing payment in your client.</p>
+      <label for="merchant-endpoint">Merchant endpoint</label>
+      <input id="merchant-endpoint" class="input" type="url" readonly size="48">
+      <button type="button" class="btn btn-secondary" id="copy-endpoint">Copy endpoint</button>
+      <form id="quote-form">
+        <p id="invite-field" hidden>
+          <label for="merchant-invite">Pilot invitation token</label>
+          <input id="merchant-invite" class="input" type="password" autocomplete="off">
+        </p>
+        <button class="btn btn-primary" type="submit" id="check-quote">Check quote</button>
+      </form>
+      <p id="merchant-status" role="status"></p>
+      <dl id="merchant-quote" hidden>
+        <dt>Amount</dt><dd id="quote-amount"></dd>
+        <dt>Recipient</dt><dd id="quote-recipient"></dd>
+        <dt>Fee sponsor</dt><dd id="quote-sponsor"></dd>
+      </dl>
+      <p><a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/http-proofs-and-payments.md#hosted-x402-test-merchant">Read the client setup guide</a></p>
+    </section>
+  </main>
+</body>
+</html>
