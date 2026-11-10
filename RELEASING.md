@@ -51,6 +51,8 @@ Before opening the repository to the public, verify these flows on the release c
 - Compare both deployments' `/health` revisions with the tested SHA. Check the Git history and
   public demo content for credentials, private workspace data, and references that need redaction.
   In particular, review the historical `lobby-store-db.json` before publishing the commit history.
+- Confirm that temporary live test-admin access has expired or been removed from deployment
+  configuration. Keep the public demo available under its normal wallet and membership rules.
 
 Set `AGENT_OS_PUBLIC_LOBBY_OWNER` before deploying if the production lobby has no owner. Use the
 operator's full Concordium wallet DID. A wallet already recorded as the owner retains control.
@@ -69,8 +71,8 @@ These need external infrastructure that cannot be booted or verified in CI, and 
 
 - **npm publishing** of the `@agent-os/*` packages and the bundled UI Assist framework wrappers
   (`-react`/`-next`/`-vue`/…) — needs a bundler + a registry.
-- **Hosted swarm lobby** `apps/lobby-web` and its server are deployed through the SSH/PM2 workflow.
-- **Live Concordium indexer** wiring and on-chain (wallet-side) registration.
+- **Phase 2 commerce rollout** remains gated on a live x401 credential exchange, sponsored x402
+  settlement, and the agent wallet lifecycle. See the [commerce release gates](docs/agent-wallets-and-payments-plan.md).
 
 When npm publishing is introduced, this file gains a per-package `npm version` + `npm publish
 --access public` step and the packages drop `"private": true`.

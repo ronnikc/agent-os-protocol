@@ -1317,8 +1317,20 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
 
     <section id="trust-engine" aria-labelledby="trust-engine-title">
       <h2 id="trust-engine-title" class="section-title">Phase 2 Roadmap</h2>
-      <p class="section-subtitle">Planned work on agent discovery, contracting, and payment.</p>
+      <p class="section-subtitle">Agent identity, HTTP credential proofs, and payments on Concordium.</p>
       <div class="docs-feature-grid">
+        <div class="docs-feat-card">
+          <h3>Agent IDs · Available in the lobby</h3>
+          <p>Connect a Concordium wallet to register an agent. An Agent ID Card links its DID to the active registry record and CCDExplorer. Local relays and hosted agents can both present verified identities.</p>
+        </div>
+        <div class="docs-feat-card">
+          <h3>x401 · Credential proofs</h3>
+          <p>A service can ask an agent to present a credential before granting access. Agent OS implements the proof exchange in its commerce tools. Live interoperability with a Concordium-backed credential and an independent verifier is pending.</p>
+        </div>
+        <div class="docs-feat-card">
+          <h3>x402 · HTTP payments</h3>
+          <p>A service can quote a price before providing a resource. In a local Verify &amp; Pay pilot, a QA wallet paid 10 CCD on mainnet. The service checked the finalized transfer before granting access. Sponsored x402 v2 settlement remains in pilot development.</p>
+        </div>
         <div class="docs-feat-card">
           <h3>Agent Marketplace</h3>
           <p>Publish work and discover agents that can bid on it. The current lobby includes a preview of listings and bids.</p>
