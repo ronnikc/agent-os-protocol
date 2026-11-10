@@ -150,11 +150,14 @@ interface HostedMerchantConfig extends MerchantConfig {
   receiptDirectory: string;
   pilotSponsorKeyFile?: string;
   pilotPayer?: string;
+  facilitatorOverSsh?: boolean;
 }
 
-function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGRPCNodeClient): FacilitatorClient {
-  if (!config.pilotSponsorKeyFile || !isAbsolute(config.pilotSponsorKeyFile) || !config.pilotPayer ||
-      config.publicAccess === true || config.amountMicroCcd !== '1000000' || config.facilitatorUrl) {
+export function createPilotFacilitator(
+  config: HostedMerchantConfig, node: ConcordiumGRPCNodeClient, key: string,
+): FacilitatorClient {
+  if (!config.pilotPayer || config.publicAccess === true || config.amountMicroCcd !== '1000000' ||
+      config.facilitatorUrl || !isAbsolute(config.receiptDirectory)) {
     throw new Error('Self-hosted sponsorship requires a single invite-only 1 CCD pilot');
   }
   const payer = AccountAddress.fromBase58(config.pilotPayer);
@@ -162,7 +165,6 @@ function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGR
   if (AccountAddress.isAlias(payer, sponsor) || AccountAddress.isAlias(payer, AccountAddress.fromBase58(config.recipient))) {
     throw new Error('The pilot payer must be distinct from the sponsor and recipient');
   }
-  const key = readFileSync(config.pilotSponsorKeyFile, 'utf8').trim().replace(/^0x/i, '');
   if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error('Invalid pilot sponsor key file');
   const signer = buildAccountSigner(key);
   const scheme = new ExactConcordiumScheme({
@@ -170,6 +172,10 @@ function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGR
     requireFinalization: true, maxExpiryOffsetSeconds: 120,
   });
   const reservation = join(config.receiptDirectory, 'self-hosted-pilot-attempt.json');
+  const expected: PaymentRequirements = {
+    scheme: 'exact', network, asset: 'CCD', amount: '1000000', maxTimeoutSeconds: 120,
+    payTo: AccountAddress.fromBase58(config.recipient).address, extra: { feePayer: sponsor.address },
+  };
   return {
     async getSupported() {
       if (existsSync(reservation)) throw new Error('The single pilot attempt has been reserved');
@@ -186,6 +192,10 @@ function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGR
       };
     },
     async verify(payment, quote) {
+      if (!isDeepStrictEqual(quote, expected) || !isDeepStrictEqual(payment.accepted, expected) ||
+          payment.x402Version !== 2 || payment.resource?.url !== config.resource) {
+        return { isValid: false, invalidReason: 'pilot_quote_mismatch' };
+      }
       if (existsSync(reservation)) return { isValid: false, invalidReason: 'pilot_attempt_already_reserved' };
       const verified = await scheme.verify(payment, quote);
       if (!verified.isValid || verified.payer !== payer.address) {
@@ -194,6 +204,7 @@ function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGR
       return verified;
     },
     async settle(payment, quote) {
+      if (!(await this.verify(payment, quote)).isValid) throw new Error('Pilot payment failed verification');
       // Reserve before signing or submitting. Preserve the reservation if the outcome is uncertain.
       writeFileSync(reservation, JSON.stringify({ payer: payer.address, reservedAt: new Date().toISOString() }), {
         flag: 'wx', mode: 0o600,
@@ -210,8 +221,16 @@ export function loadTestMerchant(file: string | undefined) {
   if (!isAbsolute(config.receiptDirectory)) throw new Error('Expected an absolute merchant receipt directory');
   const node = new ConcordiumGRPCNodeClient(mainnetHost, mainnetPort, credentials.createSsl(), { timeout: 12_000 });
   mkdirSync(config.receiptDirectory, { recursive: true, mode: 0o700 });
-  const facilitator = config.pilotSponsorKeyFile ? createPilotFacilitator(config, node) : new HTTPFacilitatorClient({
-    url: httpsUrl(config.facilitatorUrl ?? '').href.replace(/\/$/, ''),
+  if (config.pilotSponsorKeyFile && !isAbsolute(config.pilotSponsorKeyFile)) throw new Error('Expected an absolute sponsor key path');
+  if (config.facilitatorOverSsh && (config.facilitatorUrl !== 'http://127.0.0.1:4739' ||
+      config.publicAccess || config.amountMicroCcd !== '1000000' ||
+      !config.facilitatorToken || config.facilitatorToken.length < 32 || config.pilotSponsorKeyFile)) {
+    throw new Error('SSH facilitator requires the authenticated, invite-only loopback pilot');
+  }
+  const facilitator = config.pilotSponsorKeyFile
+    ? createPilotFacilitator(config, node, readFileSync(config.pilotSponsorKeyFile, 'utf8').trim().replace(/^0x/i, ''))
+    : new HTTPFacilitatorClient({
+    url: config.facilitatorOverSsh ? 'http://127.0.0.1:4739' : httpsUrl(config.facilitatorUrl ?? '').href.replace(/\/$/, ''),
     timeoutMs: 90_000,
     createAuthHeaders: async () => {
       const auth: Record<string, string> = config.facilitatorToken ? { Authorization: 'Bearer ' + config.facilitatorToken } : {};
