@@ -20,6 +20,7 @@ import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
 import type { GitHubRepoClient } from './hosted/github-repo-client.js';
 import { randomUUID } from 'node:crypto';
 import { loadHostedAgentIdAccess } from './hosted/agent-id-access.js';
+import { loadTestMerchant, TEST_MERCHANT_PATH } from './hosted/test-merchant.js';
 import { fileURLToPath } from 'node:url';
 import { resolve, join, extname, sep } from 'node:path';
 import { existsSync, statSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
@@ -1399,9 +1400,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     });
   }
 
+  const testMerchant = loadTestMerchant(process.env.AGENT_OS_X402_TEST_MERCHANT_FILE);
+
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     let path = url.pathname;
+    if (path === TEST_MERCHANT_PATH) {
+      if (testMerchant) await testMerchant(req, res);
+      else res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' })
+        .end(JSON.stringify({ error: 'The Mainnet test merchant is not enabled.' }));
+      return;
+    }
     if (path.startsWith(MAINNET_PROOF_PATH + '/')) {
       await handleMainnetProof(req, res, path);
       return;
