@@ -72,6 +72,20 @@ For the invite-only 1 CCD pilot, the lobby can also run the official Concordium 
 
 The self-hosted option reserves one settlement attempt on disk before it signs. Keep `self-hosted-pilot-attempt.json` in the persistent receipt directory across restarts. After an uncertain outcome, reconcile the payer nonce and Mainnet history before provisioning a new attempt. This mode requires the invite token and does not support public access.
 
+#### Windows sponsor over SSH
+
+Run `agent-os/scripts/x402-pilot-facilitator.ts` on Windows to keep sponsor signing on that machine. Its local JSON config uses `resource`, `recipient`, `sponsor`, `amountMicroCcd`, `pilotPayer`, `facilitatorToken`, and a persistent local `receiptDirectory`. Use a random bearer token of at least 32 characters. Pass the local config path as the only argument and pipe the sponsor key from the DPAPI store through standard input. The process verifies the sponsor on Mainnet before listening on `127.0.0.1:4739`.
+
+From Windows, open the reverse tunnel with a verified SSH host key and a forwarding-enabled login on the lobby host:
+
+```powershell
+ssh -NT -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -R 127.0.0.1:4739:127.0.0.1:4739 user@lobby-host
+```
+
+On the lobby host, keep the merchant configuration private and set `facilitatorOverSsh` to `true`, `facilitatorUrl` to `http://127.0.0.1:4739`, and `facilitatorToken` to the matching token. The lobby configuration uses an invite token and a separate persistent receipt directory writable by the lobby service. Keep the SSH remote listener bound to loopback. The encrypted SSH connection carries the facilitator traffic between machines.
+
+Check that the invited merchant returns HTTP 402 with exactly `1000000` microCCD and the approved recipient and sponsor before funding the payer. Keep the Windows facilitator and SSH connection running through finalization.
+
 ## Concordium Verify & Pay pilot
 
 Concordium also documents a transaction-hash flow. A local test resource returned HTTP 402 for 10 CCD. The QA wallet submitted the payment on mainnet and paid the network fee. The client retried with the transaction hash in `X-PAYMENT`. A local verifier checked finality, sender, recipient, and amount before granting access and rejected a replay. This evidence covers the transaction-hash flow. The sponsored v2 flow uses a different wire format and settlement path. [Concordium Verify & Pay guide](https://docs.concordium.com/en/mainnet/how-to/integrations/x402-integration.html)
