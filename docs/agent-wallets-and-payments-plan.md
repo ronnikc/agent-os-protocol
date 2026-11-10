@@ -34,6 +34,7 @@ Keep three independent trust decisions:
 - The commerce transport is exercised by `npm run verify-commerce`. It rejects unapproved quotes, requests proof before signing when required, builds sponsored CCD transactions with the official Concordium exact client, and leaves uncertain settlements reserved. The spending ledger persists reservations across restarts. Runtime integration, independent credential verification, and live sponsored settlement remain release gates.
 - A local [Concordium Verify & Pay](https://docs.concordium.com/en/mainnet/how-to/integrations/x402-integration.html) pilot settled 10 CCD on mainnet. The payer submitted the transfer and paid the fee. The test verifier matched the finalized sender, recipient, and amount to the HTTP quote, granted access, and rejected replay. This pilot exercised the transaction-hash flow. The sponsored x402 v2 pilot remains open.
 - The live public roster showed six verified cards after reconnect, matching active mainnet registry records 5123–5128. Local QA relays read their DIDs from local configuration. Hosted specialists read their DIDs from the connected repository after restart.
+- The Agent ID x401 pilot checked Mainnet registry token 5123 and verified its registered owner's approval for an ephemeral agent key. The local reference verifier accepted the resulting holder-bound credential over x401 and rejected replay. An independently operated verifier and runtime integration remain release checks.
 
 ## Product and security decisions
 
