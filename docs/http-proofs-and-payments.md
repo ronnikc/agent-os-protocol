@@ -46,6 +46,28 @@ The website opens the pilot on the hosted panel's domain, where your browser wal
 
 Use a facilitator that explicitly advertises the target network and supports the quoted asset. A local merchant fixture and the official facilitator SDK settled a 1 CCD mainnet payment from the rotated QA agent wallet. An independent chain query verified the payer, recipient, amount, and fee sponsor. A hosted merchant interoperability test remains open. See the [Concordium x402 exact scheme](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_concordium.md).
 
+### Hosted x402 test merchant
+
+The lobby server can host a demo resource at `/api/v1/agent-lobby/x402/test-resource`. An enabled merchant quotes a real Mainnet CCD payment and returns a receipt and explorer link after checking the finalized transfer. The resource costs 1 CCD during the first pilot. Operators can select 10 CCD for a later demo. CCD goes to the configured merchant account, and the facilitator sponsor pays the network fee.
+
+Set `AGENT_OS_X402_TEST_MERCHANT_FILE` to the absolute path of an operator-only JSON file outside the checkout. Configure the following fields.
+
+| Field | Value |
+| --- | --- |
+| `resource` | The full public HTTPS URL of the demo resource, ending in `/api/v1/agent-lobby/x402/test-resource`. |
+| `recipient` | The public address of a dedicated merchant receiving account. |
+| `sponsor` | The public fee-payer address advertised by the facilitator. |
+| `amountMicroCcd` | `"1000000"` for 1 CCD or `"10000000"` for 10 CCD. |
+| `facilitatorUrl` | The HTTPS base URL of an x402 facilitator that supports Concordium Mainnet exact v2 and native CCD. You can operate a separate facilitator using the official Concordium SDK. |
+| `facilitatorToken` | An optional bearer token for the facilitator. |
+| `receiptDirectory` | An absolute persistent directory where the merchant records redeemed transaction hashes. Preserve this directory across deployments. |
+| `inviteToken` | A random token of at least 32 characters for the invite-only pilot. |
+| `publicAccess` | Set to `true` to open the demo after the invite-only settlement and replay checks pass. |
+
+Use a separate funded payer account. To inspect the quote, send a GET with the invite token in the `Authorization: Bearer` header. The response is HTTP 402 with `PAYMENT-REQUIRED`. Confirm the amount, merchant address, and sponsor before authorizing the payment. Agent OS clients can use `requestWithSpendingLimit` with the exact resource and those approved values. For an invite, pass a fetch wrapper that adds the bearer token to each request to this resource. Check the final transaction and `PAYMENT-RESPONSE` before treating access as paid. If settlement is unconfirmed, reconcile the payer nonce on-chain before authorizing another attempt.
+
+The hosted code remains disabled until an operator provisions the merchant and facilitator. The local HTTP fixture covers invitation checks, modified quotes, unconfirmed settlement and duplicate receipts. A real hosted Mainnet settlement is still required before opening public access.
+
 ## Concordium Verify & Pay pilot
 
 Concordium also documents a transaction-hash flow. A local test resource returned HTTP 402 for 10 CCD. The QA wallet submitted the payment on mainnet and paid the network fee. The client retried with the transaction hash in `X-PAYMENT`. A local verifier checked finality, sender, recipient, and amount before granting access and rejected a replay. This evidence covers the transaction-hash flow. The sponsored v2 flow uses a different wire format and settlement path. [Concordium Verify & Pay guide](https://docs.concordium.com/en/mainnet/how-to/integrations/x402-integration.html)

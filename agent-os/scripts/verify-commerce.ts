@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { verifyAgentIdProof } from './verify-agent-id-proof.js';
+import { verifyTestMerchant } from './verify-test-merchant.js';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -106,6 +107,7 @@ async function main() {
   assert.equal(simulations, 1);
 
   await verifyAgentIdProof();
+  await verifyTestMerchant();
   for (const rejected of [
     { ...quote, amount: '50001' },
     { ...quote, payTo: account(4).address },

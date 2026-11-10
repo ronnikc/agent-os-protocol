@@ -97,8 +97,8 @@ export async function requestCommerceResource(
   fetchResource: typeof fetch = fetch,
 ): Promise<CommerceResult> {
   const resource = validatePolicy(policy);
-  const request = (headers: Headers) => fetchResource(resource, {
-    method: 'GET', headers, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15_000),
+  const request = (headers: Headers, timeout = 15_000) => fetchResource(resource, {
+    method: 'GET', headers, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(timeout),
   });
   const headers = new Headers();
   let response = await request(headers);
@@ -142,7 +142,7 @@ export async function requestCommerceResource(
   await authorization.recordSubmission?.(submission);
 
   try {
-    response = await request(headers);
+    response = await request(headers, 240_000);
   } catch {
     return { state: 'unconfirmed' };
   }
