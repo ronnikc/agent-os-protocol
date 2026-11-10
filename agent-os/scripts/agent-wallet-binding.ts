@@ -20,17 +20,22 @@ async function main() {
     console.log(JSON.stringify({ token, wallet: wallet?.address ?? null, nonce: String(nonce) }));
     return;
   }
-  if (process.stdin.isTTY) throw new Error('Pipe a dedicated payer account export to stdin.');
+  if (process.stdin.isTTY) throw new Error('Pipe the dedicated payer key or account export to stdin.');
   const owner = AccountAddress.fromBase58(ownerAddress);
   const payer = AccountAddress.fromBase58(payerAddress);
   const expectedWallet = expectedAddress === 'none' ? null : AccountAddress.fromBase58(expectedAddress);
   let signer;
   try {
-    const wallet = parseWallet(readFileSync(0, 'utf8').trim());
-    if (wallet.value.address !== payer.address || wallet.environment.toLowerCase() !== 'mainnet') throw new Error();
-    signer = buildAccountSigner(wallet);
+    const input = readFileSync(0, 'utf8').trim();
+    if (/^(?:0x)?[a-f0-9]{64}$/i.test(input)) {
+      signer = buildAccountSigner(input.replace(/^0x/i, ''));
+    } else {
+      const wallet = parseWallet(input);
+      if (wallet.value.address !== payer.address || wallet.environment.toLowerCase() !== 'mainnet') throw new Error();
+      signer = buildAccountSigner(wallet);
+    }
   } catch {
-    throw new Error('Expected a mainnet account export for the dedicated payer address.');
+    throw new Error('Expected a 32-byte hexadecimal payer key or a mainnet account export for the dedicated payer address.');
   }
   const { payload, deadline, nonce } = await preflightMainnetWalletBinding(node, tokenId, owner, payer, signer.sign, expectedWallet);
   writeFileSync(output, Buffer.from(Parameter.toHexString(payload.message), 'hex'), { flag: 'wx' });

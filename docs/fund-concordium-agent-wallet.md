@@ -31,7 +31,7 @@ Get-Content -LiteralPath $payerExportPath -Raw |
   npm run agent-wallet-binding -- prepare $token $owner $current $payer $parameter
 ```
 
-Set `$payerExportPath` to the local account export path. Use `none` for the current address only when the registry read returns `null`. Keep the export out of Git. The preparation command checks mainnet, matches the current binding, verifies the payer signature, and simulates the update as the owner. It writes a new binary parameter file and prints the addresses and proof expiry for review.
+Set `$payerExportPath` to the local account export path. A single-key payer can also pipe its 32-byte hexadecimal account key from a hidden local prompt. Use `none` for the current address only when the registry read returns `null`. Keep the export out of Git. The preparation command checks mainnet, matches the current binding, verifies the payer signature, and simulates the update as the owner. It writes a new binary parameter file and prints the addresses and proof expiry for review.
 
 The owner can submit the prepared parameter using an owner account configured in `concordium-client`. Review the account, network, fee, and proof deadline before approving:
 
