@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
+import { verifyAgentIdProof } from './verify-agent-id-proof.js';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -57,6 +58,7 @@ const authorization: CommerceAuthorization = {
 };
 
 async function main() {
+  await verifyAgentIdProof();
   for (const rejected of [
     { ...quote, amount: '50001' },
     { ...quote, payTo: account(4).address },
