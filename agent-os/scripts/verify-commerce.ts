@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
+import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { verifyAgentIdProof } from './verify-agent-id-proof.js';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { AccountAddress, buildAccountSigner, SequenceNumber } from '@concordium/web-sdk';
+import { AccountAddress, ReturnValue, buildAccountSigner, SequenceNumber, type ConcordiumGRPCClient } from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient } from '@concordium/web-sdk/nodejs';
 import { HEADER, verifier } from '@proof.com/x401-node';
 import { CONCORDIUM_TESTNET_CAIP2 } from '@x402/concordium';
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import type { PaymentRequirements } from '@x402/core/types';
-import { requestCommerceResource, requestWithSpendingLimit, SpendingLedger, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
+import { preflightMainnetWalletBinding, requestCommerceResource, requestWithSpendingLimit, SpendingLedger, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
 
 const account = (fill: number) => AccountAddress.fromBuffer(Buffer.alloc(32, fill));
 const policy: CommercePolicy = {
@@ -58,6 +59,52 @@ const authorization: CommerceAuthorization = {
 };
 
 async function main() {
+  const payerSeed = '04'.repeat(32);
+  const payerKey = createPrivateKey({
+    key: Buffer.from('302e020100300506032b657004220420' + payerSeed, 'hex'),
+    format: 'der', type: 'pkcs8',
+  });
+  const verifyKey = createPublicKey(payerKey).export({ format: 'der', type: 'spki' }).subarray(-32).toString('hex');
+  let simulations = 0;
+  let bindingSignatures = 0;
+  const registry = {
+    async getConsensusStatus() {
+      return { genesisBlock: '9dd9ca4d19e9393877d2c44b70f89acbfc0883c2243e5eeaecc0d1cd0503f478' };
+    },
+    async getAccountInfo() {
+      return { accountThreshold: 1, accountCredentials: { 0: { value: { contents: {
+        credentialPublicKeys: { threshold: 1, keys: { 0: { verifyKey } } },
+      } } } } };
+    },
+    async invokeContract(context: { method: { toString(): string } }) {
+      switch (context.method.toString()) {
+        case 'CIS-8004.getAgentWallet':
+          return { tag: 'success', returnValue: ReturnValue.fromHexString('01' + '02'.repeat(32)) };
+        case 'CIS-8004.getAgentWalletNonce':
+          return { tag: 'success', returnValue: ReturnValue.fromHexString('010700000000000000') };
+        case 'CIS-8004.setAgentWallet':
+          simulations++;
+          return { tag: 'success' };
+        default: throw new Error('Unexpected registry invocation');
+      }
+    },
+  } as unknown as ConcordiumGRPCClient;
+  const signBinding = (message: ArrayBuffer) => {
+    bindingSignatures++;
+    assert.equal(message.byteLength, 162);
+    return buildAccountSigner(payerSeed).sign(message);
+  };
+  await assert.rejects(preflightMainnetWalletBinding(registry, 5123n, account(1), account(3), signBinding, account(4)),
+    /Current agent wallet changed/);
+  await assert.rejects(preflightMainnetWalletBinding(registry, 5123n, account(1), account(2), signBinding, account(2)),
+    /already bound/);
+  assert.equal(bindingSignatures, 0);
+  const rotation = await preflightMainnetWalletBinding(registry, 5123n, account(1), account(3), signBinding, account(2));
+  assert.equal(rotation.nonce, 7n);
+  assert.equal(rotation.previousWallet?.address, account(2).address);
+  assert.equal(rotation.payload.amount.microCcdAmount, 0n);
+  assert.equal(simulations, 1);
+
   await verifyAgentIdProof();
   for (const rejected of [
     { ...quote, amount: '50001' },

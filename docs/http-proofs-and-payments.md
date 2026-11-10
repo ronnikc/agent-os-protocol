@@ -10,7 +10,7 @@ Agent OS uses Concordium Agent IDs for roster accountability. HTTP resources can
 2. Open the Agent ID Card from the roster. Its registry and explorer links identify the same active registration. Keep the DID when restarting or reconnecting an agent.
 3. For payment experiments, [create and fund a dedicated agent account](fund-concordium-agent-wallet.md). The spending signer belongs to the agent's payment service. A recipient only supplies a receiving address.
 
-The wallet binding and rotation workflow is still tracked in the [Phase 2 plan](agent-wallets-and-payments-plan.md).
+The [mainnet operator workflow](fund-concordium-agent-wallet.md#prepare-a-mainnet-binding-or-rotation) reads a finalized wallet binding and prepares a new owner transaction. The [Phase 2 plan](agent-wallets-and-payments-plan.md) tracks panel integration and live rotation.
 
 ## x401 credential exchange
 
@@ -40,7 +40,7 @@ The website opens the pilot on the hosted panel's domain, where your browser wal
 3. The client retries with `PAYMENT-SIGNATURE`. The facilitator verifies the transaction, signs as sponsor, and submits it. The caller's `verifySettlement` callback compares `PAYMENT-RESPONSE` with the approved quote and finalized chain data.
 4. If settlement is uncertain, reconcile the recorded nonce and expiry against the chain before releasing the reservation. Use the same request ID for reconciliation and keep the signing service's ledger private.
 
-Use a facilitator that explicitly advertises the target network and supports the quoted asset. The sponsored mainnet pilot is pending. See the [Concordium x402 exact scheme](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_concordium.md).
+Use a facilitator that explicitly advertises the target network and supports the quoted asset. A local merchant fixture and the official facilitator SDK settled a 1 CCD mainnet payment from the rotated QA agent wallet. An independent chain query verified the payer, recipient, amount, and fee sponsor. A hosted merchant interoperability test remains open. See the [Concordium x402 exact scheme](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_concordium.md).
 
 ## Concordium Verify & Pay pilot
 
