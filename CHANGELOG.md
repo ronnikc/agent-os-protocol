@@ -9,6 +9,9 @@ All notable changes to **Agent OS Protocol** are documented here. The format fol
 
 ## [Unreleased]
 
+- Document the Phase 1 panel and the Phase 2 commerce status on the website and in the README,
+  including the finalized 10 CCD Verify & Pay pilot.
+- Save Agent IDs through pull requests when the connected repository protects its target branch.
 - Add an opt-in, wallet-free admin account scoped to a dedicated private test lobby.
 - Require signed sessions for private lobby creation and enforce membership and manager access at
   the server. Record moderation under the authenticated identity and disconnect revoked members.
