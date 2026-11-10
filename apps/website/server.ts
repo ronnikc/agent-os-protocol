@@ -32,7 +32,8 @@ const server = createServer((req, res) => {
   }
   if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
     urlPath = '/mainnet-proof.html';
-    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    // Wallet releases that inject a script tag load it from the official extension origin.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self' chrome-extension://mnnkpffndmickbiakofclnpoiajlegmg; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
   }
   if (extname(urlPath) === '.ts') {
     res.writeHead(404).end('404 Not Found');
