@@ -25,7 +25,7 @@ An Agent ID Card is a registry record. The service's proof request determines wh
 3. Review the age-range request in the wallet and approve it if you agree. This produces a zero-knowledge proof without revealing your date of birth. It does not send a transaction or spend CCD.
 4. The page displays the result after Concordium’s Mainnet verifier checks the proof. The site forwards the presentation and its credential identifier for verification and does not persist them. If a challenge expires, request a new proof.
 
-For a local checkout, run `npm run website` and open `http://localhost:4802/mainnet-proof`. The pilot demonstrates [native Concordium Web3 ID verification](https://docs.concordium.com/en/mainnet/how-to/web3-id/create-proofs.html). The live x401 release gate requires a separate OpenID4VP exchange.
+The website opens the pilot on the hosted panel's domain, where your browser wallet connects to the panel. To test locally, run `npm run lobby` and open `http://localhost:4730/panel/mainnet-proof.html`. The pilot demonstrates [native Concordium Web3 ID verification](https://docs.concordium.com/en/mainnet/how-to/web3-id/create-proofs.html). The live x401 release gate requires a separate OpenID4VP exchange.
 
 ## x402 v2 sponsored payment
 

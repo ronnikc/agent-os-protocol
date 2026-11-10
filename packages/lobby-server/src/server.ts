@@ -16,6 +16,7 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { TaskRepository } from './hosted/task-repository.js';
+import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
 import type { GitHubRepoClient } from './hosted/github-repo-client.js';
 import { randomUUID } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
@@ -1384,6 +1385,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     let path = url.pathname;
+    if (path.startsWith(MAINNET_PROOF_PATH + '/')) {
+      await handleMainnetProof(req, res, path);
+      return;
+    }
 
     // Rewrite panel-specific remote proxy requests to direct lobby sub-routes
     if (path.startsWith('/api/lobby/remote/')) {

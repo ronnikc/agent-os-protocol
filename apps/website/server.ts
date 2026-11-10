@@ -5,7 +5,6 @@ import { createServer } from 'node:http';
 import { readFileSync, existsSync, statSync } from 'node:fs';
 import { join, dirname, extname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { handleMainnetProof } from './mainnet-proof.ts';
 
 const PORT = Number(process.env.AGENT_OS_WEBSITE_PORT) || 4802;
 const __filename = fileURLToPath(import.meta.url);
@@ -26,22 +25,9 @@ const MIME: Record<string, string> = {
 
 const server = createServer((req, res) => {
   let urlPath = req.url?.split('?')[0] || '/';
-  if (urlPath.startsWith('/api/mainnet-proof/')) {
-    void handleMainnetProof(req, res, urlPath);
-    return;
-  }
   if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
-    urlPath = '/mainnet-proof.html';
-    // Include the extension linked by the hosted panel as well as the current store listing.
-    res.setHeader('Content-Security-Policy', [
-      "default-src 'none'",
-      "script-src 'self' chrome-extension://odfbpeocbbpdnneocdnlphceeapeglne chrome-extension://mnnkpffndmickbiakofclnpoiajlegmg",
-      "style-src 'self'",
-      "connect-src 'self'",
-      "frame-ancestors 'none'",
-      "base-uri 'none'",
-      "form-action 'none'",
-    ].join('; '));
+    res.writeHead(302, { location: 'https://lobby.agent-os.gothard.dk/panel/mainnet-proof.html' }).end();
+    return;
   }
   if (extname(urlPath) === '.ts') {
     res.writeHead(404).end('404 Not Found');
