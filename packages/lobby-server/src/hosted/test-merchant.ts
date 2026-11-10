@@ -1,19 +1,22 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { AccountAddress, TransactionHash } from '@concordium/web-sdk';
+import { AccountAddress, TransactionHash, buildAccountSigner, signMessage, verifyMessageSignature } from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient } from '@concordium/web-sdk/nodejs';
 import { credentials } from '@grpc/grpc-js';
-import { CONCORDIUM_MAINNET_CAIP2 } from '@x402/concordium';
+import { CONCORDIUM_MAINNET_CAIP2, toConcordiumFacilitatorSigner } from '@x402/concordium';
+import { ExactConcordiumScheme } from '@x402/concordium/exact/facilitator';
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import { HTTPFacilitatorClient, type FacilitatorClient } from '@x402/core/server';
 import type { PaymentRequirements, SettleResponse } from '@x402/core/types';
 
 export const TEST_MERCHANT_PATH = '/api/v1/agent-lobby/x402/test-resource';
 const network = CONCORDIUM_MAINNET_CAIP2;
+const mainnetHost = 'grpc.mainnet.concordium.software';
+const mainnetPort = 20000;
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
 interface MerchantConfig {
@@ -141,23 +144,80 @@ export function createTestMerchant(config: MerchantConfig, services: {
   };
 }
 
+interface HostedMerchantConfig extends MerchantConfig {
+  facilitatorUrl?: string;
+  facilitatorToken?: string;
+  receiptDirectory: string;
+  pilotSponsorKeyFile?: string;
+  pilotPayer?: string;
+}
+
+function createPilotFacilitator(config: HostedMerchantConfig, node: ConcordiumGRPCNodeClient): FacilitatorClient {
+  if (!config.pilotSponsorKeyFile || !isAbsolute(config.pilotSponsorKeyFile) || !config.pilotPayer ||
+      config.publicAccess === true || config.amountMicroCcd !== '1000000' || config.facilitatorUrl) {
+    throw new Error('Self-hosted sponsorship requires a single invite-only 1 CCD pilot');
+  }
+  const payer = AccountAddress.fromBase58(config.pilotPayer);
+  const sponsor = AccountAddress.fromBase58(config.sponsor);
+  if (AccountAddress.isAlias(payer, sponsor) || AccountAddress.isAlias(payer, AccountAddress.fromBase58(config.recipient))) {
+    throw new Error('The pilot payer must be distinct from the sponsor and recipient');
+  }
+  const key = readFileSync(config.pilotSponsorKeyFile, 'utf8').trim().replace(/^0x/i, '');
+  if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error('Invalid pilot sponsor key file');
+  const signer = buildAccountSigner(key);
+  const scheme = new ExactConcordiumScheme({
+    signer: toConcordiumFacilitatorSigner(sponsor.address, signer, { host: mainnetHost, port: mainnetPort, useTls: true }),
+    requireFinalization: true, maxExpiryOffsetSeconds: 120,
+  });
+  const reservation = join(config.receiptDirectory, 'self-hosted-pilot-attempt.json');
+  return {
+    async getSupported() {
+      if (existsSync(reservation)) throw new Error('The single pilot attempt has been reserved');
+      const info = await node.getAccountInfo(sponsor);
+      const message = 'Agent OS hosted x402 pilot sponsor readiness';
+      const signature = await signMessage(sponsor, message, signer);
+      if (!await verifyMessageSignature(message, signature, info) ||
+          info.accountAvailableBalance.microCcdAmount <= 0n) {
+        throw new Error('Sponsor credentials or balance unavailable');
+      }
+      return {
+        kinds: [{ x402Version: 2, scheme: 'exact', network, extra: scheme.getExtra(network) }],
+        extensions: [], signers: { [network]: [sponsor.address] },
+      };
+    },
+    async verify(payment, quote) {
+      if (existsSync(reservation)) return { isValid: false, invalidReason: 'pilot_attempt_already_reserved' };
+      const verified = await scheme.verify(payment, quote);
+      if (!verified.isValid || verified.payer !== payer.address) {
+        return { isValid: false, invalidReason: 'pilot_payer_not_authorized' };
+      }
+      return verified;
+    },
+    async settle(payment, quote) {
+      // Reserve before signing or submitting. Preserve the reservation if the outcome is uncertain.
+      writeFileSync(reservation, JSON.stringify({ payer: payer.address, reservedAt: new Date().toISOString() }), {
+        flag: 'wx', mode: 0o600,
+      });
+      return scheme.settle(payment, quote);
+    },
+  };
+}
+
 export function loadTestMerchant(file: string | undefined) {
   if (!file) return;
   if (!isAbsolute(file)) throw new Error('Expected an absolute merchant configuration path');
-  const config = JSON.parse(readFileSync(file, 'utf8')) as MerchantConfig & {
-    facilitatorUrl: string; facilitatorToken?: string; receiptDirectory: string;
-  };
+  const config = JSON.parse(readFileSync(file, 'utf8')) as HostedMerchantConfig;
   if (!isAbsolute(config.receiptDirectory)) throw new Error('Expected an absolute merchant receipt directory');
-  const facilitator = new HTTPFacilitatorClient({
-    url: httpsUrl(config.facilitatorUrl).href.replace(/\/$/, ''),
+  const node = new ConcordiumGRPCNodeClient(mainnetHost, mainnetPort, credentials.createSsl(), { timeout: 12_000 });
+  mkdirSync(config.receiptDirectory, { recursive: true, mode: 0o700 });
+  const facilitator = config.pilotSponsorKeyFile ? createPilotFacilitator(config, node) : new HTTPFacilitatorClient({
+    url: httpsUrl(config.facilitatorUrl ?? '').href.replace(/\/$/, ''),
     timeoutMs: 90_000,
     createAuthHeaders: async () => {
       const auth: Record<string, string> = config.facilitatorToken ? { Authorization: 'Bearer ' + config.facilitatorToken } : {};
       return { supported: auth, verify: auth, settle: auth };
     },
   });
-  const node = new ConcordiumGRPCNodeClient('grpc.mainnet.concordium.software', 20000, credentials.createSsl(), { timeout: 12_000 });
-  mkdirSync(config.receiptDirectory, { recursive: true, mode: 0o700 });
   return createTestMerchant(config, {
     facilitator,
     async verifyFinalized(receipt, payer, quote) {

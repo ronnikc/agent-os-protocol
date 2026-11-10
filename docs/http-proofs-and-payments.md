@@ -68,6 +68,10 @@ Use a separate funded payer account. To inspect the quote, send a GET with the i
 
 The hosted code remains disabled until an operator provisions the merchant and facilitator. The local HTTP fixture covers invitation checks, modified quotes, unconfirmed settlement and duplicate receipts. A real hosted Mainnet settlement is still required before opening public access.
 
+For the invite-only 1 CCD pilot, the lobby can also run the official Concordium facilitator SDK in process. Omit `facilitatorUrl` and set `pilotPayer` to the one approved Mainnet payer address. Set `pilotSponsorKeyFile` to an absolute, operator-only file containing the dedicated sponsor’s 32-byte hexadecimal account signing key. The file must be readable by the lobby process. Keep the merchant, payer and sponsor accounts distinct. The merchant checks that the sponsor key matches its current account credentials and that the account has a positive available balance before quoting. Fund the sponsor for network fees and the payer with 1 CCD once the hosted quote has been checked.
+
+The self-hosted option reserves one settlement attempt on disk before it signs. Keep `self-hosted-pilot-attempt.json` in the persistent receipt directory across restarts. After an uncertain outcome, reconcile the payer nonce and Mainnet history before provisioning a new attempt. This mode requires the invite token and does not support public access.
+
 ## Concordium Verify & Pay pilot
 
 Concordium also documents a transaction-hash flow. A local test resource returned HTTP 402 for 10 CCD. The QA wallet submitted the payment on mainnet and paid the network fee. The client retried with the transaction hash in `X-PAYMENT`. A local verifier checked finality, sender, recipient, and amount before granting access and rejected a replay. This evidence covers the transaction-hash flow. The sponsored v2 flow uses a different wire format and settlement path. [Concordium Verify & Pay guide](https://docs.concordium.com/en/mainnet/how-to/integrations/x402-integration.html)
