@@ -41,6 +41,8 @@ export interface ApiRuntimeConfig {
   repoClient?: any;
   /** Injected lobby tools for roster queries, messaging, and task management. */
   lobbyTools?: LobbyToolsProvider;
+  /** Operator-configured proof exchange. The model supplies neither a URL nor key material. */
+  accessAgentIdResource?: () => Promise<string>;
 }
 
 interface Session {
@@ -58,7 +60,7 @@ function providerFor(cfg: ApiRuntimeConfig): ModelProviderAdapter {
   return new AnthropicCompatibleProvider({ ...opts, maxTokens: cfg.maxTokens });
 }
 
-function buildToolsForProvider(providerId: string): any[] {
+function buildToolsForProvider(providerId: string, agentIdAccess: boolean): any[] {
   const definitions = [
     {
       name: 'read_file',
@@ -120,6 +122,14 @@ function buildToolsForProvider(providerId: string): any[] {
 
   // Combine repo tools + lobby tools based on what's available
   const allDefs = [...definitions, ...lobbyToolDefs];
+  if (agentIdAccess) {
+    allDefs.push({
+      name: 'access_agent_id_resource',
+      description: 'Use this agent’s delegated Agent ID to request access to its configured resource.',
+      properties: {},
+      required: [],
+    });
+  }
 
   if (providerId === 'openai-compatible') {
     return allDefs.map(d => ({
@@ -156,7 +166,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   readonly supportsJsonOutput = true;
   readonly supportsSessionResume = true;
   get supportsMcp(): boolean {
-    return !!(this.cfg.repoClient || this.cfg.lobbyTools);
+    return !!(this.cfg.repoClient || this.cfg.lobbyTools || this.cfg.accessAgentIdResource);
   }
 
   private readonly provider: ModelProviderAdapter;
@@ -195,6 +205,9 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private async executeTool(name: string, args: any): Promise<string> {
+    if (name === 'access_agent_id_resource') {
+      return this.cfg.accessAgentIdResource?.() ?? 'Agent ID proof access is not configured.';
+    }
     // Lobby tools — always available when lobbyTools is configured
     if (name === 'get_roster') {
       if (!this.cfg.lobbyTools) return 'Lobby tools not available.';
@@ -240,7 +253,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
 
     s.messages.push({ role: 'user', content: next });
 
-    if (!this.cfg.repoClient) {
+    if (!this.cfg.repoClient && !this.cfg.accessAgentIdResource) {
       // Normal streaming path when no repoClient is injected
       const messages: CompletionMessage[] = [
         ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
@@ -264,7 +277,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     // Repo client tool loop (non-streaming intermediate turns, final turn yields output)
-    const tools = buildToolsForProvider(this.cfg.provider.id);
+    const tools = buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource);
     let assistantText = '';
     let loopCount = 0;
     const maxLoops = 10;

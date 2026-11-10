@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash, createPublicKey, randomBytes, sign, verify, type KeyObject } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import { HEADER, verifier, type CredentialResult, type DigitalCredentialRequest } from '@proof.com/x401-node';
+import { agent, HEADER, verifier, type CredentialResult, type DigitalCredentialRequest } from '@proof.com/x401-node';
 
 export const AGENT_ID_CREDENTIAL_TYPE = 'https://agent-os.gothard.dk/credentials/concordium-agent-id/v1';
 const protocol = 'openid4vp-v1-unsigned';
@@ -60,13 +60,13 @@ function readJwt(token: string, type: string, key: KeyObject): Record<string, un
   return JSON.parse(Buffer.from(parts[1], 'base64url').toString());
 }
 
-function requestData(nonce: string) {
+function requestData(nonce: string, id = credentialId) {
   return {
     response_type: 'vp_token',
     response_mode: 'dc_api',
     nonce,
     dcql_query: { credentials: [{
-      id: credentialId, format: 'dc+sd-jwt', meta: { vct_values: [AGENT_ID_CREDENTIAL_TYPE] },
+      id, format: 'dc+sd-jwt', meta: { vct_values: [AGENT_ID_CREDENTIAL_TYPE] },
     }] },
   };
 }
@@ -109,10 +109,13 @@ export function presentAgentIdCredential(
   request: DigitalCredentialRequest, resource: string, credential: string, holderKey: KeyObject,
 ): CredentialResult {
   const url = resourceUrl(resource);
-  const entry = request.requests.find(entry => entry.protocol === protocol);
-  const nonce = entry?.data.nonce;
-  if (typeof nonce !== 'string' || !/^[\w-]{43}$/.test(nonce) ||
-      !isDeepStrictEqual(entry?.data, requestData(nonce)) || !/^[\w.-]+~$/.test(credential)) {
+  const entry = request.requests.find(entry => {
+    const nonce = entry.data?.nonce;
+    const id = (entry.data?.dcql_query as { credentials?: { id?: unknown }[] } | undefined)?.credentials?.[0]?.id;
+    return entry.protocol === protocol && typeof nonce === 'string' && /^[\w-]{16,128}$/.test(nonce) &&
+      typeof id === 'string' && /^[\w-]{1,64}$/.test(id) && isDeepStrictEqual(entry.data, requestData(nonce, id));
+  });
+  if (!entry || !/^[\w.-]+~$/.test(credential)) {
     throw new Error('Unsupported Agent ID credential request');
   }
   const claims = JSON.parse(Buffer.from(credential.split('.')[1], 'base64url').toString());
@@ -122,10 +125,49 @@ export function presentAgentIdCredential(
     throw new Error('Agent ID credential does not authorize this holder and resource');
   }
   const keyBinding = signJwt('kb+jwt', {
-    nonce, aud: 'origin:' + url.origin, iat: clock(),
+    nonce: entry.data.nonce, aud: 'origin:' + url.origin, iat: clock(),
     sd_hash: createHash('sha256').update(credential).digest('base64url'),
   }, holderKey);
-  return { protocol, data: { vp_token: { [credentialId]: [credential + keyBinding] } } };
+  const query = entry.data.dcql_query as { credentials: [{ id: string }] };
+  return { protocol, data: { vp_token: { [query.credentials[0].id]: [credential + keyBinding] } } };
+}
+
+/** Prove a registered agent's identity to one operator-approved resource, without initiating payment. */
+export async function accessAgentIdResource(options: {
+  did: string;
+  resource: string;
+  credential: string;
+  holderKey: KeyObject;
+}, fetchResource: typeof fetch = fetch): Promise<number> {
+  const { did, resource, credential, holderKey } = options;
+  const url = resourceUrl(resource);
+  if (credential.length > 8192 || !/^[\w.-]+~$/.test(credential)) throw new Error('Invalid Agent ID credential');
+  const claims = JSON.parse(Buffer.from(credential.split('.')[1], 'base64url').toString());
+  if (claims.sub !== did) throw new Error('Agent ID credential does not match the runtime DID');
+  const request = (headers?: Headers) => fetchResource(url, {
+    method: 'GET', headers, redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15_000),
+  });
+  const challenge = await request();
+  const challengeHeader = challenge.headers.get(HEADER.PROOF_REQUEST);
+  await challenge.body?.cancel();
+  if (challenge.status !== 401 || !challengeHeader || challengeHeader.length > 16_384) {
+    throw new Error('Resource did not offer an Agent ID proof challenge');
+  }
+  const requirement = agent.detectProofRequirement({ headers: challenge.headers });
+  if (requirement?.payload.version !== '0.2.0') throw new Error('Unsupported x401 challenge');
+  const credentialResult = presentAgentIdCredential(
+    agent.getDigitalCredentialRequest(requirement.payload), resource, credential, holderKey,
+  );
+  const proof = agent.encodeResultArtifact(agent.buildResultArtifact({
+    credentialResult, requestId: requirement.payload.request_id,
+  }));
+  if (proof.length > 16_384) throw new Error('Agent ID proof exceeds the header size limit');
+  const response = await request(new Headers({ [HEADER.PROOF_RESPONSE]: proof }));
+  await response.body?.cancel();
+  if (response.headers.has(HEADER.PROOF_REQUEST) || response.headers.has(HEADER.PROOF_RESULT) && response.ok) {
+    throw new Error('Resource returned an ambiguous Agent ID proof result');
+  }
+  return response.status;
 }
 
 /** One verifier instance protects one GET resource and owns its one-time challenges. */
