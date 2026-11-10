@@ -48,6 +48,8 @@ Use a facilitator that explicitly advertises the target network and supports the
 
 ### Hosted x402 test merchant
 
+Open the [x402 Test Merchant](https://lobby.agent-os.gothard.dk/panel/x402-merchant.html) to see whether the service is available, check the current Mainnet quote, and copy the endpoint into your client.
+
 The lobby server can host a demo resource at `/api/v1/agent-lobby/x402/test-resource`. An enabled merchant quotes a real Mainnet CCD payment and returns a receipt and explorer link after checking the finalized transfer. The resource costs 1 CCD during the first pilot. Operators can select 10 CCD for a later demo. CCD goes to the configured merchant account, and the facilitator sponsor pays the network fee.
 
 Set `AGENT_OS_X402_TEST_MERCHANT_FILE` to the absolute path of an operator-only JSON file outside the checkout. Configure the following fields.
