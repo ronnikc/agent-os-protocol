@@ -1051,6 +1051,18 @@ footer p {
   font-size: 14px;
 }
 
+.footer-credit {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-soft);
+}
+
+.footer-credit:hover,
+.footer-credit:focus-visible {
+  color: var(--color-cyan);
+}
+
 /* Keyframes */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }

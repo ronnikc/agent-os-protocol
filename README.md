@@ -399,3 +399,5 @@ Licensed under the **Apache License 2.0**.
 Copyright © 2026 **Gothard.dk // Ronni K. Gothard Christiansen**.
 
 See [`LICENSE`](LICENSE) and [`NOTICE`](NOTICE).
+
+<a href="https://r-digital.tech/"><img src="apps/website/images/r-digital-logo.svg" alt="" width="24" height="24"> Powered by R Digital</a>
