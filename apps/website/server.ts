@@ -25,6 +25,14 @@ const MIME: Record<string, string> = {
 
 const server = createServer((req, res) => {
   let urlPath = req.url?.split('?')[0] || '/';
+  if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
+    res.writeHead(302, { location: 'https://lobby.agent-os.gothard.dk/panel/mainnet-proof.html' }).end();
+    return;
+  }
+  if (extname(urlPath) === '.ts') {
+    res.writeHead(404).end('404 Not Found');
+    return;
+  }
   if (urlPath === '/health') {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ ok: true, revision: process.env.AGENT_OS_REVISION }));

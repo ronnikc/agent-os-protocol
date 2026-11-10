@@ -16,7 +16,22 @@ The [mainnet operator workflow](fund-concordium-agent-wallet.md#prepare-a-mainne
 
 The commerce client fetches an approved HTTPS resource. If the response includes `PROOF-REQUEST`, the client parses the x401 0.2.0 challenge with the Proof SDK and asks the configured `presentProof` callback to produce a credential presentation. The callback is responsible for verifier trust, permitted attributes, and holder consent. The client retries once with `PROOF-RESPONSE`. It stops before payment if the resource rejects the presentation.
 
-An Agent ID Card is a registry record. The service's proof request determines which issuer and credential can satisfy the x401 challenge. The repository verifies the negotiation in a fixture. A live Concordium-backed credential presentation to an independent verifier is still a release gate.
+An Agent ID Card links an agent DID to its owner’s Concordium account in the registry. The Agent ID credential profile uses that binding for x401:
+
+1. The issuer resolves the active registry record and checks the card. The registered owner approves a delegation for a specific agent presentation key, HTTPS resource, and expiry. Verify the wallet signature against the owner’s current on-chain credentials.
+2. The issuer creates a short-lived, holder-bound SD-JWT credential. It carries the agent DID, owner account, registry record and approved resource.
+3. The agent answers the resource’s OpenID4VP challenge by signing the fresh nonce and verifier audience with the delegated key. The verifier checks the trusted issuer, holder signature, resource, expiry, and current registry binding, then consumes the nonce.
+
+The Mainnet QA pilot used Agent Registry token 5123 and verified the registered owner’s wallet signature against Mainnet. The local reference verifier accepted the x401 presentation and rejected replay. The fixture also covers a copied DID, a different signing key and an inactive registration. Deploying the issuer and holder integration and exchanging the credential with an independently operated verifier remain release checks. [x401 specification](https://x401.proof.com/spec/latest/) · [OpenID4VP](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) · [SD-JWT](https://www.rfc-editor.org/rfc/rfc9901.html)
+
+## Try the Concordium Mainnet Proof Pilot
+
+1. On the device where your Concordium Wallet for Web is installed, open the [Mainnet Proof Pilot](https://agent-os.gothard.dk/mainnet-proof).
+2. Unlock the wallet, select Mainnet and an account with a Concordium identity, then choose **Request proof in Concordium Wallet**.
+3. Review the age-range request in the wallet and approve it if you agree. This produces a zero-knowledge proof without revealing your date of birth. It does not send a transaction or spend CCD.
+4. The page displays the result after Concordium’s Mainnet verifier checks the proof. The site forwards the presentation and its credential identifier for verification and does not persist them. If a challenge expires, request a new proof.
+
+The website opens the pilot on the hosted panel's domain, where your browser wallet connects to the panel. To test locally, run `npm run lobby` and open `http://localhost:4730/panel/mainnet-proof.html`. The pilot demonstrates [native Concordium Web3 ID verification](https://docs.concordium.com/en/mainnet/how-to/web3-id/create-proofs.html). The live x401 release gate requires a separate OpenID4VP exchange.
 
 ## x402 v2 sponsored payment
 
