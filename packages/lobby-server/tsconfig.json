@@ -8,6 +8,7 @@
   "references": [
     { "path": "../protocol-core" },
     { "path": "../adapters" },
+    { "path": "../concordium-commerce" },
     { "path": "../providers" },
     { "path": "../identity-concordium" },
     { "path": "../knowledge-engine" },
