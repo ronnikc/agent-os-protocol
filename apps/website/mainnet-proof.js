@@ -37,12 +37,17 @@ button.addEventListener('click', async () => {
       status.textContent = 'Concordium Wallet could not connect to this page. In your browser’s extension settings, allow Concordium Wallet to access this site, then reload.';
       return;
     }
-    if (typeof wallet.requestVerifiablePresentation !== 'function' || typeof wallet.requestAccounts !== 'function') {
+    if (typeof wallet.requestVerifiablePresentation !== 'function' ||
+        (typeof wallet.connect !== 'function' && typeof wallet.requestAccounts !== 'function')) {
       status.textContent = 'The connected Concordium Wallet does not expose the proof API. Update the browser extension, then reload.';
       return;
     }
     status.textContent = 'Connect your Mainnet wallet.';
-    if (!(await wallet.requestAccounts())[0]) {
+    // The hosted panel connects through connect(). Newer providers also expose requestAccounts().
+    const account = typeof wallet.connect === 'function'
+      ? await wallet.connect()
+      : (await wallet.requestAccounts())[0];
+    if (!account) {
       status.textContent = 'Select an account in Concordium Wallet and try again.';
       return;
     }
