@@ -1300,3 +1300,12 @@ body {
 .proof-pilot [role="status"] {
   min-block-size: 1.6em;
 }
+
+#merchant-endpoint {
+  width: 100%;
+}
+
+#merchant-quote dd {
+  overflow-wrap: anywhere;
+  margin: 0 0 0.5rem;
+}
