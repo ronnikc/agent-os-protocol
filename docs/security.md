@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
-<!-- Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen -->
+<!-- Copyright (c) 2026 R Digital -->
 
 # Security model
 
@@ -108,4 +108,4 @@ issue describing the impact and reproduction (omit any real secrets), or contact
 
 ---
 
-Licensed under **Apache-2.0** · © 2026 Gothard.dk // Ronni K. Gothard Christiansen.
+Licensed under **Apache-2.0** · © 2026 R Digital.

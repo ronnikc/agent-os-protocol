@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: Apache-2.0
-# Copyright (c) 2026 Gothard.dk // Ronni K. Gothard Christiansen
+# Copyright (c) 2026 R Digital
 #
 # Fresh-clone boot smoke for Agent OS Protocol.
 #

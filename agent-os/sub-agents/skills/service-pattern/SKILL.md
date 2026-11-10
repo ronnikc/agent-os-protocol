@@ -14,7 +14,7 @@ Backend service implementation pattern for this project. Constructor receives Db
 Every backend service follows this exact structure. Copy and adapt — do not invent new patterns.
 
 ```typescript
-// Copyright (c) 2026 Gothard.dk All rights reserved.
+// Copyright (c) 2026 R Digital All rights reserved.
 // This source code is proprietary and confidential.
 // See LICENSE.md for licensing terms.
 
