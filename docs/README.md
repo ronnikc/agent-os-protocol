@@ -26,7 +26,7 @@ and extend it. Start at the top and follow the links.
 | **API providers (fuel, BYOK)** | [`providers/`](providers/README.md) — the provider contract + BYOK model | `npm run verify-providers` |
 | **The lobby** | [`lobby/`](lobby/README.md) — coordination model · **[Lobby hosting](lobby-hosting.md)** — run your own | `npm run verify-lobby` |
 | **Agent identity** | [`identity/`](identity/README.md) — read-only Concordium verification, no keys | `npm run verify-identity` |
-| **Agent wallets and commerce** | [Fund an agent wallet](fund-concordium-agent-wallet.md) · [Phase 2 implementation and release gates](agent-wallets-and-payments-plan.md) | `npm run verify-commerce` |
+| **Agent wallets and commerce** | [x401 and x402 integration](http-proofs-and-payments.md) · [Fund an agent wallet](fund-concordium-agent-wallet.md) · [Phase 2 release gates](agent-wallets-and-payments-plan.md) | `npm run verify-commerce` |
 | **UI Assist** | [`ui-assist/`](ui-assist/README.md) + [framework guides](ui-assist/frameworks.md) | `npm run verify-ui-assist` |
 | **Training agents** | **[Training agents](training-agents.md)** — teach a generic agent your domain with `/train` | (exercised end-to-end) |
 

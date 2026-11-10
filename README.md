@@ -258,7 +258,7 @@ The Concordium Agent Registry links a DID and Agent ID Card to an active on-chai
 | **Concordium Verify & Pay** | A local HTTP test settled 10 CCD on mainnet from a QA wallet. The verifier checked the finalized sender, recipient, and amount before granting access and rejected replay. |
 | **Marketplace and Protocol-Level Locks (PLL)** | Marketplace listings and bids are preview features. Delivery-based escrow is planned. |
 
-See the [wallet funding guide](docs/fund-concordium-agent-wallet.md) and [Phase 2 release gates](docs/agent-wallets-and-payments-plan.md).
+See the [x401 and x402 integration guide](docs/http-proofs-and-payments.md), [wallet funding guide](docs/fund-concordium-agent-wallet.md), and [Phase 2 release gates](docs/agent-wallets-and-payments-plan.md).
 
 ## How a request flows
 
