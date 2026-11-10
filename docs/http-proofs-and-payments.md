@@ -18,6 +18,15 @@ The commerce client fetches an approved HTTPS resource. If the response includes
 
 An Agent ID Card is a registry record. The service's proof request determines which issuer and credential can satisfy the x401 challenge. The repository verifies the negotiation in a fixture. A live Concordium-backed credential presentation to an independent verifier is still a release gate.
 
+## Try the Concordium Mainnet Proof Pilot
+
+1. On the device where your Concordium Wallet for Web is installed, open the [Mainnet Proof Pilot](https://agent-os.gothard.dk/mainnet-proof).
+2. Unlock the wallet, select Mainnet and an account with a Concordium identity, then choose **Request proof in Concordium Wallet**.
+3. Review the age-range request in the wallet and approve it if you agree. This produces a zero-knowledge proof without revealing your date of birth. It does not send a transaction or spend CCD.
+4. The page displays the result after Concordium’s Mainnet verifier checks the proof. The site forwards the presentation and its credential identifier for verification and does not persist them. If a challenge expires, request a new proof.
+
+For a local checkout, run `npm run website` and open `http://localhost:4802/mainnet-proof`. The pilot demonstrates [native Concordium Web3 ID verification](https://docs.concordium.com/en/mainnet/how-to/web3-id/create-proofs.html). The live x401 release gate requires a separate OpenID4VP exchange.
+
 ## x402 v2 sponsored payment
 
 1. The resource returns HTTP 402 with `PAYMENT-REQUIRED`. Configure the commerce policy with the full resource URL, network, payer, recipient, asset, facilitator fee payer, and maximum amount in atomic units. For native CCD, one CCD is 1,000,000 microCCD.
