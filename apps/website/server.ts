@@ -32,8 +32,16 @@ const server = createServer((req, res) => {
   }
   if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
     urlPath = '/mainnet-proof.html';
-    // Wallet releases that inject a script tag load it from the official extension origin.
-    res.setHeader('Content-Security-Policy', "default-src 'none'; script-src 'self' chrome-extension://mnnkpffndmickbiakofclnpoiajlegmg; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+    // Include the extension linked by the hosted panel as well as the current store listing.
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'none'",
+      "script-src 'self' chrome-extension://odfbpeocbbpdnneocdnlphceeapeglne chrome-extension://mnnkpffndmickbiakofclnpoiajlegmg",
+      "style-src 'self'",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'none'",
+      "form-action 'none'",
+    ].join('; '));
   }
   if (extname(urlPath) === '.ts') {
     res.writeHead(404).end('404 Not Found');
