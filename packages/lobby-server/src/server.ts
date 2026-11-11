@@ -434,8 +434,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   } catch (e) { console.warn('[lobby-server] Could not load agent cards file:', e); }
 
   const cardOrigin = process.env.AGENT_OS_AGENT_CARD_ORIGIN;
+  const legacyCardOrigins = (process.env.AGENT_OS_AGENT_CARD_LEGACY_ORIGINS ?? '').split(',').map((origin) => origin.trim()).filter(Boolean);
   const verifyHostedRosterIdentity = !verifyIdentity && registryMcp && cardOrigin
-    ? createRegistryRosterVerifier(registryMcp, cardOrigin, (did) => agentCards.get(did))
+    ? createRegistryRosterVerifier(registryMcp, cardOrigin, (did) => agentCards.get(did), legacyCardOrigins)
     : undefined;
   const coordinator = options.coordinator ?? new LobbyCoordinator(store, {
     verifyIdentity, verifyHostedRosterIdentity, autoFailover,

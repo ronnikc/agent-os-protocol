@@ -26,8 +26,9 @@ export function createRegistryRosterVerifier(
   registry: Pick<RegistryMcpClient, 'callTool'>,
   publicOrigin: string,
   getCard: (did: string) => unknown,
+  legacyOrigins: readonly string[] = [],
 ): VerifyIdentityFn {
-  const cardOrigin = new URL(publicOrigin);
+  const cardOrigins = [publicOrigin, ...legacyOrigins].map((origin) => new URL(origin));
   const lookups = new Map<string, { expiresAt: number; records: Promise<Record<string, unknown>[]> }>();
 
   return async (did) => {
@@ -60,7 +61,7 @@ export function createRegistryRosterVerifier(
       const cardHash = createHash('sha256').update(JSON.stringify(card)).digest('hex');
       const match = records.find((record) => record && record.status === 'Active' &&
         record.network === ref.network && record.owner_account === owner &&
-        record.metadata_hash_hex === cardHash && matchesCardUri(record.agent_uri, cardOrigin, did));
+        record.metadata_hash_hex === cardHash && cardOrigins.some((origin) => matchesCardUri(record.agent_uri, origin, did)));
       if (!match) return { ...result, status: 'unverified' };
       const token = match.token_id;
       const validToken = typeof token === 'number' ? Number.isSafeInteger(token) && token >= 0
