@@ -9,7 +9,7 @@ panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable 
 &nbsp;Status: **Stable**
 [![Deploy sites](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml/badge.svg)](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml)
 
-> **Project status.** The stable Phase 1 release includes the local panel and relay, independent lobby server, and hosted swarm demo. Phase 2 adds proof and payment tools. See the [commerce status](#agent-wallets-and-http-commerce) and [public release checklist](RELEASING.md).
+> **Project status.** Agent OS Protocol v1.0.0 is the first stable release of the orchestration platform. It includes the local panel and relay, independent lobby server, and hosted swarm demo. Phase 2 proof and payment features follow separate rollout gates. See the [commerce status](#agent-wallets-and-http-commerce) and [public release checklist](RELEASING.md).
 
 ---
 
@@ -336,7 +336,7 @@ npm run agent-os-panel
 Confirm a fresh clone is healthy (no runtime or API key needed):
 
 ```bash
-npm run verify-all      # all seven layer suites + the launch-readiness check
+npm run verify-all      # all verification suites, including launch readiness
 npm run smoke           # boots Panel + Lobby + Relay end-to-end and probes them
 ```
 
@@ -369,7 +369,7 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 ## Project Status & Version
 
-The **v1.0.0 release** covers the Phase 1 orchestration platform. See the [project website](https://agent-os-protocol.com/) for the panel tour and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
+[Agent OS Protocol v1.0.0](https://github.com/ronnikc/agent-os-protocol/releases/tag/v1.0.0) is the stable Phase 1 release. See the [changelog](CHANGELOG.md) for changes since v0.2.0, the [project website](https://agent-os-protocol.com/) for the panel tour, and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo.
 
 ## Documentation
 
