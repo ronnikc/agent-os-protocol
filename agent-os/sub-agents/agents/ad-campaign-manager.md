@@ -63,6 +63,6 @@ Return ad campaign audits in this format:
 
 ### Campaign URL Setup Example
 ```
-https://agent-os.gothard.dk/?utm_source=google&utm_medium=cpc&utm_campaign=beta-launch
+https://agent-os-protocol.com/?utm_source=google&utm_medium=cpc&utm_campaign=beta-launch
 ```
 ```

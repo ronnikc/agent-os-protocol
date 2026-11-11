@@ -26,7 +26,7 @@ const MIME: Record<string, string> = {
 const server = createServer((req, res) => {
   let urlPath = req.url?.split('?')[0] || '/';
   if (urlPath === '/mainnet-proof' || urlPath === '/mainnet-proof.html') {
-    res.writeHead(302, { location: 'https://lobby.agent-os.gothard.dk/panel/mainnet-proof.html' }).end();
+    res.writeHead(302, { location: 'https://lobby.agent-os-protocol.com/panel/mainnet-proof.html' }).end();
     return;
   }
   if (extname(urlPath) === '.ts') {

@@ -42,7 +42,7 @@ module.exports = {
         // not the checkout. Override by exporting AGENT_OS_LOBBY_STORE_FILE before pm2 start.
         AGENT_OS_LOBBY_STORE_FILE: process.env.AGENT_OS_LOBBY_STORE_FILE || LOBBY_STORE_FILE,
         // Canonical origin used to validate on-chain card URIs for hosted roster badges.
-        AGENT_OS_AGENT_CARD_ORIGIN: process.env.AGENT_OS_AGENT_CARD_ORIGIN || 'https://lobby.agent-os.gothard.dk',
+        AGENT_OS_AGENT_CARD_ORIGIN: process.env.AGENT_OS_AGENT_CARD_ORIGIN || 'https://lobby.agent-os-protocol.com',
       },
       autorestart: true,
       max_restarts: 10,

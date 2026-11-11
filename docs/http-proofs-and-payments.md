@@ -30,7 +30,7 @@ The runtime supports the profile’s unsigned OpenID4VP DC API request for its A
 
 ## Try the Concordium Mainnet Proof Pilot
 
-1. On the device where your Concordium Wallet for Web is installed, open the [Mainnet Proof Pilot](https://agent-os.gothard.dk/mainnet-proof).
+1. On the device where your Concordium Wallet for Web is installed, open the [Mainnet Proof Pilot](https://agent-os-protocol.com/mainnet-proof).
 2. Unlock the wallet, select Mainnet and an account with a Concordium identity, then choose **Request proof in Concordium Wallet**.
 3. Review the age-range request in the wallet and approve it if you agree. This produces a zero-knowledge proof without revealing your date of birth. It does not send a transaction or spend CCD.
 4. The page displays the result after Concordium’s Mainnet verifier checks the proof. The site forwards the presentation and its credential identifier for verification and does not persist them. If a challenge expires, request a new proof.
@@ -48,7 +48,7 @@ Use a facilitator that explicitly advertises the target network and supports the
 
 ### Hosted x402 test merchant
 
-Open the [x402 Test Merchant](https://lobby.agent-os.gothard.dk/panel/x402-merchant.html) to see whether the service is available, check the current Mainnet quote, and copy the endpoint into your client.
+Open the [x402 Test Merchant](https://lobby.agent-os-protocol.com/panel/x402-merchant.html) to see whether the service is available, check the current Mainnet quote, and copy the endpoint into your client.
 
 The lobby server can host a demo resource at `/api/v1/agent-lobby/x402/test-resource`. An enabled merchant quotes a real Mainnet CCD payment and returns a receipt and explorer link after checking the finalized transfer. The resource costs 1 CCD during the first pilot. Operators can select 10 CCD for a later demo. CCD goes to the configured merchant account, and the facilitator sponsor pays the network fee.
 

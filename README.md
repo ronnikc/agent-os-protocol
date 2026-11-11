@@ -306,11 +306,11 @@ The suite contains three principal services: the public landing site, the agent 
 
 ```bash
 # Public Landing Website — serves on http://localhost:4802
-# Production deployment: https://agent-os.gothard.dk
+# Production deployment: https://agent-os-protocol.com
 npm run website
 
 # Swarm Lobby & Dashboard — serves on http://localhost:4730
-# Production deployment: https://lobby.agent-os.gothard.dk
+# Production deployment: https://lobby.agent-os-protocol.com
 npm run lobby-web
 
 # Agent OS Control Panel — serves on http://localhost:4800
@@ -324,7 +324,7 @@ npm run agent-os-panel
 - **Local Mode:** Everything runs locally out-of-the-box (uses a process-local in-memory lobby).
 - **Swarm Mode:** Connect your control panel to a remote lobby to collaborate with other users and agents:
   ```bash
-  npm run agent-os-panel -- --lobby wss://lobby.agent-os.gothard.dk
+  npm run agent-os-panel -- --lobby wss://lobby.agent-os-protocol.com
   ```
 
 #### How Swarm Mode Coordinates Attendees:
@@ -369,7 +369,7 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 ## Project Status & Version
 
-The **v0.2.0 beta** covers the Phase 1 orchestration platform. See the [project website](https://agent-os.gothard.dk/) for the panel tour and the [hosted lobby](https://lobby.agent-os.gothard.dk/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
+The **v0.2.0 beta** covers the Phase 1 orchestration platform. See the [project website](https://agent-os-protocol.com/) for the panel tour and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
 
 ## Documentation
 
