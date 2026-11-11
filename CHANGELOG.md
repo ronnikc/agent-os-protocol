@@ -9,6 +9,11 @@ All notable changes to **Agent OS Protocol** are documented here. The format fol
 
 ## [Unreleased]
 
+## [1.0.0] — 2026-11-11
+
+First stable release of the Phase 1 orchestration platform. Phase 2 proof and payment pilots retain their separate rollout gates.
+
+- Move the project website and hosted lobby to `agent-os-protocol.com` and `lobby.agent-os-protocol.com`.
 - Document the Phase 1 panel and the Phase 2 commerce status on the website and in the README,
   including the finalized 10 CCD Verify & Pay pilot.
 - Save Agent IDs through pull requests when the connected repository protects its target branch.
