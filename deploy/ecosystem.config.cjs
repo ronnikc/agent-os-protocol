@@ -43,6 +43,7 @@ module.exports = {
         AGENT_OS_LOBBY_STORE_FILE: process.env.AGENT_OS_LOBBY_STORE_FILE || LOBBY_STORE_FILE,
         // Canonical origin used to validate on-chain card URIs for hosted roster badges.
         AGENT_OS_AGENT_CARD_ORIGIN: process.env.AGENT_OS_AGENT_CARD_ORIGIN || 'https://lobby.agent-os-protocol.com',
+        AGENT_OS_AGENT_CARD_LEGACY_ORIGINS: process.env.AGENT_OS_AGENT_CARD_LEGACY_ORIGINS ?? 'https://lobby.agent-os.gothard.dk',
       },
       autorestart: true,
       max_restarts: 10,

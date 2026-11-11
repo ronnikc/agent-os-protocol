@@ -208,7 +208,7 @@ async function main(): Promise<void> {
         queries++;
         return { agents: [record] };
       },
-    }, origin, () => card);
+    }, origin, () => card, ['https://previous.example.test']);
     const { store, lobbyId } = await unitSetup();
     const coord = new LobbyCoordinator(store, { verifyHostedRosterIdentity: verify });
     const message = { type: 'lobby-register', display_name: 'fixture', join_token: did } as const;
@@ -239,7 +239,9 @@ async function main(): Promise<void> {
     record.status = 'Revoked';
     assert.equal((await verify(did)).status, 'unverified');
     record.status = 'Active';
-    record.agent_uri = record.agent_uri.replace('lobby.example.test', 'another.example.test');
+    record.agent_uri = record.agent_uri.replace('lobby.example.test', 'previous.example.test');
+    assert.equal((await verify(did)).status, 'registry_verified');
+    record.agent_uri = record.agent_uri.replace('previous.example.test', 'another.example.test');
     assert.equal((await verify(did)).status, 'unverified');
     assert.equal(queries, 1);
   });
