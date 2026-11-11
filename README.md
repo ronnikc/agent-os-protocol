@@ -5,11 +5,11 @@ specialized AI agents locally or across an accountable remote swarm, with a brow
 panel, an embeddable UI Assist overlay, trainable domain agents, and verifiable agent identity.
 
 ![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)
-&nbsp;Version: **v0.2.0 Beta**
-&nbsp;Status: **v0.2.0 Beta Released**
+&nbsp;Version: **v1.0.0**
+&nbsp;Status: **Stable**
 [![Deploy sites](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml/badge.svg)](https://github.com/ronnikc/agent-os-protocol/actions/workflows/deploy.yml)
 
-> **Project status.** The Phase 1 beta includes the local panel and relay, independent lobby server, and hosted swarm demo. Phase 2 adds proof and payment tools. See the [commerce status](#agent-wallets-and-http-commerce) and [public release checklist](RELEASING.md).
+> **Project status.** The stable Phase 1 release includes the local panel and relay, independent lobby server, and hosted swarm demo. Phase 2 adds proof and payment tools. See the [commerce status](#agent-wallets-and-http-commerce) and [public release checklist](RELEASING.md).
 
 ---
 
@@ -369,7 +369,7 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 ## Project Status & Version
 
-The **v0.2.0 beta** covers the Phase 1 orchestration platform. See the [project website](https://agent-os-protocol.com/) for the panel tour and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
+The **v1.0.0 release** covers the Phase 1 orchestration platform. See the [project website](https://agent-os-protocol.com/) for the panel tour and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo. The [release checklist](RELEASING.md) covers verification before opening the repository.
 
 ## Documentation
 

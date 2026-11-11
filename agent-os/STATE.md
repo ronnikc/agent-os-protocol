@@ -1,13 +1,13 @@
 # STATE.md — Current Platform Status
 
 > **Purpose:** Current implementation state of the Agent OS Protocol platform. Informative.
-> **Last updated:** v0.2.0 Beta Release.
+> **Last updated:** v1.0.0 release.
 
 ---
 
 ## Status Summary
 
-Agent OS Protocol has successfully transitioned from initial planning to its first stable beta release (**v0.2.0 Beta**). All core features—including the control plane, runtime adapters, providers, loop orchestration, website, and swarm lobbies—are fully implemented, verified, and integrated.
+Agent OS Protocol has successfully transitioned from initial planning to its first stable release (**v1.0.0**). All core features—including the control plane, runtime adapters, providers, loop orchestration, website, and swarm lobbies—are fully implemented, verified, and integrated.
 
 ---
 
