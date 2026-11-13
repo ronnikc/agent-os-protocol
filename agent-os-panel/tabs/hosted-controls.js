@@ -4,6 +4,8 @@
 import { fetchJson, escapeHtml } from '../app.js';
 
 const base = '/api/lobby/remote';
+const providerNames = { e2b: 'E2B', agent37: 'Agent37', daytona: 'Daytona', modal: 'Modal',
+  'upstash-box': 'Upstash Box', 'vercel-sandbox': 'Vercel Sandbox' };
 const fields = [
   ['periodHours', 'Rolling budget period (hours)', 1, 744, 24],
   ['modelPerRun', 'Model tokens per run', 0, 1000000000, 100000],
@@ -16,6 +18,12 @@ const fields = [
 
 function request(path, method, body) {
   return fetchJson(base + path, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+}
+
+function errorMessage(response, fallback) {
+  const error = response?.error;
+  if (typeof error === 'string' && error.trim()) return error;
+  return typeof error?.message === 'string' && error.message.trim() ? error.message : fallback;
 }
 
 export async function mountHostedControls(root) {
@@ -34,11 +42,18 @@ export async function mountHostedControls(root) {
       <button class="btn btn-secondary btn-sm" type="submit">Save limits</button>
       <p role="status" data-status></p>
     </form>
-    <h3>Provider connections</h3>
+    <h3 id="workspace-provider-connections">Provider connections</h3>
     <form data-provider>
       <label>Provider <select name="provider">${settings.providers.map(({ id, capabilities }) =>
-        `<option value="${escapeHtml(id)}">${escapeHtml(id)}${capabilities ? '' : ' (adapter unavailable)'}</option>`).join('')}</select></label>
+        `<option value="${escapeHtml(id)}">${escapeHtml(providerNames[id] || id)}${capabilities ? '' : ' (adapter unavailable)'}</option>`).join('')}</select></label>
       <label>Action <select name="action"></select></label>
+      <fieldset data-vercel hidden disabled>
+        <legend>Vercel Sandbox project</legend>
+        <label data-vercel-target hidden>Project target <select name="vercelTarget"><option value="custom">Enter a project</option><option value="existing">Existing deployment project</option></select></label>
+        <label>Team ID <input name="vercelTeam" pattern="team_[a-zA-Z0-9_-]+" required></label>
+        <label>Project ID <input name="vercelProject" pattern="prj_[a-zA-Z0-9_-]+" required></label>
+        <label>Authentication <select name="vercelAuth"><option value="token">Owner access token</option><option value="oidc">Project OIDC</option></select></label>
+      </fieldset>
       <label data-credential>Credential <input name="credential" type="password" autocomplete="new-password" maxlength="8192"></label>
       <button class="btn btn-secondary btn-sm" type="submit">Apply provider change</button>
       <p role="status" data-status></p>
@@ -71,6 +86,10 @@ export async function mountHostedControls(root) {
   const provider = providerForm.elements.provider;
   const action = providerForm.elements.action;
   const credential = providerForm.elements.credential;
+  const vercel = providerForm.querySelector('[data-vercel]');
+  const { vercelTeam, vercelProject, vercelAuth, vercelTarget } = providerForm.elements;
+  const existingProject = settings.providers.find(entry => entry.id === 'vercel-sandbox')?.project;
+  providerForm.querySelector('[data-vercel-target]').hidden = !existingProject;
   const capabilities = providerForm.querySelector('[data-capabilities]');
   const profile = providerForm.querySelector('[data-profile]');
   let profiles = [];
@@ -143,7 +162,7 @@ export async function mountHostedControls(root) {
     providerForm.querySelector('[data-profile-details]').textContent = selected
       ? [selected.cpu + ' vCPU', selected.memoryMiB + ' MiB memory', selected.diskMiB + ' MiB disk',
           selected.isolation, 'Egress ' + selected.egress, 'Maximum ' + selected.maxRuntimeMs + ' ms',
-          'Regions ' + selected.regions.join(', ')].join(' · ')
+          'Regions ' + selected.regions.join(', '), ...(provider.value === 'upstash-box' ? ['Active CPU billing'] : [])].join(' · ')
       : '';
   }
   profile.addEventListener('change', showProfile);
@@ -164,7 +183,9 @@ export async function mountHostedControls(root) {
     showCredential();
   }
   function showCredential() {
-    credential.required = action.value === 'connect' || action.value === 'rotate';
+    const updating = action.value === 'connect' || action.value === 'rotate';
+    vercel.hidden = vercel.disabled = provider.value !== 'vercel-sandbox' || !updating;
+    credential.required = updating && (vercel.disabled || vercelAuth.value === 'token');
     credential.disabled = !credential.required;
     providerForm.querySelector('[data-credential]').hidden = credential.disabled;
     if (credential.disabled) credential.value = '';
@@ -174,10 +195,13 @@ export async function mountHostedControls(root) {
     const status = form.querySelector('[data-status]');
     if (button.disabled) return;
     const restoreFocus = document.activeElement === button;
+    const label = button.textContent;
     button.disabled = true;
+    button.textContent = 'Saving…';
     status.textContent = 'Saving…';
     try { await work(status); }
     finally {
+      button.textContent = label;
       button.disabled = false;
       if (restoreFocus && button.isConnected && document.activeElement === document.body) button.focus();
     }
@@ -198,18 +222,29 @@ export async function mountHostedControls(root) {
   });
   provider.addEventListener('change', showConnection);
   action.addEventListener('change', showCredential);
+  vercelAuth.addEventListener('change', showCredential);
+  vercelTarget.addEventListener('change', () => {
+    const selected = vercelTarget.value === 'existing' ? existingProject : undefined;
+    vercelTeam.value = selected?.teamId || '';
+    vercelProject.value = selected?.projectId || '';
+    vercelTeam.readOnly = vercelProject.readOnly = Boolean(selected);
+  });
   providerForm.addEventListener('submit', event => {
     event.preventDefault();
     void submit(providerForm, async status => {
-      const result = await request('/integrations/cloud-workspaces/' + encodeURIComponent(provider.value), 'POST', {
-        action: action.value, ...(credential.disabled ? {} : { credential: credential.value }),
-      });
+      const body = { action: action.value };
+      if (!vercel.disabled) {
+        body.credential = [vercelTeam.value, vercelProject.value, vercelAuth.value, credential.value].join(':');
+      } else if (!credential.disabled) {
+        body.credential = credential.value;
+      }
+      const result = await request('/integrations/cloud-workspaces/' + encodeURIComponent(provider.value), 'POST', body);
       if (result?.verified) {
         status.textContent = 'Provider connection verified.';
         return;
       }
       if (!Array.isArray(result?.connections)) {
-        status.textContent = result?.error || 'Unable to change the provider connection. Try again.';
+        status.textContent = errorMessage(result, 'Unable to change the provider connection. Try again.');
         return;
       }
       status.textContent = 'Provider connection updated.';
@@ -237,7 +272,7 @@ export async function mountHostedControls(root) {
     if (current !== version) return;
     refresh.disabled = false;
     if (!Array.isArray(page?.data)) {
-      status.textContent = page?.error || 'Unable to load hosted runs. Refresh to retry.';
+      status.textContent = errorMessage(page, 'Unable to load hosted runs. Refresh to retry.');
       return;
     }
     offset = page.offset;
@@ -276,7 +311,7 @@ export async function mountHostedControls(root) {
       await history(offset, 'Cancellation requested. Refresh to check cleanup.');
       refresh.focus();
     } else {
-      status.textContent = result?.error || 'Unable to cancel the run. Try again.';
+      status.textContent = errorMessage(result, 'Unable to cancel the run. Try again.');
       button.disabled = false;
       button.focus();
     }
@@ -286,7 +321,7 @@ export async function mountHostedControls(root) {
     const result = await request('/hosted-runs/recover', 'POST');
     recover.disabled = false;
     if (result?.accepted) await history(offset, 'Recovery requested. Refresh to check cleanup.');
-    else status.textContent = result?.error || 'Unable to request recovery. Try again.';
+    else status.textContent = errorMessage(result, 'Unable to request recovery. Try again.');
     recover.focus();
   });
   refresh.addEventListener('click', () => void history(offset));

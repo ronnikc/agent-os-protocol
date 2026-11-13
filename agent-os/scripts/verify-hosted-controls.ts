@@ -23,12 +23,193 @@ import { e2bAllocation } from '../../packages/lobby-server/src/hosted/e2b-alloca
 import { connectE2bGuest, createE2bWorkspace } from '../../packages/lobby-server/src/hosted/e2b-workspace.js';
 import { agent37Allocation } from '../../packages/lobby-server/src/hosted/agent37-allocation.js';
 import { createAgent37Workspace } from '../../packages/lobby-server/src/hosted/agent37-workspace.js';
+import { createDaytonaWorkspace } from '../../packages/lobby-server/src/hosted/daytona-workspace.js';
+import { createModalWorkspace } from '../../packages/lobby-server/src/hosted/modal-workspace.js';
+import { createUpstashWorkspace } from '../../packages/lobby-server/src/hosted/upstash-workspace.js';
+import { createVercelWorkspace } from '../../packages/lobby-server/src/hosted/vercel-workspace.js';
+import { BoxError } from '@upstash/box';
+import { APIError } from '@vercel/sandbox';
+import type { ModalClient, SandboxCreateParams } from 'modal';
+import { DaytonaNotFoundError, type Daytona } from '@daytona/sdk';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
   const signal = new AbortController().signal;
+  let daytonaExists = false;
+  let daytonaPrivate = false;
+  let daytonaCreates = 0;
+  let daytonaUploads = 0;
+  const daytona = createDaytonaWorkspace({ snapshot: 'fixture', command: 'npm test', maxMicrosPerSecond: 1,
+    profile: { id: 'container', isolation: 'container', regions: ['us'], cpu: 2, memoryMiB: 4096,
+      diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none' },
+  }, key => {
+    assert.equal(key, 'owner-key');
+    const sandbox = { id: 'daytona-id', public: false, sandboxClass: 'container', target: 'us', cpu: 2,
+      memory: 4, disk: 4, get networkBlockAll() { return daytonaPrivate; },
+      fs: { async uploadFile() { daytonaUploads++; } },
+      process: { async executeCommand() { return { exitCode: 0, result: '' }; } },
+    };
+    return {
+      async create(input: { networkBlockAll: boolean; public: boolean; ephemeral: boolean }) {
+        assert.equal(input.networkBlockAll, true);
+        assert.equal(input.public, false);
+        assert.equal(input.ephemeral, true);
+        daytonaExists = true;
+        daytonaCreates++;
+        return sandbox;
+      },
+      async get() {
+        if (!daytonaExists) throw new DaytonaNotFoundError('fixture deleted');
+        return sandbox;
+      },
+      async delete() { daytonaExists = false; },
+    } as unknown as Daytona;
+  });
+  let daytonaRecord: { createRequestedAt?: number; providerId?: string } = {};
+  const daytonaJournal = {
+    read: () => daytonaRecord,
+    beginCreate() {
+      if (daytonaRecord.createRequestedAt) return false;
+      daytonaRecord = { createRequestedAt: Date.now() };
+      return true;
+    },
+    bind(id: string) { daytonaRecord.providerId = id; },
+  };
+  const provisionDaytona = () => daytona.provision('attempt', {
+    lobbyId: 'fixture', taskId: 'task', attemptId: 'attempt', connectionId: 'daytona',
+    sourceRevision: 'a'.repeat(40), profileId: 'container', region: 'us', deadline: Date.now() + 120_000,
+  }, 'owner-key', signal, daytonaJournal, async () => new Uint8Array([1, 2, 3]));
+  await assert.rejects(provisionDaytona(), /approved private workspace profile/);
+  assert.equal(daytonaUploads, 0);
+  daytonaPrivate = true;
+  await provisionDaytona();
+  assert.equal(daytonaCreates, 1);
+  assert.equal(daytonaUploads, 1);
+  assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: true });
+  let modalCreated = 0;
+  let modalTerminated = false;
+  let modalClients = 0;
+  let modalCloses = 0;
+  const modal = createModalWorkspace({ app: 'fixture', image: 'fixture-image', environment: 'dev',
+    command: 'npm test', maxMicrosPerSecond: 1, profile: {
+      id: 'container', isolation: 'container', regions: ['us-east-1'], cpu: 2, memoryMiB: 4096,
+      diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none',
+    },
+  }, (id, secret) => {
+    assert.equal(id, 'token-id');
+    assert.equal(secret, 'token-secret');
+    modalClients++;
+    const sandbox = {
+      sandboxId: 'sb-fixture',
+      filesystem: { async writeBytes(bytes: Uint8Array) { assert.deepEqual([...bytes], [1, 2, 3]); } },
+      async exec(args: string[]) {
+        assert.ok(!args.join(' ').includes(secret));
+        return { stdout: { async readText() { return ''; } }, async wait() { return 0; } };
+      },
+      async terminate() { modalTerminated = true; },
+      async wait() { assert.equal(modalTerminated, true); return 0; },
+    };
+    return {
+      close() { modalCloses++; },
+      apps: { async fromName() { return {}; } },
+      images: { async fromName() { return {}; } },
+      sandboxes: {
+        async create(_app: unknown, _image: unknown, params: SandboxCreateParams) {
+          modalCreated++;
+          assert.equal(params.blockNetwork, true);
+          assert.equal(params.cpu, 1);
+          assert.equal(params.cpuLimit, 1);
+          assert.equal(params.memoryLimitMiB, 4096);
+          assert.equal(params.runtime, 'gvisor');
+          assert.deepEqual(params.regions, ['us-east-1']);
+          throw new Error('Modal create response lost');
+        },
+        async fromName(_app: string, name: string) { assert.equal(name, 'agent-os-attempt'); return sandbox; },
+        async fromId(sandboxId: string) { assert.equal(sandboxId, 'sb-fixture'); return sandbox; },
+      },
+    } as unknown as ModalClient;
+  });
+  daytonaRecord = {};
+  const provisionModal = () => modal.provision('attempt', {
+    lobbyId: 'fixture', taskId: 'task', attemptId: 'attempt', connectionId: 'modal',
+    sourceRevision: 'a'.repeat(40), profileId: 'container', region: 'us-east-1', deadline: Date.now() + 120_000,
+  }, 'token-id:token-secret', signal, daytonaJournal, async () => new Uint8Array([1, 2, 3]));
+  await assert.rejects(provisionModal(), /create response lost/);
+  await provisionModal();
+  assert.equal(modalCreated, 1);
+  assert.deepEqual(await modal.destroy('attempt', 'token-id:token-secret', signal, daytonaJournal), { confirmed: true });
+  assert.equal(modalClients, modalCloses);
+  let upstashExists = false;
+  let upstashCreates = 0;
+  const upstash = createUpstashWorkspace({ size: 'small', command: 'python3 check.py', maxMicrosPerSecond: 1,
+    profile: { id: 'small', isolation: 'container', regions: ['provider-managed'], cpu: 2, memoryMiB: 4096,
+      diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none' },
+  }, {
+    async create(params) {
+      assert.equal(params?.name, 'agent-os-attempt');
+      assert.equal(params?.apiKey, 'upstash-key');
+      assert.deepEqual(params?.networkPolicy, { mode: 'deny-all' });
+      assert.ok(params?.ttl && params.ttl <= 120);
+      upstashExists = true;
+      upstashCreates++;
+      throw new Error('Upstash create response lost');
+    },
+    async get(id) {
+      assert.ok(['agent-os-attempt', 'box-fixture'].includes(id));
+      if (!upstashExists) throw new BoxError('missing', 404);
+      return { id: 'box-fixture', size: 'small', networkPolicy: { mode: 'deny-all' }, files: { async write() {} },
+        exec: { async command() { return { exitCode: 0, stdout: '' }; } } } as never;
+    },
+    async list() { return []; },
+    async remove(params) { assert.deepEqual(params.boxIds, ['box-fixture']); upstashExists = false; },
+  });
+  daytonaRecord = {};
+  const fixtureAttempt = { lobbyId: 'fixture', taskId: 'task', attemptId: 'attempt', connectionId: 'provider',
+    sourceRevision: 'a'.repeat(40), deadline: Date.now() + 120_000 };
+  const sourceFixture = async () => new Uint8Array([1, 2, 3]);
+  const provisionUpstash = () => upstash.provision('attempt', { ...fixtureAttempt, profileId: 'small', region: 'provider-managed' },
+    'upstash-key', signal, daytonaJournal, sourceFixture);
+  await assert.rejects(provisionUpstash(), /create response lost/);
+  await provisionUpstash();
+  assert.equal(upstashCreates, 1);
+  assert.deepEqual(await upstash.destroy('attempt', 'upstash-key', signal, daytonaJournal), { confirmed: true });
+  let vercelStatus: 'missing' | 'running' | 'stopped' = 'missing';
+  let vercelCreates = 0;
+  const vercelCredential = 'team_fixture:prj_fixture:token:fixture-token';
+  const vercel = createVercelWorkspace({ command: 'python3 check.py', maxMicrosPerSecond: 1,
+    profile: { id: 'microvm', isolation: 'microvm', regions: ['iad1'], cpu: 2, memoryMiB: 4096,
+      diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none' },
+  }, {
+    async create(params) {
+      assert.ok(params && 'projectId' in params && params.projectId === 'prj_fixture');
+      assert.equal(params.persistent, false);
+      assert.equal(params.networkPolicy, 'deny-all');
+      assert.deepEqual(params.ports, []);
+      assert.equal(params.region, 'iad1');
+      vercelStatus = 'running';
+      vercelCreates++;
+      throw new Error('Vercel create response lost');
+    },
+    async get(params) {
+      assert.equal(params.name, 'agent-os-attempt');
+      assert.equal(params.resume, false);
+      if (vercelStatus === 'missing') throw new APIError(new Response(null, { status: 404 }));
+      return { name: params.name, status: vercelStatus, persistent: false, region: 'iad1', networkPolicy: 'deny-all', async writeFiles() {},
+        async runCommand() { return { exitCode: 0, async stdout() { return ''; } }; },
+        async stop() { vercelStatus = 'stopped'; } } as never;
+    },
+    async list() { return {} as never; },
+  } as typeof import('@vercel/sandbox').Sandbox, {});
+  await assert.rejects(vercel.verifyConnection!('team_fixture:prj_other:oidc:', signal), /configure OIDC/);
+  daytonaRecord = {};
+  const provisionVercel = () => vercel.provision('attempt', { ...fixtureAttempt, profileId: 'microvm', region: 'iad1' },
+    vercelCredential, signal, daytonaJournal, sourceFixture);
+  await assert.rejects(provisionVercel(), /create response lost/);
+  await provisionVercel();
+  assert.equal(vercelCreates, 1);
+  assert.deepEqual(await vercel.destroy('attempt', vercelCredential, signal, daytonaJournal), { confirmed: true });
   await assert.rejects(connectE2bGuest('sandbox', 'owner-key', signal, {
     async getInfo() { return { allowInternetAccess: true } as Awaited<ReturnType<typeof import('e2b').Sandbox.getInfo>>; },
     async connect() { return assert.fail('Unconfirmed policy must block guest connection'); },
