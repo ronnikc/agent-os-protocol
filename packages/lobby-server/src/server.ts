@@ -1807,13 +1807,17 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const marketplaceRoute = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/marketplace\/(catalog|listings|audit|engagements)(?:\/([^/]+)\/(bids|hire|delivery|artifacts)(?:\/([^/]+))?)?$/);
     if (marketplaceRoute) {
       const [, lobbyId, resource, listingId, action, artifactId] = marketplaceRoute;
-      if (process.env.AGENT_OS_MARKETPLACE_BETA !== 'true' || scopedLobby?.visibility !== 'private') {
-        return json({ error: 'Marketplace beta is unavailable for this lobby.' }, 404);
+      if (process.env.AGENT_OS_MARKETPLACE_BETA === 'false' || !scopedLobby) {
+        return json({ error: 'Marketplace is disabled or this lobby is unavailable.' }, 404);
       }
       const actor = sessionIdentity(lobbyId);
       if (!actor || actor === TEST_ADMIN_IDENTITY) return json({ error: 'Wallet sign-in required.' }, 401);
       const manager = await isLobbyManager(store, lobbyId, actor);
-      if (!manager && !await hasPrivateMembership(scopedLobby, actor)) return json({ error: 'Marketplace invite required.' }, 403);
+      const member = await store.getMember(lobbyId, actor);
+      if (member && (member.status !== 'active' || (member.expires_at && Date.parse(member.expires_at) <= Date.now()))) {
+        return json({ error: 'Marketplace access is unavailable for this membership.' }, 403);
+      }
+      const canPublish = scopedLobby.status === 'active' && (manager || scopedLobby.visibility === 'public');
       res.setHeader('Cache-Control', 'no-store');
       try {
         const offset = Number(url.searchParams.get('offset') ?? 0);
@@ -1833,16 +1837,29 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ profile: await marketplace.profile(lobbyId, actor, await readBody(req), manager) });
         }
         if (resource === 'listings' && !listingId) {
-          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager, workspaceRepository: manager ? (await store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined });
-          if (req.method === 'POST' && manager) return json({ listing: marketplace.listing(lobbyId, actor, await readBody(req)) });
+          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish, workspaceRepository: manager ? (await store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined });
+          if (req.method === 'POST' && canPublish) {
+            const body = await readBody(req);
+            if (body.workspaceRepository !== undefined || body.workspaceRevision !== undefined) {
+              const repo = manager ? (await store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined;
+              if (!repo || body.workspaceRepository !== repo) return json({ error: 'Select the lobby’s connected repository as a manager.' }, 403);
+            }
+            return json({ listing: marketplace.listing(lobbyId, actor, body) });
+          }
         }
         if (resource === 'listings' && action === 'bids') {
           if (req.method === 'GET') return json(marketplace.bids(lobbyId, actor, listingId, offset, limit, manager));
           if (req.method === 'POST') return json({ bid: await marketplace.bid(lobbyId, actor, listingId, await readBody(req)) });
         }
-        if (resource === 'listings' && action === 'hire' && req.method === 'POST' && manager) {
+        if (resource === 'listings' && action === 'hire' && req.method === 'POST' && canPublish) {
           return json({ agreement: await marketplace.hire(lobbyId, actor, listingId, await readBody(req),
-            () => isLobbyManager(store, lobbyId, actor)) });
+            async () => {
+              const lobby = await store.getLobby(lobbyId);
+              const currentMember = await store.getMember(lobbyId, actor);
+              return lobby?.status === 'active' && (!currentMember || (currentMember.status === 'active' &&
+                (!currentMember.expires_at || Date.parse(currentMember.expires_at) > Date.now()))) &&
+                (lobby.visibility === 'public' || await isLobbyManager(store, lobbyId, actor));
+            }) });
         }
         if (resource === 'engagements' && listingId && action === 'delivery' && !artifactId) {
           if (req.method === 'GET') return json(await marketplaceDelivery.get(lobbyId, listingId, actor, manager, offset, limit));

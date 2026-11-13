@@ -20,6 +20,16 @@ function fields(value: unknown, label: string): string[] {
   return value.map(item => field(item, label, 300));
 }
 
+/** CCD terms only. Recording a quote does not initiate payment. */
+function quote(amount: unknown): { amount: string } {
+  if (typeof amount !== 'string' || !/^(?:0|[1-9][0-9]{0,9})(?:\.[0-9]{1,6})?$/.test(amount)) {
+    throw new MarketplaceError('Enter a CCD amount with up to six decimal places.', 400);
+  }
+  const [whole, fraction] = amount.split('.');
+  const decimals = fraction?.replace(/0+$/, '');
+  return { amount: decimals ? whole + '.' + decimals : whole };
+}
+
 function digest(listing: MarketplaceListing, bid: Omit<MarketplaceBid, 'consent' | 'status'>) {
   const { status: _status, ...terms } = listing;
   return createHash('sha256').update(JSON.stringify({ terms, bid })).digest('hex');
@@ -124,7 +134,6 @@ export class Marketplace {
         return current;
       }
       if (body.action !== 'publish' && body.action !== 'draft') throw new MarketplaceError('Choose a listing action.', 400);
-      if (body.amount !== '0') throw new MarketplaceError('This marketplace supports zero-price agreements during beta.', 400);
       if (typeof body.deadline !== 'number' || !Number.isSafeInteger(body.deadline) || body.deadline <= Date.now()) {
         throw new MarketplaceError('Choose a future deadline.', 400);
       }
@@ -138,7 +147,7 @@ export class Marketplace {
         workspaceSource = { repository, revision };
       }
       const listing: MarketplaceListing = { id, buyer, version: (current?.version ?? 0) + 1,
-        status: body.action === 'draft' ? 'draft' : 'open', quote: { amount: '0' }, deadline: body.deadline,
+        status: body.action === 'draft' ? 'draft' : 'open', quote: quote(body.amount), deadline: body.deadline,
         title: field(body.title, 'a listing title', 200), deliverable: field(body.deliverable, 'the deliverable'),
         acceptanceChecks: fields(body.acceptanceChecks, 'acceptance checks'), scope: field(body.scope, 'repository or artifact scope'), workspaceSource };
       if (current) state.listings[index] = listing;
@@ -176,13 +185,13 @@ export class Marketplace {
         throw new MarketplaceError('The listing or specialist profile changed. Refresh before submitting.');
       }
       const { turnaroundHours, expiresAt } = body;
-      if (body.amount !== '0' || typeof turnaroundHours !== 'number' || !Number.isSafeInteger(turnaroundHours) ||
+      if (typeof turnaroundHours !== 'number' || !Number.isSafeInteger(turnaroundHours) ||
           turnaroundHours <= 0 || Date.now() + turnaroundHours * 3_600_000 > listing.deadline ||
           typeof expiresAt !== 'number' || !Number.isSafeInteger(expiresAt) || expiresAt <= Date.now() || expiresAt > listing.deadline) {
-        throw new MarketplaceError('Enter zero-price terms, a valid turnaround and a bid expiry within the listing deadline.', 400);
+        throw new MarketplaceError('Enter a valid turnaround and a bid expiry within the listing deadline.', 400);
       }
       const offer = { id: previous?.id ?? randomUUID(), listingId, listingVersion: listing.version, version: (previous?.version ?? 0) + 1,
-        specialist: actor, profileId: profile.id, agentId, turnaroundHours, expiresAt, quote: { amount: '0' as const },
+        specialist: actor, profileId: profile.id, agentId, turnaroundHours, expiresAt, quote: quote(body.amount),
         prerequisites: field(body.prerequisites, 'prerequisites'), assumptions: field(body.assumptions, 'assumptions') };
       const bid: MarketplaceBid = { ...offer, status: 'submitted', consent: { actor, at: Date.now(), digest: digest(listing, offer) } };
       if (previous) state.bids[index] = bid;

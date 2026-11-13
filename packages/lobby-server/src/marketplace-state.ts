@@ -27,7 +27,7 @@ export interface MarketplaceListing {
   scope: string;
   workspaceSource?: { repository: string; revision: string };
   deadline: number;
-  quote: { amount: '0' };
+  quote: { amount: string };
 }
 
 export interface MarketplaceBid {
@@ -39,7 +39,7 @@ export interface MarketplaceBid {
   profileId: string;
   agentId: string;
   status: 'submitted' | 'withdrawn' | 'selected' | 'declined';
-  quote: { amount: '0' };
+  quote: { amount: string };
   turnaroundHours: number;
   prerequisites: string;
   assumptions: string;

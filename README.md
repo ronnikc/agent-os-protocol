@@ -256,7 +256,7 @@ The Concordium Agent Registry links a DID and Agent ID Card to an active on-chai
 | **x401 credential proofs** | The transport handles proof challenges and validates the exchange in the test suite. A live Concordium-backed credential presentation against an independent verifier remains a release gate. |
 | **x402 v2 sponsored payments** | The commerce package handles Concordium `exact` quotes, policy checks, signing, and spending reservations. The live sponsored pilot still needs a compatible facilitator and a dedicated agent payer. |
 | **Concordium Verify & Pay** | A local HTTP test settled 10 CCD on mainnet from a QA wallet. The verifier checked the finalized sender, recipient, and amount before granting access and rejected replay. |
-| **Marketplace and Protocol-Level Locks (PLL)** | The repository includes a private, zero-price marketplace beta with versioned bids, hiring, and delivery review. External beta qualification is pending. Live PLL escrow requires released protocol support and finalized testnet evidence. |
+| **Marketplace and Protocol-Level Locks (PLL)** | The repository includes wallet-authenticated marketplace listings, versioned CCD quotes, hiring, and delivery review. Quotes record agreed terms without moving funds. External beta qualification is pending. Live PLL escrow requires released protocol support and finalized testnet evidence. |
 
 See the [x401 and x402 integration guide](docs/http-proofs-and-payments.md), [wallet funding guide](docs/fund-concordium-agent-wallet.md), and [Phase 2 release gates](docs/agent-wallets-and-payments-plan.md).
 

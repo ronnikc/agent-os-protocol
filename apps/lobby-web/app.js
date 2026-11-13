@@ -2155,7 +2155,22 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
   if (!lobbyId || !isSignedIn()) {
     root.hidden = true;
     access.hidden = false;
-    access.textContent = 'Connect your wallet and join an invited private lobby to use Marketplace.';
+    access.textContent = state.wallet.connected ? 'Sign in to the selected lobby to use Marketplace.' : 'Connect your wallet to use Marketplace.';
+    const action = document.createElement('button');
+    action.type = 'button';
+    action.className = 'btn btn-primary';
+    action.textContent = state.wallet.connected ? 'Sign in to lobby' : 'Connect wallet';
+    action.onclick = async () => {
+      action.disabled = true;
+      try {
+        if (state.wallet.connected) await signInToLobby();
+        else await window.connectConcordiumWallet();
+        if (isSignedIn()) await loadMarketplaceBeta(catalogOffset, listingOffset);
+        else if (state.wallet.connected) access.firstChild.textContent =
+          document.getElementById('hosted-signin-status')?.textContent || 'Sign in to the selected lobby.';
+      } finally { action.disabled = false; }
+    };
+    access.append(' ', action);
     return;
   }
   if (root.dataset.lobby !== lobbyId || root.dataset.actor !== state.session.identityRef) {
@@ -2226,7 +2241,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       const unavailable = [401, 403, 404].includes(error.status);
       root.hidden = unavailable;
       access.hidden = !unavailable;
-      access.textContent = 'Marketplace beta is unavailable for this lobby.';
+      access.textContent = error.status === 401 ? 'Sign in again from the Lobby tab to continue.' : error.message;
       status.textContent = error.message;
       for (const button of root.querySelectorAll('button')) button.disabled = true;
       if (!unavailable) {
@@ -2307,7 +2322,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       delete body.workspaceRevision;
     }
     const editing = listings.data.find(item => item.id === listingForm.dataset.editing);
-    await request('listings', { ...body, id: editing?.id, version: editing?.version, action: button.value || 'publish', amount: '0', deadline: Date.parse(body.deadline),
+    await request('listings', { ...body, id: editing?.id, version: editing?.version, action: button.value || 'publish', deadline: Date.parse(body.deadline),
       acceptanceChecks: lines(body.acceptanceChecks) });
     delete listingForm.dataset.editing;
     listingForm.reset();
@@ -2322,7 +2337,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     return row;
   }));
   list.innerHTML = listings.data.map(entry => `<article>
-    <h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(entry.status)} · Zero price · Version ${entry.version}</p>
+    <h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(entry.status)} · Budget ${escapeHtml(entry.quote.amount)} CCD · Version ${entry.version}</p>
     <p>${escapeHtml(entry.deliverable)}</p><p>Scope ${escapeHtml(entry.scope)}</p>
     <p>Deadline ${escapeHtml(new Date(entry.deadline).toLocaleString())}</p>
     <ul>${entry.acceptanceChecks.map(check => `<li>${escapeHtml(check)}</li>`).join('')}</ul>
@@ -2339,6 +2354,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       form.querySelector('button').onclick = () => {
         listingForm.dataset.editing = entry.id;
         for (const name of ['title', 'deliverable', 'scope']) listingForm.elements[name].value = entry[name];
+        listingForm.elements.amount.value = entry.quote.amount;
         workspaceRepository.value = entry.workspaceSource?.repository || '';
         workspaceRevision.value = entry.workspaceSource?.revision || '';
         syncWorkspaceRevision();
@@ -2362,7 +2378,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
         if (!active()) return;
         offers.replaceChildren();
         if (result.agreement) {
-          offers.textContent = `Agreement ${result.agreement.id}. Assignment ${result.agreement.assignmentId}. Handoff ${result.agreement.handoff.status}.`;
+          offers.textContent = `Agreement ${result.agreement.id}. Assignment ${result.agreement.assignmentId}. Handoff ${result.agreement.handoff.status}. Agreed price ${result.agreement.bid.quote.amount} CCD. Escrow pending.`;
           if (result.agreement.handoff.status === 'pending' && entry.buyer === actor) {
             const retry = document.createElement('form');
             retry.innerHTML = '<button type="submit">Retry assignment handoff</button>';
@@ -2478,7 +2494,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
         }
         for (const bid of result.data) {
           const form = document.createElement('form');
-          form.innerHTML = `<p>Bid version ${bid.version} · Zero price · ${bid.turnaroundHours} hours · ${escapeHtml(bid.status)}</p>
+          form.innerHTML = `<p>Bid version ${bid.version} · ${escapeHtml(bid.quote.amount)} CCD · ${bid.turnaroundHours} hours · ${escapeHtml(bid.status)}</p>
             <p>Prerequisites ${escapeHtml(bid.prerequisites)}</p><p>Assumptions ${escapeHtml(bid.assumptions)}</p>`;
           if (bid.status === 'submitted') {
             const hire = entry.buyer === actor;
@@ -2495,8 +2511,9 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
         }
         if (entry.status === 'open' && entry.buyer !== actor && catalog.ownProfiles.some(profile => profile.eligible)) {
           const form = document.createElement('form');
-          form.innerHTML = `<h5>Submit your zero-price bid</h5>
+          form.innerHTML = `<h5>Submit a bid</h5>
             <label>Specialist agent <select name="agent" required></select></label>
+            <label>Price in CCD <input name="amount" inputmode="decimal" value="${escapeHtml(entry.quote.amount)}" required></label>
             <label>Turnaround in hours <input name="turnaroundHours" type="number" min="1" required></label>
             <label>Offer expiry <input name="expiresAt" type="datetime-local" required></label>
             <label>Prerequisites <textarea name="prerequisites" required></textarea></label>
@@ -2509,7 +2526,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
           wire(form, async values => {
             const choice = available[Number(values.get('agent'))];
             const body = Object.fromEntries(values);
-            await request(`listings/${encodeURIComponent(entry.id)}/bids`, { ...body, action: 'submit', amount: '0',
+            await request(`listings/${encodeURIComponent(entry.id)}/bids`, { ...body, action: 'submit',
               version: result.data[0]?.version, listingVersion: entry.version, profileId: choice.profile.id,
               agentId: choice.agent.agent_id, turnaroundHours: Number(body.turnaroundHours), expiresAt: Date.parse(body.expiresAt) });
             await loadMarketplaceBeta(catalogOffset, listingOffset);
