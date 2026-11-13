@@ -23,7 +23,7 @@ export async function connectE2bGuest(id: string, apiKey: string, signal: AbortS
   signal.throwIfAborted();
   const info = await sdk.getInfo(id, { apiKey, requestTimeoutMs: 10_000, signal });
   if (info.allowInternetAccess !== false || info.network?.allowOut?.length ||
-      info.network?.allowPublicTraffic === true) {
+      info.network?.allowPublicTraffic !== false) {
     throw new Error('E2B did not confirm the required private workspace policy.');
   }
   if (profile && (info.cpuCount !== profile.cpu || info.memoryMB !== profile.memoryMiB)) {

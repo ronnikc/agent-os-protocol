@@ -53,6 +53,7 @@ export async function verifyHostedControls() {
       creates++;
       const body = JSON.parse(String(init.body));
       assert.equal(body.allow_internet_access, false);
+      assert.deepEqual(body.network, { allowPublicTraffic: false, dnsServers: [] });
       assert.equal(body.autoPause, false);
       assert.equal(body.metadata.agent_os_attempt, 'attempt');
       throw new Error('Lost create response');
