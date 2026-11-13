@@ -751,6 +751,22 @@ export async function verifyHostedControls() {
     assert.equal(cleaned.state, 'failed');
     assert.equal(allocations.has(cleaned.id), false);
     assert.ok(!provisionCalls.includes(revoked.body.run.id), 'Revocation during download must prevent source delivery');
+    await store.updateIntegration('b', 'github-b', { status: 'active' });
+    const rollback = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'rollback-active' });
+    assert.equal(rollback.status, 202);
+    const rollbackId = rollback.body.run.id;
+    await until(() => allocations.has(rollbackId) ? true : undefined);
+    const disabled = { ...policy, computePerPeriod: 1000, workspaceEnabled: false };
+    assert.equal((await call('b', '/hosted-controls', 'PUT', disabled)).status, 200);
+    const rolledBack = await until(() => store.readHostedState('b').runs.find(r => r.id === rollbackId && r.cleanup === 'confirmed'));
+    assert.equal(rolledBack.state, 'cancelled');
+    assert.equal(allocations.has(rollbackId), false);
+    const deniedAfterRollback = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'rollback-denied' });
+    assert.equal(deniedAfterRollback.status, 409);
+    assert.match(deniedAfterRollback.body.error, /Workspace execution is disabled/);
+    assert.ok(!store.readHostedState('b').runs.some(r => r.attempt?.attemptId === 'rollback-denied'));
     await server.close();
     server = undefined;
 
