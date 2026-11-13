@@ -67,3 +67,5 @@ See the [wallet funding walkthrough](fund-concordium-agent-wallet.md) for the cu
 ## Final release review
 
 After agent wallet deployment and both protocol flows pass the release gates, update the live website and its Visual Tour to show the verified wallet, x401 proof, and x402 payment experience. Keep the Marketplace and PLL marked according to their actual release status. Review the root README against the finished Phase 1 baseline and shipped Phase 2 capabilities, update setup and funding links, and remove obsolete website design specs after checking references. Verify the deployed website and a clean setup before the repository is made public.
+
+The [delivery-based escrow simulator](escrow-lifecycle.md) records the pending PLL capabilities and activation evidence. It operates separately from immediate x402 and zero-price marketplace work.

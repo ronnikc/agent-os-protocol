@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { AgentWallets } from '../../packages/lobby-server/src/hosted/agent-wallets.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
+import { verifyEscrowSimulator } from './verify-escrow-simulator.js';
 import { verifyAgentIdProof } from './verify-agent-id-proof.js';
 import { verifyTestMerchant } from './verify-test-merchant.js';
 import { mkdtempSync, rmSync, rmdirSync } from 'node:fs';
@@ -95,6 +96,7 @@ async function verifyWalletOperations() {
 }
 
 async function main() {
+  verifyEscrowSimulator();
   await verifyWalletOperations();
   const payerSeed = '04'.repeat(32);
   const payerKey = createPrivateKey({
