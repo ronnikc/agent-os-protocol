@@ -2,6 +2,7 @@
 // Copyright (c) 2026 R Digital
 
 import assert from 'node:assert/strict';
+import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
@@ -67,6 +68,7 @@ export async function verifyHostedControls() {
   assert.deepEqual(await e2b().destroy(signal), { confirmed: true });
   allocation = {};
   const calls: string[] = [];
+  const fixturePatch = 'diff --git a/README.md b/README.md\nnew file mode 100644\n--- /dev/null\n+++ b/README.md\n@@ -0,0 +1 @@\n+updated\n';
   const e2bWorkspace = createE2bWorkspace({
     templateId: 'fixture', command: 'npm test', maxMicrosPerSecond: 5,
     profile: { id: 'fixture', cpu: 2, memoryMiB: 1024, diskMiB: 2048, isolation: 'microvm',
@@ -78,7 +80,7 @@ export async function verifyHostedControls() {
       async upload(bytes) { assert.deepEqual([...bytes], [1, 2, 3]); calls.push('upload'); },
       async run(command, options) {
         assert.equal(options.signal, signal);
-        if (command.includes('git diff --cached')) return { stdout: 'fixture patch' };
+        if (command.includes('git diff --cached')) return { stdout: fixturePatch };
         if (!command.includes('tar --')) assert.match(command, /timeout --kill-after=1s \d+s sh -c/);
         calls.push(command.includes('tar --') ? 'extract' : 'execute');
         assert.ok(!command.includes(token));
@@ -96,8 +98,38 @@ export async function verifyHostedControls() {
   }, 'owner-key', signal, journal, async () => new Uint8Array([1, 2, 3]));
   await e2bWorkspace.wait('attempt', 'owner-key', signal, journal);
   assert.deepEqual(calls, ['upload', 'extract', 'execute']);
-  assert.deepEqual(await e2bWorkspace.collect('attempt', 'owner-key', signal, journal), { exitCode: 0, logs: 'test output', patch: 'fixture patch' });
+  const e2bArtifacts = await e2bWorkspace.collect('attempt', 'owner-key', signal, journal);
+  assert.deepEqual(e2bArtifacts, { exitCode: 0, logs: 'test output', patch: fixturePatch });
   assert.deepEqual(await e2bWorkspace.destroy('attempt', 'owner-key', signal, journal), { confirmed: true });
+  const patchRepo = await mkdtemp(join(tmpdir(), 'agent-os-patch-'));
+  try {
+    const git = (...args: string[]) => execFileSync('git', args, { cwd: patchRepo, encoding: 'utf8' });
+    git('init', '-q');
+    git('-c', 'user.name=Fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'pinned source');
+    const revision = git('rev-parse', 'HEAD').trim();
+    const input = e2bArtifacts.patch!;
+    execFileSync('git', ['apply', '--check', '-'], { cwd: patchRepo, input });
+    execFileSync('git', ['-c', 'core.autocrlf=false', 'apply', '-'], { cwd: patchRepo, input });
+    assert.equal(await readFile(join(patchRepo, 'README.md'), 'utf8'), 'updated\n');
+    assert.equal(git('rev-parse', 'HEAD').trim(), revision);
+  } finally {
+    await rm(patchRepo, { recursive: true, force: true });
+  }
+  allocation = {};
+  const failedBoot = createE2bWorkspace({
+    templateId: 'fixture', command: 'npm test', maxMicrosPerSecond: 5,
+    profile: e2bWorkspace.capabilities.profiles[0],
+  }, async () => { throw new Error('Guest boot failed'); }, async (_, init) => {
+    if (init?.method === 'POST') return Response.json({ sandboxID: 'failed-boot' }, { status: 201 });
+    assert.equal(init?.method, 'DELETE');
+    return new Response(null, { status: 204 });
+  });
+  await assert.rejects(failedBoot.provision('boot', {
+    lobbyId: 'fixture', taskId: 'task', attemptId: 'boot', connectionId: 'e2b', sourceRevision: 'a'.repeat(40),
+    profileId: 'fixture', region: 'fixture', deadline: Date.now() + 30_000,
+  }, 'owner-key', signal, journal, async () => new Uint8Array([1, 2, 3])), /Guest boot failed/);
+  assert.equal(journal.read().providerId, 'failed-boot');
+  assert.deepEqual(await failedBoot.destroy('boot', 'owner-key', signal, journal), { confirmed: true });
   allocation = {};
   let agent37Creates = 0;
   let deleted = false;
@@ -482,6 +514,19 @@ export async function verifyHostedControls() {
     assert.equal(agentEdits, 1);
     assert.equal(modelCalls, 2);
     assert.equal(store.readHostedState('b').runs.find(r => r.id === execution.body.run.id)?.workspaceAgent, 'finished');
+    waitForCancel = true;
+    const timeoutTask = { ...agentTask.body.task, task_id: 'timeout-task', output_mode: undefined };
+    await store.upsertTask(timeoutTask);
+    assert.equal((await call('b', '/hosted-controls', 'PUT', {
+      ...policy, computePerPeriod: 200, deadlineMs: 500,
+    })).status, 200);
+    const timeoutRun = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'guest-timeout' });
+    assert.equal(timeoutRun.status, 202, JSON.stringify(timeoutRun.body));
+    const expired = await until(() => store.readHostedState('b').runs.find(r =>
+      r.id === timeoutRun.body.run.id && r.cleanup === 'confirmed'));
+    assert.equal(expired.state, 'failed');
+    assert.equal(allocations.has(expired.id), false);
     await server.close();
     server = undefined;
 
