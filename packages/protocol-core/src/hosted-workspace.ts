@@ -29,6 +29,7 @@ export interface WorkspaceAttempt {
   attemptId: string;
   connectionId: string;
   sourceRevision: string;
+  sourceRepository?: string;
   profileId: string;
   region: string;
   deadline: number;
@@ -38,6 +39,8 @@ export type WorkspaceState = 'requested' | 'provisioning' | 'running' | 'collect
 export type WorkspaceCleanup = 'pending' | 'confirmed';
 
 export interface WorkspaceArtifacts {
+  /** Exit status of the approved workspace command. */
+  exitCode?: number;
   logs?: string;
   tests?: string;
   patch?: string;
@@ -69,7 +72,7 @@ export interface WorkspaceAdapter {
   /** Check account access without provisioning a billable workspace. */
   verifyConnection?(credential: string, signal: AbortSignal): Promise<void>;
   estimate(attempt: WorkspaceAttempt): number;
-  provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<void>;
+  provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal, source?: () => Promise<Uint8Array>): Promise<void>;
   wait(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<void>;
   collect(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<WorkspaceArtifacts>;
   destroy(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<{ confirmed: boolean; actual?: number }>;
