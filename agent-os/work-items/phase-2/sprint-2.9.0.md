@@ -92,3 +92,7 @@ An early recording or benchmark can misrepresent the product after beta fixes. T
 | --- | --- | --- |
 | New product development | Scope boundary | Close functional work before beginning release recording and public benchmarking. |
 | Production PLL rollout | Scope boundary | Conditional 2.10.0. |
+
+## Repository preparation
+
+The [release evidence plan](../../../docs/phase-2-release-evidence.md) defines candidate verification, a controlled comparison protocol, the recording sequence and the publication checklist. Recording, benchmark execution and release claims remain gated on beta exit.
