@@ -105,3 +105,7 @@ The [beta operator runbook](../../../docs/phase-2-beta-runbook.md) records the p
 | 4 | Runbook defines owners, release criteria and metrics. | Cohort measurements pending. |
 | 5 | HTTP fixture verifies beta flag rollback, preserved preview records and cross-lobby denial; commerce checks preserve uncertain reservations. | Deployment rollback drill pending. |
 | 6 | UI checks cover labels, status regions, paginated evidence and disabled mutations. | Keyboard and screen-reader walkthrough pending. |
+
+### Beta stabilization fix
+
+Cloud staging now requires an exact repository and commit approved in the marketplace agreement. The lobby fixture confirms that a matching pin reaches ordinary workspace admission and that an absent pin, a different commit or a changed repository is rejected before any compute reservation. This verifies the source authorization boundary locally. Live provider and cohort evidence remains pending.

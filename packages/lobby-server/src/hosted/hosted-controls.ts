@@ -210,6 +210,16 @@ export class HostedControls {
     return run.usage.length - 1;
   }
 
+  private checkMarketplaceSource(lobbyId: string, taskId: string, repository: string | undefined, revision: string) {
+    const agreement = this.store.readMarketplaceState(lobbyId).agreements.find(entry => entry.assignmentId === taskId);
+    if (!agreement) return;
+    const approved = agreement.listing.workspaceSource;
+    if (!approved || approved.repository.toLowerCase() !== repository?.toLowerCase() || approved.revision !== revision.toLowerCase() ||
+        agreement.listing.deadline <= Date.now() || !['assigned', 'in_progress', 'revision_requested'].includes(agreement.delivery?.status ?? 'assigned')) {
+      throw new HostedControlError('This agreement does not authorize staging that repository and commit.', 403);
+    }
+  }
+
   async requestWorkspace(lobbyId: string, actor: string, input: Record<string, unknown>) {
     const { taskId, attemptId, connectionId, sourceRevision, profileId, region } = input;
     if (typeof taskId !== 'string' || typeof attemptId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(attemptId) ||
@@ -221,6 +231,7 @@ export class HostedControls {
     if (!task) throw new HostedControlError('Lobby task not found.', 404);
     const sourceIntegration = this.readSource ? await this.store.getIntegration(lobbyId, 'github') : undefined;
     const sourceRepository = sourceIntegration?.repo_full_name;
+    this.checkMarketplaceSource(lobbyId, taskId, sourceRepository, sourceRevision);
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
       const duplicate = state.runs.find(r => r.taskId === taskId && r.attempt?.attemptId === attemptId);
       if (duplicate) {
@@ -420,6 +431,7 @@ export class HostedControls {
               if (!task || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
                 throw new HostedControlError('The task assignment changed before source staging.');
               }
+              this.checkMarketplaceSource(attempt.lobbyId, attempt.taskId, attempt.sourceRepository, attempt.sourceRevision);
               return this.readSource!(attempt, signal);
             } : undefined;
             await adapter.provision(run.id, attempt, credential, signal, allocation, source);

@@ -151,7 +151,8 @@ async function main(): Promise<void> {
         skills: ['Testing'], runtimes: ['Local', 'Hosted', 'Cloud'], availability: 'Today', workSamples: ['Example'] }, false);
       for (const execution of ['local', 'hosted', 'cloud']) {
         const listing = marketplace.listing(id, 'buyer', { action: 'publish', title: execution, deliverable: 'Check', scope: 'reports/',
-          acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0' });
+          acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0',
+          ...(execution === 'cloud' && { workspaceRepository: 'example/approved', workspaceRevision: 'a'.repeat(40) }) });
         const bid = await marketplace.bid(id, 'seller', listing.id, { action: 'submit', profileId: profile.id, agentId: 'worker',
           listingVersion: listing.version, amount: '0', turnaroundHours: 1, expiresAt: Date.now() + 3_600_000,
           prerequisites: 'None', assumptions: 'Fixture' });
@@ -159,6 +160,23 @@ async function main(): Promise<void> {
         const agreement = await marketplace.hire(id, 'buyer', listing.id, { listingVersion: listing.version, bidVersion: bid.version,
           bidId: bid.id, digest: termsDigest });
         const task = (await store.getTask(id, agreement.assignmentId))!;
+        const request = { taskId: task.task_id, attemptId: 'scope-fixture', connectionId: 'fixture',
+          sourceRevision: 'a'.repeat(40), profileId: 'fixture', region: 'fixture' };
+        const before = store.readHostedState(id).runs.length;
+        if (execution === 'cloud') {
+          const integration = await store.addIntegration({ id: 'fixture-repo', lobby_id: id, provider: 'github', status: 'active',
+            repo_full_name: 'example/approved', scopes: [], installed_by_identity_ref: 'buyer', created_at: now, updated_at: now });
+          const cloudControls = new HostedControls(store, [], async () => assert.fail('Denied staging must not read source'));
+          assert.deepEqual(agreement.listing.workspaceSource, { repository: 'example/approved', revision: request.sourceRevision });
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', { ...request, sourceRevision: 'b'.repeat(40) }),
+            /does not authorize staging/);
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', request), /Set hosted limits/);
+          await store.updateIntegration(id, integration.id, { repo_full_name: 'example/other' });
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', request), /does not authorize staging/);
+        } else {
+          await assert.rejects(hosted.requestWorkspace(id, 'buyer', request), /does not authorize staging/);
+        }
+        assert.equal(store.readHostedState(id).runs.length, before, 'denied staging must not create a reservation');
         await store.upsertTask({ ...task, status: 'completed' });
         const sourceRevision = 'a'.repeat(40);
         const attemptId = `attempt-${execution}`;

@@ -1825,7 +1825,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ profile: await marketplace.profile(lobbyId, actor, await readBody(req), manager) });
         }
         if (resource === 'listings' && !listingId) {
-          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager });
+          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager, workspaceRepository: manager ? (await store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined });
           if (req.method === 'POST' && manager) return json({ listing: marketplace.listing(lobbyId, actor, await readBody(req)) });
         }
         if (resource === 'listings' && action === 'bids') {

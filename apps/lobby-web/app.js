@@ -2256,8 +2256,21 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     await request('catalog', { ...body, action: 'publish' });
     await loadMarketplaceBeta(0, listingOffset);
   });
+  const { workspaceRepository, workspaceRevision } = listingForm.elements;
+  workspaceRepository.replaceChildren(new Option('No cloud source approved', ''));
+  if (listings.workspaceRepository) workspaceRepository.add(new Option(listings.workspaceRepository, listings.workspaceRepository));
+  const syncWorkspaceRevision = () => {
+    workspaceRevision.required = Boolean(workspaceRepository.value);
+    workspaceRevision.disabled = !workspaceRevision.required;
+  };
+  workspaceRepository.onchange = syncWorkspaceRevision;
+  syncWorkspaceRevision();
   wire(listingForm, async (values, button) => {
     const body = Object.fromEntries(values);
+    if (!body.workspaceRepository) {
+      delete body.workspaceRepository;
+      delete body.workspaceRevision;
+    }
     const editing = listings.data.find(item => item.id === listingForm.dataset.editing);
     await request('listings', { ...body, id: editing?.id, version: editing?.version, action: button.value || 'publish', amount: '0', deadline: Date.parse(body.deadline),
       acceptanceChecks: lines(body.acceptanceChecks) });
@@ -2278,6 +2291,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     <p>${escapeHtml(entry.deliverable)}</p><p>Scope ${escapeHtml(entry.scope)}</p>
     <p>Deadline ${escapeHtml(new Date(entry.deadline).toLocaleString())}</p>
     <ul>${entry.acceptanceChecks.map(check => `<li>${escapeHtml(check)}</li>`).join('')}</ul>
+    ${entry.workspaceSource ? '<p>Cloud source <code>' + escapeHtml(entry.workspaceSource.repository + '@' + entry.workspaceSource.revision) + '</code></p>' : ''}
     <button type="button" data-review>Review bids and agreement</button><div data-market-offers></div>
   </article>`).join('');
   [...list.children].forEach((article, index) => {
@@ -2290,6 +2304,9 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       form.querySelector('button').onclick = () => {
         listingForm.dataset.editing = entry.id;
         for (const name of ['title', 'deliverable', 'scope']) listingForm.elements[name].value = entry[name];
+        workspaceRepository.value = entry.workspaceSource?.repository || '';
+        workspaceRevision.value = entry.workspaceSource?.revision || '';
+        syncWorkspaceRevision();
         listingForm.elements.acceptanceChecks.value = entry.acceptanceChecks.join('\n');
         const localDeadline = new Date(entry.deadline);
         localDeadline.setMinutes(localDeadline.getMinutes() - localDeadline.getTimezoneOffset());

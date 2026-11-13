@@ -259,6 +259,8 @@
           <label>Deliverable <textarea name="deliverable" required></textarea></label>
           <label>Acceptance checks, one per line <textarea name="acceptanceChecks" required></textarea></label>
           <label>Repository or artifact scope <textarea name="scope" required></textarea></label>
+          <label>Cloud source repository <select name="workspaceRepository"><option value="">No cloud source approved</option></select></label>
+          <label>Cloud source commit <input name="workspaceRevision" pattern="[0-9a-fA-F]{40}" maxlength="40" disabled></label>
           <label>Deadline <input type="datetime-local" name="deadline" required></label>
           <button type="submit">Publish listing</button>
           <button type="submit" value="draft">Save draft</button>
