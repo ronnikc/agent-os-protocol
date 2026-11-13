@@ -109,7 +109,9 @@ A model run can include multiple completions. The server reserves input capacity
 
 An injected workspace adapter declares its resource profiles, regions, isolation and egress. The request binds the selected profile and region, lobby, task, attempt, connection and exact source commit. The server retries interrupted provisioning with the same attempt key. Cancellation stops subsequent execution steps and queues provider-confirmed deletion. **Retry recovery** runs the same recovery sweep used at startup and periodically. Disabling a connection blocks new admissions. Rotation and disconnection wait for dependent cleanup and usage reconciliation so the server retains the credential it needs for recovery.
 
-The sprint ships the contract and a fake adapter for verification. The production adapter registry starts empty. Live integrations and the task launch and handoff experience begin in Sprint 2.2.0.
+Deployers can enable E2B with `AGENT_OS_E2B_PROFILE` and Agent37 with `AGENT_OS_AGENT37_PROFILE`. Each is a JSON object with the approved `region`, `cpu`, `maxRuntimeMs`, `maxMicrosPerSecond` and `command`. E2B additionally uses `templateId`, `memoryMiB` and `diskMiB`. Agent37 uses `template`, `type` (`default` or `vm`), `memory` and `disk` in GiB. Set the compute rate to a conservative upper bound for the qualified profile. Lobby managers supply their own provider API keys in Apps.
+
+In **Launch a workspace**, select a lobby task, an active connection, an approved profile and region, then enter the full GitHub commit SHA. The server stages the archive from the lobby's connected repository and runs the configured command with outbound access disabled. Run history displays the command's exit status and available logs and patch for review. The workspace does not publish changes to GitHub. Agent37's cloud deletion retains a recovery copy for seven days under its [privacy policy](https://www.agent37.com/privacy).
 
 ## The working repository (GitHub App)
 
