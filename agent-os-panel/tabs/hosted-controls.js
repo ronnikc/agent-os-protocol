@@ -27,9 +27,20 @@ function errorMessage(response, fallback) {
 }
 
 export async function mountHostedControls(root) {
+  root.innerHTML = '<h2>Hosted limits and cloud workspaces</h2><p role="status">Loading workspace controls…</p>';
   const settings = await request('/hosted-controls', 'GET');
   if (!root.isConnected) return;
-  if (!settings || settings.error) return;
+  if (!settings?.policy || !Array.isArray(settings.providers)) {
+    const message = errorMessage(settings, 'Could not load workspace controls. Connect to a lobby and try again.');
+    root.innerHTML = `<h2>Hosted limits and cloud workspaces</h2>
+      <p role="status" tabindex="-1">${escapeHtml(message)}</p>
+      <button class="btn btn-secondary btn-sm" type="button">Retry loading workspace controls</button>`;
+    root.querySelector('button').addEventListener('click', async () => {
+      await mountHostedControls(root);
+      root.querySelector('[tabindex="-1"], form input')?.focus();
+    });
+    return;
+  }
   const policy = settings.policy ?? {};
   root.innerHTML = `
     <h2>Hosted limits and cloud workspaces</h2>

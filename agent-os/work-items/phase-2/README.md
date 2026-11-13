@@ -36,7 +36,7 @@ The November 13 competitive review informs the demo, documentation, benchmarks, 
 
 Marketplace discovery and independent interoperability can proceed while the cloud integrations are under development once their dependencies are available. Conditional PLL activation is outside the critical path for the beta and public release.
 
-Sprint 2.1.0 is in implementation review. The flagship recording and public benchmarks are scheduled in Sprint 2.9.0 after the Sprint 2.8.0 beta stabilization gate.
+Sprint 2.1.0 through 2.7.0 have merged implementations with repository verification. Live provider qualification and independent x401 and x402 evidence are tracked in the sprint plans. Sprint 2.8.0 has an operator runbook and fixture evidence, with external participant validation and live rollback still pending. Sprint 2.9.0 has benchmark tooling and release preparation, with the flagship recording and public benchmarks gated on beta stabilization. Sprint 2.10.0 records the evidence required before live PLL activation.
 
 ## Cloud workspace experience
 
@@ -56,7 +56,7 @@ Use the provider's live capabilities, account tier, region, applicable plan term
 ## Marketplace experience
 
 - **Discover.** Independent specialist owners publish curated profiles tied to an active Concordium Agent ID. Buyers filter by capability, availability and execution requirements. Profiles distinguish identity verification from delivery evidence.
-- **Agree.** Buyers define deliverables, acceptance checks, repository access, deadline and price or zero-price terms. Specialist owners bid with scope, schedule and runtime assumptions. Both owners accept the same versioned terms before one named lobby assignment is created.
+- **Agree.** Buyers define deliverables, acceptance checks, repository access, deadline and any CCD quote. Specialist owners bid with scope, schedule and runtime assumptions. Both owners accept the same versioned terms before one named lobby assignment is created. Escrow is pending PLL support. Quoted amounts are agreement terms only, and the workflow can run through delivery and review today.
 - **Deliver.** The specialist works locally, in hosted mode, or in an approved cloud workspace. Delivery pins the source, patch or PR commit and test evidence. Buyers can accept a particular submission, request revisions or open a dispute. Authorized reviewers resolve disputes from the audit trail.
 - **Settle.** Track work status, delivery decisions and settlement receipts independently. Existing wallet-signed preview authorizations remain historical evidence. The x401 proof and x402 immediate-payment work follows the existing [commerce plan](../../../docs/agent-wallets-and-payments-plan.md). Live delivery-based escrow follows [conditional PLL activation](sprint-2.10.0.md).
 
