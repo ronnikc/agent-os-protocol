@@ -36,6 +36,46 @@ export class GitHubRepoClient {
     return typeof this.tokenSource === 'function' ? await this.tokenSource() : this.tokenSource;
   }
 
+  /** Fetch the immutable source archive on the control plane for sandbox staging. */
+  async readSourceArchive(revision: string, signal: AbortSignal): Promise<Uint8Array> {
+    if (!/^[a-f0-9]{40}$/i.test(revision)) throw new Error('A full source commit is required.');
+    const url = 'https://api.github.com/repos/' + encodeURIComponent(this.owner) + '/' +
+      encodeURIComponent(this.repo) + '/tarball/' + revision;
+    const response = await this.fetchFn(url, {
+      headers: { Authorization: 'Bearer ' + await this.resolveToken(), 'User-Agent': 'Agent-OS-Lobby' },
+      redirect: 'manual',
+      signal,
+    });
+    const location = response.headers.get('location');
+    await response.body?.cancel();
+    if (response.status !== 302 || !location) throw new Error('GitHub did not return a source archive.');
+    const download = new URL(location);
+    if (download.origin !== 'https://codeload.github.com' || download.username || download.password) {
+      throw new Error('GitHub returned an unexpected archive host.');
+    }
+    const archive = await this.fetchFn(download, { redirect: 'error', signal });
+    if (!archive.ok || !archive.body) {
+      await archive.body?.cancel();
+      throw new Error('GitHub source archive download failed.');
+    }
+    const limit = 32 * 1024 * 1024;
+    const reader = archive.body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) return Buffer.concat(chunks, size);
+        size += value.byteLength;
+        if (size > limit) throw new Error('GitHub source archive exceeds 32 MiB.');
+        chunks.push(value);
+      }
+    } finally {
+      await reader.cancel();
+      reader.releaseLock();
+    }
+  }
+
   private async request(path: string, options: RequestInit = {}, retriedOn401 = false): Promise<any> {
     const cleanPath = path.startsWith('/') ? path : `/${path}`;
     const url = `https://api.github.com/repos/${this.owner}/${this.repo}${cleanPath}`;

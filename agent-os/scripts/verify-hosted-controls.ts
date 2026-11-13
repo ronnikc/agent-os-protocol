@@ -17,12 +17,28 @@ import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
+import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
   const signal = new AbortController().signal;
+  const revision = 'a'.repeat(40);
+  const archive = new GitHubRepoClient('example', 'project', 'installation-secret', async (input, init) => {
+    assert.equal(init?.signal, signal);
+    if (String(input).startsWith('https://api.github.com/')) {
+      assert.equal(String(input), 'https://api.github.com/repos/example/project/tarball/' + revision);
+      assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer installation-secret');
+      assert.equal(init?.redirect, 'manual');
+      return new Response(null, { status: 302, headers: { location: 'https://codeload.github.com/archive' } });
+    }
+    assert.equal(String(input), 'https://codeload.github.com/archive');
+    assert.equal(new Headers(init?.headers).has('authorization'), false);
+    return new Response(new Uint8Array([1, 2, 3]));
+  });
+  assert.deepEqual([...await archive.readSourceArchive(revision, signal)], [1, 2, 3]);
+  await assert.rejects(archive.readSourceArchive('main', signal), /full source commit/);
   const uncertain = new WorkspaceAllocationRecovery({
     read: () => ({ createRequestedAt: 1 }),
     beginCreate: () => false,
@@ -70,16 +86,18 @@ export async function verifyHostedControls() {
       if (token !== credential) throw new Error('Provider rejected ' + token);
     },
     estimate: () => 100,
-    async provision(key, attempt, token, signal, journal) {
+    async provision(key, attempt, token, signal, journal, source) {
       assert.equal(token, credential);
       assert.equal(attempt.sourceRevision, 'a'.repeat(40));
+      assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
+      assert.deepEqual([...await source!()], [1, 2, 3]);
       provisionCalls.push(key);
       await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
     },
     async wait(_, __, signal) {
       if (waitForCancel) await delay(30_000, undefined, { signal });
     },
-    async collect() { return { tests: 'passed', logs: 'redact ' + credential }; },
+    async collect() { return { exitCode: 1, tests: 'failed', logs: 'redact ' + credential + 'x'.repeat(70_000) }; },
     async destroy(key, _, signal, journal) {
       return new WorkspaceAllocationRecovery(journal, operations(key)).destroy(signal);
     },
@@ -109,7 +127,8 @@ export async function verifyHostedControls() {
   let server: RunningLobbyServer | undefined;
   let controls: HostedControls | undefined;
   const openServer = (store: InMemoryLobbyStore) =>
-    startLobbyServer({ port: 0, store, autoDefaultLobby: false, workspaceAdapters: [adapter] });
+    startLobbyServer({ port: 0, store, autoDefaultLobby: false, workspaceAdapters: [adapter],
+      workspaceSource: async () => new Uint8Array([1, 2, 3]) });
   async function call(lobby: string, path: string, method = 'GET', body?: unknown, actor = 'owner-' + lobby, tokenLobby = lobby) {
     const port = (server!.httpServer.address() as AddressInfo).port;
     const response = await fetch('http://127.0.0.1:' + port + '/api/v1/agent-lobby/lobbies/' + lobby + path, {
@@ -138,6 +157,9 @@ export async function verifyHostedControls() {
         description: 'Verify task binding', priority: 'normal', category: 'general', status: 'assigned',
         assigned_to: 'fake', assigned_by: 'owner-' + lobby, assigned_at: now };
       await store.upsertTask(task);
+      await store.addIntegration({ id: 'github-' + lobby, lobby_id: lobby, provider: 'github', status: 'active',
+        repo_full_name: 'example/project-' + lobby, scopes: [], installed_by_identity_ref: 'owner-' + lobby,
+        created_at: now, updated_at: now });
     }
     server = await openServer(store);
     assert.equal((await call('a', '/hosted-controls', 'PUT', policy, 'observer')).status, 403);
@@ -177,11 +199,14 @@ export async function verifyHostedControls() {
     await server.close();
     store = new InMemoryLobbyStore(file);
     server = await openServer(store);
-    await until(() => store.readHostedState('a').runs[0].state === 'succeeded' ? true : undefined);
+    await until(() => store.readHostedState('a').runs[0].state === 'failed' ? true : undefined);
     assert.deepEqual(provisionCalls, [run.id, run.id]);
     assert.equal(store.readHostedState('a').runs[0].allocation?.providerId, run.id);
     assert.equal(allocations.size, 1);
-    assert.equal(store.readHostedState('a').runs[0].artifacts?.logs, 'redact [redacted]');
+    const artifacts = store.readHostedState('a').runs[0].artifacts;
+    assert.equal(artifacts?.exitCode, 1);
+    assert.equal(artifacts?.logs?.length, 65_536);
+    assert.ok(artifacts?.logs?.startsWith('redact [redacted]'));
     assert.equal(store.readHostedState('a').runs[0].cleanup, 'pending');
 
     await server.close();

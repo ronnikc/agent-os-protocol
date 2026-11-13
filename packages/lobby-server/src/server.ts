@@ -378,6 +378,8 @@ export interface LobbyServerOptions {
   /** Injected fetch for hosted API-runtime agents (tests mock the provider HTTP). Defaults to global fetch. */
   apiRuntimeFetch?: typeof fetch;
   workspaceAdapters?: readonly WorkspaceAdapter[];
+  /** Inject source staging for adapter conformance fixtures. */
+  workspaceSource?: ConstructorParameters<typeof HostedControls>[2];
   /** On-chain account-info source for wallet sign-in (tests inject a mock; prod uses gRPC). */
   accountInfoSource?: AccountInfoSource;
 }
@@ -393,7 +395,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // Fail-closed: refuse to boot if the dev wallet-signature bridge is enabled in production.
   assertDevBridgeNotInProduction();
   const store = options.store ?? new InMemoryLobbyStore();
-  const hosted = new HostedControls(store, options.workspaceAdapters);
+  const hosted = new HostedControls(store, options.workspaceAdapters, options.workspaceSource ?? (async (attempt, signal) => {
+    const integration = await store.getIntegration(attempt.lobbyId, 'github');
+    if (!attempt.sourceRepository || integration?.repo_full_name !== attempt.sourceRepository || !integration.installation_id) {
+      throw new Error('The workspace source repository is no longer connected.');
+    }
+    const { owner, repo } = parseRepoRef(attempt.sourceRepository);
+    const { GitHubRepoClient } = await import('./hosted/github-repo-client.js');
+    const client = new GitHubRepoClient(owner, repo, () => getInstallationToken(integration.installation_id!));
+    return client.readSourceArchive(attempt.sourceRevision, signal);
+  }));
   // On-chain account-info source for production wallet sign-in (gRPC unless a mock is injected).
   const accountInfoSource: AccountInfoSource = options.accountInfoSource ?? new GrpcAccountInfoSource();
   // Phase 8: wire a read-only identity verifier only when an indexer URL is configured. Without it

@@ -29,7 +29,11 @@ export class HostedControls {
   private readonly adapters: Map<WorkspaceProvider, WorkspaceAdapter>;
   private closed = false;
 
-  constructor(private readonly store: LobbyStore, adapters: readonly WorkspaceAdapter[] = []) {
+  constructor(
+    private readonly store: LobbyStore,
+    adapters: readonly WorkspaceAdapter[] = [],
+    private readonly readSource?: (attempt: WorkspaceAttempt, signal: AbortSignal) => Promise<Uint8Array>,
+  ) {
     this.adapters = new Map(adapters.map(adapter => [adapter.capabilities.provider, adapter]));
   }
 
@@ -170,6 +174,7 @@ export class HostedControls {
       throw new HostedControlError('Select a task, connection, profile, region and pinned commit.', 400);
     }
     if (!await this.store.getTask(lobbyId, taskId)) throw new HostedControlError('Lobby task not found.', 404);
+    const sourceRepository = this.readSource ? (await this.store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined;
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
       const duplicate = state.runs.find(r => r.taskId === taskId && r.attempt?.attemptId === attemptId);
       if (duplicate) {
@@ -189,7 +194,8 @@ export class HostedControls {
       if (!profile) throw new HostedControlError('Select an approved resource profile and region.', 400);
       const started = Date.now();
       const deadline = started + Math.min(policy.deadlineMs, profile.maxRuntimeMs);
-      const attempt: WorkspaceAttempt = { lobbyId, taskId, attemptId, connectionId, sourceRevision, profileId, region, deadline };
+      if (this.readSource && !sourceRepository) throw new HostedControlError('Select a GitHub repository in this lobby before launching a workspace.');
+      const attempt: WorkspaceAttempt = { lobbyId, taskId, attemptId, connectionId, sourceRevision, sourceRepository, profileId, region, deadline };
       const run: HostedRun = { id: randomUUID(), kind: 'workspace', taskId, attempt, state: 'requested', cleanup: 'pending', started, deadline, usage: [] };
       this.admit(state, run);
       this.reserve(state, run, adapter.estimate(attempt));
@@ -327,7 +333,8 @@ export class HostedControls {
         if (run.state === 'requested' || run.state === 'provisioning') {
           advance('provisioning');
           try {
-            await adapter.provision(run.id, attempt, credential, signal, allocation);
+            const source = this.readSource ? () => this.readSource!(attempt, signal) : undefined;
+            await adapter.provision(run.id, attempt, credential, signal, allocation, source);
           } catch (error) {
             // The provider may have allocated before losing its response. Retry
             // with the same attempt key until the deadline, then fence and delete.
@@ -343,14 +350,18 @@ export class HostedControls {
         }
         signal.throwIfAborted();
         const collected = await adapter.collect(run.id, credential, signal, allocation);
+        const textArtifact = (value: string | undefined, limit: number) =>
+          value?.replaceAll(credential, '[redacted]').slice(0, limit);
         const artifacts = {
-          logs: collected.logs?.replaceAll(credential, '[redacted]'),
-          tests: collected.tests?.replaceAll(credential, '[redacted]'),
-          patch: collected.patch?.replaceAll(credential, '[redacted]'),
-          files: collected.files?.map(file => file.replaceAll(credential, '[redacted]')),
+          exitCode: Number.isInteger(collected.exitCode) ? collected.exitCode : undefined,
+          logs: textArtifact(collected.logs, 65_536),
+          tests: textArtifact(collected.tests, 65_536),
+          patch: textArtifact(collected.patch, 262_144),
+          files: collected.files?.slice(0, 100).map(file => textArtifact(file, 512)!),
         };
         signal.throwIfAborted();
-        this.finish(lobbyId, run.id, 'succeeded', undefined, artifacts);
+        if (artifacts.exitCode) this.finish(lobbyId, run.id, 'failed', 'Workspace command exited unsuccessfully.', artifacts);
+        else this.finish(lobbyId, run.id, 'succeeded', undefined, artifacts);
       } catch {
         if (this.closed) return;
         this.finish(lobbyId, run.id, 'failed', 'Workspace execution stopped or failed.');

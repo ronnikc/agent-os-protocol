@@ -170,6 +170,9 @@ export async function mountHostedControls(root) {
       return `<article>
         <h4>${escapeHtml(run.kind)} · ${escapeHtml(run.taskId || run.id)}</h4>
         <p>${escapeHtml(run.state)} · Cleanup ${escapeHtml(run.cleanup)} · Estimated ${reserved} ${unit} · Reported ${pending && !run.usage.some(item => item.actual !== undefined) ? 'pending' : actual + ' ' + unit}${pending && actual > 0 ? ' (partial)' : ''}</p>
+        ${Number.isInteger(run.artifacts?.exitCode) ? `<p>Command exit code ${run.artifacts.exitCode}</p>` : ''}
+        ${['logs', 'tests', 'patch'].filter(key => run.artifacts?.[key]).map(key =>
+          `<details><summary>${key === 'logs' ? 'Workspace logs' : key === 'tests' ? 'Test results' : 'Patch'}</summary><pre>${escapeHtml(run.artifacts[key])}</pre></details>`).join('')}
         ${run.failure ? `<p>${escapeHtml(run.failure)}</p>` : ''}
         ${['succeeded', 'failed', 'cancelled'].includes(run.state) ? '' :
           `<button class="btn btn-secondary btn-sm" data-cancel="${escapeHtml(run.id)}" type="button">Cancel run</button>`}
