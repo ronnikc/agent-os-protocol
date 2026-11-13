@@ -28,6 +28,18 @@ For each scenario record outcome, elapsed time from hire to verified delivery, c
 - Preserve the lobby store and spending ledger. Keep unresolved payment reservations in place until an independent finality check resolves them. Zero-price engagements require neither a signer nor a funded lock.
 - Restore the known-good release and retry the documented zero-price scenario. Confirm that private data and artifacts remain inaccessible from another lobby.
 
+### Candidate deployment rollback drill
+
+Use a separate lobby deployment with its own persistent store, encryption key, and provider connections. Record the candidate SHA and known-good SHA before starting. Use a disposable repository and a task with a long enough runtime to observe cancellation. The deployer configures the provider account through Apps.
+
+1. Launch the pinned task and record the run ID. Confirm that the provider shows an allocation before changing policy.
+2. In Apps, clear **Enable workspace execution** and save. Confirm the run is cancelled and that a new attempt is denied. Record the policy change and cancellation from hosted audit history.
+3. Restart the candidate against the same persistent store and encryption key. If cleanup was pending at restart, verify that it resumes automatically or use **Retry recovery**. Confirm the cleanup state and independently verify deletion in the provider dashboard before disconnecting the provider. If cleanup already finished, record that timing and repeat the restart case before claiming pending-cleanup recovery.
+4. Restore the known-good release using the deployment's normal procedure. Verify that the lobby can read its preview records and complete a new zero-price engagement with an invited buyer and specialist. Check cross-lobby access with a separate authorized test account.
+5. Record timestamps, candidate and restored revisions, policy and run IDs, cleanup result, dashboard evidence, and the outcome of the post-rollback engagement. Keep provider credentials in the deployment.
+
+The hosted suite exercises the policy change, persisted cancellation, disconnection guard and restart cleanup with a fake provider. Capture separate evidence for the deployment drill.
+
 ## Release decision
 
 Require a complete external journey, all six live rows, clean rollback, no unresolved billable workspaces, and passing accessibility and regression checks. Retain the candidate commit, evidence links, deviations and explicit decision. Fixture success supports development readiness. The external cohort, live provider qualification and assistive-technology walkthrough are pending.
