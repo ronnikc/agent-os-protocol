@@ -791,3 +791,4 @@ select option {
 [data-market-status] { margin-bottom: 12px; }
 @media (max-width: 760px) { .market-columns { grid-template-columns: minmax(0, 1fr); } }
 #view-marketplace { overflow-y: auto; }
+.market-escrow { color: #c8d5ea; margin-bottom: 16px; line-height: 1.6; }

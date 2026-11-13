@@ -119,11 +119,23 @@ async function main(): Promise<void> {
       const read = (tokenLobby = lobby.lobby_id) => fetch(url, {
         headers: { Authorization: 'Bearer ' + issueSessionToken(owner, tokenLobby) },
       });
-      process.env.AGENT_OS_MARKETPLACE_BETA = 'true';
+      delete process.env.AGENT_OS_MARKETPLACE_BETA;
       const enabled = await read();
       assert.equal(enabled.status, 200);
       assert.equal((await enabled.json()).legacy[0].id, 'preview');
       assert.equal((await read('other-lobby')).status, 401);
+      const publicLobby = makeLobby('public');
+      await store.createLobby(publicLobby);
+      const publicUrl = url.replace(lobby.lobby_id, publicLobby.lobby_id);
+      assert.equal((await fetch(publicUrl)).status, 401);
+      const publish = (amount: string) => fetch(publicUrl, { method: 'POST',
+        headers: { Authorization: 'Bearer ' + issueSessionToken(owner, publicLobby.lobby_id), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'publish', title: 'Quoted work', deliverable: 'Deliver result',
+          acceptanceChecks: ['Review result'], scope: 'Artifact only', deadline: Date.now() + 86_400_000, amount }) });
+      assert.equal((await publish('1.0000001')).status, 400);
+      const quoted = await publish('12.340000');
+      assert.equal(quoted.status, 200);
+      assert.equal((await quoted.json()).listing.quote.amount, '12.34');
       const member = 'did:ccd:testnet:unrelated';
       await store.updateLobby(lobby.lobby_id, { allowlist: [owner, member] });
       const task = { task_id: 'private-assignment', lobby_id: lobby.lobby_id, org_id: 'default', title: 'Private',
@@ -144,7 +156,7 @@ async function main(): Promise<void> {
       assert.equal((await ownerTasks.json()).coordination_tasks[0].task_id, task.task_id);
       assert.equal((await fetch(tasksUrl + '/' + task.task_id + '/delete', { method: 'POST', headers: as(member) })).status, 409);
       assert.ok(await store.getTask(lobby.lobby_id, task.task_id));
-      delete process.env.AGENT_OS_MARKETPLACE_BETA;
+      process.env.AGENT_OS_MARKETPLACE_BETA = 'false';
       assert.equal((await read()).status, 404);
       assert.equal((await store.getMarketplaceTask(lobby.lobby_id, 'preview'))?.title, 'Preview');
     } finally {
@@ -174,11 +186,12 @@ async function main(): Promise<void> {
           acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0',
           ...(execution === 'cloud' && { workspaceRepository: 'example/approved', workspaceRevision: 'a'.repeat(40) }) });
         const bid = await marketplace.bid(id, 'seller', listing.id, { action: 'submit', profileId: profile.id, agentId: 'worker',
-          listingVersion: listing.version, amount: '0', turnaroundHours: 1, expiresAt: Date.now() + 3_600_000,
+          listingVersion: listing.version, amount: execution === 'local' ? '42.250000' : '0', turnaroundHours: 1, expiresAt: Date.now() + 3_600_000,
           prerequisites: 'None', assumptions: 'Fixture' });
         const termsDigest = bid.consent.digest;
         const agreement = await marketplace.hire(id, 'buyer', listing.id, { listingVersion: listing.version, bidVersion: bid.version,
           bidId: bid.id, digest: termsDigest });
+        assert.equal(agreement.bid.quote.amount, execution === 'local' ? '42.25' : '0');
         const task = (await store.getTask(id, agreement.assignmentId))!;
         const request = { taskId: task.task_id, attemptId: 'scope-fixture', connectionId: 'fixture',
           sourceRevision: 'a'.repeat(40), profileId: 'fixture', region: 'fixture' };

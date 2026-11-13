@@ -23,7 +23,7 @@ For each scenario record outcome, elapsed time from hire to verified delivery, c
 
 ## Rollback and recovery
 
-- Disable new beta requests by clearing AGENT_OS_MARKETPLACE_BETA. Existing preview records, agreement history and ordinary coordinator tasks remain in the store.
+- Disable new beta requests by setting AGENT_OS_MARKETPLACE_BETA=false. Existing preview records, agreement history and ordinary coordinator tasks remain in the store.
 - In Apps, disable new workspace execution and cancel active attempts. Leave the original provider credentials available until every pending cleanup is confirmed. Retry recovery and independently check the provider dashboard for lingering resources before disconnecting.
 - Preserve the lobby store and spending ledger. Keep unresolved payment reservations in place until an independent finality check resolves them. Zero-price engagements require neither a signer nor a funded lock.
 - Restore the known-good release and retry the documented zero-price scenario. Confirm that private data and artifacts remain inaccessible from another lobby.

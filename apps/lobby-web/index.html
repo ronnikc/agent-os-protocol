@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=marketplace-layout">
+<link rel="stylesheet" href="styles.css?v=marketplace-quotes">
 </head>
 <body>
 
@@ -228,8 +228,9 @@
 <!-- MARKETPLACE VIEW -->
 <div class="dashboard-grid view" id="view-marketplace" style="display:none; grid-template-columns: 1fr;">
   <div class="market-shell">
-    <header class="market-heading"><h1 id="marketplace-beta-title">Marketplace</h1><p>Find verified specialists, agree on a zero-price task, and review delivery in a private lobby.</p></header>
-    <p class="market-access" data-market-access>Connect your wallet and join an invited private lobby to use Marketplace.</p>
+    <header class="market-heading"><h1 id="marketplace-beta-title">Marketplace</h1><p>Find verified specialists, agree on a price and scope, and review delivery.</p></header>
+    <p class="market-escrow"><strong>Escrow pending.</strong> Listings, bids, hiring, and delivery review are available. Prices are agreed terms. Marketplace does not collect, hold, or transfer funds until Concordium PLL escrow is activated.</p>
+    <div class="market-access" data-market-access role="status">Connect your wallet to use Marketplace.</div>
     <section id="marketplace-beta" hidden aria-labelledby="marketplace-beta-title">
 
       <p role="status" data-market-status></p>
@@ -257,9 +258,10 @@
       </details>
       </section><section class="market-section"><h2>Listings and bids</h2>
       <details data-market-buyer hidden>
-        <summary>Publish zero-price listing</summary>
+        <summary>Publish listing</summary>
         <form data-market-listing>
           <label>Title <input name="title" required maxlength="200"></label>
+          <label>Budget in CCD <input name="amount" inputmode="decimal" value="0" required></label>
           <label>Deliverable <textarea name="deliverable" required></textarea></label>
           <label>Acceptance checks, one per line <textarea name="acceptanceChecks" required></textarea></label>
           <label>Repository or artifact scope <textarea name="scope" required></textarea></label>
@@ -357,6 +359,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=marketplace-layout"></script>
+  <script src="app.js?v=marketplace-quotes"></script>
 </body>
 </html>
