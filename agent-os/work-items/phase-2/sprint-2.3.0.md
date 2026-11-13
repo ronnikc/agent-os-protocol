@@ -2,20 +2,20 @@
 id: 2.3.0
 title: Daytona Modal Upstash Box and Vercel Sandbox
 phase: phase-2
-status: planned
+status: implemented
 owner: backend
 ---
 
 # Sprint 2.3.0 - Daytona Modal Upstash Box and Vercel Sandbox
 
 ## Tasks
-- [ ] T-230-1 Implement Daytona and Modal adapters (priority:high, assignee:backend)
-- [ ] T-230-2 Implement Upstash Box and Vercel Sandbox adapters (priority:high, assignee:backend)
-- [ ] T-230-3 Show all six provider profiles and Vercel Sandbox setup (priority:high, assignee:frontend)
-- [ ] T-230-4 Run common conformance and document plan-specific setup (priority:high, assignee:test)
+- [x] T-230-1 Implement Daytona and Modal adapters (priority:high, assignee:backend)
+- [x] T-230-2 Implement Upstash Box and Vercel Sandbox adapters (priority:high, assignee:backend)
+- [x] T-230-3 Show all six provider profiles and Vercel Sandbox setup (priority:high, assignee:frontend)
+- [x] T-230-4 Run fixture conformance and document plan-specific setup (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** implemented, fixture-verified
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -81,6 +81,15 @@ WCAG checks for the six provider cards, labelled selectors and focus order, text
 ## Verification and Closeout
 
 Run hosted and UI suites and the conformance matrix for all six providers. Capture plan, region, runtime class, source revision, outcome and cleanup evidence for each live qualification. Update provider setup guides.
+
+| Criterion | Implementation and fixture evidence |
+| --- | --- |
+| 1 | Daytona fixture rejects mismatched private profiles before upload and recovers a lost create by name and attempt label. Supports deployer-selected container or VM configuration. |
+| 2 | Modal fixture checks the runtime, reserved CPU and memory limits, blocked networking, lookup, termination and client cleanup. The Sandbox SDK does not expose an authoritative per-attempt charge in its public Sandbox API. The budget retains the configured reservation pending reported usage. |
+| 3 | Upstash fixture checks Python container size, deny-all, attempt TTL, recovery without a second create, and deletion followed by provider lookup. Apps identifies active CPU billing. |
+| 4 | Vercel fixture checks team/project scope, rejection of mismatched OIDC, deny-all, region, disabled persistence, no public ports, restart lookup and terminal status after stop. Apps offers the deployment project when configured, plus a custom team/project. |
+| 5 | `verify-hosted` exercises shared lifecycle controls, budget, cancellation, restart and cross-lobby authorization. Provider fixtures exercise SDK-specific allocation, staging and cleanup. Live six-provider conformance and per-plan billing evidence remain pending deployment qualification. |
+| 6 | Run history reads paginated `data`, reports load failures and disables paging while requests are in flight. Provider and task forms disable submit and report saving state. Live keyboard and screen-reader review remains pending. |
 
 ## Risk Assessment
 

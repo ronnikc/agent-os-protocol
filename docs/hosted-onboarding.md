@@ -87,6 +87,26 @@ an agent has an ID, it always connects to your lobby with that identity. See
 
 ---
 
-**Recap:** wallet = your login; keys are stored encrypted and wallet-locked; per-lobby or per-agent;
-no platform spend caps. Server-side agent execution (so agents run without any local machine) is the
-next hosted milestone — see [hosted-panel](hosted-panel.md).
+## 5. Connect cloud workspaces
+
+In **Apps**, set the hosted compute limits and enable workspace execution. Choose a provider, connect
+your account, and verify the connection. The launch form lists the connected account's configured
+profiles and regions. Choose a lobby task and a full commit SHA. Run history shows the result, budget
+reservation, artifacts, and cleanup state.
+
+Deployers configure each available provider profile as a JSON environment variable. Each profile
+needs a trusted check `command` and a conservative `maxMicrosPerSecond` reservation rate based on the
+provider plan. Commands must work with the configured network policy and guest image.
+
+| Provider | Setup |
+| --- | --- |
+| E2B | Configure `AGENT_OS_E2B_PROFILE` for a private template. Connect an E2B API key. |
+| Agent37 | Configure `AGENT_OS_AGENT37_PROFILE` for a plan with the approved private workspace endpoint. Connect an account API key. |
+| Daytona | Set `AGENT_OS_DAYTONA_PROFILE` with `snapshot`, `region`, `isolation` (`container` or `vm`), `cpu`, `memoryMiB`, `diskMiB`, `maxRuntimeMs`, `maxMicrosPerSecond`, and `command`. Use a snapshot with Git, Bash, Python 3, and the check dependencies. The plan and target must return the requested sandbox class and confirm that outbound networking is blocked. |
+| Modal | Set `AGENT_OS_MODAL_PROFILE` with `app`, `image`, `environment`, `region`, `isolation`, `cpu`, `memoryMiB`, `diskMiB`, `maxRuntimeMs`, `maxMicrosPerSecond`, and `command`. Provision the named app and image in the owner's Modal environment. Enter the token ID and secret separated by a colon. Confirm the plan supports the selected runtime and deny-network option. |
+| Upstash Box | Set `AGENT_OS_UPSTASH_BOX_PROFILE` with `size` (`small`, `medium`, or `large`), `region` (`provider-managed`), `cpu`, `memoryMiB`, `diskMiB`, `maxRuntimeMs`, `maxMicrosPerSecond`, and `command`. Connect an Upstash Box API key. The service bills active CPU and the workspace budget reserves the configured ceiling while final usage is pending. |
+| Vercel Sandbox | Run Node.js 22.19 or later and set `AGENT_OS_VERCEL_SANDBOX_PROFILE` with `region`, `cpu`, `diskMiB`, `maxRuntimeMs`, `maxMicrosPerSecond`, and `command`. Choose the project and its team in Apps. Use a Sandbox-authorized owner token for external hosting. For a Vercel-hosted lobby with project OIDC, set `VERCEL_TEAM_ID` and `VERCEL_PROJECT_ID` to the bound team and project and enable runtime `VERCEL_OIDC_TOKEN`. The existing project then appears as a selectable target. |
+
+Vercel Deploy continues to use its own GitHub Actions secrets. Keep the Sandbox token scoped to the
+intended team and project. Run a disposable task on each plan and region you enable, and confirm
+cleanup in the provider dashboard before opening the profile to users.

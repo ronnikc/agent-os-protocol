@@ -49,6 +49,9 @@ import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './hosted/hosted-controls.js';
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
+import { configuredDaytonaWorkspaces } from './hosted/daytona-workspace.js';
+import { configuredModalWorkspaces } from './hosted/modal-workspace.js';
+import { configuredUpstashWorkspaces } from './hosted/upstash-workspace.js';
 import { configuredAgent37Workspaces } from './hosted/agent37-workspace.js';
 import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAttempt, type WorkspaceFileTools, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
@@ -397,7 +400,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // Fail-closed: refuse to boot if the dev wallet-signature bridge is enabled in production.
   assertDevBridgeNotInProduction();
   const store = options.store ?? new InMemoryLobbyStore();
-  const workspaceAdapters = options.workspaceAdapters ?? [...configuredE2bWorkspace(), ...configuredAgent37Workspaces()];
+  const workspaceAdapters = options.workspaceAdapters ??
+    [...configuredE2bWorkspace(), ...configuredAgent37Workspaces(), ...configuredDaytonaWorkspaces(),
+      ...configuredModalWorkspaces(), ...configuredUpstashWorkspaces(),
+      ...(process.env.AGENT_OS_VERCEL_SANDBOX_PROFILE
+        ? (await import('./hosted/vercel-workspace.js')).configuredVercelWorkspaces() : [])];
   const hosted = new HostedControls(store, workspaceAdapters, options.workspaceSource ?? (async (attempt, signal) => {
     const integration = await store.getIntegration(attempt.lobbyId, 'github');
     if (!attempt.sourceRepository || integration?.repo_full_name !== attempt.sourceRepository ||
@@ -1756,6 +1763,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           if (body.action === 'verify') {
             await hosted.verifyConnection(lobbyId, actor, item as WorkspaceProvider);
             return json({ verified: true });
+          }
+          if (item === 'vercel-sandbox' && (body.action === 'connect' || body.action === 'rotate')) {
+            await hosted.verifyVercelProject(body.credential);
           }
           hosted.connection(lobbyId, actor, item as WorkspaceProvider, body.action, body.credential);
           return json(hosted.settings(lobbyId));

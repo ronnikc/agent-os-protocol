@@ -43,6 +43,13 @@ Run state, budget reservations and audit events persist together in the lobby st
 
 Local workspace operation and the independent commerce ledger have separate trust and accounting boundaries. Live Concordium PLL actions require released protocol support, compatible tooling and testnet evidence.
 
+Cloud workspace connections are lobby-scoped and require a lobby manager. Provider credentials
+remain sealed in the control plane. Vercel Sandbox validates access to the selected project before
+saving a connection. Vercel Deploy credentials stay in GitHub Actions. The four Sprint 2.3 adapters
+request private, deadline-bound workspaces and track teardown separately from run status. Daytona,
+Upstash Box and Vercel verify returned isolation settings before staging repository content.
+Unconfirmed cleanup keeps its budget reservation and can be retried against the original account.
+
 ## Local Mode vs Swarm Mode — what is exposed
 
 | | Local Mode | Swarm Mode (remote lobby) |

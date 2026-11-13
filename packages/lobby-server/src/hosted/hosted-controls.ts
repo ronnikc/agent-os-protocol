@@ -49,6 +49,10 @@ export class HostedControls {
         id,
         capabilities: this.adapters.get(id)?.capabilities ?? null,
         canVerify: Boolean(this.adapters.get(id)?.verifyConnection || workspaceAccountVerifier(id)),
+        ...(id === 'vercel-sandbox' && /^team_[\w-]+$/.test(process.env.VERCEL_TEAM_ID ?? '') &&
+          /^prj_[\w-]+$/.test(process.env.VERCEL_PROJECT_ID ?? '') ? {
+            project: { teamId: process.env.VERCEL_TEAM_ID, projectId: process.env.VERCEL_PROJECT_ID },
+          } : {}),
       })),
       connections: state.connections.filter(c => c.integration.status !== 'revoked')
         .map(({ integration, hint }) => ({ id: integration.id, provider: integration.provider, status: integration.status, hint })),
@@ -95,6 +99,16 @@ export class HostedControls {
       }
     }
     return policy;
+  }
+
+  async verifyVercelProject(credential: unknown) {
+    if (typeof credential !== 'string' || !credential.trim() || credential.length > 8192) {
+      throw new HostedControlError('Enter the Vercel Sandbox project and its credentials.', 400);
+    }
+    const adapter = this.adapters.get('vercel-sandbox');
+    if (!adapter?.verifyConnection) throw new HostedControlError('Vercel Sandbox is unavailable on this deployment.');
+    try { await adapter.verifyConnection(credential, AbortSignal.timeout(10_000)); }
+    catch { throw new HostedControlError('Vercel denied access to this Sandbox project or could not be reached.', 400); }
   }
 
   connection(lobbyId: string, actor: string, provider: WorkspaceProvider, action: unknown, credential: unknown) {

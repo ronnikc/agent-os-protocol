@@ -191,7 +191,10 @@ async function render() {
   el.innerHTML = `
     <section data-hosted-controls></section>
     ${sectionTitle('Deploy &amp; CI', repo ? repoLabel : 'no repo connected')}
-    ${vercel}${ci}
+    ${vercel}
+    ${card({ accent: 'var(--color-border)', badge: '', title: 'Vercel Sandbox', body: 'Connect a Vercel project to run lobby tasks in disposable workspaces.',
+      actions: '<button class="btn btn-secondary btn-sm" type="button" id="btn-app-vercel-sandbox">Set up Vercel Sandbox</button>' })}
+    ${ci}
     ${sectionTitle('Chat apps', 'reach the swarm where your team is')}
     ${slack}${discord}${telegram}
     ${sectionTitle('Data &amp; stats')}
@@ -199,6 +202,13 @@ async function render() {
   `;
 
   void mountHostedControls(el.querySelector('[data-hosted-controls]'));
+  el.querySelector('#btn-app-vercel-sandbox').addEventListener('click', () => {
+    const provider = el.querySelector('[data-provider] select[name="provider"]');
+    if (!provider) return;
+    provider.value = 'vercel-sandbox';
+    provider.dispatchEvent(new Event('change'));
+    provider.focus();
+  });
   document.getElementById('btn-app-vercel')?.addEventListener('click', () => scaffold('scaffold-vercel', 'Vercel deploy', el));
   document.getElementById('btn-app-ci')?.addEventListener('click', () => scaffold('scaffold-ci', 'CI', el));
   wireOwnerIntegration('slack', slackFields);
