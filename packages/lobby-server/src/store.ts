@@ -10,8 +10,9 @@
 
 import type { LobbySession, LobbyAgent, LobbyMessage, LobbyTask, LobbyEvent, LobbyRequest } from '@agent-os/protocol-core';
 import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalIdentityLink, KnowledgeBase, KnowledgeSyncJob, MarketplaceTask, ConcordiumIssuerRecord, TaskBid, ProviderKeyConfig, WalletChallenge } from './models.js';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, openSync, fsyncSync, closeSync } from 'node:fs';
 import { join, dirname } from 'node:path';
+import { emptyHostedState, type HostedState } from './hosted/hosted-state.js';
 
 // Where the durable lobby state lives. On a hosted deployment this MUST point at a path that
 // survives container recycling/redeploys (a mounted volume) — set AGENT_OS_LOBBY_STORE_FILE to an
@@ -51,6 +52,9 @@ export interface LobbyWorkSession {
 }
 
 export interface LobbyStore {
+  readHostedState(lobbyId: string): HostedState;
+  hostedLobbyIds(): string[];
+  mutateHostedState<T>(lobbyId: string, update: (state: HostedState) => T): T;
   createLobby(lobby: LobbySession, overwrite?: boolean): Promise<LobbySession>;
   getLobby(lobbyId: string): Promise<LobbySession | undefined>;
   listLobbies(): Promise<LobbySession[]>;
@@ -185,8 +189,35 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   private saveTimer: NodeJS.Timeout | null = null;
 
-  constructor() {
+  private hosted = new Map<string, HostedState>();
+
+  constructor(private readonly storeFile = STORE_FILE) {
     this.loadSync();
+  }
+
+  readHostedState(lobbyId: string): HostedState {
+    return structuredClone(this.hosted.get(lobbyId) ?? emptyHostedState());
+  }
+
+  hostedLobbyIds(): string[] {
+    return [...this.hosted.keys()];
+  }
+
+  // Synchronous transaction for the single-writer lobby process. Persist before
+  // returning so no external operation can race ahead of its reservation.
+  mutateHostedState<T>(lobbyId: string, update: (state: HostedState) => T): T {
+    const previous = this.hosted.get(lobbyId);
+    const next = this.readHostedState(lobbyId);
+    const result = update(next);
+    this.hosted.set(lobbyId, next);
+    try {
+      this.saveSync(true);
+    } catch (error) {
+      if (previous) this.hosted.set(lobbyId, previous);
+      else this.hosted.delete(lobbyId);
+      throw error;
+    }
+    return structuredClone(result);
   }
 
   private queueSave() {
@@ -197,7 +228,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     }, 500);
   }
 
-  private saveSync() {
+  private saveSync(required = false) {
     try {
       const lobbiesSerialized = Array.from(this.lobbies.entries()).map(([id, bucket]) => ({
         id,
@@ -211,6 +242,7 @@ export class InMemoryLobbyStore implements LobbyStore {
 
       const data = {
         lobbies: lobbiesSerialized,
+        hosted: [...this.hosted.entries()],
         members: Array.from(this.members.entries()),
         integrations: Array.from(this.integrations.entries()),
         secrets: Array.from(this.secrets.entries()),
@@ -229,9 +261,18 @@ export class InMemoryLobbyStore implements LobbyStore {
 
       // Ensure the store directory exists — AGENT_OS_LOBBY_STORE_FILE points at a persistent path
       // outside the git checkout (e.g. the user's home), which may not exist on first write.
-      mkdirSync(dirname(STORE_FILE), { recursive: true });
-      writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), 'utf-8');
+      mkdirSync(dirname(this.storeFile), { recursive: true });
+      const temp = this.storeFile + '.tmp';
+      const fd = openSync(temp, 'w', 0o600);
+      try {
+        writeFileSync(fd, JSON.stringify(data, null, 2), 'utf-8');
+        fsyncSync(fd);
+      } finally {
+        closeSync(fd);
+      }
+      renameSync(temp, this.storeFile);
     } catch (err) {
+      if (required) throw err;
       console.error('[Lobby Store] Failed to save store state to disk:', err);
     }
   }
@@ -240,10 +281,10 @@ export class InMemoryLobbyStore implements LobbyStore {
     // Seamless migration: when the durable path (e.g. $HOME/.agent-os-lobby) has no store yet but a
     // legacy in-checkout ./lobby-store-db.json exists, load from it once. The next save writes to the
     // durable path, so state carries over the move without a manual copy or another wipe.
-    let source = STORE_FILE;
+    let source = this.storeFile;
     if (!existsSync(source)) {
       const legacy = join(process.cwd(), 'lobby-store-db.json');
-      if (legacy !== STORE_FILE && existsSync(legacy)) {
+      if (this.storeFile === STORE_FILE && legacy !== STORE_FILE && existsSync(legacy)) {
         source = legacy;
         console.log(`[Lobby Store] Migrating state from legacy ${legacy} → ${STORE_FILE}`);
       } else {
@@ -253,6 +294,7 @@ export class InMemoryLobbyStore implements LobbyStore {
     try {
       const content = readFileSync(source, 'utf-8');
       const data = JSON.parse(content);
+      if (Array.isArray(data.hosted)) this.hosted = new Map(data.hosted);
       if (Array.isArray(data.lobbies)) {
         for (const item of data.lobbies) {
           this.lobbies.set(item.id, {
@@ -279,9 +321,9 @@ export class InMemoryLobbyStore implements LobbyStore {
       if (Array.isArray(data.bids)) this.bids = new Map(data.bids);
       if (Array.isArray(data.issuers)) this.issuers = new Map(data.issuers);
       if (Array.isArray(data.requests)) this.requests = new Map(data.requests);
-      console.log(`[Lobby Store] Successfully loaded ${this.lobbies.size} lobbies from ${STORE_FILE}`);
+      console.log(`[Lobby Store] Successfully loaded ${this.lobbies.size} lobbies from ${source}`);
     } catch (err) {
-      console.error('[Lobby Store] Failed to load store state from disk:', err);
+      throw new Error('Failed to load lobby store', { cause: err });
     }
   }
 

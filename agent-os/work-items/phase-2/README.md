@@ -36,6 +36,8 @@ The November 13 competitive review informs the demo, documentation, benchmarks, 
 
 Marketplace discovery and independent interoperability can proceed while the cloud integrations are under development once their dependencies are available. Conditional PLL activation is outside the critical path for the beta and public release.
 
+Sprint 2.1.0 is in implementation review. The flagship recording and public benchmarks are scheduled in Sprint 2.9.0 after the Sprint 2.8.0 beta stabilization gate.
+
 ## Cloud workspace experience
 
 The owner connects their own provider account in **Apps → Cloud Workspaces**, selects an allowed region and runtime profile, and sets resource, network and spend limits. Agent OS provisions one disposable Linux workspace per task attempt. The task receives a pinned source revision, runs within its approved scope and returns logs, test results, artifacts and a patch for review. Keep repository write approval, model orchestration and provider credentials in the Agent OS control plane. Show provider capabilities and plan limits before admission, and record cleanup until the provider confirms it.

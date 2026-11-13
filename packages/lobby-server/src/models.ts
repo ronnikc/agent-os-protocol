@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 R Digital
 
+import type { WorkspaceProvider } from '@agent-os/protocol-core';
+
 export interface Lobby {
   id: string;
   name: string;
@@ -74,7 +76,7 @@ export interface WalletChallenge {
 export interface LobbyIntegration {
   id: string;
   lobby_id: string;
-  provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase' | 'dreambase';
+  provider: 'slack' | 'github' | 'google_drive' | 'discord' | 'telegram' | 'supabase' | 'dreambase' | WorkspaceProvider;
   status: 'pending' | 'active' | 'revoked' | 'error';
   external_account_id?: string;
   external_account_name?: string;

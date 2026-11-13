@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 R Digital
+
+export const workspaceProviders = ['e2b', 'agent37', 'daytona', 'modal', 'upstash-box', 'vercel-sandbox'] as const;
+export type WorkspaceProvider = typeof workspaceProviders[number];
+
+export interface WorkspaceProfile {
+  id: string;
+  cpu: number;
+  memoryMiB: number;
+  diskMiB: number;
+  isolation: 'container' | 'microvm' | 'vm';
+  egress: 'none' | 'allowlist' | 'unrestricted';
+  regions: readonly string[];
+  maxRuntimeMs: number;
+}
+
+export interface WorkspaceCapabilities {
+  provider: WorkspaceProvider;
+  profiles: readonly WorkspaceProfile[];
+  deletion: 'confirmed';
+  credentials: 'control-plane-only';
+  usage: 'final-or-pending';
+}
+
+export interface WorkspaceAttempt {
+  lobbyId: string;
+  taskId: string;
+  attemptId: string;
+  connectionId: string;
+  sourceRevision: string;
+  profileId: string;
+  region: string;
+  deadline: number;
+}
+
+export type WorkspaceState = 'requested' | 'provisioning' | 'running' | 'collecting' | 'succeeded' | 'failed' | 'cancelled';
+export type WorkspaceCleanup = 'pending' | 'confirmed';
+
+export interface WorkspaceArtifacts {
+  logs?: string;
+  tests?: string;
+  patch?: string;
+  files?: readonly string[];
+}
+
+/**
+ * attemptKey is stable across processes. Provision must be idempotent. Destroy must
+ * find even an unacknowledged allocation by key and fence future allocations with
+ * that key before confirming deletion. Credentials authenticate the control plane
+ * and must never be injected into the workspace. Usage is final only when billed
+ * totals are known. Compute is denominated in USD millionths.
+ */
+export interface WorkspaceAdapter {
+  capabilities: WorkspaceCapabilities;
+  estimate(attempt: WorkspaceAttempt): number;
+  provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal): Promise<void>;
+  wait(attemptKey: string, credential: string, signal: AbortSignal): Promise<void>;
+  collect(attemptKey: string, credential: string, signal: AbortSignal): Promise<WorkspaceArtifacts>;
+  destroy(attemptKey: string, credential: string, signal: AbortSignal): Promise<{ confirmed: boolean; actual?: number }>;
+}

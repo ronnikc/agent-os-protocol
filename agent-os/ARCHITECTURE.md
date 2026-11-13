@@ -61,6 +61,10 @@ You (Panel / UI Assist)
    → Panel tabs        (live via WebSocket)
 ```
 
+## Hosted execution
+
+Hosted model completions reserve token capacity through the lobby server before contacting a model provider. The shared workspace contract describes provider capabilities and binds each workspace to a lobby task attempt, connection and pinned commit. The lobby store commits run state, cleanup, usage and audit as one single-writer transaction. Apps reads and manages that state through lobby-scoped owner routes.
+
 ## Tech stack
 
 - **Runtime:** Node.js ≥ 20, ESM, TypeScript run via `tsx`.

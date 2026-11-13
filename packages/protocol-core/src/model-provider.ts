@@ -47,6 +47,8 @@ export interface AgentCompletionRequest {
   tools?: unknown[];
   jsonMode?: boolean;
   stream?: boolean;
+  maxOutputTokens?: number;
+  signal?: AbortSignal;
 }
 
 export interface AgentCompletionResult {

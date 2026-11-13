@@ -1,7 +1,7 @@
 # STATE.md — Current Platform Status
 
 > **Purpose:** Current implementation state of the Agent OS Protocol platform. Informative.
-> **Last updated:** v1.0.0 release.
+> **Last updated:** 2026-11-13.
 
 ---
 
@@ -10,6 +10,10 @@
 Agent OS Protocol has successfully transitioned from initial planning to its first stable release (**v1.0.0**). All core features—including the control plane, runtime adapters, providers, loop orchestration, website, and swarm lobbies—are fully implemented, verified, and integrated.
 
 ---
+
+## Phase 2 implementation
+
+Sprint 2.1.0 adds hosted limits, the shared workspace contract, owner controls and recovery. The workspace lifecycle is verified with a fake provider. The implementation PR is the review checkpoint before live adapters.
 
 ## Core Component Status
 

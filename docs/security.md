@@ -35,6 +35,14 @@ a remote swarm.
 
 Details: [providers](providers/README.md).
 
+### Hosted execution controls
+
+Hosted policy, run history, audit and provider connection routes require a lobby-scoped wallet session and an active lobby owner or administrator. Task and connection IDs are resolved within the authenticated lobby. Workspace credentials use the hosted secret box and require a configured deployment encryption key. Apps receives a masked hint. Provider credentials authenticate adapter control-plane calls and stay outside the task environment. Adapter errors are recorded as fixed messages. Exact credential occurrences are redacted before storing collected artifact metadata or text.
+
+Run state, budget reservations and audit events persist together in the lobby store before provider calls. Deploy one lobby writer per persistent store file. A multi-instance deployment requires transactional shared storage and worker fencing. Workspace adapters must support idempotent provisioning, enforce their profile and deadline, and fence further allocations when confirming deletion. Unknown usage holds capacity through restart and across budget windows. An in-flight operation already accepted by a remote service can still complete after a cancellation request. Cleanup confirmation remains separate from cancellation.
+
+Local workspace operation and the independent commerce ledger have separate trust and accounting boundaries. Live Concordium PLL actions require released protocol support, compatible tooling and testnet evidence.
+
 ## Local Mode vs Swarm Mode — what is exposed
 
 | | Local Mode | Swarm Mode (remote lobby) |

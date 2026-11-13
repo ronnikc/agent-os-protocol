@@ -19,6 +19,7 @@
  */
 
 import assert from 'node:assert/strict';
+import { verifyHostedControls } from './verify-hosted-controls.js';
 import { generateKeyPairSync } from 'node:crypto';
 import { AccountAddress, signMessage, buildBasicAccountSigner } from '@concordium/web-sdk';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
@@ -59,6 +60,8 @@ async function check(name: string, fn: () => void | Promise<void>): Promise<void
 
 async function main(): Promise<void> {
   console.log('verify-hosted — Hosted Agent OS foundation (Phase 1a: provider-key custody)\n');
+
+  await check('Sprint 2.1.0 hosted controls, concurrency, cancellation and restart', verifyHostedControls);
 
   // ── A. secret-box ──
   await check('secret-box seals and opens round-trip', () => {

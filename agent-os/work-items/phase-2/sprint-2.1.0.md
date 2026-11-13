@@ -2,20 +2,20 @@
 id: 2.1.0
 title: Hosted Controls and Workspace Contract
 phase: phase-2
-status: planned
+status: review
 owner: backend
 ---
 
 # Sprint 2.1.0 - Hosted Controls and Workspace Contract
 
 ## Tasks
-- [ ] T-210-1 Define workspace capabilities and persistent state transitions (priority:high, assignee:backend)
-- [ ] T-210-2 Enforce hosted budgets authorization cancellation and audit (priority:high, assignee:backend)
-- [ ] T-210-3 Expose owner limits usage and recovery in Apps (priority:high, assignee:frontend)
-- [ ] T-210-4 Verify concurrency restart and authorization with a fake provider (priority:high, assignee:test)
+- [x] T-210-1 Define workspace capabilities and persistent state transitions (priority:high, assignee:backend)
+- [x] T-210-2 Enforce hosted budgets authorization cancellation and audit (priority:high, assignee:backend)
+- [x] T-210-3 Expose owner limits usage and recovery in Apps (priority:high, assignee:frontend)
+- [x] T-210-4 Verify concurrency restart and authorization with a fake provider (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** implementation review
 **Created:** 2026-11-13
 **Priority:** High
 
