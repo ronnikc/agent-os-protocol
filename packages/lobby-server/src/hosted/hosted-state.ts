@@ -32,6 +32,7 @@ export interface HostedRun {
   taskId?: string;
   attempt?: WorkspaceAttempt;
   allocation?: WorkspaceAllocation;
+  workspaceAgent?: 'started' | 'finished';
   state: WorkspaceState;
   cleanup: WorkspaceCleanup;
   started: number;

@@ -224,6 +224,8 @@ export async function verifyHostedControls() {
   let actual: number | undefined;
   let failCleanup = true;
   let waitForCancel = false;
+  let agentEdits = 0;
+  let modelCalls = 0;
   let failProvision = true;
   const adapter: WorkspaceAdapter = {
     capabilities: {
@@ -240,13 +242,26 @@ export async function verifyHostedControls() {
       assert.equal(attempt.sourceRevision, 'a'.repeat(40));
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
       assert.equal(attempt.sourceIntegrationId, 'github-' + attempt.lobbyId);
-      assert.equal(attempt.assignedAgentId, 'fake');
+      assert.ok(attempt.assignedAgentId);
       assert.deepEqual([...await source!()], [1, 2, 3]);
       provisionCalls.push(key);
       await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
     },
     async wait(_, __, signal) {
       if (waitForCancel) await delay(30_000, undefined, { signal });
+    },
+    async openFileTools() {
+      return {
+        async readFile() { return 'original'; },
+        async listFiles() { return ['README.md']; },
+        async writeFile(path, content) {
+          assert.equal(path, 'README.md');
+          assert.equal(content, 'updated');
+          agentEdits++;
+          return 'staged';
+        },
+        createPullRequest() { return assert.fail('Workspace must not publish a PR'); },
+      };
     },
     async collect() { return { exitCode: 1, tests: 'failed', patch: 'redact ' + credential, logs: 'redact ' + credential + 'x'.repeat(70_000) }; },
     async destroy(key, _, signal, journal) {
@@ -279,7 +294,16 @@ export async function verifyHostedControls() {
   let controls: HostedControls | undefined;
   const openServer = (store: InMemoryLobbyStore) =>
     startLobbyServer({ port: 0, store, autoDefaultLobby: false, workspaceAdapters: [adapter],
-      workspaceSource: async () => new Uint8Array([1, 2, 3]) });
+      workspaceSource: async () => new Uint8Array([1, 2, 3]),
+      apiRuntimeFetch: async (_, init) => {
+        assert.ok(!String(init?.body).includes(credential));
+        modelCalls++;
+        return Response.json({ content: modelCalls === 1
+          ? [{ type: 'tool_use', id: 'edit', name: 'write_file',
+            input: { path: 'README.md', content: 'updated', commit_message: 'edit' } }]
+          : [{ type: 'text', text: 'Edited the staged file.' }],
+        usage: { input_tokens: 100, output_tokens: 50 } });
+      } });
   async function call(lobby: string, path: string, method = 'GET', body?: unknown, actor = 'owner-' + lobby, tokenLobby = lobby) {
     const port = (server!.httpServer.address() as AddressInfo).port;
     const response = await fetch('http://127.0.0.1:' + port + '/api/v1/agent-lobby/lobbies/' + lobby + path, {
@@ -302,7 +326,7 @@ export async function verifyHostedControls() {
     let store = new InMemoryLobbyStore(file);
     const now = new Date().toISOString();
     for (const lobby of ['a', 'b']) {
-      await store.createLobby({ lobby_id: lobby, org_id: 'default', name: lobby, status: 'active', visibility: 'private',
+      await store.createLobby({ lobby_id: lobby, org_id: 'default', name: lobby, status: 'active', visibility: lobby === 'b' ? 'public' : 'private',
         connected_agent_ids: [], message_seq: 0, created_at: now, updated_at: now, created_by: 'owner-' + lobby });
       const task: LobbyTask = { lobby_id: lobby, task_id: 'task-' + lobby, org_id: 'default', title: 'Fake workspace',
         description: 'Verify task binding', priority: 'normal', category: 'general', status: 'assigned',
@@ -424,6 +448,25 @@ export async function verifyHostedControls() {
     assert.notEqual(rotated.id, request.connectionId);
     assert.equal(store.readHostedState('a').runs[1].usage[0].actual, undefined);
     assert.deepEqual((await call('a', provider, 'POST', { action: 'disconnect' })).body.connections, []);
+    assert.equal((await call('b', '/provider-keys', 'POST', { provider: 'anthropic', api_key: 'fixture-model-key' })).status, 201);
+    const agent = await call('b', '/hosted-agents', 'POST', { name: 'Workspace fixture', provider: 'anthropic', model: 'fixture' });
+    assert.equal(agent.status, 201, JSON.stringify(agent.body));
+    const agentTask = await call('b', '/tasks', 'POST', { title: 'Edit README', description: 'Update README.md.',
+      assigned_to: agent.body.agent_id, output_mode: 'workspace' });
+    assert.equal(agentTask.status, 201);
+    assert.equal(modelCalls, 0);
+    waitForCancel = false;
+    actual = 20;
+    await call('b', '/hosted-controls', 'PUT', { ...policy, modelPerRun: 30_000, modelPerPeriod: 30_000, concurrency: 1 });
+    await call('b', provider, 'POST', { action: 'rotate', credential });
+    const bSettings = await call('b', '/hosted-controls');
+    const execution = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'agent-workspace' });
+    assert.equal(execution.status, 202, JSON.stringify(execution.body));
+    await until(() => store.readHostedState('b').runs.find(r => r.id === execution.body.run.id && r.cleanup === 'confirmed'));
+    assert.equal(agentEdits, 1);
+    assert.equal(modelCalls, 2);
+    assert.equal(store.readHostedState('b').runs.find(r => r.id === execution.body.run.id)?.workspaceAgent, 'finished');
     await server.close();
     server = undefined;
 
@@ -474,13 +517,15 @@ export async function verifyHostedControls() {
     });
     assert.match(await runner().respondTo('unknown model bill still holds capacity'), /budget exhausted/);
 
-    controls.setPolicy('b', 'owner-b', { ...policy, concurrency: 1, deadlineMs: 80 });
+    controls.setPolicy('b', 'owner-b', { ...policy, concurrency: 1, deadlineMs: 500 });
     const timed = controls.runModel('b', 'task-b', async (_, signal) => {
       await delay(30_000, undefined, { signal });
     });
     const timedOut = assert.rejects(timed, /aborted/i);
-    await assert.rejects(controls.runModel('b', 'task-b', async () => {}), /concurrency limit/);
-    await timedOut;
+    await Promise.all([
+      assert.rejects(controls.runModel('b', 'task-b', async () => {}), /concurrency limit/),
+      timedOut,
+    ]);
     assert.equal(store.readHostedState('b').runs.at(-1)?.state, 'failed');
   } finally {
     controls?.close();

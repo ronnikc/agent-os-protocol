@@ -64,6 +64,13 @@ export interface WorkspaceAllocationJournal {
   bind(providerId: string): void;
 }
 
+export interface WorkspaceFileTools {
+  readFile(path: string): Promise<string>;
+  listFiles(path: string): Promise<string[]>;
+  writeFile(path: string, content: string, message: string): Promise<string>;
+  createPullRequest(): never;
+}
+
 /**
  * attemptKey is stable across processes. Provision must be idempotent. Destroy must
  * find even an unacknowledged allocation by key and fence future allocations with
@@ -75,6 +82,7 @@ export interface WorkspaceAdapter {
   capabilities: WorkspaceCapabilities;
   /** Check account access without provisioning a billable workspace. */
   verifyConnection?(credential: string, signal: AbortSignal): Promise<void>;
+  openFileTools?(credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<WorkspaceFileTools>;
   estimate(attempt: WorkspaceAttempt): number;
   provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal, source?: () => Promise<Uint8Array>): Promise<void>;
   wait(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<void>;

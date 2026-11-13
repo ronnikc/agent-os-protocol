@@ -50,7 +50,7 @@ import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './ho
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
 import { configuredAgent37Workspaces } from './hosted/agent37-workspace.js';
-import { workspaceProviders, type WorkspaceAdapter, type WorkspaceProvider } from '@agent-os/protocol-core';
+import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAttempt, type WorkspaceFileTools, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
@@ -518,7 +518,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   }
 
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
-  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string }>();
+  const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string;
+    runWorkspace: (id: string, task: LobbyTask, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void> }>();
+  hosted.workspaceAgent = async (id: string, attempt: WorkspaceAttempt, tools, signal) => {
+    const task = await store.getTask(attempt.lobbyId, attempt.taskId);
+    const agent = attempt.assignedAgentId && hostedAgents.get(attempt.assignedAgentId);
+    if (!task || task.assigned_to !== attempt.assignedAgentId || !agent || agent.conn.lobbyId !== attempt.lobbyId) {
+      throw new HostedControlError('The assigned hosted agent is unavailable.');
+    }
+    await agent.runWorkspace(id, task, tools, signal);
+  };
   // Per-agent throttle for broadcast observation (see observeBroadcast) — bounds LLM cost so a
   // stream of broadcasts can't trigger an evaluation turn on every message for every hosted agent.
   const lastObservation = new Map<string, number>();
@@ -1312,7 +1321,25 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     }, Math.max(Math.floor(STALE_MS / 3), 15_000)); // heartbeat at 1/3 of stale threshold, min 15s
     if (typeof heartbeatInterval.unref === 'function') heartbeatInterval.unref();
 
-    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, taskRepository, workingBranch: integration?.branch || 'main' });
+    hostedAgents.set(agentId, { runner, connId, conn, heartbeatInterval, repoClient, taskRepository, workingBranch: integration?.branch || 'main',
+      async runWorkspace(id, task, tools, signal) {
+        const workspaceBudget = hostedModelBudget(hosted, task.lobby_id, { id, taskId: task.task_id, signal });
+        const workspaceRunner = new HostedAgentRunner(createApiRuntimeAdapter({
+          provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
+          apiKey: params.apiKey, fetchFn: options.apiRuntimeFetch, repoClient: tools, workspaceFiles: true,
+          guardedCompletion: workspaceBudget.guardedCompletion, workSignal: workspaceBudget.workSignal,
+        }), {
+          run: workspaceBudget.run,
+          systemPrompt: 'Use the file tools to edit the staged workspace for the assigned task. Writes stay in the workspace for human review. The lobby runs the approved build and test command after your turn.',
+        });
+        try {
+          const result = await workspaceRunner.respondTo(task.title + '\n\n' + task.description);
+          if (!result || result.startsWith('⚠') || /^BLOCKED:/i.test(result)) throw new HostedControlError('The assigned agent could not complete the workspace turn.');
+        } finally {
+          await workspaceRunner.stop();
+        }
+      },
+    });
     return agentId;
   }
 

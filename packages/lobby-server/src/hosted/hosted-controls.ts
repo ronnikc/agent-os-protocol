@@ -2,7 +2,7 @@
 // Copyright (c) 2026 R Digital
 
 import { randomUUID } from 'node:crypto';
-import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAllocationJournal, type WorkspaceAttempt, type WorkspaceProvider } from '@agent-os/protocol-core';
+import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAllocationJournal, type WorkspaceAttempt, type WorkspaceFileTools, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { hasConfiguredKey, keyHint, open, seal, sealedKeyId } from '../crypto/secret-box.js';
 import type { LobbyStore } from '../store.js';
 import { terminal, type HostedPolicy, type HostedRun, type HostedState } from './hosted-state.js';
@@ -27,6 +27,7 @@ function liability(run: HostedRun) {
 }
 
 export class HostedControls {
+  workspaceAgent?: (id: string, attempt: WorkspaceAttempt, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void>;
   private readonly active = new Map<string, AbortController>();
   private readonly adapters: Map<WorkspaceProvider, WorkspaceAdapter>;
   private closed = false;
@@ -169,10 +170,10 @@ export class HostedControls {
     });
   }
 
-  private admit(state: HostedState, run: HostedRun) {
+  private admit(state: HostedState, run: HostedRun, parentId?: string) {
     const policy = this.policy(state);
     if (this.closed) throw new HostedControlError('Hosted execution is shutting down.');
-    if (state.runs.filter(r => !terminal(r) || this.active.has(r.id) || r.cleanup === 'pending').length >= policy.concurrency) {
+    if (state.runs.filter(r => r.id !== parentId && (!terminal(r) || this.active.has(r.id) || r.cleanup === 'pending')).length >= policy.concurrency) {
       throw new HostedControlError('Hosted concurrency limit reached.');
     }
     state.runs.push(run);
@@ -268,23 +269,28 @@ export class HostedControls {
     }
   }
 
-  async runModel<T>(lobbyId: string, taskId: string | undefined, work: (id: string, signal: AbortSignal) => Promise<T>): Promise<T> {
+  async runModel<T>(lobbyId: string, taskId: string | undefined, work: (id: string, signal: AbortSignal) => Promise<T>,
+    workspace?: { id: string; signal: AbortSignal }): Promise<T> {
+    workspace?.signal.throwIfAborted();
     const run = this.store.mutateHostedState(lobbyId, state => {
       const policy = this.policy(state);
-      if (taskId && state.runs.some(existing => existing.kind === 'workspace' && existing.taskId === taskId &&
+      const parent = workspace && state.runs.find(existing => existing.id === workspace.id && existing.kind === 'workspace' &&
+        existing.taskId === taskId && existing.state === 'running');
+      if (workspace && !parent) throw new HostedControlError('Workspace model session is no longer authorized.');
+      if (!workspace && taskId && state.runs.some(existing => existing.kind === 'workspace' && existing.taskId === taskId &&
           (!terminal(existing) || this.active.has(existing.id)))) {
         throw new WorkspaceTaskBusyError('This task already has a workspace run in progress.');
       }
       const started = Date.now();
       const run: HostedRun = { id: randomUUID(), taskId, kind: 'model', state: 'running', cleanup: 'confirmed',
         started, deadline: started + policy.deadlineMs, usage: [] };
-      this.admit(state, run);
+      this.admit(state, run, parent?.id);
       audit(state, 'hosted', 'model_run_started', run.id);
       return run;
     });
     const controller = new AbortController();
     this.active.set(run.id, controller);
-    const signal = AbortSignal.any([controller.signal, AbortSignal.timeout(Math.max(1, run.deadline - Date.now()))]);
+    const signal = AbortSignal.any([controller.signal, workspace?.signal ?? controller.signal, AbortSignal.timeout(Math.max(1, run.deadline - Date.now()))]);
     try {
       const result = await work(run.id, signal);
       signal.throwIfAborted();
@@ -399,6 +405,17 @@ export class HostedControls {
         }
         if (run.state !== 'collecting') {
           signal.throwIfAborted();
+          if (this.workspaceAgent) {
+            const task = await this.store.getTask(lobbyId, attempt.taskId);
+            if (task?.output_mode === 'workspace' && run.workspaceAgent !== 'finished') {
+              if (!adapter.openFileTools) throw new HostedControlError('The workspace provider does not offer agent file tools.');
+              if (run.workspaceAgent === 'started') throw new HostedControlError('Workspace agent was interrupted. Launch a new attempt.');
+              const tools = await adapter.openFileTools(credential, signal, allocation);
+              this.change(lobbyId, run.id, current => { current.workspaceAgent = 'started'; });
+              await this.workspaceAgent(run.id, attempt, tools, signal);
+              this.change(lobbyId, run.id, current => { current.workspaceAgent = 'finished'; });
+            }
+          }
           await adapter.wait(run.id, credential, signal, allocation);
           advance('collecting');
         }
