@@ -26,7 +26,9 @@ export function e2bAllocation(
       if (timeout < 1) throw new Error('Workspace deadline has elapsed.');
       const result = await request('/sandboxes', 'POST', signal, {
         templateID: settings.templateId, cpuCount: settings.cpu, timeout,
-        autoPause: false, allow_internet_access: false, metadata: { agent_os_attempt: key },
+        autoPause: false, allow_internet_access: false,
+        network: { allowPublicTraffic: false, dnsServers: [] },
+        metadata: { agent_os_attempt: key },
       });
       if (result.status !== 201) {
         await result.body?.cancel();

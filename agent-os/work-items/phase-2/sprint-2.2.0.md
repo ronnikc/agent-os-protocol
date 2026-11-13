@@ -2,20 +2,20 @@
 id: 2.2.0
 title: Cloud Workspaces with E2B and Agent37
 phase: phase-2
-status: planned
+status: review
 owner: backend
 ---
 
 # Sprint 2.2.0 - Cloud Workspaces with E2B and Agent37
 
 ## Tasks
-- [ ] T-220-1 Implement E2B and Agent37 lifecycle adapters (priority:high, assignee:backend)
-- [ ] T-220-2 Connect repository staging hosted tools and artifact handoff (priority:high, assignee:backend)
-- [ ] T-220-3 Expose workspace provider setup progress and results (priority:high, assignee:frontend)
-- [ ] T-220-4 Run provider conformance and live opt-in checks (priority:high, assignee:test)
+- [x] T-220-1 Implement E2B and Agent37 lifecycle adapters (priority:high, assignee:backend)
+- [x] T-220-2 Connect repository staging hosted tools and artifact handoff (priority:high, assignee:backend)
+- [x] T-220-3 Expose workspace provider setup progress and results (priority:high, assignee:frontend)
+- [x] T-220-4 Run fixture conformance and document live opt-in checks (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** implementation review. See the [acceptance evidence](sprint-2.2.0-workfile.md).
 **Created:** 2026-11-13
 **Priority:** High
 

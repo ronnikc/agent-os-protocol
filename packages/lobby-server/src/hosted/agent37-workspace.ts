@@ -48,6 +48,21 @@ export function createAgent37Workspace(config: {
       }
       return {
         async upload(bytes, signal) {
+          // Reconfirm policy on recovered allocations as well as new ones. A
+          // propagation response is retried by the provisioning sweep.
+          const policy = await check(await fetchFn('https://api.agent37.com/v1/instances/' + id, {
+            method: 'PATCH', headers: { Authorization: 'Bearer ' + credential, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ network: 'deny-all' }), signal, redirect: 'error',
+          }));
+          const confirmed = await policy.json() as {
+            type?: string; region?: string; resources?: { cpu: number; memory: number; disk: number };
+          };
+          const actual = confirmed.resources;
+          if (confirmed.type !== settings.type || confirmed.region !== settings.region ||
+              actual?.cpu !== settings.resources.cpu || actual.memory !== settings.resources.memory ||
+              actual.disk !== settings.resources.disk) {
+            throw new Error('Agent37 allocated resources outside the approved workspace profile.');
+          }
           const response = await check(await fetchFn(base + encodeURIComponent('/tmp/agent-os-source.tar.gz'), {
             method: 'PUT', body: Buffer.from(bytes), headers, signal, redirect: 'error',
           }));
