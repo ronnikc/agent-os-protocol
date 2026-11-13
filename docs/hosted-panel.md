@@ -115,6 +115,8 @@ Create a task for a named hosted agent and select **Run in a cloud workspace fro
 
 Open **Load workspace evidence** in the task details to inspect the exit status and logs and download the patch. Review it against the pinned commit before submitting changes through the repository's normal pull request workflow. Agent37's cloud deletion retains a recovery copy for seven days under its [privacy policy](https://www.agent37.com/privacy).
 
+For opt-in deployment conformance, use a disposable repository with a known commit and a provider account approved for the test. Verify the connection in Apps, launch a workspace task, compare its profile with the provider console, and check the logs and patch against the pinned commit. Confirm outbound traffic is denied using a deployment-controlled test endpoint. Run a second task and cancel it, then confirm cleanup in Apps and verify the allocation is gone in the provider console. Check the final bill separately if the account exposes per-workspace charges. Record the provider, profile, region, pinned commit, outcome, and cleanup confirmation.
+
 ## The working repository (GitHub App)
 
 The connected repository is the **durable home of everything the lobby manages** — the lobby host

@@ -54,7 +54,15 @@ export function createAgent37Workspace(config: {
             method: 'PATCH', headers: { Authorization: 'Bearer ' + credential, 'Content-Type': 'application/json' },
             body: JSON.stringify({ network: 'deny-all' }), signal, redirect: 'error',
           }));
-          await policy.body?.cancel();
+          const confirmed = await policy.json() as {
+            type?: string; region?: string; resources?: { cpu: number; memory: number; disk: number };
+          };
+          const actual = confirmed.resources;
+          if (confirmed.type !== settings.type || confirmed.region !== settings.region ||
+              actual?.cpu !== settings.resources.cpu || actual.memory !== settings.resources.memory ||
+              actual.disk !== settings.resources.disk) {
+            throw new Error('Agent37 allocated resources outside the approved workspace profile.');
+          }
           const response = await check(await fetchFn(base + encodeURIComponent('/tmp/agent-os-source.tar.gz'), {
             method: 'PUT', body: Buffer.from(bytes), headers, signal, redirect: 'error',
           }));

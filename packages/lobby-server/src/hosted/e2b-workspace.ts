@@ -4,6 +4,7 @@
 import { Sandbox } from 'e2b';
 import type { WorkspaceAdapter, WorkspaceProfile } from '@agent-os/protocol-core';
 import { e2bAllocation } from './e2b-allocation.js';
+import { createShellWorkspace, type WorkspaceGuest } from './shell-workspace.js';
 
 interface E2bWorkspaceConfig {
   templateId: string;
@@ -14,11 +15,21 @@ interface E2bWorkspaceConfig {
   command: string;
 }
 
-import { createShellWorkspace, type WorkspaceGuest } from './shell-workspace.js';
-
-async function connectGuest(id: string, apiKey: string, signal: AbortSignal): Promise<WorkspaceGuest> {
+export async function connectE2bGuest(id: string, apiKey: string, signal: AbortSignal,
+  sdk = {
+    getInfo: (id: string, options: { apiKey: string; requestTimeoutMs: number; signal: AbortSignal }) => Sandbox.getInfo(id, options),
+    connect: (id: string, options: { apiKey: string; requestTimeoutMs: number; signal: AbortSignal }) => Sandbox.connect(id, options),
+  }, profile?: WorkspaceProfile): Promise<WorkspaceGuest> {
   signal.throwIfAborted();
-  const sandbox = await Sandbox.connect(id, { apiKey, requestTimeoutMs: 10_000, signal });
+  const info = await sdk.getInfo(id, { apiKey, requestTimeoutMs: 10_000, signal });
+  if (info.allowInternetAccess !== false || info.network?.allowOut?.length ||
+      info.network?.allowPublicTraffic === true) {
+    throw new Error('E2B did not confirm the required private workspace policy.');
+  }
+  if (profile && (info.cpuCount !== profile.cpu || info.memoryMB !== profile.memoryMiB)) {
+    throw new Error('E2B allocated resources outside the approved workspace profile.');
+  }
+  const sandbox = await sdk.connect(id, { apiKey, requestTimeoutMs: 10_000, signal });
   signal.throwIfAborted();
   return {
     upload: (data, abort) => sandbox.files.write('/tmp/agent-os-source.tar.gz', new Blob([Buffer.from(data)]), { signal: abort }).then(() => {}),
@@ -49,7 +60,7 @@ export function configuredE2bWorkspace(env: NodeJS.ProcessEnv = process.env): Wo
 
 export function createE2bWorkspace(
   config: E2bWorkspaceConfig,
-  connect = connectGuest,
+  connect = (id: string, key: string, signal: AbortSignal) => connectE2bGuest(id, key, signal, undefined, config.profile),
   fetchFn: typeof fetch = fetch,
 ): WorkspaceAdapter {
   const allocationSettings = { templateId: config.templateId, cpu: config.profile.cpu, deadline: 0 };

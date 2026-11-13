@@ -20,7 +20,7 @@ import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted
 import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
 import { e2bAllocation } from '../../packages/lobby-server/src/hosted/e2b-allocation.js';
-import { createE2bWorkspace } from '../../packages/lobby-server/src/hosted/e2b-workspace.js';
+import { connectE2bGuest, createE2bWorkspace } from '../../packages/lobby-server/src/hosted/e2b-workspace.js';
 import { agent37Allocation } from '../../packages/lobby-server/src/hosted/agent37-allocation.js';
 import { createAgent37Workspace } from '../../packages/lobby-server/src/hosted/agent37-workspace.js';
 
@@ -29,6 +29,10 @@ const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, mode
 
 export async function verifyHostedControls() {
   const signal = new AbortController().signal;
+  await assert.rejects(connectE2bGuest('sandbox', 'owner-key', signal, {
+    async getInfo() { return { allowInternetAccess: true } as Awaited<ReturnType<typeof import('e2b').Sandbox.getInfo>>; },
+    async connect() { return assert.fail('Unconfirmed policy must block guest connection'); },
+  }), /private workspace policy/);
   let allocation: { createRequestedAt?: number; providerId?: string } = {};
   const journal = {
     deadline: Date.now() + 30_000,
@@ -164,6 +168,7 @@ export async function verifyHostedControls() {
   allocation = {};
   const operationsSeen: string[] = [];
   let policyReady = false;
+  let reportedCpu = 4;
   const agent37Workspace = createAgent37Workspace({
     template: 'agent37-base', command: 'npm test', maxMicrosPerSecond: 5,
     profile: { id: 'default', cpu: 2, memoryMiB: 4096, diskMiB: 4096, isolation: 'container',
@@ -179,7 +184,8 @@ export async function verifyHostedControls() {
       assert.equal(url.pathname, '/v1/instances/fixture');
       if (init?.method === 'PATCH') {
         assert.deepEqual(JSON.parse(String(init.body)), { network: 'deny-all' });
-        return Response.json({}, { status: policyReady ? 200 : 503 });
+        return Response.json({ type: 'default', region: 'us', resources: { cpu: reportedCpu, memory: 4, disk: 4 } },
+          { status: policyReady ? 200 : 503 });
       }
       return new Response(null, { status: init?.method === 'DELETE' ? 204 : 404 });
     }
@@ -209,11 +215,14 @@ export async function verifyHostedControls() {
   await assert.rejects(provisionAgent37(), /workspace operation failed/);
   assert.deepEqual(operationsSeen, ['POST', 'PATCH']);
   policyReady = true;
+  await assert.rejects(provisionAgent37(), /outside the approved workspace profile/);
+  assert.deepEqual(operationsSeen, ['POST', 'PATCH', 'PATCH']);
+  reportedCpu = 2;
   await provisionAgent37();
   await agent37Workspace.wait('attempt', 'owner-key', signal, journal);
   assert.deepEqual(await agent37Workspace.collect('attempt', 'owner-key', signal, journal), { exitCode: 0, logs: 'logs', patch: 'patch' });
   assert.deepEqual(await agent37Workspace.destroy('attempt', 'owner-key', signal, journal), { confirmed: true });
-  assert.deepEqual(operationsSeen, ['POST', 'PATCH', 'PATCH', 'upload', 'stage', 'run', 'patch', 'DELETE', 'GET']);
+  assert.deepEqual(operationsSeen, ['POST', 'PATCH', 'PATCH', 'PATCH', 'upload', 'stage', 'run', 'patch', 'DELETE', 'GET']);
   const revision = 'a'.repeat(40);
   const archive = new GitHubRepoClient('example', 'project', 'installation-secret', async (input, init) => {
     assert.equal(init?.signal, signal);
