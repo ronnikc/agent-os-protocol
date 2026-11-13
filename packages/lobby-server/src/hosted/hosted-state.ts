@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) 2026 R Digital
 
-import type { WorkspaceArtifacts, WorkspaceAttempt, WorkspaceCleanup, WorkspaceState } from '@agent-os/protocol-core';
+import type { WorkspaceAllocation, WorkspaceArtifacts, WorkspaceAttempt, WorkspaceCleanup, WorkspaceState } from '@agent-os/protocol-core';
 import type { IntegrationSecret, LobbyIntegration } from '../models.js';
 
 export interface HostedPolicy {
@@ -31,6 +31,7 @@ export interface HostedRun {
   kind: 'model' | 'workspace';
   taskId?: string;
   attempt?: WorkspaceAttempt;
+  allocation?: WorkspaceAllocation;
   state: WorkspaceState;
   cleanup: WorkspaceCleanup;
   started: number;

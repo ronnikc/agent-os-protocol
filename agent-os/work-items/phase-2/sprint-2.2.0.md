@@ -25,7 +25,7 @@ Deliver a complete lobby coding task in an owner-connected E2B or Agent37 worksp
 
 ## Dependencies
 
-[2.1.0](sprint-2.1.0.md), GitHub App connection and approved provider test accounts.
+[2.1.0](sprint-2.1.0.md) and the existing GitHub App integration. Users supply their own provider credentials when connecting a provider in Apps. Development and CI use fixtures.
 
 ## Acceptance Criteria
 
@@ -68,7 +68,7 @@ Reuse the 2.1.0 contract, `HostedAgentRunner`, task repository scoping and exist
 
 ## C.1 API Contract Trace
 
-Trace the existing Apps relay and `/integrations` route family, plus hosted task dispatch in `packages/lobby-server/src/hosted/hosted-agent-runner.ts`. Record the final routes and status/error shapes for connection, start, logs, artifacts and cancellation before wiring Apps. Pin vendor SDK or REST versions and run authenticated staging tests.
+Trace the existing Apps relay and `/integrations` route family, plus hosted task dispatch in `packages/lobby-server/src/hosted/hosted-agent-runner.ts`. Record the final routes and status/error shapes for connection, start, logs, artifacts and cancellation before wiring Apps. Pin vendor SDK or REST versions and exercise them with fixtures. Apps verifies the user's authenticated connection on demand.
 
 ## C.2 Form Completeness Gate
 
@@ -80,7 +80,7 @@ WCAG checks for accessible form errors, keyboard connection and cancel controls,
 
 ## Verification and Closeout
 
-Use `npm run verify-hosted`, `npm run verify-lobby` and `npm run verify-ui` plus opt-in live conformance on E2B and Agent37. Record Agent37 retention from its policy and confirm billable resource cleanup separately. Document owner onboarding for both.
+Use `npm run verify-hosted`, `npm run verify-lobby` and `npm run verify-ui` with E2B and Agent37 conformance fixtures. Offer live conformance as an opt-in check for users with their own accounts and report its evidence separately. Record Agent37 retention from its policy and distinguish provider-confirmed deletion from billing reconciliation. Document owner onboarding for both.
 
 ## Risk Assessment
 

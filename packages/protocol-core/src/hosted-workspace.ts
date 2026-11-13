@@ -44,6 +44,19 @@ export interface WorkspaceArtifacts {
   files?: readonly string[];
 }
 
+/** Persisted before a billable create and retained until teardown completes. */
+export interface WorkspaceAllocation {
+  createRequestedAt?: number;
+  providerId?: string;
+}
+
+export interface WorkspaceAllocationJournal {
+  read(): WorkspaceAllocation;
+  /** Returns false when this attempt already issued its create request. */
+  beginCreate(): boolean;
+  bind(providerId: string): void;
+}
+
 /**
  * attemptKey is stable across processes. Provision must be idempotent. Destroy must
  * find even an unacknowledged allocation by key and fence future allocations with
@@ -56,8 +69,8 @@ export interface WorkspaceAdapter {
   /** Check account access without provisioning a billable workspace. */
   verifyConnection?(credential: string, signal: AbortSignal): Promise<void>;
   estimate(attempt: WorkspaceAttempt): number;
-  provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal): Promise<void>;
-  wait(attemptKey: string, credential: string, signal: AbortSignal): Promise<void>;
-  collect(attemptKey: string, credential: string, signal: AbortSignal): Promise<WorkspaceArtifacts>;
-  destroy(attemptKey: string, credential: string, signal: AbortSignal): Promise<{ confirmed: boolean; actual?: number }>;
+  provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<void>;
+  wait(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<void>;
+  collect(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<WorkspaceArtifacts>;
+  destroy(attemptKey: string, credential: string, signal: AbortSignal, allocation: WorkspaceAllocationJournal): Promise<{ confirmed: boolean; actual?: number }>;
 }
