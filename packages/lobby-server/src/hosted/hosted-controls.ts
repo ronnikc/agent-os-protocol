@@ -187,7 +187,9 @@ export class HostedControls {
     }
     const task = await this.store.getTask(lobbyId, taskId);
     if (!task) throw new HostedControlError('Lobby task not found.', 404);
-    const sourceRepository = this.readSource ? (await this.store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined;
+    if (!task.assigned_to?.trim()) throw new HostedControlError('Assign this task to an agent before launching a workspace.');
+    const sourceIntegration = this.readSource ? await this.store.getIntegration(lobbyId, 'github') : undefined;
+    const sourceRepository = sourceIntegration?.repo_full_name;
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
       const duplicate = state.runs.find(r => r.taskId === taskId && r.attempt?.attemptId === attemptId);
       if (duplicate) {
@@ -212,7 +214,7 @@ export class HostedControls {
       const deadline = started + Math.min(policy.deadlineMs, profile.maxRuntimeMs);
       if (this.readSource && !sourceRepository) throw new HostedControlError('Select a GitHub repository in this lobby before launching a workspace.');
       const attempt: WorkspaceAttempt = { lobbyId, taskId, assignedAgentId: task.assigned_to, attemptId,
-        connectionId, sourceRevision, sourceRepository, profileId, region, deadline };
+        connectionId, sourceRevision, sourceRepository, sourceIntegrationId: sourceIntegration?.id, profileId, region, deadline };
       const run: HostedRun = { id: randomUUID(), kind: 'workspace', taskId, attempt, state: 'requested', cleanup: 'pending', started, deadline, usage: [] };
       this.admit(state, run);
       this.reserve(state, run, adapter.estimate(attempt));
@@ -354,7 +356,13 @@ export class HostedControls {
         if (run.state === 'requested' || run.state === 'provisioning') {
           advance('provisioning');
           try {
-            const source = this.readSource ? () => this.readSource!(attempt, signal) : undefined;
+            const source = this.readSource ? async () => {
+              const task = await this.store.getTask(lobbyId, attempt.taskId);
+              if (!task || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
+                throw new HostedControlError('The task assignment changed before source staging.');
+              }
+              return this.readSource!(attempt, signal);
+            } : undefined;
             await adapter.provision(run.id, attempt, credential, signal, allocation, source);
           } catch (error) {
             // The provider may have allocated before losing its response. Retry

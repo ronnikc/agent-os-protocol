@@ -237,6 +237,7 @@ export async function verifyHostedControls() {
       assert.equal(token, credential);
       assert.equal(attempt.sourceRevision, 'a'.repeat(40));
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
+      assert.equal(attempt.sourceIntegrationId, 'github-' + attempt.lobbyId);
       assert.equal(attempt.assignedAgentId, 'fake');
       assert.deepEqual([...await source!()], [1, 2, 3]);
       provisionCalls.push(key);
@@ -332,6 +333,12 @@ export async function verifyHostedControls() {
       sourceRevision: 'a'.repeat(40), profileId: 'small', region: 'fake-region' };
     assert.equal((await call('b', '/hosted-runs', 'POST', { ...request, taskId: 'task-b' })).status, 404);
     assert.equal((await call('a', '/hosted-runs', 'POST', { ...request, taskId: 'task-b' })).status, 404);
+    const assigned = (await store.getTask('a', 'task-a'))!;
+    await store.upsertTask({ ...assigned, assigned_to: '' });
+    const unassigned = await call('a', '/hosted-runs', 'POST', request);
+    assert.equal(unassigned.status, 409);
+    assert.match(unassigned.body.error, /Assign this task/);
+    await store.upsertTask(assigned);
     assert.equal((await call('a', '/hosted-runs', 'POST', { ...request, region: 'unapproved' })).status, 400);
     const simultaneous = await Promise.all(['first', 'second'].map(attemptId =>
       call('a', '/hosted-runs', 'POST', { ...request, attemptId })));
