@@ -2,20 +2,20 @@
 id: 2.7.0
 title: Concordium Escrow Readiness
 phase: phase-2
-status: planned
+status: implemented
 owner: backend
 ---
 
 # Sprint 2.7.0 - Concordium Escrow Readiness
 
 ## Tasks
-- [ ] T-270-1 Define settlement transitions signing authority and upstream capability matrix (priority:high, assignee:backend)
-- [ ] T-270-2 Implement the escrow simulator and reconcile race fixtures (priority:high, assignee:backend)
-- [ ] T-270-3 Exercise failure and zero-price regression scenarios (priority:high, assignee:test)
-- [ ] T-270-4 Document the pending status and the production activation checklist (priority:high, assignee:documentation)
+- [x] T-270-1 Define settlement transitions signing authority and upstream capability matrix (priority:high, assignee:backend)
+- [x] T-270-2 Implement the escrow simulator and reconcile race fixtures (priority:high, assignee:backend)
+- [x] T-270-3 Exercise failure and zero-price regression scenarios (priority:high, assignee:test)
+- [x] T-270-4 Document the pending status and the production activation checklist (priority:high, assignee:documentation)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** implemented, simulator verified
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -101,3 +101,9 @@ Concordium's roadmap dates and semantics can change. Keep assumptions in a versi
 | --- | --- | --- |
 | Testnet and mainnet activation | Scope boundary | Conditional 2.10.0 owns the released protocol integration. |
 | Alternative custody mechanism | Scope boundary | The approved escrow path uses Concordium PLL. |
+
+## Verification evidence
+
+- Criteria 1 and 5: the escrow lifecycle reference records the dated roadmap, simulated authority, asset and expiry fields, testnet requirements, and the production gate.
+- Criteria 2–4: commerce fixtures cover agreement and delivery binding, release and expiry order, dispute holds, duplicate events, lost responses, uncertain snapshots, reconciliation, rotation and return.
+- Criterion 6: this sprint adds a pure simulator and no production controls or routes.
