@@ -759,6 +759,10 @@ export async function verifyHostedControls() {
     await until(() => allocations.has(rollbackId) ? true : undefined);
     const disabled = { ...policy, computePerPeriod: 1000, workspaceEnabled: false };
     assert.equal((await call('b', '/hosted-controls', 'PUT', disabled)).status, 200);
+    const persistedRollback = new InMemoryLobbyStore(file).readHostedState('b');
+    assert.equal(persistedRollback.policy?.workspaceEnabled, false);
+    assert.equal(persistedRollback.runs.find(r => r.id === rollbackId)?.state, 'cancelled');
+    assert.ok(persistedRollback.audit.some(event => event.action === 'hosted_run_cancelled' && event.subject === rollbackId));
     const rolledBack = await until(() => store.readHostedState('b').runs.find(r => r.id === rollbackId && r.cleanup === 'confirmed'));
     assert.equal(rolledBack.state, 'cancelled');
     assert.equal(allocations.has(rollbackId), false);

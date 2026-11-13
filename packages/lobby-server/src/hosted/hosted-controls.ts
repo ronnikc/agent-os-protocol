@@ -89,14 +89,23 @@ export class HostedControls {
       throw new HostedControlError('Check the budget period, ceilings, concurrency and deadline.', 400);
     }
     const policy: HostedPolicy = { workspaceEnabled, periodHours, modelPerRun, modelPerPeriod, computePerRun, computePerPeriod, concurrency, deadlineMs };
-    this.store.mutateHostedState(lobbyId, state => {
+    const cancelled = this.store.mutateHostedState(lobbyId, state => {
       state.policy = policy;
       audit(state, actor, 'hosted_policy_updated');
-    });
-    if (!workspaceEnabled) {
-      for (const run of this.store.readHostedState(lobbyId).runs) {
-        if (run.kind === 'workspace' && !terminal(run)) this.cancel(lobbyId, run.id, actor);
+      const runIds: string[] = [];
+      if (!workspaceEnabled) {
+        for (const run of state.runs) {
+          if (run.kind !== 'workspace' || terminal(run)) continue;
+          run.state = 'cancelled';
+          audit(state, actor, 'hosted_run_cancelled', run.id);
+          runIds.push(run.id);
+        }
       }
+      return runIds;
+    });
+    for (const id of cancelled) {
+      this.active.get(id)?.abort();
+      this.kick(lobbyId, id);
     }
     return policy;
   }
