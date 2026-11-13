@@ -92,3 +92,10 @@ Local harness success does not establish independent hosted interoperability. Tr
 | --- | --- | --- |
 | Delivery-based escrow | Scope boundary | Covered by 2.7.0 and 2.10.0. |
 | Open or uncapped mainnet payments | Scope boundary | Outside the invite-only Phase 2 pilot. |
+
+## Implementation evidence
+
+- Owner operations use a fresh registry check and finalized wallet nonce. Fixtures cover linking, pausing, stale rotation, revocation, wrong network, unlinking and lobby isolation.
+- The existing spending ledger retains uncertain reservations, rejects duplicate request and transaction IDs, and provides redacted receipt pages.
+- The local x401 and x402 harness exercises denial and settlement. Independent hosted endpoints and PLT evidence remain pending. Paid marketplace execution and mainnet spending stay disabled.
+- The Agents wallet panel shows finalized balance and paginated CCD receipts and disables wallet controls during mutations. Manual assistive-technology review remains pending.

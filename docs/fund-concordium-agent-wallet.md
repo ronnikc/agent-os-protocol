@@ -57,3 +57,9 @@ Wait for finalization and run the read command again. Confirm the new address an
 5. Reconcile the first charge with the agent balance and the finalized receipt. If the outcome is uncertain, look up the original transaction before making another payment. Pause the signer before changing an Agent ID binding or payment account.
 
 See the [official CCD transfer guide](https://docs.concordium.com/en/mainnet/technical-reference/wallets/guides/send-ccd-wallets.html) and [Concordium x402 exact payment scheme](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_concordium.md).
+
+## Hosted wallet controls
+
+Open **Agents → Wallet** on a connected lobby agent. The server checks registry ownership and reads the finalized wallet and nonce. Link adopts an existing dedicated binding. Pause before changing it on chain. Rotate adopts a distinct replacement with a higher finalized nonce. Unlink removes eligibility in this lobby. All operations leave mainnet payments disabled.
+
+To display CCD receipts from an operator's isolated signer ledger, configure AGENT_OS_SPENDING_LEDGER with the path to the same local ledger. The panel shows redacted reservation and settlement states. An uncertain reservation still counts against its limit.

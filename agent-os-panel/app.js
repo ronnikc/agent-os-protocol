@@ -207,7 +207,7 @@ export async function fetchJson(url, opts) {
         const query = path.includes('?') ? '?' + path.split('?')[1] : '';
 
         let lobbyPath = '';
-        if (/^(?:hosted-controls|hosted-runs(?:\/[^/]+)?|integrations\/cloud-workspaces\/[^/]+)$/.test(cleanPath)) {
+        if (/^(?:hosted-controls|hosted-runs(?:\/[^/]+)?|integrations\/cloud-workspaces\/[^/]+|agent-wallets\/[^/]+(?:\/receipts)?)$/.test(cleanPath)) {
           lobbyPath = '/api/v1/agent-lobby/lobbies/' + encodeURIComponent(s.lobbyId) + '/' + cleanPath + query;
         } else if (cleanPath === 'agents') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/roster${query}`;

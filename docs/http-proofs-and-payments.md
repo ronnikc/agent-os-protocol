@@ -101,3 +101,7 @@ npm run verify-commerce
 ```
 
 The commerce suite checks proof gating, quote validation, sponsored transaction construction, settlement handling, and spending reservations with test fixtures. It requires no funded account. For rollout criteria and outstanding integration work, see the [Phase 2 plan](agent-wallets-and-payments-plan.md).
+
+## Sprint 2.6 verification boundary
+
+Run npm run verify-commerce, npm run verify-identity and npm run verify-hosted. The local fixtures exercise finalized wallet adoption and rotation, wrong network and owner rejection, replay and durable reservations, and pagination without exposing signed submissions. Independent hosted x401 and x402 evidence, PLT settlement, and a real-money pilot remain gated. Capture the verifier and merchant operator identities, test network, allowed and denied proof results, and independently finalized payer, recipient, asset, amount and sponsor before enabling a pilot.

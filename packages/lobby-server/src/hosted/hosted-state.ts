@@ -3,6 +3,7 @@
 
 import type { WorkspaceAllocation, WorkspaceArtifacts, WorkspaceAttempt, WorkspaceCleanup, WorkspaceState } from '@agent-os/protocol-core';
 import type { IntegrationSecret, LobbyIntegration } from '../models.js';
+import type { AgentWalletRecord } from './agent-wallets.js';
 
 export interface HostedPolicy {
   workspaceEnabled: boolean;
@@ -43,6 +44,7 @@ export interface HostedRun {
 }
 
 export interface HostedState {
+  wallets?: AgentWalletRecord[];
   policy?: HostedPolicy;
   runs: HostedRun[];
   connections: HostedConnection[];
