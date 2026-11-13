@@ -15,3 +15,9 @@ Record a verified lobby across two machines and runtimes. Show the owner connect
 After evidence review, reconcile the README, docs index, website tour, release notes and operator guides against the candidate. Verify all claims against recorded results. External proof and payment qualifications and PLL require their own evidence. Record the release decision before publication.
 
 Status: awaiting beta exit. No public benchmark results or recording yet.
+
+### Measurement tooling
+
+After beta exit, keep the raw observations for the frozen revision and summarize them with node scripts/summarize-phase-2-benchmark.mjs attempts.json. Supply a JSON object with a full lowercase Git SHA in revision and an attempts array. Each attempt needs a unique id, scenario, group (swarm, single-agent, or external), outcome (completed, failed, timed-out, or cancelled), elapsedMs, regression (boolean), cleanup (confirmed, failed, or not-applicable), and recovery (succeeded, failed, or not-attempted). Record modelTokens, computeMicrosEstimated, computeMicrosReported, and interventions as nonnegative integers when measured. Omit unavailable measurements or use null.
+
+The summary retains every outcome in the denominator and reports measurement coverage alongside totals and means. Keep the run configuration and version details with the raw observations. To check the calculation without running a comparison, use node scripts/verify-phase-2-benchmark.mjs.
