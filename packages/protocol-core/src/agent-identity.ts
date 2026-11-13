@@ -159,6 +159,8 @@ export type VerificationSource = 'indexer' | 'api' | 'cache' | 'none';
 /** The outcome of resolving a reference read-only. Carries only non-secret, public facts. */
 export interface IdentityVerificationResult {
   status: IdentityVerificationStatus;
+  /** Decimal CIS-8004 token ID from a verified registry record. */
+  registryTokenId?: string;
   registryLinks?: { registration: string; explorer: string };
   /** The reference that was checked (echoed back, non-secret). */
   ref?: ConcordiumAgentRef;

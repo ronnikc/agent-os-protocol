@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
+import { AgentWallets } from '../../packages/lobby-server/src/hosted/agent-wallets.js';
+import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { createPrivateKey, createPublicKey } from 'node:crypto';
 import { verifyAgentIdProof } from './verify-agent-id-proof.js';
 import { verifyTestMerchant } from './verify-test-merchant.js';
@@ -12,7 +14,7 @@ import { HEADER, verifier } from '@proof.com/x401-node';
 import { CONCORDIUM_TESTNET_CAIP2 } from '@x402/concordium';
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import type { PaymentRequirements } from '@x402/core/types';
-import { preflightMainnetWalletBinding, requestCommerceResource, requestWithSpendingLimit, SpendingLedger, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
+import { preflightMainnetWalletBinding, requestCommerceResource, requestWithSpendingLimit, spendingScope, SpendingLedger, type CommerceAuthorization, type CommercePolicy } from '@agent-os/concordium-commerce';
 
 const account = (fill: number) => AccountAddress.fromBuffer(Buffer.alloc(32, fill));
 const policy: CommercePolicy = {
@@ -59,7 +61,41 @@ const authorization: CommerceAuthorization = {
   },
 };
 
+async function verifyWalletOperations() {
+  const directory = mkdtempSync(join(tmpdir(), 'agent-wallet-'));
+  try {
+    const file = join(directory, 'wallet.json');
+    const did = 'did:ccd:mainnet:fixture';
+    const ownerAddress = account(1).address;
+    const owner = 'did:ccd:mainnet:' + ownerAddress;
+    let revoked = false;
+    let binding = { address: account(2).address, nonce: '1', balance: '100' };
+    const service = () => new AgentWallets(new InMemoryLobbyStore(file), async () => ({
+      status: revoked ? 'failed' : 'registry_verified',
+      ref: { did, network: 'mainnet', account: ownerAddress }, registryTokenId: '42',
+      source: 'api', checkedAt: new Date().toISOString(),
+    }), async tokenId => { assert.equal(tokenId, 42n); return binding; });
+    const action = (name: string) => ({ action: name, network: 'mainnet', address: binding.address, nonce: binding.nonce });
+    await assert.rejects(service().update('lobby', 'outsider', did, action('link')), /ownership/);
+    await assert.rejects(service().update('lobby', owner, did, { ...action('link'), network: 'testnet' }), /network/);
+    assert.equal((await service().update('lobby', owner, did, action('link'))).status, 'linked');
+    assert.equal((await service().view('lobby', owner, did)).eligible, true);
+    assert.equal((await service().view('other-lobby', owner, did)).saved, undefined);
+    await service().update('lobby', owner, did, action('pause'));
+    const stale = action('rotate');
+    binding = { address: account(3).address, nonce: '2', balance: '200' };
+    await assert.rejects(service().update('lobby', owner, did, stale), /changed/);
+    assert.equal((await service().update('lobby', owner, did, action('rotate'))).address, binding.address);
+    revoked = true;
+    await assert.rejects(service().view('lobby', owner, did), /ownership/);
+    revoked = false;
+    assert.equal((await service().update('lobby', owner, did, action('unlink'))).status, 'unlinked');
+    assert.equal((await service().view('lobby', owner, did)).paymentState, 'disabled');
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+}
+
 async function main() {
+  await verifyWalletOperations();
   const payerSeed = '04'.repeat(32);
   const payerKey = createPrivateKey({
     key: Buffer.from('302e020100300506032b657004220420' + payerSeed, 'hex'),
@@ -186,6 +222,10 @@ async function main() {
         return new Response('resource', { headers: { 'PAYMENT-RESPONSE': encodePaymentResponseHeader(receipt) } });
       });
       assert.equal(second.result.state, 'settled');
+      const page = reopened.receipts(spendingScope(policy.network, policy.payer, policy.asset), 0, 2);
+      assert.equal(page.total, 3);
+      assert.equal(page.data[0].state, 'settled');
+      assert.ok(page.data.every(row => !('submission' in row) && !('scope' in row)));
       await assert.rejects(requestWithSpendingLimit(policy, authorization, reopened, 'order-5', 20_000n, merchant), /daily limit/);
     } finally {
       rmSync(path, { force: true });

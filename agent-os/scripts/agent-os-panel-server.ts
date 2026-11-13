@@ -2164,6 +2164,18 @@ const server = createServer(async (req, res) => {
     return;
   }
 
+  const agentWalletPath = path.match(/^\/api\/lobby\/remote\/(agent-wallets\/[a-zA-Z0-9_-]+(?:\/receipts)?)$/);
+  if (agentWalletPath && (method === 'GET' || method === 'POST')) {
+    const lobbyId = await resolveLobbyId(req);
+    if (!lobbyId) { sendJson(res, { error: 'No active lobby' }, 400); return; }
+    const query = new URL(req.url ?? '/', 'http://localhost').search;
+    const body = method === 'POST' ? JSON.stringify(await parseBody(req)) : undefined;
+    const data = await proxyToStaging(DEFAULT_LOBBY_URL,
+      '/api/v1/agent-lobby/lobbies/' + encodeURIComponent(lobbyId) + '/' + agentWalletPath[1] + query, method, body, reqHeaders(req));
+    sendJson(res, data);
+    return;
+  }
+
   if (path === '/api/lobby/remote/agents' && method === 'GET') {
     const lobbyId = await resolveLobbyId(req);
     if (!lobbyId && stagingAgentRoster.size === 0) {

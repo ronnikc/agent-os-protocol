@@ -90,9 +90,76 @@ function renderAgents() {
       <td><div style="display:flex;gap:4px;flex-wrap:wrap;">${isRunning
         ? `<button class="btn btn-danger btn-sm" data-action="stop" data-slug="${a.slug}">Stop</button>`
         : `<button class="btn btn-primary btn-sm" data-action="start" data-slug="${a.slug}">Start</button>`
-      }${idBtn}</div></td>
+      }${idBtn}${a.remoteAgentId && a.identity ? `<button type="button" class="btn btn-sm" data-action="agent-wallet" data-slug="${escapeHtml(a.slug)}">Wallet</button>` : ''}</div></td>
     </tr>`;
   }).join('');
+}
+
+async function showAgentWallet(agent, trigger) {
+  const endpoint = '/api/lobby/remote/agent-wallets/' + encodeURIComponent(agent.remoteAgentId);
+  const errorMessage = (result, fallback) => result?.error?.message || result?.error || fallback;
+  trigger.disabled = true;
+  let wallet;
+  try { wallet = await fetchJson(endpoint); }
+  finally { trigger.disabled = false; }
+  if (!wallet?.binding) return showAlert('Agent wallet', errorMessage(wallet, 'Unable to verify the finalized wallet.'));
+  showModal(`<h2>Agent wallet</h2><p>${escapeHtml(agent.name)}</p><div id="agent-wallet-details"></div>`);
+  const root = document.getElementById('agent-wallet-details');
+  const render = async (offset = 0) => {
+    if (!root?.isConnected) return;
+    const { saved, binding } = wallet;
+    root.innerHTML = `<p>Network Mainnet · ${escapeHtml(saved?.status || 'unlinked')} · Payments disabled</p>
+      <p>Finalized wallet <code>${escapeHtml(binding.address || 'None')}</code></p>
+      <p>Balance ${escapeHtml(binding.balance ?? 'Unavailable')} microCCD</p>
+      <p role="status" data-wallet-status></p><div data-wallet-actions></div><h3>CCD receipts</h3><div data-wallet-receipts></div>`;
+    const status = root.querySelector('[data-wallet-status]');
+    const actions = root.querySelector('[data-wallet-actions]');
+    const enabled = [];
+    if (binding.address && (!saved || saved.status === 'unlinked')) enabled.push(['link', 'Link finalized wallet']);
+    if (saved?.status === 'linked') enabled.push(['pause', 'Pause wallet']);
+    if (saved?.status === 'paused' && binding.address && saved.address !== binding.address) enabled.push(['rotate', 'Adopt finalized replacement']);
+    if (saved && saved.status !== 'unlinked') enabled.push(['unlink', 'Unlink from this lobby']);
+    for (const [action, label] of enabled) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'btn btn-secondary btn-sm';
+      button.textContent = label;
+      button.onclick = async () => {
+        const buttons = [...actions.querySelectorAll('button')];
+        buttons.forEach(control => { control.disabled = true; });
+        button.textContent = 'Saving…';
+        try {
+          const result = await fetchJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action, network: 'mainnet', address: binding.address, nonce: binding.nonce }) });
+          if (!result?.wallet) { status.textContent = errorMessage(result, 'Unable to update the agent wallet.'); return; }
+          wallet = { ...wallet, saved: result.wallet };
+          await render();
+          const nextStatus = root.querySelector('[data-wallet-status]');
+          if (nextStatus) { nextStatus.textContent = 'Agent wallet updated.'; nextStatus.tabIndex = -1; nextStatus.focus(); }
+        } finally {
+          buttons.forEach(control => { control.disabled = false; });
+          button.textContent = label;
+        }
+      };
+      actions.append(button);
+    }
+    const receipts = root.querySelector('[data-wallet-receipts]');
+    receipts.textContent = 'Loading receipts…';
+    const page = await fetchJson(`${endpoint}/receipts?asset=CCD&offset=${offset}`);
+    if (!receipts.isConnected) return;
+    if (!Array.isArray(page?.data)) { receipts.textContent = errorMessage(page, 'Unable to load receipts.'); return; }
+    receipts.innerHTML = page.data.length ? `<ul>${page.data.map(row => `<li>${escapeHtml(row.state)} · ${escapeHtml(row.amount)} atomic units${row.transaction ? ` · <code>${escapeHtml(row.transaction)}</code>` : ''}</li>`).join('')}</ul>` : 'No receipts.';
+    for (const [label, target, show] of [['Previous receipts', Math.max(0, offset - page.limit), offset > 0],
+      ['Next receipts', offset + page.limit, offset + page.data.length < page.total]]) {
+      if (!show) continue;
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.onclick = () => { button.disabled = true; void render(target); };
+      receipts.append(button);
+    }
+  };
+  await render();
 }
 
 function updateStartBtn() {
@@ -581,6 +648,7 @@ async function refresh() {
           runtime: activeRemote?.runtime || la.runtime,
           model: activeRemote?.model || la.model,
           identity: activeRemote?.identity_ref || la.identity,
+          remoteAgentId: activeRemote?.agent_id,
           identity_registry_links: activeRemote?.identity_ref ? activeRemote.identity_registry_links : undefined,
         };
       });
@@ -621,6 +689,11 @@ function init() {
     if (btn.dataset.action === 'agent-id-card') {
       const agent = state.agents.find(a => a.slug === slug);
       if (agent) showAgentIdCard(agent);
+      return;
+    }
+    if (btn.dataset.action === 'agent-wallet') {
+      const agent = state.agents.find(a => a.slug === slug);
+      if (agent?.remoteAgentId) void showAgentWallet(agent, btn);
       return;
     }
     if (btn.dataset.action === 'start') startOne(slug);

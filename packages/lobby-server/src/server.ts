@@ -49,6 +49,8 @@ import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './hosted/hosted-controls.js';
 import { Marketplace, MarketplaceError } from './marketplace.js';
 import { MarketplaceDeliveryService } from './marketplace-delivery.js';
+import { AgentWallets, mainnetWalletReader, type ReadFinalWallet } from './hosted/agent-wallets.js';
+import { SpendingLedger } from '@agent-os/concordium-commerce';
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
 import { configuredDaytonaWorkspaces } from './hosted/daytona-workspace.js';
@@ -389,6 +391,7 @@ export interface LobbyServerOptions {
   workspaceSource?: ConstructorParameters<typeof HostedControls>[2];
   /** On-chain account-info source for wallet sign-in (tests inject a mock; prod uses gRPC). */
   accountInfoSource?: AccountInfoSource;
+  walletBindingReader?: ReadFinalWallet;
 }
 
 export interface RunningLobbyServer {
@@ -470,6 +473,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const coordinator = options.coordinator ?? new LobbyCoordinator(store, {
     verifyIdentity, verifyHostedRosterIdentity, autoFailover,
   });
+  const walletVerifier = registryMcp && cardOrigin
+    ? createRegistryRosterVerifier(registryMcp, cardOrigin, did => agentCards.get(did), legacyCardOrigins, 0)
+    : coordinator.verifyIdentity;
+  const walletLedger = process.env.AGENT_OS_SPENDING_LEDGER;
+  const agentWallets = new AgentWallets(store, walletVerifier, options.walletBindingReader ?? mainnetWalletReader(),
+    walletLedger ? new SpendingLedger(walletLedger) : undefined);
   const verificationSource = indexerUrl ? 'http-indexer' : verifyHostedRosterIdentity ? 'registry-mcp' : 'none';
 
   function persistCards() {
@@ -1758,6 +1767,32 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!view) return json({ error: 'provider key not found' }, 404);
         await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
         return json({ revoked: view });
+      }
+    }
+
+    const walletRoute = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/agent-wallets\/([^/]+)(\/receipts)?$/);
+    if (walletRoute) {
+      const [, lobbyId, agentId, receiptPath] = walletRoute;
+      const actor = sessionIdentity(lobbyId);
+      if (!actor || actor === TEST_ADMIN_IDENTITY) return json({ error: 'Owner wallet sign-in required.' }, 401);
+      res.setHeader('Cache-Control', 'no-store');
+      const agent = await store.getAgent(lobbyId, agentId);
+      if (!agent?.identity_ref) return json({ error: 'Verified lobby agent not found.' }, 404);
+      try {
+        if (req.method === 'GET' && !receiptPath) return json(await agentWallets.view(lobbyId, actor, agent.identity_ref));
+        if (req.method === 'POST' && !receiptPath) return json({ wallet: await agentWallets.update(lobbyId, actor, agent.identity_ref, await readBody(req)) });
+        if (req.method === 'GET' && receiptPath) {
+          const offset = Number(url.searchParams.get('offset') ?? 0);
+          const limit = Number(url.searchParams.get('limit') ?? 20);
+          const asset = url.searchParams.get('asset') ?? 'CCD';
+          if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100 ||
+              !/^[a-zA-Z0-9_-]{1,64}$/.test(asset)) return json({ error: 'Choose a valid receipt page and asset.' }, 400);
+          return json(await agentWallets.receipts(lobbyId, actor, agent.identity_ref, asset, offset, limit));
+        }
+        return json({ error: 'Wallet action not found.' }, 404);
+      } catch (error) {
+        if (error instanceof HostedControlError) return json({ error: error.message }, error.status);
+        return json({ error: 'Finalized wallet data could not be verified. Try again.' }, 503);
       }
     }
 

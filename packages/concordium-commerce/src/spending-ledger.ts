@@ -16,6 +16,15 @@ interface Reservation {
   submission?: PaymentSubmission;
 }
 
+export type SpendingReceipt = Pick<Reservation, 'id' | 'requestId' | 'amount' | 'state' | 'createdAt' | 'settledAt' | 'transaction'>;
+
+export function spendingScope(network: string, payer: string, asset: string): string {
+  const account = AccountAddress.fromBase58(payer);
+  // Concordium account aliases share the same first 29 bytes and budget.
+  const wallet = Buffer.from(AccountAddress.toBuffer(account)).subarray(0, 29).toString('hex');
+  return [network, wallet, asset].join('/');
+}
+
 /**
  * The directory must be accessible only to the signing service. Use one ledger
  * per deployment and keep it on a local filesystem with atomic create and rename.
@@ -23,6 +32,16 @@ interface Reservation {
  */
 export class SpendingLedger {
   constructor(private readonly path: string) {}
+
+  receipts(scope: string, offset: number, limit: number): { data: SpendingReceipt[]; total: number; offset: number; limit: number } {
+    if (!scope || !Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+      throw new Error('Invalid receipt page');
+    }
+    const records: Reservation[] = existsSync(this.path) ? JSON.parse(readFileSync(this.path, 'utf8')) : [];
+    const scoped = records.filter(row => row.scope === scope).reverse();
+    return { data: scoped.slice(offset, offset + limit).map(({ id, requestId, amount, state, createdAt, settledAt, transaction }) =>
+      ({ id, requestId, amount, state, createdAt, settledAt, transaction })), total: scoped.length, offset, limit };
+  }
 
   reserve(scope: string, requestId: string, amount: bigint, dailyLimit: bigint): string {
     if (!scope || !/^[a-zA-Z0-9_-]{1,128}$/.test(requestId)) throw new Error('Invalid payment request identifier');
@@ -120,10 +139,7 @@ export async function requestWithSpendingLimit(
   dailyLimit: bigint,
   fetchResource: typeof fetch = fetch,
 ): Promise<BudgetedResult> {
-  const account = AccountAddress.fromBase58(policy.payer);
-  // Concordium account aliases share the same first 29 bytes and the same budget.
-  const wallet = Buffer.from(AccountAddress.toBuffer(account)).subarray(0, 29).toString('hex');
-  const scope = [policy.network, wallet, policy.asset].join('/');
+  const scope = spendingScope(policy.network, policy.payer, policy.asset);
   let reservationId: string | undefined;
   let result: CommerceResult;
   try {

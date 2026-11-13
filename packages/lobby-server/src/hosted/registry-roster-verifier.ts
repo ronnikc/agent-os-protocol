@@ -27,6 +27,7 @@ export function createRegistryRosterVerifier(
   publicOrigin: string,
   getCard: (did: string) => unknown,
   legacyOrigins: readonly string[] = [],
+  cacheMs = 30_000,
 ): VerifyIdentityFn {
   const cardOrigins = [publicOrigin, ...legacyOrigins].map((origin) => new URL(origin));
   const lookups = new Map<string, { expiresAt: number; records: Promise<Record<string, unknown>[]> }>();
@@ -53,7 +54,7 @@ export function createRegistryRosterVerifier(
         if (!Array.isArray(response.agents)) throw new Error('registry response has no agent list');
         return response.agents as Record<string, unknown>[];
       });
-      lookup = { expiresAt: now + 30_000, records };
+      lookup = { expiresAt: now + cacheMs, records };
       lookups.set(key, lookup);
     }
     try {
@@ -78,7 +79,8 @@ export function createRegistryRosterVerifier(
           explorer: `https://ccdexplorer.io/mainnet/token/${contract.index}/${contract.subindex}/${id}`,
         };
       }
-      return { ...result, ref: { ...ref, account: owner }, status: 'registry_verified', registryLinks };
+      return { ...result, ref: { ...ref, account: owner }, status: 'registry_verified', registryLinks,
+        registryTokenId: validToken ? String(token) : undefined };
     } catch {
       if (lookups.get(key) === lookup) lookups.delete(key);
       return { ...result, status: 'pending' };
