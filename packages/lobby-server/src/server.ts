@@ -520,6 +520,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
   const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string;
     runWorkspace: (id: string, task: LobbyTask, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void> }>();
+  hosted.workspaceAgentAvailable = (lobbyId, agentId) => hostedAgents.get(agentId)?.conn.lobbyId === lobbyId;
   hosted.workspaceAgent = async (id: string, attempt: WorkspaceAttempt, tools, signal) => {
     const task = await store.getTask(attempt.lobbyId, attempt.taskId);
     const agent = attempt.assignedAgentId && hostedAgents.get(attempt.assignedAgentId);
@@ -4106,13 +4107,20 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     store,
     httpServer,
     close: () =>
-      new Promise<void>((resolve) => {
+      new Promise<void>((resolve, reject) => {
         clearInterval(sweeper);
         clearInterval(memorySweep);
         clearInterval(hostedRecovery);
         hosted.close();
         for (const s of sockets.values()) s.terminate();
-        wss.close(() => httpServer.close(() => resolve()));
+        wss.close(() => httpServer.close(() => {
+          try {
+            if (store instanceof InMemoryLobbyStore) store.flushPendingWrites();
+            resolve();
+          } catch (error) {
+            reject(error);
+          }
+        }));
       }),
   };
 }

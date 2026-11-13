@@ -111,7 +111,9 @@ An injected workspace adapter declares its resource profiles, regions, isolation
 
 Deployers can enable E2B with `AGENT_OS_E2B_PROFILE` and Agent37 with `AGENT_OS_AGENT37_PROFILE`. Each is a JSON object with the approved `region`, `cpu`, `maxRuntimeMs`, `maxMicrosPerSecond` and `command`. E2B additionally uses `templateId`, `memoryMiB` and `diskMiB`. Agent37 uses `template`, `type` (`default` or `vm`), `memory` and `disk` in GiB. Set the compute rate to a conservative upper bound for the qualified profile. Lobby managers supply their own provider API keys in Apps.
 
-In **Launch a workspace**, select a lobby task, an active connection, an approved profile and region, then enter the full GitHub commit SHA. The server stages the archive from the lobby's connected repository and runs the configured command with outbound access disabled. Run history displays the command's exit status and available logs and patch for review. The workspace does not publish changes to GitHub. Agent37's cloud deletion retains a recovery copy for seven days under its [privacy policy](https://www.agent37.com/privacy).
+Create a task for a named hosted agent and select **Run in a cloud workspace from Apps**. In **Launch a workspace**, choose the task, an active connection, an approved profile and region, and enter the full GitHub commit SHA. The lobby stages the connected repository's source archive and runs the agent's model session in the control plane. File tools stage edits in the guest. The configured build and test command runs there with outbound access disabled. Use a template with the required tools and dependencies already installed, including Python 3, Bash, Git, and GNU coreutils.
+
+Open **Load workspace evidence** in the task details to inspect the exit status and logs and download the patch. Review it against the pinned commit before submitting changes through the repository's normal pull request workflow. Agent37's cloud deletion retains a recovery copy for seven days under its [privacy policy](https://www.agent37.com/privacy).
 
 ## The working repository (GitHub App)
 

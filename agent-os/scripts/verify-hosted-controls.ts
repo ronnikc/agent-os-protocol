@@ -460,6 +460,21 @@ export async function verifyHostedControls() {
     await call('b', '/hosted-controls', 'PUT', { ...policy, modelPerRun: 30_000, modelPerPeriod: 30_000, concurrency: 1 });
     await call('b', provider, 'POST', { action: 'rotate', credential });
     const bSettings = await call('b', '/hosted-controls');
+    const openFileTools = adapter.openFileTools;
+    adapter.openFileTools = undefined;
+    const unsupported = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'unsupported' });
+    assert.equal(unsupported.status, 409);
+    assert.match(unsupported.body.error, /cannot run assigned agents/);
+    assert.equal(store.readHostedState('b').runs.length, 0);
+    adapter.openFileTools = openFileTools;
+    await store.upsertTask({ ...agentTask.body.task, assigned_to: 'offline-agent' });
+    const offline = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'offline' });
+    assert.equal(offline.status, 409);
+    assert.match(offline.body.error, /Start the assigned hosted agent/);
+    assert.equal(store.readHostedState('b').runs.length, 0);
+    await store.upsertTask(agentTask.body.task);
     const execution = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
       connectionId: bSettings.body.connections[0].id, attemptId: 'agent-workspace' });
     assert.equal(execution.status, 202, JSON.stringify(execution.body));
@@ -487,13 +502,13 @@ export async function verifyHostedControls() {
     const runner = () => new HostedAgentRunner(createApiRuntimeAdapter({
       provider: { id: 'anthropic-compatible', model: 'fake' }, apiKey: 'fake', fetchFn: fakeFetch, ...budget,
     }), budget);
-    const first = runner().respondTo('work');
+    const first = runner().respondTo('work').then(value => ({ value }), error => ({ error }));
     try {
       await until(() => requests === 1 ? true : undefined);
       assert.match(await runner().respondTo('parallel work'), /budget exhausted/);
       assert.equal(requests, 1);
     } finally { release(); }
-    assert.equal(await first, 'finished');
+    assert.deepEqual(await first, { value: 'finished' });
     assert.equal(store.readHostedState('a').runs.find(r => r.kind === 'model')?.usage[0].actual, 50);
 
     let cancelledSignal: AbortSignal | null | undefined;
@@ -517,16 +532,19 @@ export async function verifyHostedControls() {
     });
     assert.match(await runner().respondTo('unknown model bill still holds capacity'), /budget exhausted/);
 
-    controls.setPolicy('b', 'owner-b', { ...policy, concurrency: 1, deadlineMs: 500 });
-    const timed = controls.runModel('b', 'task-b', async (_, signal) => {
+    const deadlineLobby = 'deadline-fixture';
+    controls.setPolicy(deadlineLobby, 'owner-b', { ...policy, concurrency: 1, deadlineMs: 500 });
+    const timed = controls.runModel(deadlineLobby, undefined, async (_, signal) => {
       await delay(30_000, undefined, { signal });
     });
-    const timedOut = assert.rejects(timed, /aborted/i);
-    await Promise.all([
-      assert.rejects(controls.runModel('b', 'task-b', async () => {}), /concurrency limit/),
-      timedOut,
+    const results = await Promise.allSettled([
+      assert.rejects(controls.runModel(deadlineLobby, undefined, async () => {}), /concurrency limit/),
+      assert.rejects(timed, /aborted/i),
     ]);
-    assert.equal(store.readHostedState('b').runs.at(-1)?.state, 'failed');
+    for (const result of results) {
+      if (result.status === 'rejected') throw result.reason;
+    }
+    assert.equal(store.readHostedState(deadlineLobby).runs.at(-1)?.state, 'failed');
   } finally {
     controls?.close();
     await server?.close();
