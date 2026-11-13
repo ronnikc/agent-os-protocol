@@ -185,7 +185,10 @@ export class MarketplaceDeliveryService {
     if (execution === 'cloud') {
       const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === body.workspaceRunId &&
         entry.kind === 'workspace' && entry.taskId === agreement.assignmentId && entry.state === 'succeeded');
-      if (run?.attempt?.sourceRevision !== sourceRevision || run.attempt.attemptId !== submission.attemptId || !run.artifacts?.patch) {
+      const approved = agreement.listing.workspaceSource;
+      if (!approved || approved.revision !== sourceRevision ||
+          approved.repository.toLowerCase() !== run?.attempt?.sourceRepository?.toLowerCase() ||
+          run.attempt.sourceRevision !== sourceRevision || run.attempt.attemptId !== submission.attemptId || !run.artifacts?.patch) {
         throw new MarketplaceError('Choose a successful workspace run with patch evidence for this assignment.');
       }
       submission.workspaceRunId = run.id;

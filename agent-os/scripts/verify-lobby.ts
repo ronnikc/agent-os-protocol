@@ -206,9 +206,17 @@ async function main(): Promise<void> {
             cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [] });
           if (execution === 'cloud') state.runs.push({ id: workspaceRunId, kind: 'workspace', taskId: task.task_id,
             state: 'succeeded', cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [],
-            attempt: { lobbyId: id, taskId: task.task_id, attemptId, connectionId: 'fixture', sourceRevision,
+            attempt: { lobbyId: id, taskId: task.task_id, attemptId, connectionId: 'fixture', sourceRevision, sourceRepository: 'example/other',
               profileId: 'fixture', region: 'fixture', deadline: Date.now() }, artifacts: { patch: 'patch evidence', tests: 'pass' } });
         });
+        if (execution === 'cloud') {
+          await assert.rejects(delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
+            termsDigest, execution, attemptId, sourceRevision, workspaceRunId }), /Choose a successful workspace run/);
+          assert.equal((await delivery.get(id, agreement.id, 'buyer', false, 0, 20)).total, 0);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/approved';
+          });
+        }
         const submitted = await delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
           termsDigest, execution, attemptId, sourceRevision, workspaceRunId, patchDigest: 'b'.repeat(64), testResults: 'pass' });
         const submissionId = submitted.submissions[0].id;
