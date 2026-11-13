@@ -622,7 +622,7 @@ export class LobbyCoordinator {
     };
     await this.store.upsertTask(updated);
     await this.event(conn.lobbyId, 'task_updated', conn.agentId, { task_id: msg.task_id, status: updated.status });
-    return { out: [{ target: { kind: 'lobby' }, message: { type: 'lobby-task-updated', task: updated } }] };
+    return { out: [{ target: { kind: engagement ? 'self' : 'lobby' }, message: { type: 'lobby-task-updated', task: updated } }] };
   }
 
   // ── Requests ──

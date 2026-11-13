@@ -124,6 +124,26 @@ async function main(): Promise<void> {
       assert.equal(enabled.status, 200);
       assert.equal((await enabled.json()).legacy[0].id, 'preview');
       assert.equal((await read('other-lobby')).status, 401);
+      const member = 'did:ccd:testnet:unrelated';
+      await store.updateLobby(lobby.lobby_id, { allowlist: [owner, member] });
+      const task = { task_id: 'private-assignment', lobby_id: lobby.lobby_id, org_id: 'default', title: 'Private',
+        description: 'Private scope', assigned_by: 'LobbyOwner', assigned_to: 'agent', assigned_at: now,
+        priority: 'normal', category: 'general', status: 'assigned' } as const;
+      await store.upsertTask(task);
+      store.mutateMarketplaceState(lobby.lobby_id, state => {
+        state.agreements.push({ id: 'agreement', assignmentId: task.task_id,
+          listing: { buyer: owner } as never, bid: { specialist: 'seller' } as never,
+          buyerConsent: { actor: owner, at: Date.now(), digest: 'fixture' }, handoff: { task, status: 'dispatched' } });
+      });
+      const tasksUrl = url.replace('/marketplace/listings', '/tasks');
+      const as = (actor: string) => ({ Authorization: 'Bearer ' + issueSessionToken(actor, lobby.lobby_id) });
+      const privateTasks = await fetch(tasksUrl, { headers: as(member) });
+      assert.equal(privateTasks.status, 200);
+      assert.deepEqual((await privateTasks.json()).coordination_tasks, []);
+      const ownerTasks = await fetch(tasksUrl, { headers: as(owner) });
+      assert.equal((await ownerTasks.json()).coordination_tasks[0].task_id, task.task_id);
+      assert.equal((await fetch(tasksUrl + '/' + task.task_id + '/delete', { method: 'POST', headers: as(member) })).status, 409);
+      assert.ok(await store.getTask(lobby.lobby_id, task.task_id));
       delete process.env.AGENT_OS_MARKETPLACE_BETA;
       assert.equal((await read()).status, 404);
       assert.equal((await store.getMarketplaceTask(lobby.lobby_id, 'preview'))?.title, 'Preview');
