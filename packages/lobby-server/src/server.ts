@@ -3451,7 +3451,13 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
       if (req.method === 'GET') {
         const tasks = await store.listMarketplaceTasks(lobbyId);
-        const coordination_tasks = await store.listTasks(lobbyId);
+        const actor = sessionIdentity(lobbyId);
+        const canReview = actor && await isLobbyManager(store, lobbyId, actor);
+        const workspaces = canReview ? hosted.latestWorkspaceByTask(lobbyId) : undefined;
+        const coordination_tasks = (await store.listTasks(lobbyId)).map(task => {
+          const workspace = workspaces?.get(task.task_id);
+          return workspace ? { ...task, workspace_run: workspace } : task;
+        });
         return json({ tasks, coordination_tasks });
       }
     }

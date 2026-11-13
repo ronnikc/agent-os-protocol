@@ -237,6 +237,7 @@ export async function verifyHostedControls() {
       assert.equal(token, credential);
       assert.equal(attempt.sourceRevision, 'a'.repeat(40));
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
+      assert.equal(attempt.assignedAgentId, 'fake');
       assert.deepEqual([...await source!()], [1, 2, 3]);
       provisionCalls.push(key);
       await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
@@ -352,6 +353,12 @@ export async function verifyHostedControls() {
     assert.equal(allocations.size, 1);
     const artifacts = store.readHostedState('a').runs[0].artifacts;
     assert.equal(artifacts?.exitCode, 1);
+    const review = await call('a', '/tasks');
+    assert.deepEqual(review.body.coordination_tasks[0].workspace_run, {
+      id: run.id, state: 'failed', sourceRevision: 'a'.repeat(40),
+    });
+    const other = await call('b', '/tasks');
+    assert.equal(other.body.coordination_tasks[0].workspace_run, undefined);
     assert.equal(artifacts?.logs?.length, 65_536);
     assert.ok(artifacts?.logs?.startsWith('redact [redacted]'));
     assert.equal(store.readHostedState('a').runs[0].cleanup, 'pending');
