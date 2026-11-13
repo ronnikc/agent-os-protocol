@@ -328,6 +328,7 @@ export class HostedControls {
     const credential = open(connection.secret.encrypted_value);
     const signal = AbortSignal.any([cancel, AbortSignal.timeout(Math.max(1, run.deadline - Date.now()))]);
     const allocation: WorkspaceAllocationJournal = {
+      deadline: run.deadline,
       read: () => this.store.readHostedState(lobbyId).runs.find(current => current.id === run.id)?.allocation ?? {},
       beginCreate: () => this.change(lobbyId, run.id, (current, state) => {
         signal.throwIfAborted();

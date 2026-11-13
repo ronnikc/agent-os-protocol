@@ -36,9 +36,12 @@ export function createShellWorkspace(
       if (!id) throw new Error('Workspace allocation is unavailable.');
       const guest = await connect(id, credential, signal);
       const command = "'" + config.command.replaceAll("'", "'\\''") + "'";
+      const remaining = journal.deadline === undefined ? undefined : journal.deadline - Date.now();
+      if (remaining !== undefined && remaining < 1000) throw new Error('Workspace deadline has elapsed.');
+      const execute = remaining === undefined ? 'sh -c ' : 'timeout --kill-after=1s ' + Math.floor(remaining / 1000) + 's sh -c ';
       await guest.run(
         'if mkdir ' + root + '/started 2>/dev/null; then ' +
-        'cd ' + root + '/source && { sh -c ' + command + ' 2>&1; echo $? > ' + root + '/exit.tmp; }' +
+        'cd ' + root + '/source && { ' + execute + command + ' 2>&1; echo $? > ' + root + '/exit.tmp; }' +
         ' | { head -c 65536 > ' + root + '/logs; cat > /dev/null; }; mv ' + root + '/exit.tmp ' + root + '/exit; ' +
         'fi; while [ ! -f ' + root + '/exit ]; do sleep 1; done',
         { signal, timeoutMs: 0, retainOutput: false },

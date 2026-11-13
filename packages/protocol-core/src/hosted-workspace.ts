@@ -56,6 +56,7 @@ export interface WorkspaceAllocation {
 }
 
 export interface WorkspaceAllocationJournal {
+  readonly deadline?: number;
   read(): WorkspaceAllocation;
   /** Returns false when this attempt already issued its create request. */
   beginCreate(): boolean;
