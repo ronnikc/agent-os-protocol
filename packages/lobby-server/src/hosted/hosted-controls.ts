@@ -12,6 +12,8 @@ export class HostedControlError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
 }
 
+export class WorkspaceTaskBusyError extends HostedControlError {}
+
 function integer(value: unknown, max = 1_000_000_000): value is number {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 && value <= max;
 }
@@ -197,6 +199,9 @@ export class HostedControls {
       }
       const policy = this.policy(state);
       if (!policy.workspaceEnabled) throw new HostedControlError('Workspace execution is disabled.');
+      if (state.runs.some(existing => existing.taskId === taskId && (!terminal(existing) || this.active.has(existing.id)))) {
+        throw new HostedControlError('This task already has a hosted run in progress.');
+      }
       const connection = state.connections.find(c => c.integration.id === connectionId && c.integration.status === 'active');
       if (!connection?.secret) throw new HostedControlError('Active workspace connection not found.', 404);
       const adapter = this.adapters.get(connection.integration.provider as WorkspaceProvider);
@@ -240,6 +245,10 @@ export class HostedControls {
   async runModel<T>(lobbyId: string, taskId: string | undefined, work: (id: string, signal: AbortSignal) => Promise<T>): Promise<T> {
     const run = this.store.mutateHostedState(lobbyId, state => {
       const policy = this.policy(state);
+      if (taskId && state.runs.some(existing => existing.kind === 'workspace' && existing.taskId === taskId &&
+          (!terminal(existing) || this.active.has(existing.id)))) {
+        throw new WorkspaceTaskBusyError('This task already has a workspace run in progress.');
+      }
       const started = Date.now();
       const run: HostedRun = { id: randomUUID(), taskId, kind: 'model', state: 'running', cleanup: 'confirmed',
         started, deadline: started + policy.deadlineMs, usage: [] };

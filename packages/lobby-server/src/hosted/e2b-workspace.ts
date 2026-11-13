@@ -18,7 +18,7 @@ import { createShellWorkspace, type WorkspaceGuest } from './shell-workspace.js'
 
 async function connectGuest(id: string, apiKey: string, signal: AbortSignal): Promise<WorkspaceGuest> {
   signal.throwIfAborted();
-  const sandbox = await Sandbox.connect(id, { apiKey, requestTimeoutMs: 10_000 });
+  const sandbox = await Sandbox.connect(id, { apiKey, requestTimeoutMs: 10_000, signal });
   signal.throwIfAborted();
   return {
     upload: (data, abort) => sandbox.files.write('/tmp/agent-os-source.tar.gz', new Blob([Buffer.from(data)]), { signal: abort }).then(() => {}),

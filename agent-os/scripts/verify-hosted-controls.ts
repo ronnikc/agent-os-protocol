@@ -379,6 +379,14 @@ export async function verifyHostedControls() {
     waitForCancel = true;
     const second = await call('a', '/hosted-runs', 'POST', { ...request, attemptId: 'cancel-me' });
     assert.equal(second.status, 202);
+    const competing = new HostedControls(store);
+    await assert.rejects(
+      competing.runModel('a', request.taskId, async () => assert.fail('Competing model run started')),
+      /workspace run in progress/,
+    );
+    const concurrent = await call('a', '/hosted-runs', 'POST', { ...request, attemptId: 'overlap' });
+    assert.equal(concurrent.status, 409);
+    assert.match(concurrent.body.error, /hosted run in progress/);
     assert.equal((await call('a', '/hosted-runs/' + second.body.run.id, 'DELETE')).status, 202);
     await until(() => store.readHostedState('a').runs[1].cleanup === 'confirmed' ? true : undefined);
     assert.equal(store.readHostedState('a').runs[1].state, 'cancelled');
