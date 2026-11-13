@@ -92,3 +92,17 @@ Roadmap timing and supported semantics can change. A protocol milestone date alo
 | --- | --- | --- |
 | Broad marketplace escrow rollout | Scope boundary | Pilot evidence and separate rollout review are required. |
 | Automatic release rules that require unavailable protocol features | Scope boundary | Enable only when the relevant released capability passes validation. |
+
+## Activation status checked on 2026-11-13
+
+Concordium's October update targets January 27, 2027 for the first PLL release. The roadmap targets January 2027 for Simple PLL and March 2027 for Enhanced PLL. The town hall recap places public testnet availability in mid-December 2026. Released capability and testnet lifecycle evidence are pending. [October update](https://www.concordium.com/article/agent-registry-update-october-2026) · [Roadmap](https://www.concordium.com/roadmap) · [Town hall recap](https://www.concordium.com/article/concordium-town-hall-6-recap)
+
+| Criterion | Evidence required to reopen |
+| --- | --- |
+| 1 | Pin released node, protocol, SDK and wallet versions and one supported testnet PLT. Map lock and release to confirmed Simple PLL capabilities. Validate cancellation, expiry and return separately. |
+| 2–3 | Record independently finalized testnet lock and release or return receipts with agreement digest, authorities, asset, amount and deadline. Require Enhanced PLL evidence before implementing an on-chain dispute constraint. |
+| 4 | Reconcile an uncertain operation from finalized chain state after restart, race release against expiry, and verify a safe stop with recoverable outstanding locks. |
+| 5 | Obtain explicit approval for named participants, network, asset and caps after testnet evidence is reviewed. |
+| 6 | Exercise wallet controls and paginated settlement history against the released adapter after the capability gate opens. |
+
+Live activation remains disabled. The Sprint 2.7.0 simulator remains the reference for state transitions.
