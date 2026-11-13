@@ -48,6 +48,13 @@ export function createAgent37Workspace(config: {
       }
       return {
         async upload(bytes, signal) {
+          // Reconfirm policy on recovered allocations as well as new ones. A
+          // propagation response is retried by the provisioning sweep.
+          const policy = await check(await fetchFn('https://api.agent37.com/v1/instances/' + id, {
+            method: 'PATCH', headers: { Authorization: 'Bearer ' + credential, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ network: 'deny-all' }), signal, redirect: 'error',
+          }));
+          await policy.body?.cancel();
           const response = await check(await fetchFn(base + encodeURIComponent('/tmp/agent-os-source.tar.gz'), {
             method: 'PUT', body: Buffer.from(bytes), headers, signal, redirect: 'error',
           }));
