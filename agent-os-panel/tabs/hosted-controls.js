@@ -81,7 +81,8 @@ export async function mountHostedControls(root) {
     showProfile();
     const connection = connections.find(entry => entry.provider === provider.value);
     action.innerHTML = connection
-      ? (connection.status === 'active' ? '<option value="verify">Verify connection</option>' : '') +
+      ? (connection.status === 'active' && settings.providers.some(entry => entry.id === provider.value && entry.canVerify)
+        ? '<option value="verify">Verify connection</option>' : '') +
         '<option value="rotate">Rotate credential and enable</option><option value="disable">Disable</option><option value="disconnect">Disconnect</option>'
       : '<option value="connect">Connect</option>';
     providerForm.querySelector('[data-connection]').textContent = connection

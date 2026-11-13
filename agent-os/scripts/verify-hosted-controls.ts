@@ -15,11 +15,27 @@ import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-server/src/server.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
+import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
+  const signal = new AbortController().signal;
+  for (const [provider, url, header, value] of [
+    ['e2b', 'https://api.e2b.app/v2/sandboxes?limit=1', 'X-API-Key', 'owner-key'],
+    ['agent37', 'https://api.agent37.com/v1/instances', 'Authorization', 'Bearer owner-key'],
+  ] as const) {
+    const verify = workspaceAccountVerifier(provider, async (input, init) => {
+      assert.equal(input, url);
+      assert.equal(init?.method, 'GET');
+      assert.equal(new Headers(init?.headers).get(header), value);
+      assert.equal(init?.redirect, 'error');
+      assert.equal(init?.signal, signal);
+      return new Response(null, { status: 200 });
+    });
+    await verify!('owner-key', signal);
+  }
   const dir = await mkdtemp(join(tmpdir(), 'agent-os-hosted-'));
   const file = join(dir, 'store.json');
   const previousKey = process.env.AGENT_OS_SECRET_ENCRYPTION_KEY;

@@ -6,6 +6,7 @@ import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAttempt, type 
 import { hasConfiguredKey, keyHint, open, seal, sealedKeyId } from '../crypto/secret-box.js';
 import type { LobbyStore } from '../store.js';
 import { terminal, type HostedPolicy, type HostedRun, type HostedState } from './hosted-state.js';
+import { workspaceAccountVerifier } from './workspace-account.js';
 
 export class HostedControlError extends Error {
   constructor(message: string, readonly status = 409) { super(message); }
@@ -36,7 +37,11 @@ export class HostedControls {
     const state = this.store.readHostedState(lobbyId);
     return {
       policy: state.policy ?? null,
-      providers: workspaceProviders.map(id => ({ id, capabilities: this.adapters.get(id)?.capabilities ?? null })),
+      providers: workspaceProviders.map(id => ({
+        id,
+        capabilities: this.adapters.get(id)?.capabilities ?? null,
+        canVerify: Boolean(this.adapters.get(id)?.verifyConnection || workspaceAccountVerifier(id)),
+      })),
       connections: state.connections.filter(c => c.integration.status !== 'revoked')
         .map(({ integration, hint }) => ({ id: integration.id, provider: integration.provider, status: integration.status, hint })),
     };
@@ -113,13 +118,14 @@ export class HostedControls {
 
   async verifyConnection(lobbyId: string, actor: string, provider: WorkspaceProvider) {
     const adapter = this.adapters.get(provider);
-    if (!adapter?.verifyConnection) throw new HostedControlError('Connection verification is unavailable for this provider.');
+    const verify = adapter?.verifyConnection?.bind(adapter) ?? workspaceAccountVerifier(provider);
+    if (!verify) throw new HostedControlError('Connection verification is unavailable for this provider.');
     const connection = this.store.readHostedState(lobbyId).connections.find(c =>
       c.integration.provider === provider && c.integration.status === 'active');
     const secret = connection?.secret;
     if (!secret) throw new HostedControlError('Active workspace connection not found.', 404);
     try {
-      await adapter.verifyConnection(open(secret.encrypted_value), AbortSignal.timeout(10_000));
+      await verify(open(secret.encrypted_value), AbortSignal.timeout(10_000));
     } catch {
       throw new HostedControlError('Provider verification failed. Check the credential and account permissions, then retry.', 422);
     }
