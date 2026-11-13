@@ -25,7 +25,7 @@ Make all six approved cloud providers usable through the same Apps and lobby tas
 
 ## Dependencies
 
-[2.2.0](sprint-2.2.0.md), plus owner-authorized test accounts for each new provider.
+[2.2.0](sprint-2.2.0.md). Users supply their own provider credentials when connecting a provider in Apps. Development and CI use fixtures.
 
 ## Acceptance Criteria
 

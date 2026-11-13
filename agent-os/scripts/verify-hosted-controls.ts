@@ -16,12 +16,25 @@ import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime
 import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-server/src/server.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
+import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
   const signal = new AbortController().signal;
+  const uncertain = new WorkspaceAllocationRecovery({
+    read: () => ({ createRequestedAt: 1 }),
+    beginCreate: () => false,
+    bind: () => assert.fail('No allocation was discovered'),
+  }, {
+    find: async () => undefined,
+    create: async () => assert.fail('Do not repeat an uncertain create'),
+    remove: async () => assert.fail('No allocation was discovered'),
+    confirmAbsent: async () => false,
+  });
+  await assert.rejects(uncertain.provision(signal), /has not been confirmed/);
+  assert.deepEqual(await uncertain.destroy(signal), { confirmed: false });
   for (const [provider, url, header, value] of [
     ['e2b', 'https://api.e2b.app/v2/sandboxes?limit=1', 'X-API-Key', 'owner-key'],
     ['agent37', 'https://api.agent37.com/v1/instances', 'Authorization', 'Bearer owner-key'],
@@ -57,26 +70,41 @@ export async function verifyHostedControls() {
       if (token !== credential) throw new Error('Provider rejected ' + token);
     },
     estimate: () => 100,
-    async provision(key, attempt, token) {
+    async provision(key, attempt, token, signal, journal) {
       assert.equal(token, credential);
       assert.equal(attempt.sourceRevision, 'a'.repeat(40));
       provisionCalls.push(key);
-      allocations.add(key);
-      if (failProvision) {
-        failProvision = false;
-        throw new Error('Provider allocated but lost the response');
-      }
+      await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
     },
     async wait(_, __, signal) {
       if (waitForCancel) await delay(30_000, undefined, { signal });
     },
     async collect() { return { tests: 'passed', logs: 'redact ' + credential }; },
-    async destroy(key) {
-      if (failCleanup) return { confirmed: false };
-      allocations.delete(key);
-      return { confirmed: true, actual };
+    async destroy(key, _, signal, journal) {
+      return new WorkspaceAllocationRecovery(journal, operations(key)).destroy(signal);
     },
   };
+  function operations(key: string) {
+    return {
+      async create() {
+        assert.ok(!allocations.has(key), 'Attempt must never issue a second create');
+        allocations.add(key);
+        if (failProvision) {
+          failProvision = false;
+          throw new Error('Provider allocated but lost the response');
+        }
+        return key;
+      },
+      async find() { return allocations.has(key) ? key : undefined; },
+      async remove(id: string) {
+        assert.equal(id, key);
+        if (failCleanup) return { confirmed: false };
+        allocations.delete(id);
+        return { confirmed: true, actual };
+      },
+      async confirmAbsent() { return false; },
+    };
+  }
 
   let server: RunningLobbyServer | undefined;
   let controls: HostedControls | undefined;
@@ -141,6 +169,7 @@ export async function verifyHostedControls() {
     const run = simultaneous.find(reply => reply.status === 202)!.body.run;
     assert.equal((await call('a', '/hosted-runs', 'POST', { ...request, attemptId: run.attempt.attemptId })).body.run.id, run.id);
     assert.equal(store.readHostedState('a').runs[0].state, 'provisioning');
+    assert.ok(store.readHostedState('a').runs[0].allocation?.createRequestedAt);
     assert.equal((await call('b', '/hosted-runs/' + run.id, 'DELETE')).status, 404);
     assert.equal((await call('a', provider, 'POST', { action: 'rotate', credential })).status, 409);
     assert.ok(!(await readFile(file, 'utf8')).includes(credential));
@@ -150,6 +179,7 @@ export async function verifyHostedControls() {
     server = await openServer(store);
     await until(() => store.readHostedState('a').runs[0].state === 'succeeded' ? true : undefined);
     assert.deepEqual(provisionCalls, [run.id, run.id]);
+    assert.equal(store.readHostedState('a').runs[0].allocation?.providerId, run.id);
     assert.equal(allocations.size, 1);
     assert.equal(store.readHostedState('a').runs[0].artifacts?.logs, 'redact [redacted]');
     assert.equal(store.readHostedState('a').runs[0].cleanup, 'pending');

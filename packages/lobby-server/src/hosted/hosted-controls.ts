@@ -2,7 +2,7 @@
 // Copyright (c) 2026 R Digital
 
 import { randomUUID } from 'node:crypto';
-import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAttempt, type WorkspaceProvider } from '@agent-os/protocol-core';
+import { workspaceProviders, type WorkspaceAdapter, type WorkspaceAllocationJournal, type WorkspaceAttempt, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { hasConfiguredKey, keyHint, open, seal, sealedKeyId } from '../crypto/secret-box.js';
 import type { LobbyStore } from '../store.js';
 import { terminal, type HostedPolicy, type HostedRun, type HostedState } from './hosted-state.js';
@@ -292,6 +292,28 @@ export class HostedControls {
     if (!adapter || !connection?.secret) return;
     const credential = open(connection.secret.encrypted_value);
     const signal = AbortSignal.any([cancel, AbortSignal.timeout(Math.max(1, run.deadline - Date.now()))]);
+    const allocation: WorkspaceAllocationJournal = {
+      read: () => this.store.readHostedState(lobbyId).runs.find(current => current.id === run.id)?.allocation ?? {},
+      beginCreate: () => this.change(lobbyId, run.id, (current, state) => {
+        signal.throwIfAborted();
+        if (current.state !== 'provisioning' || !state.policy?.workspaceEnabled || current.deadline <= Date.now()) {
+          throw new HostedControlError('Workspace execution has stopped.');
+        }
+        if (current.allocation?.createRequestedAt !== undefined) return false;
+        current.allocation = { createRequestedAt: Date.now() };
+        audit(state, 'hosted', 'workspace_create_requested', run.id);
+        return true;
+      }),
+      bind: providerId => this.change(lobbyId, run.id, current => {
+        if (!providerId || providerId.length > 200 || current.allocation?.createRequestedAt === undefined) {
+          throw new Error('Invalid workspace allocation identity.');
+        }
+        if (current.allocation.providerId && current.allocation.providerId !== providerId) {
+          throw new Error('Workspace allocation identity changed.');
+        }
+        current.allocation.providerId = providerId;
+      }),
+    };
     const advance = (next: HostedRun['state']) => this.change(lobbyId, run.id, (current, state) => {
       if (terminal(current) || !state.policy?.workspaceEnabled || Date.now() >= current.deadline) {
         throw new HostedControlError('Workspace execution has stopped.');
@@ -305,7 +327,7 @@ export class HostedControls {
         if (run.state === 'requested' || run.state === 'provisioning') {
           advance('provisioning');
           try {
-            await adapter.provision(run.id, attempt, credential, signal);
+            await adapter.provision(run.id, attempt, credential, signal, allocation);
           } catch (error) {
             // The provider may have allocated before losing its response. Retry
             // with the same attempt key until the deadline, then fence and delete.
@@ -316,11 +338,11 @@ export class HostedControls {
         }
         if (run.state !== 'collecting') {
           signal.throwIfAborted();
-          await adapter.wait(run.id, credential, signal);
+          await adapter.wait(run.id, credential, signal, allocation);
           advance('collecting');
         }
         signal.throwIfAborted();
-        const collected = await adapter.collect(run.id, credential, signal);
+        const collected = await adapter.collect(run.id, credential, signal, allocation);
         const artifacts = {
           logs: collected.logs?.replaceAll(credential, '[redacted]'),
           tests: collected.tests?.replaceAll(credential, '[redacted]'),
@@ -335,7 +357,7 @@ export class HostedControls {
       }
     }
     if (this.closed) return;
-    const cleanup = await adapter.destroy(run.id, credential, AbortSignal.timeout(30_000));
+    const cleanup = await adapter.destroy(run.id, credential, AbortSignal.timeout(30_000), allocation);
     this.change(lobbyId, run.id, (current, state) => {
       if (cleanup.confirmed && current.cleanup === 'pending') {
         current.cleanup = 'confirmed';
