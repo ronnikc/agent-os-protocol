@@ -28,6 +28,7 @@ function liability(run: HostedRun) {
 
 export class HostedControls {
   workspaceAgent?: (id: string, attempt: WorkspaceAttempt, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void>;
+  workspaceAgentAvailable?: (lobbyId: string, agentId: string) => boolean;
   private readonly active = new Map<string, AbortController>();
   private readonly adapters: Map<WorkspaceProvider, WorkspaceAdapter>;
   private closed = false;
@@ -173,7 +174,8 @@ export class HostedControls {
   private admit(state: HostedState, run: HostedRun, parentId?: string) {
     const policy = this.policy(state);
     if (this.closed) throw new HostedControlError('Hosted execution is shutting down.');
-    if (state.runs.filter(r => r.id !== parentId && (!terminal(r) || this.active.has(r.id) || r.cleanup === 'pending')).length >= policy.concurrency) {
+    if (state.runs.filter(r => r.id !== parentId && (!terminal(r) || r.cleanup === 'pending' ||
+        (r.kind === 'model' && this.active.has(r.id)))).length >= policy.concurrency) {
       throw new HostedControlError('Hosted concurrency limit reached.');
     }
     state.runs.push(run);
@@ -227,6 +229,12 @@ export class HostedControls {
       if (!connection?.secret) throw new HostedControlError('Active workspace connection not found.', 404);
       const adapter = this.adapters.get(connection.integration.provider as WorkspaceProvider);
       if (!adapter) throw new HostedControlError('Workspace provider is unavailable.');
+      if (task.output_mode === 'workspace' && (!this.workspaceAgent || !adapter.openFileTools)) {
+        throw new HostedControlError('The selected workspace provider cannot run assigned agents.');
+      }
+      if (task.output_mode === 'workspace' && !this.workspaceAgentAvailable?.(lobbyId, task.assigned_to)) {
+        throw new HostedControlError('Start the assigned hosted agent before launching its workspace.');
+      }
       const profile = adapter.capabilities.profiles.find(p => p.id === profileId && p.regions.includes(region));
       if (!profile) throw new HostedControlError('Select an approved resource profile and region.', 400);
       const started = Date.now();

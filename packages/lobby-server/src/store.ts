@@ -166,6 +166,12 @@ interface LobbyBucket {
 
 /** Process-local store — the default for Local Mode and the standalone Node WS server. */
 export class InMemoryLobbyStore implements LobbyStore {
+  flushPendingWrites(): void {
+    if (!this.saveTimer) return;
+    this.saveSync(true);
+    clearTimeout(this.saveTimer);
+    this.saveTimer = null;
+  }
   private lobbies = new Map<string, LobbyBucket>();
 
   // New relation storage maps
