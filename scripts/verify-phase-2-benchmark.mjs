@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { summarizeBenchmark } from './summarize-phase-2-benchmark.mjs';
 
 const base = { scenario: 'fixture', outcome: 'completed', elapsedMs: 10,
@@ -23,4 +28,22 @@ assert.deepEqual(swarm.measurements.computeMicrosReported, { measured: 0, total:
 assert.throws(() => summarizeBenchmark({ ...report, attempts: attempts.slice(0, 3) }), /Missing comparison group/);
 assert.throws(() => summarizeBenchmark({ ...report, attempts: [...attempts, attempts[0]] }), /duplicate/);
 assert.throws(() => summarizeBenchmark({ ...report, revision: 'main' }), /pinned revision/);
+const directory = mkdtempSync(join(tmpdir(), 'phase-2-benchmark-'));
+try {
+  const script = fileURLToPath(new URL('./summarize-phase-2-benchmark.mjs', import.meta.url));
+  const fixture = join(directory, 'attempts.json');
+  writeFileSync(fixture, JSON.stringify(report));
+  const run = () => spawnSync(process.execPath, [script, fixture], { encoding: 'utf8' });
+  const valid = run();
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.deepEqual(JSON.parse(valid.stdout), summarizeBenchmark(report));
+  writeFileSync(fixture, JSON.stringify({ ...report, revision: 'main' }));
+  const invalid = run();
+  assert.equal(invalid.status, 1);
+  assert.equal(invalid.stdout, '');
+  assert.match(invalid.stderr, /pinned revision/);
+} finally {
+  rmSync(join(directory, 'attempts.json'), { force: true });
+  rmdirSync(directory);
+}
 console.log('Phase 2 benchmark measurement fixtures passed.');

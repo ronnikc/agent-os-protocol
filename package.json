@@ -54,9 +54,10 @@
     "verify-launch": "tsx agent-os/scripts/verify-launch.ts",
     "verify-memory": "tsx agent-os/scripts/verify-memory.ts",
     "verify-hosted": "tsx agent-os/scripts/verify-hosted.ts",
-    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch && npm run verify-memory && npm run verify-hosted && npm run verify-commerce",
+    "verify-all": "npm run verify-adapters && npm run verify-providers && npm run verify-lobby && npm run verify-identity && npm run verify-ui-assist && npm run verify-loop && npm run verify-ui && npm run verify-launch && npm run verify-memory && npm run verify-hosted && npm run verify-commerce && npm run verify-phase-2-benchmark",
     "smoke": "bash scripts/smoke.sh",
     "verify-commerce": "tsx agent-os/scripts/verify-commerce.ts",
+    "verify-phase-2-benchmark": "node scripts/verify-phase-2-benchmark.mjs",
     "agent-wallet-binding": "tsx agent-os/scripts/agent-wallet-binding.ts"
   },
   "dependencies": {
