@@ -213,6 +213,7 @@ async function main(): Promise<void> {
           await assert.rejects(delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
             termsDigest, execution, attemptId, sourceRevision, workspaceRunId }), /Choose a successful workspace run/);
           assert.equal((await delivery.get(id, agreement.id, 'buyer', false, 0, 20)).total, 0);
+          assert.deepEqual((await delivery.get(id, agreement.id, 'buyer', false, 0, 20)).workspaceRuns, []);
           store.mutateHostedState(id, state => {
             state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/approved';
           });
@@ -224,6 +225,10 @@ async function main(): Promise<void> {
         if (execution === 'cloud') {
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'outsider', false, workspaceRunId), /not found/);
           assert.equal((await delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId)).artifacts?.patch, 'patch evidence');
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/other';
+          });
+          await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
         }
         if (execution === 'hosted') {
           const results = await Promise.allSettled([

@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { MarketplaceError } from './marketplace.js';
 import { newMarketplaceDelivery, type MarketplaceAgreement, type MarketplaceSubmission } from './marketplace-state.js';
 import type { HostedControls } from './hosted/hosted-controls.js';
+import type { HostedRun } from './hosted/hosted-state.js';
 import type { LobbyStore } from './store.js';
 
 function required(value: unknown, label: string, max = 4000): string {
@@ -20,6 +21,13 @@ function revision(value: unknown, label: string, length: number): string {
 
 const openWork = new Set(['assigned', 'in_progress', 'revision_requested']);
 const finalWork = new Set(['accepted', 'cancelled', 'expired']);
+
+function approvedWorkspaceRun(agreement: MarketplaceAgreement, run: HostedRun): boolean {
+  const approved = agreement.listing.workspaceSource;
+  return Boolean(approved && run.kind === 'workspace' && run.taskId === agreement.assignmentId &&
+    run.attempt?.sourceRevision === approved.revision &&
+    run.attempt.sourceRepository?.toLowerCase() === approved.repository.toLowerCase());
+}
 
 export class MarketplaceDeliveryService {
   constructor(private readonly store: LobbyStore, private readonly hosted: HostedControls,
@@ -57,7 +65,7 @@ export class MarketplaceDeliveryService {
     const current = this.getAgreement(lobbyId, id, actor, reviewer);
     const delivery = current.delivery ?? newMarketplaceDelivery();
     const task = await this.store.getTask(lobbyId, current.assignmentId);
-    const runs = this.store.readHostedState(lobbyId).runs.filter(run => run.taskId === current.assignmentId && run.kind === 'workspace');
+    const runs = this.store.readHostedState(lobbyId).runs.filter(run => approvedWorkspaceRun(current, run));
     return { status: delivery.status, version: delivery.version, termsDigest: current.buyerConsent.digest,
       isBuyer: current.listing.buyer === actor, isSpecialist: current.bid.specialist === actor, reviewer,
       assignee: current.bid.agentId, taskStatus: task?.status, workspaceRuns: runs.map(run => ({
@@ -71,7 +79,9 @@ export class MarketplaceDeliveryService {
 
   async workspaceArtifact(lobbyId: string, id: string, actor: string, reviewer: boolean, runId: string) {
     const agreement = this.getAgreement(lobbyId, id, actor, reviewer);
-    if (!agreement.delivery?.submissions.some(submission => submission.workspaceRunId === runId)) {
+    const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === runId);
+    if (!run || !approvedWorkspaceRun(agreement, run) ||
+        !agreement.delivery?.submissions.some(submission => submission.workspaceRunId === runId)) {
       throw new MarketplaceError('Artifact not found.', 404);
     }
     return this.hosted.workspaceEvidence(lobbyId, runId);
@@ -185,10 +195,8 @@ export class MarketplaceDeliveryService {
     if (execution === 'cloud') {
       const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === body.workspaceRunId &&
         entry.kind === 'workspace' && entry.taskId === agreement.assignmentId && entry.state === 'succeeded');
-      const approved = agreement.listing.workspaceSource;
-      if (!approved || approved.revision !== sourceRevision ||
-          approved.repository.toLowerCase() !== run?.attempt?.sourceRepository?.toLowerCase() ||
-          run.attempt.sourceRevision !== sourceRevision || run.attempt.attemptId !== submission.attemptId || !run.artifacts?.patch) {
+      if (!run?.attempt || !approvedWorkspaceRun(agreement, run) || run.attempt.sourceRevision !== sourceRevision ||
+          run.attempt.attemptId !== submission.attemptId || !run.artifacts?.patch) {
         throw new MarketplaceError('Choose a successful workspace run with patch evidence for this assignment.');
       }
       submission.workspaceRunId = run.id;
