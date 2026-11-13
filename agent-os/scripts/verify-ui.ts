@@ -31,6 +31,20 @@ const read = (p: string) => readFileSync(R(p), 'utf8');
 async function main(): Promise<void> {
   console.log('verify-ui — UI layout, design tokens, and regressions\n');
 
+  await check('Phase 2 panels expose labelled controls, status regions and paginated evidence', () => {
+    const lobby = read('apps/lobby-web/index.html');
+    const marketplace = read('apps/lobby-web/app.js');
+    const apps = read('agent-os-panel/tabs/hosted-controls.js');
+    assert.match(lobby, /id="marketplace-beta"[^>]+aria-labelledby="marketplace-beta-title"/);
+    assert.match(lobby, /role="status" data-market-status/);
+    assert.match(lobby, /<label>Lobby agent <select/);
+    assert.match(marketplace, /delivery\.history\.data/);
+    assert.match(marketplace, /button\.disabled = true/);
+    assert.match(apps, /role="status" data-history-status/);
+    assert.match(apps, /page\.data\.length/);
+    assert.match(apps, /button\.textContent = 'Saving…'/);
+  });
+
   // 1. Verify CSS design tokens
   await check('styles.css exists and has design tokens', () => {
     assert.ok(existsSync(R('agent-os-panel/styles.css')), 'styles.css is missing');

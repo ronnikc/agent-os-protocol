@@ -102,6 +102,38 @@ async function main(): Promise<void> {
 
   // ════════ Part A — unit (coordinator rules) ════════
   console.log('Part A — coordinator (server-side rules)');
+  await check('Marketplace beta flag rollback preserves preview history and blocks cross-lobby reads', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'marketplace-rollback-'));
+    const previous = process.env.AGENT_OS_MARKETPLACE_BETA;
+    const store = new InMemoryLobbyStore(join(directory, 'store.json'));
+    const owner = 'did:ccd:testnet:fixture-owner';
+    const lobby = { ...makeLobby('private', [owner]), created_by: owner };
+    await store.createLobby(lobby);
+    const now = new Date().toISOString();
+    await store.createMarketplaceTask({ id: 'preview', lobby_id: lobby.lobby_id, title: 'Preview', description: 'History',
+      status: 'posted', posted_by_identity_ref: owner, proposed_budget_ccd: 0, created_at: now, updated_at: now });
+    const running = await startLobbyServer({ port: 0, store, autoDefaultLobby: false });
+    try {
+      const address = running.httpServer.address() as import('node:net').AddressInfo;
+      const url = 'http://127.0.0.1:' + address.port + '/api/v1/agent-lobby/lobbies/' + lobby.lobby_id + '/marketplace/listings';
+      const read = (tokenLobby = lobby.lobby_id) => fetch(url, {
+        headers: { Authorization: 'Bearer ' + issueSessionToken(owner, tokenLobby) },
+      });
+      process.env.AGENT_OS_MARKETPLACE_BETA = 'true';
+      const enabled = await read();
+      assert.equal(enabled.status, 200);
+      assert.equal((await enabled.json()).legacy[0].id, 'preview');
+      assert.equal((await read('other-lobby')).status, 401);
+      delete process.env.AGENT_OS_MARKETPLACE_BETA;
+      assert.equal((await read()).status, 404);
+      assert.equal((await store.getMarketplaceTask(lobby.lobby_id, 'preview'))?.title, 'Preview');
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_OS_MARKETPLACE_BETA;
+      else process.env.AGENT_OS_MARKETPLACE_BETA = previous;
+      await running.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
   await check('Marketplace delivery pins all three execution paths and rejects conflicting review or artifact access', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'marketplace-delivery-'));
     try {
@@ -506,7 +538,9 @@ async function main(): Promise<void> {
   // ════════ Part B — integration (real WS, two clients) ════════
   console.log('\nPart B — wire (real HTTP/WS server + clients)');
 
-  const server = await startLobbyServer({ port: 4739, autoDefaultLobby: true });
+  const wireDirectory = await mkdtemp(join(tmpdir(), 'lobby-wire-'));
+  const server = await startLobbyServer({ port: 4739, autoDefaultLobby: true,
+    store: new InMemoryLobbyStore(join(wireDirectory, 'store.json')) });
   const lobbyUrl = `http://localhost:${server.port}`;
   const clients: LobbyClient[] = [];
   const mk = (name: string, lobbyId?: string) => {
@@ -1275,6 +1309,7 @@ async function main(): Promise<void> {
   } finally {
     for (const c of clients) c.close();
     await server.close();
+    await rm(wireDirectory, { recursive: true, force: true });
   }
 
   console.log(`\n${passed} passed, ${failures.length} failed`);
