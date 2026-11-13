@@ -476,6 +476,9 @@ export async function verifyHostedControls() {
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
       assert.equal(attempt.sourceIntegrationId, 'github-' + attempt.lobbyId);
       assert.ok(attempt.assignedAgentId);
+      if (attempt.attemptId === 'source-revoked') {
+        await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
+      }
       const archive = await source!().catch(error => {
         if (attempt.attemptId === 'source-revoked') sourceRejection = error;
         throw error;
@@ -744,8 +747,9 @@ export async function verifyHostedControls() {
     assert.equal(revoked.status, 202);
     const deniedSource = await until(() => sourceRejection);
     assert.match(String(deniedSource), /source repository changed before staging/);
-    assert.equal((await call('b', '/hosted-runs/' + revoked.body.run.id, 'DELETE')).status, 202);
-    await until(() => store.readHostedState('b').runs.find(r => r.id === revoked.body.run.id && r.cleanup === 'confirmed'));
+    const cleaned = await until(() => store.readHostedState('b').runs.find(r => r.id === revoked.body.run.id && r.cleanup === 'confirmed'));
+    assert.equal(cleaned.state, 'failed');
+    assert.equal(allocations.has(cleaned.id), false);
     assert.ok(!provisionCalls.includes(revoked.body.run.id), 'Revocation during download must prevent source delivery');
     await server.close();
     server = undefined;

@@ -425,6 +425,7 @@ export class HostedControls {
       try {
         if (run.state === 'requested' || run.state === 'provisioning') {
           advance('provisioning');
+          let sourceAccessDenied = false;
           try {
             const source = this.readSource ? async () => {
               const checkSourceAccess = async () => {
@@ -434,9 +435,11 @@ export class HostedControls {
                 ]);
                 signal.throwIfAborted();
                 if (!task || task.status === 'cancelled' || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
+                  sourceAccessDenied = true;
                   throw new HostedControlError('The task assignment changed before source staging.');
                 }
                 if (integration?.id !== attempt.sourceIntegrationId || integration?.repo_full_name !== attempt.sourceRepository) {
+                  sourceAccessDenied = true;
                   throw new HostedControlError('The workspace source repository changed before staging.');
                 }
                 this.checkMarketplaceSource(lobbyId, attempt.taskId, attempt.sourceRepository, attempt.sourceRevision);
@@ -450,7 +453,7 @@ export class HostedControls {
           } catch (error) {
             // The provider may have allocated before losing its response. Retry
             // with the same attempt key until the deadline, then fence and delete.
-            if (!signal.aborted && Date.now() < run.deadline) return;
+            if (!sourceAccessDenied && !signal.aborted && Date.now() < run.deadline) return;
             throw error;
           }
           advance('running');
