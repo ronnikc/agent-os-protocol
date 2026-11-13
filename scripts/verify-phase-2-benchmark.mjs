@@ -23,6 +23,8 @@ const configurations = Object.fromEntries(['swarm', 'single-agent', 'external'].
 }]));
 const report = { revision: 'a'.repeat(40), configurations, attempts };
 assert.deepEqual(summarizeBenchmark(report).configurations, configurations);
+const withExtraFields = { ...configurations, swarm: { ...configurations.swarm, privateNote: 'fixture only' } };
+assert.deepEqual(summarizeBenchmark({ ...report, configurations: withExtraFields }).configurations, configurations);
 assert.throws(() => summarizeBenchmark({ ...report, configurations: {} }), /Missing pinned benchmark configuration/);
 const { swarm } = summarizeBenchmark(report).scenarios[0].results;
 assert.equal(swarm.completionRate, 0.5);
