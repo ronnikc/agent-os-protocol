@@ -140,7 +140,7 @@ function showTaskDetail(taskId) {
     <div class="form-actions">
       <button class="btn btn-danger btn-sm" data-action="delete-modal" data-task-id="${t.task_id}">Delete</button>
       ${['done', 'failed', 'completed', 'cancelled'].includes(rawStatus) || t.status === 'done' || t.status === 'failed' ? `
-        <button class="btn btn-secondary btn-sm" data-action="reopen-modal" data-task-id="${t.task_id}" title="Re-assigns the task — the assignee executes it again">Reopen & Re-run</button>` : ''}
+        <button class="btn btn-secondary btn-sm" data-action="reopen-modal" data-task-id="${t.task_id}">${t.output_mode === 'workspace' ? 'Reopen for workspace launch' : 'Reopen & Re-run'}</button>` : ''}
       <span style="flex:1"></span>
       <button class="btn btn-secondary" onclick="document.getElementById('modal-overlay').style.display='none'">Close</button>
     </div>
@@ -236,6 +236,7 @@ async function showCreateModal() {
       <label>Assign To</label>
       <select id="new-task-agent"><option value="">Unassigned</option>${agentOptions}</select>
     </div>
+    ${window.AGENT_OS_HOSTED ? '<div class="form-group"><label><input type="checkbox" id="new-task-workspace"> Run in a cloud workspace from Apps</label></div>' : ''}
     <div class="form-group">
       <label>Priority</label>
       <select id="new-task-priority">
@@ -271,6 +272,13 @@ async function showCreateModal() {
       priority: document.getElementById('new-task-priority')?.value || 'normal',
       category: document.getElementById('new-task-category')?.value || 'general',
     };
+    if (document.getElementById('new-task-workspace')?.checked) {
+      if (!payload.assigned_to) {
+        showAlert('Assign a Task Agent', 'Select an agent before creating a workspace task.');
+        return;
+      }
+      payload.output_mode = 'workspace';
+    }
     // Swarm Mode creates a coordination task on the lobby (delivered to the assignee over WS);
     // Local Mode keeps the panel-server work-item endpoint. Surface failures instead of silently
     // closing — the old behavior swallowed a 404 and looked like a no-op.

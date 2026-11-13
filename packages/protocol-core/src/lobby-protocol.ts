@@ -357,7 +357,7 @@ export interface LobbyTask {
   /** Markdown: what to do, expected output. */
   description: string;
   /** Expected deliverable for hosted execution. Older tasks use the lobby's default. */
-  output_mode?: 'text' | 'repository';
+  output_mode?: 'text' | 'repository' | 'workspace';
   /** Priority level. */
   priority: 'critical' | 'high' | 'normal' | 'low';
   /** Task category. */
