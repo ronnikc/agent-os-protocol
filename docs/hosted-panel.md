@@ -101,6 +101,16 @@ so the same UI runs hosted. Built in slices, each testable on its own:
 - **Phase 4.6 — Knowledge Base / KB (done):** refactored and renamed the panel's "Memory" tab to "KB". Added repo URL / branch settings configuration and direct file upload -> convert to markdown -> remote commit via the lobby's GitHub App installation token.
 - **Local-only views (Files, Gantt, Scheduled, Loop):** either given hosted data sources (wallet-scoped server-side state) or kept hidden in hosted mode.
 
+## Hosted limits and cloud workspaces
+
+Open **Apps → Hosted limits and cloud workspaces** as a lobby owner or active admin. Save a rolling budget period, model tokens per run and period, compute limits in USD millionths, a concurrency limit and a deadline in milliseconds. A zero ceiling denies new usage for that resource. Configure limits before starting server-side model work. Local agent execution is independent of this policy. Leave workspace execution disabled to use model-only hosted runs.
+
+A model run can include multiple completions. The server reserves input capacity and a bounded output allowance before every call, then accounts for provider-reported input and output tokens. Model limits measure tokens. The model provider bills its account separately. The workspace adapter supplies a worst-case compute reservation and reports final billed compute. The owner can review estimated and reported usage, pending charges and cleanup in run history. Unknown usage retains its reservation across rolling periods. When final usage exceeds the reserve, the ledger records the full amount and audits the overage. Use provider plans that honor enforced resource and runtime limits.
+
+An injected workspace adapter declares its resource profiles, regions, isolation and egress. The request binds the selected profile and region, lobby, task, attempt, connection and exact source commit. The server retries interrupted provisioning with the same attempt key. Cancellation stops subsequent execution steps and queues provider-confirmed deletion. **Retry recovery** runs the same recovery sweep used at startup and periodically. Disabling a connection blocks new admissions. Rotation and disconnection wait for dependent cleanup and usage reconciliation so the server retains the credential it needs for recovery.
+
+The sprint ships the contract and a fake adapter for verification. The production adapter registry starts empty. Live integrations and the task launch and handoff experience begin in Sprint 2.2.0.
+
 ## The working repository (GitHub App)
 
 The connected repository is the **durable home of everything the lobby manages** — the lobby host

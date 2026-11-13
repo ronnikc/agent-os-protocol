@@ -13,6 +13,7 @@
  * per-lobby and never shares it; status endpoints return only a masked hint.
  */
 import { fetchJson, registerTab, escapeHtml, showAlert, showHtmlAlert } from '../app.js';
+import { mountHostedControls } from './hosted-controls.js';
 
 let github = null;
 
@@ -188,6 +189,7 @@ async function render() {
   });
 
   el.innerHTML = `
+    <section data-hosted-controls></section>
     ${sectionTitle('Deploy &amp; CI', repo ? repoLabel : 'no repo connected')}
     ${vercel}${ci}
     ${sectionTitle('Chat apps', 'reach the swarm where your team is')}
@@ -196,6 +198,7 @@ async function render() {
     ${supabase}${dreambase}
   `;
 
+  void mountHostedControls(el.querySelector('[data-hosted-controls]'));
   document.getElementById('btn-app-vercel')?.addEventListener('click', () => scaffold('scaffold-vercel', 'Vercel deploy', el));
   document.getElementById('btn-app-ci')?.addEventListener('click', () => scaffold('scaffold-ci', 'CI', el));
   wireOwnerIntegration('slack', slackFields);

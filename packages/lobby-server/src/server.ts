@@ -46,6 +46,9 @@ import { signInTestAdmin } from './auth/testAdmin.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
+import { HostedControls, HostedControlError } from './hosted/hosted-controls.js';
+import { hostedModelBudget } from './hosted/model-budget.js';
+import { workspaceProviders, type WorkspaceAdapter, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
 import { collectAgentOsSeed, buildManifest, AGENT_OS_MANIFEST_PATH } from './hosted/repo-initializer.js';
@@ -374,6 +377,7 @@ export interface LobbyServerOptions {
   autoDefaultLobby?: boolean;
   /** Injected fetch for hosted API-runtime agents (tests mock the provider HTTP). Defaults to global fetch. */
   apiRuntimeFetch?: typeof fetch;
+  workspaceAdapters?: readonly WorkspaceAdapter[];
   /** On-chain account-info source for wallet sign-in (tests inject a mock; prod uses gRPC). */
   accountInfoSource?: AccountInfoSource;
 }
@@ -389,6 +393,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // Fail-closed: refuse to boot if the dev wallet-signature bridge is enabled in production.
   assertDevBridgeNotInProduction();
   const store = options.store ?? new InMemoryLobbyStore();
+  const hosted = new HostedControls(store, options.workspaceAdapters);
   // On-chain account-info source for production wallet sign-in (gRPC unless a mock is injected).
   const accountInfoSource: AccountInfoSource = options.accountInfoSource ?? new GrpcAccountInfoSource();
   // Phase 8: wire a read-only identity verifier only when an indexer URL is configured. Without it
@@ -669,6 +674,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           console.warn('[Lobby Server] Hosted task could not run:', (e as Error)?.message ?? e);
           result = 'BLOCKED: Could not prepare or run the assigned task.';
         }
+        entry.runner.signal?.throwIfAborted();
         const deliveredText = /^RESULT:\s*\S/i.test(result);
         let failed = !result || /^(⚠|BLOCKED:)/i.test(result) || (repositoryTask ? commits.length === 0 : !deliveredText);
         if (failed && !/^(⚠|BLOCKED:)/i.test(result)) {
@@ -689,7 +695,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
               const cur = await store.getLobbySession(conn.lobbyId);
               if (cur?.branch !== sessionBranch) throw new Error('Work session changed before PR creation.');
               if (cur?.pr_url) { prUrl = cur.pr_url; return; }
+              entry.runner.signal?.throwIfAborted();
               const ahead = await rc.aheadBy(workingBranch, sessionBranch);
+              entry.runner.signal?.throwIfAborted();
               if (ahead > 0) {
                 prUrl = await rc.createPullRequest(
                   '[agent-os] Lobby work session'.slice(0, 120),
@@ -720,6 +728,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           const rc = entry.repoClient;
           const waitForChecks = async (): Promise<{ done: boolean; conclusion: string | null; none: boolean }> => {
             for (let i = 0; i < 6; i++) {
+              entry.runner.signal?.throwIfAborted();
               const s = await rc.getCheckRunsForRef(sessionBranch).catch(() => ({ status: 'none', conclusion: null, total: 0 }));
               if (s.total === 0) { if (i >= 2) return { done: false, conclusion: null, none: true }; }
               else if (s.status === 'completed') return { done: true, conclusion: s.conclusion, none: false };
@@ -750,6 +759,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           : ciStatus === 'failing' ? '\n\n❌ CI is still failing after fixes — needs a human.'
           : ciStatus === 'pending' ? '\n\n⏳ CI was still running when the task finished.'
           : '';
+        entry.runner.signal?.throwIfAborted();
         const resultWithPr = (prUrl ? `${result}\n\n🔀 Changes are in the work-session Pull Request: ${prUrl}` : result) + ciNote;
         // Persist the PR URL + session branch + CI status so the panel can link the PR and show CI state.
         const storedTask = await store.getTask(conn.lobbyId, taskId).catch(() => null);
@@ -776,6 +786,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           } as AgentToLobbyMessage);
           dispatch(conn, r.out);
         }
+      }, taskId).catch(async error => {
+        const result = error instanceof HostedControlError ? error.message : 'Hosted execution stopped.';
+        const reply = await coordinator.handle(conn, {
+          type: 'lobby-task-update', task_id: taskId, status: 'failed', result,
+        } as AgentToLobbyMessage);
+        dispatch(conn, reply.out);
       });
       return;
     }
@@ -792,7 +808,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (isBoss && (addressedToMe || isBroadcast) && !queuedBossTurn) {
       // Rebuild context when this turn runs. Concurrent specialist handoffs must not be
       // dropped while the Boss is processing the preceding result.
-      await entry.runner.runTask(respond => onHostedInbound(conn, data, respond));
+      await entry.runner.runTask(respond => onHostedInbound(conn, data, respond)).catch(() => {});
       return;
     }
     // Routing: reply to direct messages addressed to us, or (as Boss) to broadcasts. A non-boss
@@ -1184,7 +1200,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           entry.identity_status === 'registry_verified');
       },
     });
+    const budget = hostedModelBudget(hosted, params.lobbyId);
     const adapter = createApiRuntimeAdapter({
+      guardedCompletion: budget.guardedCompletion,
+      workSignal: budget.workSignal,
       provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
       apiKey: params.apiKey,
       fetchFn: options.apiRuntimeFetch,
@@ -1207,7 +1226,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       ? '\nUse access_agent_id_resource to check access to the operator-configured resource with your Agent ID.'
       : '';
     const groundedSystemPrompt = [params.systemPrompt, capabilities + agentIdCapability].filter(Boolean).join('\n\n');
-    const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt });
+    const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt, run: budget.run, workSignal: budget.workSignal });
     await runner.start();
 
     const connId = `hosted-${randomUUID()}`;
@@ -1217,7 +1236,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const conn: Connection = { connId, lobbyId: params.lobbyId, orgId: 'default', trusted: true };
     const virtualSocket = {
       readyState: WebSocket.OPEN,
-      send: (data: string) => { void onHostedInbound(conn, data); },
+      send: (data: string) => { void onHostedInbound(conn, data).catch(() => {}); },
       close: () => {},
       terminate: () => {},
     } as unknown as WebSocket;
@@ -1347,11 +1366,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       if (!key) return null;
       const resolved = await resolveProviderKey(store, lobbyId, key.provider, null);
       if (!resolved) return null;
+      const budget = hostedModelBudget(hosted, lobbyId);
       const adapter = createApiRuntimeAdapter({
+        guardedCompletion: budget.guardedCompletion,
+        workSignal: budget.workSignal,
         provider: { id: providerIdFor(key.provider), model: resolved.model || 'claude-opus-4-8', baseUrl: resolved.baseUrl },
         apiKey: resolved.apiKey, fetchFn: options.apiRuntimeFetch,
       });
       const runner = new HostedAgentRunner(adapter, {
+        run: (_, work) => budget.run(task.task_id, work),
         systemPrompt: 'You are a senior engineer writing a terse post-merge retrospective for the team\'s shared memory. From the task and the agent\'s report, extract DURABLE, reusable lessons only: what worked, gotchas/pitfalls, key decisions and why, and reusable patterns or skills worth keeping. Bullet points, specific, no fluff, max ~180 words. Output GitHub markdown only — no preamble.',
       });
       await runner.start();
@@ -1668,6 +1691,51 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!view) return json({ error: 'provider key not found' }, 404);
         await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
         return json({ revoked: view });
+      }
+    }
+
+    const hostedControl = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/(hosted-controls|hosted-runs|integrations\/cloud-workspaces)(?:\/([^/]+))?$/);
+    if (hostedControl) {
+      const [, lobbyId, resource, item] = hostedControl;
+      const actor = sessionIdentity(lobbyId);
+      if (!actor) return json({ error: 'authentication required' }, 401);
+      if (!(await isLobbyManager(store, lobbyId, actor))) return json({ error: 'not authorized to manage this lobby' }, 403);
+      res.setHeader('Cache-Control', 'no-store');
+      try {
+        if (resource === 'hosted-controls' && !item) {
+          if (req.method === 'GET') return json(hosted.settings(lobbyId));
+          if (req.method === 'PUT') return json({ policy: hosted.setPolicy(lobbyId, actor, await readBody(req)) });
+        }
+        if (resource === 'integrations/cloud-workspaces' && workspaceProviders.includes(item as WorkspaceProvider) && req.method === 'POST') {
+          const body = await readBody(req);
+          hosted.connection(lobbyId, actor, item as WorkspaceProvider, body.action, body.credential);
+          return json(hosted.settings(lobbyId));
+        }
+        if (resource === 'hosted-runs') {
+          if (req.method === 'GET' && (!item || item === 'audit')) {
+            const offset = Number(url.searchParams.get('offset') ?? 0);
+            const limit = Number(url.searchParams.get('limit') ?? 20);
+            if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
+              return json({ error: 'Choose a valid history page.' }, 400);
+            }
+            return json(item === 'audit' ? hosted.auditHistory(lobbyId, offset, limit) : hosted.history(lobbyId, offset, limit));
+          }
+          if (req.method === 'POST' && !item) {
+            return json({ run: await hosted.requestWorkspace(lobbyId, actor, await readBody(req)) }, 202);
+          }
+          if (req.method === 'POST' && item === 'recover') {
+            hosted.recover(lobbyId, actor);
+            return json({ accepted: true }, 202);
+          }
+          if (req.method === 'DELETE' && item) {
+            hosted.cancel(lobbyId, item, actor);
+            return json({ accepted: true }, 202);
+          }
+        }
+        return json({ error: 'Hosted control action not found.' }, 404);
+      } catch (error) {
+        if (error instanceof HostedControlError) return json({ error: error.message }, error.status);
+        return json({ error: 'Unable to persist or apply the hosted operation. Retry shortly.' }, 503);
       }
     }
 
@@ -3835,6 +3903,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   });
 
   if (autoDefault) await ensureDefaultLobby();
+  hosted.recover();
+  const hostedRecovery = setInterval(() => {
+    try { hosted.recover(); }
+    catch { console.warn('[lobby-server] hosted recovery sweep could not persist state'); }
+  }, 5_000);
+  hostedRecovery.unref();
 
   // ── Re-launch hosted agents that were running before this restart/deploy ──
   // Hosted agents run in-process, so a restart (pm2 reload on deploy) stops them all. Their desired
@@ -3975,6 +4049,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       new Promise<void>((resolve) => {
         clearInterval(sweeper);
         clearInterval(memorySweep);
+        clearInterval(hostedRecovery);
+        hosted.close();
         for (const s of sockets.values()) s.terminate();
         wss.close(() => httpServer.close(() => resolve()));
       }),

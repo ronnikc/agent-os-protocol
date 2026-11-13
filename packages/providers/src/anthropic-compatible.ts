@@ -144,7 +144,7 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
     const { system, turns } = this.splitMessages(request.messages);
     return JSON.stringify({
       model: config.model,
-      max_tokens: this.maxTokens,
+      max_tokens: request.maxOutputTokens ?? this.maxTokens,
       ...(system ? { system } : {}),
       messages: turns,
       ...(request.tools ? { tools: request.tools } : {}),
@@ -154,7 +154,7 @@ export class AnthropicCompatibleProvider implements ModelProviderAdapter {
 
   async complete(request: AgentCompletionRequest): Promise<AgentCompletionResult> {
     const { url, headers } = this.endpoint();
-    const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false) });
+    const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false), signal: request.signal });
     if (!res.ok) throw new Error(`anthropic-compatible: ${res.status} ${await safeText(res)}`);
     const data = (await res.json()) as {
       content?: Array<{ type?: string; text?: string; id?: string; name?: string; input?: any }>;

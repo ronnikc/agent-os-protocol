@@ -17,6 +17,8 @@ import type { AgentRuntimeAdapter, AgentProcessHandle } from '@agent-os/protocol
 export interface HostedAgentOptions {
   systemPrompt?: string;
   cwd?: string;
+  workSignal?: () => AbortSignal | undefined;
+  run?: <T>(taskId: string | undefined, work: () => Promise<T>) => Promise<T>;
 }
 
 export class HostedAgentRunner {
@@ -33,13 +35,15 @@ export class HostedAgentRunner {
   }
 
   /** True while a turn is in flight — callers that must not drop work (task execution) wait on it. */
+  get signal(): AbortSignal | undefined { return this.opts.workSignal?.(); }
+
   get busy(): boolean { return !!(this.turn || this.tasks); }
 
   /** Reserve the runner for a task, including preparation and follow-up turns. */
-  runTask(work: (respond: (content: string) => Promise<string>) => Promise<void>): Promise<void> {
+  runTask(work: (respond: (content: string) => Promise<string>) => Promise<void>, taskId?: string): Promise<void> {
     const pending = this.tasks ?? this.turn?.then(() => {}, () => {});
     const task = Promise.resolve(pending)
-      .then(() => work(content => this.runTurn(content)))
+      .then(() => this.withRun(taskId, () => work(content => this.runTurn(content))))
       .finally(() => { if (this.tasks === tail) this.tasks = undefined; });
     const tail = task.then(() => {}, () => {});
     this.tasks = tail;
@@ -53,13 +57,17 @@ export class HostedAgentRunner {
    */
   async respondTo(content: string): Promise<string> {
     if (this.busy) return '';
-    const turn = this.runTurn(content);
+    const turn = this.withRun(undefined, () => this.runTurn(content));
     this.turn = turn;
     try {
       return await turn;
     } finally {
       this.turn = undefined;
     }
+  }
+
+  private withRun<T>(taskId: string | undefined, work: () => Promise<T>): Promise<T> {
+    return this.opts.run ? this.opts.run(taskId, work) : work();
   }
 
   private async runTurn(content: string): Promise<string> {

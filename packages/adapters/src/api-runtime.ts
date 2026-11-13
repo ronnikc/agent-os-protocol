@@ -19,7 +19,7 @@
 import type {
   AgentRuntimeAdapter, AgentProcessHandle, StartAgentConfig, RuntimeDetectionResult, RuntimeMessage, RuntimeEvent,
 } from '@agent-os/protocol-core';
-import type { ProviderConfig, ModelProviderAdapter, CompletionMessage } from '@agent-os/protocol-core';
+import type { ProviderConfig, ModelProviderAdapter, CompletionMessage, AgentCompletionRequest, AgentCompletionResult } from '@agent-os/protocol-core';
 import { AnthropicCompatibleProvider, OpenAICompatibleProvider } from '@agent-os/providers';
 import { randomUUID } from 'node:crypto';
 
@@ -37,6 +37,8 @@ export interface ApiRuntimeConfig {
   fetchFn?: typeof fetch;
   /** Max output tokens (Anthropic requires it; forwarded to the provider). */
   maxTokens?: number;
+  guardedCompletion?: (request: AgentCompletionRequest, complete: (request: AgentCompletionRequest) => Promise<AgentCompletionResult>) => Promise<AgentCompletionResult>;
+  workSignal?: () => AbortSignal | undefined;
   /** Injected repo client for hosted repository tool-use. */
   repoClient?: any;
   /** Injected lobby tools for roster queries, messaging, and task management. */
@@ -253,7 +255,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
 
     s.messages.push({ role: 'user', content: next });
 
-    if (!this.cfg.repoClient && !this.cfg.accessAgentIdResource) {
+    if (!this.cfg.guardedCompletion && !this.cfg.repoClient && !this.cfg.accessAgentIdResource) {
       // Normal streaming path when no repoClient is injected
       const messages: CompletionMessage[] = [
         ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
@@ -277,7 +279,9 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     // Repo client tool loop (non-streaming intermediate turns, final turn yields output)
-    const tools = buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource);
+    const tools = this.cfg.repoClient || this.cfg.accessAgentIdResource
+      ? buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource) : undefined;
+    const signal = this.cfg.workSignal?.();
     let assistantText = '';
     let loopCount = 0;
     const maxLoops = 10;
@@ -294,21 +298,24 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
 
       let result: any;
       try {
-        result = await this.provider.complete({ messages, tools });
+        const request = { messages, tools };
+        result = this.cfg.guardedCompletion
+          ? await this.cfg.guardedCompletion(request, input => this.provider.complete(input))
+          : await this.provider.complete(request);
       } catch (err) {
         yield { type: 'error', content: err instanceof Error ? err.message : 'Provider execution error' };
         yield { type: 'done' };
         return;
       }
 
-      if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
+      if (s.aborted || signal?.aborted) { yield { type: 'error', content: 'aborted' }; return; }
 
       if (result.content) {
         assistantText += result.content;
         yield { type: 'output', content: result.content };
       }
 
-      if (result.toolCalls && result.toolCalls.length > 0) {
+      if (tools && result.toolCalls && result.toolCalls.length > 0) {
         s.messages.push({
           role: 'assistant',
           content: result.content || '',
@@ -316,6 +323,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
         });
 
         for (const tc of result.toolCalls) {
+          if (s.aborted || signal?.aborted) { yield { type: 'error', content: 'aborted' }; return; }
           yield { type: 'tool_call', content: `Calling tool ${tc.name}`, data: tc };
           try {
             const output = await this.executeTool(tc.name, tc.arguments);

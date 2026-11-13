@@ -371,6 +371,8 @@ Full reference: **[Getting started → Configure](docs/getting-started.md#config
 
 [Agent OS Protocol v1.0.0](https://github.com/ronnikc/agent-os-protocol/releases/tag/v1.0.0) is the stable Phase 1 release. See the [changelog](CHANGELOG.md) for changes since v0.2.0, the [project website](https://agent-os-protocol.com/) for the panel tour, and the [hosted lobby](https://lobby.agent-os-protocol.com/) for the running demo.
 
+See [hosted execution controls](docs/hosted-panel.md#hosted-limits-and-cloud-workspaces) for lobby-managed budget limits, run history and recovery. The workspace provider contract is verified with a fake provider for Sprint 2.1.0.
+
 ## Documentation
 
 Full docs live in **[`docs/`](docs/README.md)** — start there. Highlights:

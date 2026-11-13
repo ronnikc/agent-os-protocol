@@ -12,6 +12,8 @@ and ships **no domain knowledge** by default (agents are taught via `/train`). S
 [`README.md`](README.md) for the product overview and [`agent-os/ARCHITECTURE.md`](agent-os/ARCHITECTURE.md)
 for the four-layer architecture.
 
+Sprint 2.1.0 introduces the hosted limits and workspace contract. The hosted, lobby and UI verification scripts exercise the foundation and fake-provider recovery path. See [current implementation state](agent-os/STATE.md#phase-2-implementation).
+
 ## Repository structure
 
 ```

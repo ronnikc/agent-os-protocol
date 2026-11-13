@@ -107,13 +107,14 @@ export class OpenAICompatibleProvider implements ModelProviderAdapter {
       messages,
       ...(request.tools ? { tools: request.tools } : {}),
       ...(request.jsonMode ? { response_format: { type: 'json_object' } } : {}),
+      ...(request.maxOutputTokens ? { max_completion_tokens: request.maxOutputTokens } : {}),
       stream,
     });
   }
 
   async complete(request: AgentCompletionRequest): Promise<AgentCompletionResult> {
     const { url, headers } = this.endpoint();
-    const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false) });
+    const res = await this.fetchFn(url, { method: 'POST', headers, body: this.body(request, false), signal: request.signal });
     if (!res.ok) throw new Error(`openai-compatible: ${res.status} ${await safeText(res)}`);
     const data = (await res.json()) as {
       choices?: Array<{ message?: { content?: string; tool_calls?: any[] } }>;
