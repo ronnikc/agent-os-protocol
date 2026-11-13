@@ -30,7 +30,7 @@ export async function mountHostedControls(root) {
   root.innerHTML = '<h2>Hosted limits and cloud workspaces</h2><p role="status">Loading workspace controls…</p>';
   const settings = await request('/hosted-controls', 'GET');
   if (!root.isConnected) return;
-  if (!settings?.policy || !Array.isArray(settings.providers)) {
+  if (!Array.isArray(settings?.providers)) {
     const message = errorMessage(settings, 'Could not load workspace controls. Connect to a lobby and try again.');
     root.innerHTML = `<h2>Hosted limits and cloud workspaces</h2>
       <p role="status" tabindex="-1">${escapeHtml(message)}</p>
