@@ -396,6 +396,7 @@ export async function verifyHostedControls() {
     assert.equal((await call('a', '/hosted-controls', 'PUT', { ...policy, computePerPeriod: 120 })).status, 200);
 
     waitForCancel = true;
+    actual = undefined;
     const second = await call('a', '/hosted-runs', 'POST', { ...request, attemptId: 'cancel-me' });
     assert.equal(second.status, 202);
     const competing = new HostedControls(store);
@@ -418,7 +419,10 @@ export async function verifyHostedControls() {
     assert.equal(page.body.total, 2);
     assert.equal(page.body.data[0].id, run.id);
     assert.equal((await call('a', provider, 'POST', { action: 'disable' })).body.connections[0].status, 'pending');
-    assert.equal((await call('a', provider, 'POST', { action: 'rotate', credential })).body.connections[0].status, 'active');
+    const rotated = (await call('a', provider, 'POST', { action: 'rotate', credential })).body.connections[0];
+    assert.equal(rotated.status, 'active');
+    assert.notEqual(rotated.id, request.connectionId);
+    assert.equal(store.readHostedState('a').runs[1].usage[0].actual, undefined);
     assert.deepEqual((await call('a', provider, 'POST', { action: 'disconnect' })).body.connections, []);
     await server.close();
     server = undefined;
