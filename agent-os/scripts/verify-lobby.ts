@@ -28,6 +28,8 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Marketplace } from '../../packages/lobby-server/src/marketplace.js';
+import { MarketplaceDeliveryService } from '../../packages/lobby-server/src/marketplace-delivery.js';
+import { HostedControls } from '../../packages/lobby-server/src/hosted/hosted-controls.js';
 
 let passed = 0;
 const failures: string[] = [];
@@ -100,6 +102,86 @@ async function main(): Promise<void> {
 
   // ════════ Part A — unit (coordinator rules) ════════
   console.log('Part A — coordinator (server-side rules)');
+  await check('Marketplace delivery pins all three execution paths and rejects conflicting review or artifact access', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'marketplace-delivery-'));
+    try {
+      const store = new InMemoryLobbyStore(join(directory, 'lobbies.json'));
+      const lobby = makeLobby('private');
+      const id = lobby.lobby_id;
+      await store.createLobby(lobby);
+      const marketplace = new Marketplace(store, async () => true, async () => {});
+      const hosted = new HostedControls(store);
+      const delivery = new MarketplaceDeliveryService(store, hosted, async () => true);
+      const now = new Date().toISOString();
+      await store.addAgent(id, { agent_id: 'worker', display_name: 'Worker', role: 'worker', participant_type: 'cli_agent',
+        status: 'idle', current_work: '', registered_at: now, last_seen: now, identity_ref: 'did:ccd:testnet:worker' });
+      const profile = await marketplace.profile(id, 'seller', { action: 'publish', agentDid: 'did:ccd:testnet:worker', displayName: 'Worker',
+        skills: ['Testing'], runtimes: ['Local', 'Hosted', 'Cloud'], availability: 'Today', workSamples: ['Example'] }, false);
+      for (const execution of ['local', 'hosted', 'cloud']) {
+        const listing = marketplace.listing(id, 'buyer', { action: 'publish', title: execution, deliverable: 'Check', scope: 'reports/',
+          acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0' });
+        const bid = await marketplace.bid(id, 'seller', listing.id, { action: 'submit', profileId: profile.id, agentId: 'worker',
+          listingVersion: listing.version, amount: '0', turnaroundHours: 1, expiresAt: Date.now() + 3_600_000,
+          prerequisites: 'None', assumptions: 'Fixture' });
+        const termsDigest = bid.consent.digest;
+        const agreement = await marketplace.hire(id, 'buyer', listing.id, { listingVersion: listing.version, bidVersion: bid.version,
+          bidId: bid.id, digest: termsDigest });
+        const task = (await store.getTask(id, agreement.assignmentId))!;
+        await store.upsertTask({ ...task, status: 'completed' });
+        const sourceRevision = 'a'.repeat(40);
+        const attemptId = `attempt-${execution}`;
+        const workspaceRunId = 'cloud-fixture';
+        store.mutateHostedState(id, state => {
+          if (execution === 'hosted') state.runs.push({ id: attemptId, kind: 'model', taskId: task.task_id, state: 'succeeded',
+            cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [] });
+          if (execution === 'cloud') state.runs.push({ id: workspaceRunId, kind: 'workspace', taskId: task.task_id,
+            state: 'succeeded', cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [],
+            attempt: { lobbyId: id, taskId: task.task_id, attemptId, connectionId: 'fixture', sourceRevision,
+              profileId: 'fixture', region: 'fixture', deadline: Date.now() }, artifacts: { patch: 'patch evidence', tests: 'pass' } });
+        });
+        const submitted = await delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
+          termsDigest, execution, attemptId, sourceRevision, workspaceRunId, patchDigest: 'b'.repeat(64), testResults: 'pass' });
+        const submissionId = submitted.submissions[0].id;
+        await assert.rejects(delivery.get(id, agreement.id, 'outsider', false, 0, 20), /not found/);
+        if (execution === 'cloud') {
+          await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'outsider', false, workspaceRunId), /not found/);
+          assert.equal((await delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId)).artifacts?.patch, 'patch evidence');
+        }
+        if (execution === 'hosted') {
+          const results = await Promise.allSettled([
+            delivery.change(id, agreement.id, 'seller', false, { action: 'dispute', version: 1, termsDigest, reason: 'Review scope' }),
+            delivery.change(id, agreement.id, 'buyer', false, { action: 'accept', version: 1, termsDigest, submissionId }),
+          ]);
+          assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+          const snapshot = await delivery.get(id, agreement.id, 'reviewer', true, 0, 20);
+          if (snapshot.status === 'disputed') {
+            await assert.rejects(delivery.change(id, agreement.id, 'buyer', true, { action: 'resolve', version: 2, termsDigest,
+              decision: 'cancelled', reason: 'Resolved', reference: 'record' }), /independent/);
+            await delivery.change(id, agreement.id, 'reviewer', true, { action: 'resolve', version: 2, termsDigest,
+              decision: 'cancelled', reason: 'Resolved', reference: 'record' });
+            assert.equal((await store.getTask(id, agreement.assignmentId))?.status, 'cancelled');
+          }
+        } else if (execution === 'local') {
+          const reopened = await delivery.change(id, agreement.id, 'buyer', false, { action: 'revise', version: 1,
+            termsDigest, submissionId, reason: 'Improve check output' });
+          assert.equal(reopened.status, 'revision_requested');
+          assert.equal((await store.getTask(id, agreement.assignmentId))?.status, 'assigned');
+          await store.upsertTask({ ...task, status: 'completed' });
+          const next = await delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 2, termsDigest,
+            execution, attemptId: 'revision-attempt', sourceRevision, patchDigest: 'c'.repeat(64), testResults: 'pass' });
+          assert.equal(next.submissions.length, 2);
+          await delivery.change(id, agreement.id, 'buyer', false, { action: 'accept', version: 3, termsDigest,
+            submissionId: next.submissions[1].id });
+        } else {
+          await delivery.change(id, agreement.id, 'buyer', false, { action: 'accept', version: 1, termsDigest, submissionId });
+          await delivery.change(id, agreement.id, 'buyer', false, { action: 'feedback', version: 2, termsDigest, text: 'Verified' });
+          await assert.rejects(delivery.change(id, agreement.id, 'buyer', false, { action: 'feedback', version: 3, termsDigest,
+            text: 'Duplicate' }), /one entry/);
+        }
+        assert.equal(delivery.canExecute(id, agreement.assignmentId), false);
+      }
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
   await check('Marketplace beta preserves preview history and recovers one versioned hire after restart', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'marketplace-beta-'));
     const filename = join(directory, 'lobbies.json');

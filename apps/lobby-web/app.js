@@ -2322,6 +2322,106 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
             });
             offers.append(retry);
           }
+          const engagement = `engagements/${encodeURIComponent(result.agreement.id)}`;
+          const panel = document.createElement('section');
+          offers.append(panel);
+          const renderDelivery = async (offset = 0) => {
+            const delivery = await request(`${engagement}/delivery?offset=${offset}`);
+            if (!active()) return;
+            panel.innerHTML = `<h5>Delivery</h5><p>${escapeHtml(delivery.status)} · Agent ${escapeHtml(delivery.assignee)} · Task ${escapeHtml(delivery.taskStatus || 'pending')}</p>`;
+            const mutation = (action, label, fields, values = {}) => {
+              const form = document.createElement('form');
+              form.innerHTML = `${fields}<button type="submit">${label}</button>`;
+              wire(form, async data => {
+                await request(`${engagement}/delivery`, { ...Object.fromEntries(data), ...values,
+                  action, version: delivery.version, termsDigest: delivery.termsDigest });
+                await renderDelivery();
+                panel.querySelector('h5').focus();
+              });
+              panel.append(form);
+              return form;
+            };
+            panel.querySelector('h5').tabIndex = -1;
+            for (const submission of delivery.data) {
+              const article = document.createElement('article');
+              article.innerHTML = `<h6>Submission ${submission.version} · ${escapeHtml(submission.execution)}</h6>
+                <p>Source <code>${escapeHtml(submission.sourceRevision)}</code></p>
+                <p>Patch or PR commit <code>${escapeHtml(submission.patchDigest || submission.pullRequestCommit)}</code></p>
+                <pre>${escapeHtml(submission.testResults)}</pre>`;
+              if (submission.workspaceRunId) {
+                const button = document.createElement('button');
+                button.type = 'button';
+                button.textContent = 'Load workspace evidence';
+                button.onclick = async () => {
+                  button.disabled = true;
+                  try {
+                    const evidence = await request(`${engagement}/artifacts/${encodeURIComponent(submission.workspaceRunId)}`);
+                    const output = document.createElement('pre');
+                    output.textContent = evidence.artifacts?.patch || 'Patch unavailable.';
+                    if (active()) { article.append(output); button.remove(); }
+                  } catch (error) { if (active()) status.textContent = error.message; }
+                  finally { button.disabled = false; }
+                };
+                article.append(button);
+              }
+              panel.append(article);
+            }
+            const reason = '<label>Reason <textarea name="reason" required></textarea></label>';
+            const latest = offset === 0 ? delivery.data[0] : undefined;
+            if (delivery.isBuyer && delivery.status === 'submitted' && latest) {
+              mutation('accept', 'Accept submission', '', { submissionId: latest.id });
+              mutation('revise', 'Request revision', reason, { submissionId: latest.id });
+            }
+            if (delivery.isSpecialist && ['assigned', 'in_progress', 'revision_requested'].includes(delivery.status)) {
+              if (delivery.status !== 'in_progress') mutation('start', 'Start assignment', '');
+              mutation('submit', 'Submit delivery', `<label>Execution <select name="execution"><option value="local">Local</option><option value="hosted">Hosted</option></select></label>
+                <label>Attempt ID <input name="attemptId" required></label><label>Source commit <input name="sourceRevision" required pattern="[0-9a-fA-F]{40}"></label>
+                <label>Patch SHA-256 <input name="patchDigest" pattern="[0-9a-fA-F]{64}"></label><label>PR commit <input name="pullRequestCommit" pattern="[0-9a-fA-F]{40}"></label>
+                <label>Test results <textarea name="testResults" required></textarea></label>`);
+              for (const run of delivery.workspaceRuns.filter(run => run.state === 'succeeded')) {
+                mutation('submit', `Submit workspace ${run.id}`, '', { execution: 'cloud', workspaceRunId: run.id,
+                  attemptId: run.attemptId, sourceRevision: run.sourceRevision });
+              }
+            }
+            if (delivery.status === 'disputed' && delivery.reviewer && !delivery.isBuyer && !delivery.isSpecialist) {
+              mutation('resolve', 'Resolve dispute', `${reason}<label>Decision <select name="decision"><option value="revision_requested">Request revision</option>
+                <option value="cancelled">Cancel engagement</option></select></label><label>Evidence reference <input name="reference" required></label>`);
+            } else if (!['accepted', 'cancelled', 'expired', 'disputed'].includes(delivery.status)) {
+              if (delivery.isBuyer || delivery.isSpecialist) mutation('dispute', 'Open dispute', reason);
+              mutation('cancel', 'Cancel engagement', reason);
+            }
+            if (delivery.status === 'accepted' && (delivery.isBuyer || delivery.isSpecialist) && !delivery.feedback.some(row => row.actor === actor)) {
+              mutation('feedback', 'Submit feedback', '<label>Feedback <textarea name="text" required></textarea></label>');
+            }
+            for (const feedback of delivery.feedback) {
+              const text = document.createElement('p');
+              text.textContent = `${feedback.hidden ? 'Hidden feedback' : 'Feedback'} · ${feedback.text}`;
+              panel.append(text);
+              if (delivery.reviewer && !feedback.hidden) mutation('hide_feedback', 'Hide feedback', reason, { reference: feedback.id });
+            }
+            const history = document.createElement('ul');
+            for (const row of delivery.history.data) {
+              const item = document.createElement('li');
+              item.textContent = `${row.action} · ${new Date(row.at).toLocaleString()}${row.reason ? ' · ' + row.reason : ''}`;
+              history.append(item);
+            }
+            panel.append(history);
+            for (const [label, target, show] of [['Previous evidence page', Math.max(0, offset - delivery.limit), offset > 0],
+              ['Next evidence page', offset + delivery.limit, offset + delivery.limit < Math.max(delivery.total, delivery.history.total)]]) {
+              if (!show) continue;
+              const button = document.createElement('button');
+              button.type = 'button';
+              button.textContent = label;
+              button.onclick = async () => {
+                button.disabled = true;
+                try { await renderDelivery(target); panel.querySelector('h5').focus(); }
+                catch (error) { if (active()) status.textContent = error.message; }
+                finally { button.disabled = false; }
+              };
+              panel.append(button);
+            }
+          };
+          await renderDelivery();
           return;
         }
         for (const bid of result.data) {

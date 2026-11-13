@@ -53,6 +53,35 @@ export interface MarketplaceAgreement {
   bid: MarketplaceBid;
   buyerConsent: MarketplaceBid['consent'];
   handoff: { task: LobbyTask; status: 'pending' | 'dispatched' };
+  delivery?: MarketplaceDelivery;
+}
+
+export type DeliveryStatus = 'assigned' | 'in_progress' | 'submitted' | 'revision_requested' | 'accepted' | 'cancelled' | 'expired' | 'disputed';
+
+export interface MarketplaceSubmission {
+  id: string;
+  version: number;
+  termsDigest: string;
+  attemptId: string;
+  execution: 'local' | 'hosted' | 'cloud';
+  sourceRevision: string;
+  patchDigest?: string;
+  pullRequestCommit?: string;
+  testResults: string;
+  workspaceRunId?: string;
+  submittedAt: number;
+}
+
+export interface MarketplaceDelivery {
+  status: DeliveryStatus;
+  version: number;
+  submissions: MarketplaceSubmission[];
+  history: { actor: string; at: number; action: string; reason?: string; reference?: string }[];
+  feedback: { id: string; actor: string; text: string; hidden: boolean }[];
+}
+
+export function newMarketplaceDelivery(): MarketplaceDelivery {
+  return { status: 'assigned', version: 0, submissions: [], history: [], feedback: [] };
 }
 
 export interface MarketplaceState {

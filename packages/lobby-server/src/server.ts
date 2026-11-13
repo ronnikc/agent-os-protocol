@@ -48,6 +48,7 @@ import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adap
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './hosted/hosted-controls.js';
 import { Marketplace, MarketplaceError } from './marketplace.js';
+import { MarketplaceDeliveryService } from './marketplace-delivery.js';
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
 import { configuredDaytonaWorkspaces } from './hosted/daytona-workspace.js';
@@ -484,12 +485,14 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const sockets = new Map<string, WebSocket>(); // connId → socket
   const lobbyConns = new Map<string, Set<string>>(); // lobbyId → connIds
   const agentConn = new Map<string, string>(); // agentId → connId
-  const marketplace = new Marketplace(store, async (did, owner) => {
+  const verifyMarketplaceOwner = async (did: string, owner: string) => {
     const result = await (verifyHostedRosterIdentity ?? coordinator.verifyIdentity)(did);
     const ref = result.ref;
     return Boolean(ref?.account && ['registry_verified', 'human_linked', 'org_linked'].includes(result.status) &&
       owner === `did:ccd:${ref.network}:${ref.account}`);
-  }, async task => {
+  };
+  const marketplaceDelivery = new MarketplaceDeliveryService(store, hosted, verifyMarketplaceOwner);
+  const marketplace = new Marketplace(store, verifyMarketplaceOwner, async task => {
     for (const cid of lobbyConns.get(task.lobby_id) ?? []) {
       if (cid === agentConn.get(task.assigned_to)) send(cid, { type: 'lobby-task-assigned', task });
     }
@@ -674,6 +677,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const task = (msg as unknown as { task?: LobbyTask }).task;
       if (!task?.task_id || task.assigned_to !== myId) return;
       const taskId = task.task_id;
+      if (!marketplaceDelivery.canExecute(conn.lobbyId, taskId)) return;
       if (task.output_mode === 'workspace') return;
       const entry = hostedAgents.get(myId);
       if (!entry) return;
@@ -1757,9 +1761,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
     }
 
-    const marketplaceRoute = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/marketplace\/(catalog|listings|audit)(?:\/([^/]+)\/(bids|hire))?$/);
+    const marketplaceRoute = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/marketplace\/(catalog|listings|audit|engagements)(?:\/([^/]+)\/(bids|hire|delivery|artifacts)(?:\/([^/]+))?)?$/);
     if (marketplaceRoute) {
-      const [, lobbyId, resource, listingId, action] = marketplaceRoute;
+      const [, lobbyId, resource, listingId, action, artifactId] = marketplaceRoute;
       if (process.env.AGENT_OS_MARKETPLACE_BETA !== 'true' || scopedLobby?.visibility !== 'private') {
         return json({ error: 'Marketplace beta is unavailable for this lobby.' }, 404);
       }
@@ -1786,16 +1790,23 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ profile: await marketplace.profile(lobbyId, actor, await readBody(req), manager) });
         }
         if (resource === 'listings' && !listingId) {
-          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit), canPublish: manager });
+          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager });
           if (req.method === 'POST' && manager) return json({ listing: marketplace.listing(lobbyId, actor, await readBody(req)) });
         }
         if (resource === 'listings' && action === 'bids') {
-          if (req.method === 'GET') return json(marketplace.bids(lobbyId, actor, listingId, offset, limit));
+          if (req.method === 'GET') return json(marketplace.bids(lobbyId, actor, listingId, offset, limit, manager));
           if (req.method === 'POST') return json({ bid: await marketplace.bid(lobbyId, actor, listingId, await readBody(req)) });
         }
         if (resource === 'listings' && action === 'hire' && req.method === 'POST' && manager) {
           return json({ agreement: await marketplace.hire(lobbyId, actor, listingId, await readBody(req),
             () => isLobbyManager(store, lobbyId, actor)) });
+        }
+        if (resource === 'engagements' && listingId && action === 'delivery' && !artifactId) {
+          if (req.method === 'GET') return json(await marketplaceDelivery.get(lobbyId, listingId, actor, manager, offset, limit));
+          if (req.method === 'POST') return json({ delivery: await marketplaceDelivery.change(lobbyId, listingId, actor, manager, await readBody(req)) });
+        }
+        if (resource === 'engagements' && listingId && action === 'artifacts' && artifactId && req.method === 'GET') {
+          return json(await marketplaceDelivery.workspaceArtifact(lobbyId, listingId, actor, manager, artifactId));
         }
         return json({ error: 'Marketplace action forbidden.' }, 403);
       } catch (error) {
@@ -1838,7 +1849,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             return json(item === 'audit' ? hosted.auditHistory(lobbyId, offset, limit) : hosted.history(lobbyId, offset, limit));
           }
           if (req.method === 'POST' && !item) {
-            return json({ run: await hosted.requestWorkspace(lobbyId, actor, await readBody(req)) }, 202);
+            const body = await readBody(req);
+            if (typeof body.taskId === 'string' && !marketplaceDelivery.canExecute(lobbyId, body.taskId)) {
+              return json({ error: 'Marketplace engagement is closed to execution.' }, 409);
+            }
+            return json({ run: await hosted.requestWorkspace(lobbyId, actor, body) }, 202);
           }
           if (req.method === 'GET' && item) {
             return json({ run: hosted.workspaceEvidence(lobbyId, item) });
@@ -3575,6 +3590,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const coordTask = await store.getTask(lobbyId, taskId);
       if (coordTask) {
         if (scopedLobby?.status !== 'active') return json({ error: 'lobby is not active' }, 409);
+        if (marketplaceDelivery.isMarketplaceTask(lobbyId, taskId)) {
+          return json({ error: 'Use the engagement delivery controls for this assignment.' }, 409);
+        }
         const patchIdentity = sessionIdentity(lobbyId);
         if (!patchIdentity) return json({ error: 'authentication required' }, 401);
         if (!(await isLobbyManager(store, lobbyId, patchIdentity))) {
@@ -4036,6 +4054,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const hostedRecovery = setInterval(() => {
     try { hosted.recover(); }
     catch { console.warn('[lobby-server] hosted recovery sweep could not persist state'); }
+    void marketplaceDelivery.recover().catch(() => console.warn('[lobby-server] marketplace recovery sweep failed'));
   }, 5_000);
   hostedRecovery.unref();
 
