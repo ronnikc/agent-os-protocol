@@ -80,8 +80,11 @@ export class MarketplaceDeliveryService {
   async workspaceArtifact(lobbyId: string, id: string, actor: string, reviewer: boolean, runId: string) {
     const agreement = this.getAgreement(lobbyId, id, actor, reviewer);
     const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === runId);
-    if (!run || !approvedWorkspaceRun(agreement, run) ||
-        !agreement.delivery?.submissions.some(submission => submission.workspaceRunId === runId)) {
+    const submission = agreement.delivery?.submissions.find(entry => entry.workspaceRunId === runId);
+    const patch = run?.artifacts?.patch;
+    if (!run || run.state !== 'succeeded' || !approvedWorkspaceRun(agreement, run) || !submission ||
+        run.attempt?.attemptId !== submission.attemptId || !patch ||
+        createHash('sha256').update(patch).digest('hex') !== submission.patchDigest) {
       throw new MarketplaceError('Artifact not found.', 404);
     }
     return this.hosted.workspaceEvidence(lobbyId, runId);

@@ -226,6 +226,13 @@ async function main(): Promise<void> {
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'outsider', false, workspaceRunId), /not found/);
           assert.equal((await delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId)).artifacts?.patch, 'patch evidence');
           store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'modified patch';
+          });
+          await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'patch evidence';
+          });
+          store.mutateHostedState(id, state => {
             state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/other';
           });
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
