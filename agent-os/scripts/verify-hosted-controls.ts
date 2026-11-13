@@ -459,6 +459,7 @@ export async function verifyHostedControls() {
   let agentEdits = 0;
   let modelCalls = 0;
   let failProvision = true;
+  let sourceRejection: unknown;
   const adapter: WorkspaceAdapter = {
     capabilities: {
       provider: 'e2b', deletion: 'confirmed', credentials: 'control-plane-only', usage: 'final-or-pending',
@@ -475,7 +476,11 @@ export async function verifyHostedControls() {
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
       assert.equal(attempt.sourceIntegrationId, 'github-' + attempt.lobbyId);
       assert.ok(attempt.assignedAgentId);
-      assert.deepEqual([...await source!()], [1, 2, 3]);
+      const archive = await source!().catch(error => {
+        if (attempt.attemptId === 'source-revoked') sourceRejection = error;
+        throw error;
+      });
+      assert.deepEqual([...archive], [1, 2, 3]);
       provisionCalls.push(key);
       await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
     },
@@ -526,7 +531,13 @@ export async function verifyHostedControls() {
   let controls: HostedControls | undefined;
   const openServer = (store: InMemoryLobbyStore) =>
     startLobbyServer({ port: 0, store, autoDefaultLobby: false, workspaceAdapters: [adapter],
-      workspaceSource: async () => new Uint8Array([1, 2, 3]),
+      workspaceSource: async attempt => {
+        if (attempt.attemptId === 'source-revoked') {
+          await store.updateIntegration(attempt.lobbyId, attempt.sourceIntegrationId!, { status: 'revoked' });
+
+        }
+        return new Uint8Array([1, 2, 3]);
+      },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
         modelCalls++;
@@ -727,6 +738,15 @@ export async function verifyHostedControls() {
       r.id === timeoutRun.body.run.id && r.cleanup === 'confirmed'));
     assert.equal(expired.state, 'failed');
     assert.equal(allocations.has(expired.id), false);
+    assert.equal((await call('b', '/hosted-controls', 'PUT', { ...policy, computePerPeriod: 1000 })).status, 200);
+    const revoked = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'source-revoked' });
+    assert.equal(revoked.status, 202);
+    const deniedSource = await until(() => sourceRejection);
+    assert.match(String(deniedSource), /source repository changed before staging/);
+    assert.equal((await call('b', '/hosted-runs/' + revoked.body.run.id, 'DELETE')).status, 202);
+    await until(() => store.readHostedState('b').runs.find(r => r.id === revoked.body.run.id && r.cleanup === 'confirmed'));
+    assert.ok(!provisionCalls.includes(revoked.body.run.id), 'Revocation during download must prevent source delivery');
     await server.close();
     server = undefined;
 

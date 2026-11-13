@@ -427,12 +427,24 @@ export class HostedControls {
           advance('provisioning');
           try {
             const source = this.readSource ? async () => {
-              const task = await this.store.getTask(lobbyId, attempt.taskId);
-              if (!task || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
-                throw new HostedControlError('The task assignment changed before source staging.');
-              }
-              this.checkMarketplaceSource(attempt.lobbyId, attempt.taskId, attempt.sourceRepository, attempt.sourceRevision);
-              return this.readSource!(attempt, signal);
+              const checkSourceAccess = async () => {
+                const [task, integration] = await Promise.all([
+                  this.store.getTask(lobbyId, attempt.taskId),
+                  this.store.getIntegration(lobbyId, 'github'),
+                ]);
+                signal.throwIfAborted();
+                if (!task || task.status === 'cancelled' || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
+                  throw new HostedControlError('The task assignment changed before source staging.');
+                }
+                if (integration?.id !== attempt.sourceIntegrationId || integration?.repo_full_name !== attempt.sourceRepository) {
+                  throw new HostedControlError('The workspace source repository changed before staging.');
+                }
+                this.checkMarketplaceSource(lobbyId, attempt.taskId, attempt.sourceRepository, attempt.sourceRevision);
+              };
+              await checkSourceAccess();
+              const archive = await this.readSource!(attempt, signal);
+              await checkSourceAccess();
+              return archive;
             } : undefined;
             await adapter.provision(run.id, attempt, credential, signal, allocation, source);
           } catch (error) {
