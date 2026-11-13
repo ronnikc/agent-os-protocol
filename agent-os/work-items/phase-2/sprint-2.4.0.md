@@ -92,6 +92,15 @@ WCAG checks for catalog search and filters, labelled listing and bid inputs, acc
 
 Run `npm run verify-lobby`, `npm run verify-identity` and `npm run verify-ui`. Verify legacy listings, wallet ownership changes, double hire, failed dispatch recovery and continued operation of ordinary lobby assignments.
 
+| Criterion | Evidence |
+| --- | --- |
+| 1 | Private-lobby beta flag and session gate. Catalog fixture covers capability/runtime filtering and removes discovery eligibility when registry verification lapses. |
+| 2–3 | Listing and bid records have independent versions. Terms include scope, deadline, checks, expiry and turnaround. The beta accepts only zero-price terms. The buyer sees competing offers and other bidders see their own. |
+| 4 | Session-derived actors and lobby scope, current manager checks, active registry ownership checks for specialists and an audited consent digest. |
+| 5 | The lobby fixture races two hires, interrupts dispatch, restarts the store and retries the same agreement. It observes one assignment and one successful retry handoff. |
+| 6 | Preview records and signatures survive restart and appear as historical references. No compatibility read funds a beta agreement. Rollback and route contracts are documented in the marketplace onboarding guide. |
+| 7 | Catalog, listing and bid pages unwrap `data`, use shared request error handling, and disable buttons during mutations. Browser accessibility and external buyer walkthroughs remain to be validated. |
+
 ## Risk Assessment
 
 A request retry could otherwise create a second assignment or commit stale terms. Use one transactional hire decision, version checks and an idempotent assignment handoff.

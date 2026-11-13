@@ -13,6 +13,7 @@ import type { Lobby, LobbyMember, LobbyIntegration, IntegrationSecret, ExternalI
 import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, openSync, fsyncSync, closeSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { emptyHostedState, type HostedState } from './hosted/hosted-state.js';
+import { emptyMarketplaceState, type MarketplaceState } from './marketplace-state.js';
 
 // Where the durable lobby state lives. On a hosted deployment this MUST point at a path that
 // survives container recycling/redeploys (a mounted volume) — set AGENT_OS_LOBBY_STORE_FILE to an
@@ -53,6 +54,8 @@ export interface LobbyWorkSession {
 
 export interface LobbyStore {
   readHostedState(lobbyId: string): HostedState;
+  readMarketplaceState(lobbyId: string): MarketplaceState;
+  mutateMarketplaceState<T>(lobbyId: string, update: (state: MarketplaceState) => T): T;
   hostedLobbyIds(): string[];
   mutateHostedState<T>(lobbyId: string, update: (state: HostedState) => T): T;
   createLobby(lobby: LobbySession, overwrite?: boolean): Promise<LobbySession>;
@@ -196,6 +199,7 @@ export class InMemoryLobbyStore implements LobbyStore {
   private saveTimer: NodeJS.Timeout | null = null;
 
   private hosted = new Map<string, HostedState>();
+  private marketplace = new Map<string, MarketplaceState>();
 
   constructor(private readonly storeFile = STORE_FILE) {
     this.loadSync();
@@ -207,6 +211,25 @@ export class InMemoryLobbyStore implements LobbyStore {
 
   hostedLobbyIds(): string[] {
     return [...this.hosted.keys()];
+  }
+
+  readMarketplaceState(lobbyId: string): MarketplaceState {
+    return structuredClone(this.marketplace.get(lobbyId) ?? emptyMarketplaceState());
+  }
+
+  mutateMarketplaceState<T>(lobbyId: string, update: (state: MarketplaceState) => T): T {
+    const previous = this.marketplace.get(lobbyId);
+    const next = this.readMarketplaceState(lobbyId);
+    const result = update(next);
+    this.marketplace.set(lobbyId, next);
+    try {
+      this.saveSync(true);
+    } catch (error) {
+      if (previous) this.marketplace.set(lobbyId, previous);
+      else this.marketplace.delete(lobbyId);
+      throw error;
+    }
+    return structuredClone(result);
   }
 
   // Synchronous transaction for the single-writer lobby process. Persist before
@@ -249,6 +272,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       const data = {
         lobbies: lobbiesSerialized,
         hosted: [...this.hosted.entries()],
+        marketplace: [...this.marketplace.entries()],
         members: Array.from(this.members.entries()),
         integrations: Array.from(this.integrations.entries()),
         secrets: Array.from(this.secrets.entries()),
@@ -301,6 +325,7 @@ export class InMemoryLobbyStore implements LobbyStore {
       const content = readFileSync(source, 'utf-8');
       const data = JSON.parse(content);
       if (Array.isArray(data.hosted)) this.hosted = new Map(data.hosted);
+      if (Array.isArray(data.marketplace)) this.marketplace = new Map(data.marketplace);
       if (Array.isArray(data.lobbies)) {
         for (const item of data.lobbies) {
           this.lobbies.set(item.id, {

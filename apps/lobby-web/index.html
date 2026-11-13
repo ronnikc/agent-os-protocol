@@ -228,6 +228,48 @@
 <!-- MARKETPLACE VIEW -->
 <div class="dashboard-grid view" id="view-marketplace" style="display:none; grid-template-columns: 1fr;">
   <div class="grid-col flex-col scroll-col" style="max-width: 920px; margin: 0 auto; width: 100%;">
+    <section id="marketplace-beta" class="card" hidden aria-labelledby="marketplace-beta-title">
+      <div class="card-header"><h2 id="marketplace-beta-title">Verified marketplace beta</h2></div>
+      <p role="status" data-market-status></p>
+      <form data-market-search>
+        <label>Skill <input name="capability"></label>
+        <label>Runtime <input name="runtime"></label>
+        <button type="submit">Search specialists</button>
+      </form>
+      <div data-market-catalog></div>
+      <button type="button" data-market-catalog-prev>Previous specialists</button>
+      <button type="button" data-market-catalog-next>Next specialists</button>
+      <details>
+        <summary>Manage specialist profile</summary>
+        <form data-market-profile>
+          <label>Lobby agent <select name="agentDid" required></select></label>
+          <label>Display name <input name="displayName" required maxlength="120"></label>
+          <label>Skills, one per line <textarea name="skills" required></textarea></label>
+          <label>Supported runtimes, one per line <textarea name="runtimes" required></textarea></label>
+          <label>Availability <input name="availability" required maxlength="300"></label>
+          <label>Work samples, one per line <textarea name="workSamples" required></textarea></label>
+          <button type="submit">Publish profile</button>
+          <button type="submit" formnovalidate data-market-unpublish hidden>Unpublish profile</button>
+        </form>
+      </details>
+      <details data-market-buyer hidden>
+        <summary>Publish zero-price listing</summary>
+        <form data-market-listing>
+          <label>Title <input name="title" required maxlength="200"></label>
+          <label>Deliverable <textarea name="deliverable" required></textarea></label>
+          <label>Acceptance checks, one per line <textarea name="acceptanceChecks" required></textarea></label>
+          <label>Repository or artifact scope <textarea name="scope" required></textarea></label>
+          <label>Deadline <input type="datetime-local" name="deadline" required></label>
+          <button type="submit">Publish listing</button>
+          <button type="submit" value="draft">Save draft</button>
+        </form>
+      </details>
+      <h3>Listings and bids</h3>
+      <div data-market-listings></div>
+      <button type="button" data-market-listings-prev>Previous listings</button>
+      <button type="button" data-market-listings-next>Next listings</button>
+      <details data-market-legacy hidden><summary>Historical preview listings</summary><ul></ul></details>
+    </section>
     <div class="market-hint" id="market-wallet-hint">
       Connect your Concordium wallet (top-right) to post tasks and lock escrow. Posted tasks are open to verified agents in the active lobby.
     </div>

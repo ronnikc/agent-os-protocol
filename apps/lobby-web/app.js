@@ -510,6 +510,7 @@ function renderTelemetry() {
 
 window.selectLobby = async function(lobbyId) {
   state.activeLobbyId = lobbyId;
+  document.getElementById('marketplace-beta').hidden = true;
   state.agents = [];
   state.messages = [];
   state.events = [];
@@ -522,7 +523,10 @@ window.selectLobby = async function(lobbyId) {
     await signInToLobby();
     if (!isSignedIn() || state.activeLobbyId !== lobbyId) return;
   }
-  pollLobbyDetails();
+  await pollLobbyDetails();
+  if (state.activeLobbyId === lobbyId && document.getElementById('view-marketplace').style.display !== 'none') {
+    void loadMarketplaceBeta();
+  }
 };
 
 // ── Polling Loops ──
@@ -2141,6 +2145,246 @@ window.switchOnboardTab = function(tabName) {
 
 // ── Top-nav view switcher (Lobby / Manage / Marketplace / Panel) ──
 const VIEWS = ['lobby', 'marketplace'];
+let marketplaceGeneration = 0;
+async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
+  const root = document.getElementById('marketplace-beta');
+  const generation = ++marketplaceGeneration;
+  const lobbyId = state.activeLobbyId;
+  if (!lobbyId || !isSignedIn()) { root.hidden = true; return; }
+  if (root.dataset.lobby !== lobbyId || root.dataset.actor !== state.session.identityRef) {
+    root.hidden = true;
+    root.querySelector('[data-market-search]').reset();
+    root.querySelector('[data-market-listing]').reset();
+    delete root.querySelector('[data-market-listing]').dataset.editing;
+    root.dataset.lobby = lobbyId;
+    root.dataset.actor = state.session.identityRef;
+  }
+  const status = root.querySelector('[data-market-status]');
+  const search = root.querySelector('[data-market-search]');
+  const profileForm = root.querySelector('[data-market-profile]');
+  const listingForm = root.querySelector('[data-market-listing]');
+  const actor = state.session.identityRef;
+  const pageSize = 20;
+  const active = () => generation === marketplaceGeneration && state.activeLobbyId === lobbyId && isSignedIn() && state.session.identityRef === actor;
+  async function request(path, body) {
+    const response = await fetch(`/api/v1/agent-lobby/lobbies/${encodeURIComponent(lobbyId)}/marketplace/${path}`, {
+      headers: { ...lobbySessionHeaders(), 'Content-Type': 'application/json' },
+      ...(body && { method: 'POST', body: JSON.stringify(body) }),
+    });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error?.message || result.error || 'Marketplace request failed.');
+    return result;
+  }
+  function wire(form, action) {
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const button = event.submitter || form.querySelector('button[type="submit"]');
+      if (!active() || button.disabled) return;
+      const label = button.textContent;
+      button.disabled = true;
+      button.textContent = 'Saving…';
+      try { await action(new FormData(form), button); }
+      catch (error) { if (active()) status.textContent = error.message; }
+      finally {
+        button.textContent = label;
+        button.disabled = false;
+      }
+    };
+  }
+  const lines = value => String(value).split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+  const filters = new URLSearchParams(new FormData(search));
+  filters.set('offset', catalogOffset);
+  const paging = (name, page, reload) => {
+    const prev = root.querySelector(`[data-market-${name}-prev]`);
+    const next = root.querySelector(`[data-market-${name}-next]`);
+    prev.disabled = page.offset === 0;
+    next.disabled = page.offset + page.data.length >= page.total;
+    prev.onclick = () => { prev.disabled = next.disabled = true; void reload(Math.max(0, page.offset - pageSize)); };
+    next.onclick = () => { prev.disabled = next.disabled = true; void reload(page.offset + pageSize); };
+  };
+  let catalog, listings;
+  try {
+    [catalog, listings] = await Promise.all([request(`catalog?${filters}`), request(`listings?offset=${listingOffset}`)]);
+  } catch (error) {
+    if (active()) { root.hidden = true; status.textContent = error.message; }
+    return;
+  }
+  if (!active()) return;
+  root.hidden = false;
+  root.querySelector('[data-market-buyer]').hidden = !listings.canPublish;
+  status.textContent = `${catalog.total} specialists and ${listings.total} listings.`;
+  search.onsubmit = event => { event.preventDefault(); void loadMarketplaceBeta(0, listingOffset); };
+  paging('catalog', catalog, offset => loadMarketplaceBeta(offset, listingOffset));
+  paging('listings', listings, offset => loadMarketplaceBeta(catalogOffset, offset));
+  const catalogList = root.querySelector('[data-market-catalog]');
+  catalogList.innerHTML = catalog.data.map(profile => `<article>
+    <h3>${escapeHtml(profile.displayName)}</h3><p>Verified Agent ID ${escapeHtml(profile.agentDid)}</p>
+    <p>Skills ${escapeHtml(profile.skills.join(', '))} · Runtimes ${escapeHtml(profile.runtimes.join(', '))}</p>
+    <p>${escapeHtml(profile.availability)}</p><p>Work samples ${escapeHtml(profile.workSamples.join(', '))}</p>
+  </article>`).join('');
+  if (listings.canPublish) [...catalogList.children].forEach((article, index) => {
+    const form = document.createElement('form');
+    form.innerHTML = '<button type="submit">Suspend profile</button>';
+    wire(form, async () => {
+      await request('catalog', { action: 'suspend', id: catalog.data[index].id });
+      await loadMarketplaceBeta(catalogOffset, listingOffset);
+    });
+    article.append(form);
+  });
+  const roster = state.agents.filter(agent => agent.identity_ref);
+  profileForm.elements.agentDid.replaceChildren(...roster.map(agent => new Option(agent.display_name, agent.identity_ref)));
+  const unpublish = profileForm.querySelector('[data-market-unpublish]');
+  function selectProfile() {
+    const profile = catalog.ownProfiles.find(item => item.agentDid === profileForm.elements.agentDid.value);
+    unpublish.hidden = profile?.status !== 'published';
+    for (const name of ['displayName', 'skills', 'runtimes', 'availability', 'workSamples']) {
+      const value = profile?.[name];
+      profileForm.elements[name].value = Array.isArray(value) ? value.join('\n') : value || '';
+    }
+  }
+  profileForm.elements.agentDid.onchange = selectProfile;
+  selectProfile();
+  wire(profileForm, async (values, button) => {
+    const body = Object.fromEntries(values);
+    const selected = catalog.ownProfiles.find(item => item.agentDid === body.agentDid);
+    if (button === unpublish) {
+      await request('catalog', { action: 'unpublish', id: selected.id });
+      await loadMarketplaceBeta(0, listingOffset);
+      return;
+    }
+    for (const name of ['skills', 'runtimes', 'workSamples']) body[name] = lines(body[name]);
+    await request('catalog', { ...body, action: 'publish' });
+    await loadMarketplaceBeta(0, listingOffset);
+  });
+  wire(listingForm, async (values, button) => {
+    const body = Object.fromEntries(values);
+    const editing = listings.data.find(item => item.id === listingForm.dataset.editing);
+    await request('listings', { ...body, id: editing?.id, version: editing?.version, action: button.value || 'publish', amount: '0', deadline: Date.parse(body.deadline),
+      acceptanceChecks: lines(body.acceptanceChecks) });
+    delete listingForm.dataset.editing;
+    listingForm.reset();
+    await loadMarketplaceBeta(catalogOffset, 0);
+  });
+  const list = root.querySelector('[data-market-listings]');
+  const legacy = root.querySelector('[data-market-legacy]');
+  legacy.hidden = listings.legacy.length === 0;
+  legacy.querySelector('ul').replaceChildren(...listings.legacy.map(entry => {
+    const row = document.createElement('li');
+    row.textContent = `${entry.title} · ${entry.status}${entry.legacyAuthorization ? ' · Historical wallet authorization' : ''}`;
+    return row;
+  }));
+  list.innerHTML = listings.data.map(entry => `<article>
+    <h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(entry.status)} · Zero price · Version ${entry.version}</p>
+    <p>${escapeHtml(entry.deliverable)}</p><p>Scope ${escapeHtml(entry.scope)}</p>
+    <p>Deadline ${escapeHtml(new Date(entry.deadline).toLocaleString())}</p>
+    <ul>${entry.acceptanceChecks.map(check => `<li>${escapeHtml(check)}</li>`).join('')}</ul>
+    <button type="button" data-review>Review bids and agreement</button><div data-market-offers></div>
+  </article>`).join('');
+  [...list.children].forEach((article, index) => {
+    const entry = listings.data[index];
+    const review = article.querySelector('[data-review]');
+    const offers = article.querySelector('[data-market-offers]');
+    if (listings.canPublish && entry.buyer === actor && ['open', 'draft'].includes(entry.status)) {
+      const form = document.createElement('form');
+      form.innerHTML = '<button type="button">Edit listing</button><button type="submit">Cancel listing</button>';
+      form.querySelector('button').onclick = () => {
+        listingForm.dataset.editing = entry.id;
+        for (const name of ['title', 'deliverable', 'scope']) listingForm.elements[name].value = entry[name];
+        listingForm.elements.acceptanceChecks.value = entry.acceptanceChecks.join('\n');
+        const localDeadline = new Date(entry.deadline);
+        localDeadline.setMinutes(localDeadline.getMinutes() - localDeadline.getTimezoneOffset());
+        listingForm.elements.deadline.value = localDeadline.toISOString().slice(0, 16);
+        listingForm.closest('details').open = true;
+        listingForm.elements.title.focus();
+      };
+      wire(form, async () => {
+        await request('listings', { id: entry.id, version: entry.version, action: 'cancel' });
+        await loadMarketplaceBeta(catalogOffset, listingOffset);
+      });
+      article.insertBefore(form, review);
+    }
+    review.onclick = async () => {
+      review.disabled = true;
+      try {
+        const result = await request(`listings/${encodeURIComponent(entry.id)}/bids?offset=${Number(offers.dataset.offset || 0)}`);
+        if (!active()) return;
+        offers.replaceChildren();
+        if (result.agreement) {
+          offers.textContent = `Agreement ${result.agreement.id}. Assignment ${result.agreement.assignmentId}. Handoff ${result.agreement.handoff.status}.`;
+          if (result.agreement.handoff.status === 'pending' && entry.buyer === actor) {
+            const retry = document.createElement('form');
+            retry.innerHTML = '<button type="submit">Retry assignment handoff</button>';
+            wire(retry, async () => {
+              const agreement = result.agreement;
+              await request(`listings/${encodeURIComponent(entry.id)}/hire`, { bidId: agreement.bid.id,
+                bidVersion: agreement.bid.version, listingVersion: agreement.listing.version, digest: agreement.buyerConsent.digest });
+              await review.onclick();
+            });
+            offers.append(retry);
+          }
+          return;
+        }
+        for (const bid of result.data) {
+          const form = document.createElement('form');
+          form.innerHTML = `<p>Bid version ${bid.version} · Zero price · ${bid.turnaroundHours} hours · ${escapeHtml(bid.status)}</p>
+            <p>Prerequisites ${escapeHtml(bid.prerequisites)}</p><p>Assumptions ${escapeHtml(bid.assumptions)}</p>`;
+          if (bid.status === 'submitted') {
+            const hire = entry.buyer === actor;
+            form.insertAdjacentHTML('beforeend', `<button type="submit">${hire ? 'Accept these terms and hire' : 'Withdraw bid'}</button>`);
+            wire(form, async () => {
+              const listingPath = `listings/${encodeURIComponent(entry.id)}`;
+              if (hire) await request(`${listingPath}/hire`, { bidId: bid.id, bidVersion: bid.version,
+                listingVersion: entry.version, digest: bid.consent.digest });
+              else await request(`${listingPath}/bids`, { action: 'withdraw', version: bid.version });
+              await loadMarketplaceBeta(catalogOffset, listingOffset);
+            });
+          }
+          offers.append(form);
+        }
+        if (entry.status === 'open' && entry.buyer !== actor && catalog.ownProfiles.some(profile => profile.eligible)) {
+          const form = document.createElement('form');
+          form.innerHTML = `<h5>Submit your zero-price bid</h5>
+            <label>Specialist agent <select name="agent" required></select></label>
+            <label>Turnaround in hours <input name="turnaroundHours" type="number" min="1" required></label>
+            <label>Offer expiry <input name="expiresAt" type="datetime-local" required></label>
+            <label>Prerequisites <textarea name="prerequisites" required></textarea></label>
+            <label>Assumptions <textarea name="assumptions" required></textarea></label>
+            <button type="submit">Submit and accept listing terms</button>`;
+          const available = roster.flatMap(agent => catalog.ownProfiles.filter(profile => profile.eligible && profile.agentDid === agent.identity_ref)
+            .map(profile => ({ agent, profile })));
+          form.elements.agent.replaceChildren(...available.map(({ agent }, index) => new Option(agent.display_name, index)));
+          form.querySelector('button').disabled = !available.length;
+          wire(form, async values => {
+            const choice = available[Number(values.get('agent'))];
+            const body = Object.fromEntries(values);
+            await request(`listings/${encodeURIComponent(entry.id)}/bids`, { ...body, action: 'submit', amount: '0',
+              version: result.data[0]?.version, listingVersion: entry.version, profileId: choice.profile.id,
+              agentId: choice.agent.agent_id, turnaroundHours: Number(body.turnaroundHours), expiresAt: Date.parse(body.expiresAt) });
+            await loadMarketplaceBeta(catalogOffset, listingOffset);
+          });
+          offers.append(form);
+        }
+        for (const [label, target, disabled] of [
+          ['Previous bids', Math.max(0, result.offset - result.limit), result.offset === 0],
+          ['Next bids', result.offset + result.limit, result.offset + result.data.length >= result.total],
+        ]) {
+          if (disabled) continue;
+          const button = document.createElement('button');
+          button.type = 'button';
+          button.textContent = label;
+          button.onclick = async () => {
+            button.disabled = true;
+            offers.dataset.offset = String(target);
+            await review.onclick();
+            review.focus();
+          };
+          offers.append(button);
+        }
+      } catch (error) { if (active()) status.textContent = error.message; }
+      finally { review.disabled = false; }
+    };
+  });
+}
 window.switchView = function(view) {
   if (!VIEWS.includes(view)) return;
   VIEWS.forEach(v => {
@@ -2152,7 +2396,7 @@ window.switchView = function(view) {
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
   });
-  if (view === 'marketplace') pollLobbyDetails();
+  if (view === 'marketplace') void pollLobbyDetails().then(() => loadMarketplaceBeta());
 };
 
 

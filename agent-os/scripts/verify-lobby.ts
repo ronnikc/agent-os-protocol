@@ -24,6 +24,10 @@ import { issueSessionToken } from '../../packages/lobby-server/src/auth/identity
 import { createRegistryRosterVerifier } from '../../packages/lobby-server/src/hosted/registry-roster-verifier.js';
 import { resolveProviderKey, setProviderKey } from '../../packages/lobby-server/src/providers/key-custody.js';
 import { WebSocket } from 'ws';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { Marketplace } from '../../packages/lobby-server/src/marketplace.js';
 
 let passed = 0;
 const failures: string[] = [];
@@ -96,6 +100,60 @@ async function main(): Promise<void> {
 
   // ════════ Part A — unit (coordinator rules) ════════
   console.log('Part A — coordinator (server-side rules)');
+  await check('Marketplace beta preserves preview history and recovers one versioned hire after restart', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'marketplace-beta-'));
+    const filename = join(directory, 'lobbies.json');
+    try {
+      const store = new InMemoryLobbyStore(filename);
+      const lobby = makeLobby('private');
+      const id = lobby.lobby_id;
+      await store.createLobby(lobby);
+      const now = new Date().toISOString();
+      await store.createMarketplaceTask({ id: 'preview', lobby_id: id, title: 'Historical', description: 'Historical',
+        proposed_budget_ccd: 100, status: 'posted', posted_by_identity_ref: 'buyer', created_at: now, updated_at: now,
+        escrow_signature: 'historical-wallet-signature' });
+      await store.addAgent(id, { agent_id: 'specialist', display_name: 'Specialist', role: 'worker',
+        participant_type: 'cli_agent', status: 'idle', current_work: '', registered_at: now, last_seen: now,
+        identity_ref: 'did:ccd:testnet:fixture' });
+      let verified = true;
+      const verify = async (did: string, owner: string) => verified && did === 'did:ccd:testnet:fixture' && owner === 'owner';
+      let dispatches = 0;
+      const marketplace = new Marketplace(store, verify, async () => { dispatches++; throw new Error('dispatch interrupted'); });
+      const profileBody = { action: 'publish', agentDid: 'did:ccd:testnet:fixture', displayName: 'Specialist', skills: ['TypeScript'],
+        runtimes: ['API'], availability: 'Today', workSamples: ['sample'] };
+      await assert.rejects(marketplace.profile(id, 'other', profileBody, false), /ownership/);
+      const profile = await marketplace.profile(id, 'owner', profileBody, false);
+      assert.equal((await marketplace.catalog(id, 'script', 'api', 0, 10)).total, 1);
+      const listing = marketplace.listing(id, 'buyer', { action: 'publish', title: 'Verify delivery', deliverable: 'Run check',
+        scope: 'reports/', acceptanceChecks: ['green checks'], deadline: Date.now() + 86_400_000, amount: '0' });
+      const bid = await marketplace.bid(id, 'owner', listing.id, { action: 'submit', listingVersion: listing.version,
+        agentId: 'specialist', profileId: profile.id, amount: '0', turnaroundHours: 2, expiresAt: Date.now() + 7_200_000,
+        prerequisites: 'None', assumptions: 'Fixture only' });
+      assert.equal(marketplace.bids(id, 'other', listing.id, 0, 10).total, 0);
+      const approval = { bidId: bid.id, bidVersion: bid.version, listingVersion: listing.version, digest: bid.consent.digest };
+      await assert.rejects(marketplace.hire(id, 'buyer', listing.id, { ...approval, digest: 'stale' }), /Terms changed/);
+      verified = false;
+      assert.equal((await marketplace.catalog(id, '', '', 0, 10)).total, 0);
+      await assert.rejects(marketplace.hire(id, 'buyer', listing.id, approval), /no longer eligible/);
+      verified = true;
+      const racing = await Promise.allSettled([
+        marketplace.hire(id, 'buyer', listing.id, approval), marketplace.hire(id, 'buyer', listing.id, approval),
+      ]);
+      assert.ok(racing.every(result => result.status === 'rejected'));
+      assert.equal(dispatches, 1);
+      const restarted = new InMemoryLobbyStore(filename);
+      const retry = new Marketplace(restarted, verify, async () => { dispatches++; });
+      const [agreement, duplicate] = await Promise.all([
+        retry.hire(id, 'buyer', listing.id, approval), retry.hire(id, 'buyer', listing.id, approval),
+      ]);
+      assert.equal(agreement.id, duplicate.id);
+      assert.equal(agreement.handoff.status, 'dispatched');
+      assert.equal((await restarted.listTasks(id)).length, 1);
+      assert.equal(dispatches, 2);
+      assert.equal((await restarted.getMarketplaceTask(id, 'preview'))?.escrow_signature, 'historical-wallet-signature');
+      assert.equal((await retry.listings(id, 'buyer', 0, 10)).legacy[0]?.legacyAuthorization, true);
+    } finally { await rm(directory, { recursive: true, force: true }); }
+  });
 
   await check('SPONSOR CLIENT: validates inputs, relays the unsigned tx, and surfaces upstream errors', async () => {
     const realFetch = globalThis.fetch;

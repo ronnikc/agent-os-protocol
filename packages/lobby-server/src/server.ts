@@ -47,6 +47,7 @@ import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './hosted/hosted-controls.js';
+import { Marketplace, MarketplaceError } from './marketplace.js';
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
 import { configuredDaytonaWorkspaces } from './hosted/daytona-workspace.js';
@@ -483,6 +484,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const sockets = new Map<string, WebSocket>(); // connId → socket
   const lobbyConns = new Map<string, Set<string>>(); // lobbyId → connIds
   const agentConn = new Map<string, string>(); // agentId → connId
+  const marketplace = new Marketplace(store, async (did, owner) => {
+    const result = await (verifyHostedRosterIdentity ?? coordinator.verifyIdentity)(did);
+    const ref = result.ref;
+    return Boolean(ref?.account && ['registry_verified', 'human_linked', 'org_linked'].includes(result.status) &&
+      owner === `did:ccd:${ref.network}:${ref.account}`);
+  }, async task => {
+    for (const cid of lobbyConns.get(task.lobby_id) ?? []) {
+      if (cid === agentConn.get(task.assigned_to)) send(cid, { type: 'lobby-task-assigned', task });
+    }
+  });
 
   let defaultLobbyId: string | undefined;
 
@@ -1743,6 +1754,53 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         if (!view) return json({ error: 'provider key not found' }, 404);
         await recordEvent(lobbyId, 'provider_key_revoked', identityRef, { provider: view.provider, scope: view.scope });
         return json({ revoked: view });
+      }
+    }
+
+    const marketplaceRoute = path.match(/^\/api\/v1\/agent-lobby\/lobbies\/([^/]+)\/marketplace\/(catalog|listings|audit)(?:\/([^/]+)\/(bids|hire))?$/);
+    if (marketplaceRoute) {
+      const [, lobbyId, resource, listingId, action] = marketplaceRoute;
+      if (process.env.AGENT_OS_MARKETPLACE_BETA !== 'true' || scopedLobby?.visibility !== 'private') {
+        return json({ error: 'Marketplace beta is unavailable for this lobby.' }, 404);
+      }
+      const actor = sessionIdentity(lobbyId);
+      if (!actor || actor === TEST_ADMIN_IDENTITY) return json({ error: 'Wallet sign-in required.' }, 401);
+      const manager = await isLobbyManager(store, lobbyId, actor);
+      if (!manager && !await hasPrivateMembership(scopedLobby, actor)) return json({ error: 'Marketplace invite required.' }, 403);
+      res.setHeader('Cache-Control', 'no-store');
+      try {
+        const offset = Number(url.searchParams.get('offset') ?? 0);
+        const limit = Number(url.searchParams.get('limit') ?? 20);
+        if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isSafeInteger(limit) || limit < 1 || limit > 100) {
+          throw new MarketplaceError('Choose a valid page.', 400);
+        }
+        if (req.method === 'GET' && resource === 'catalog' && !listingId) {
+          return json({ ...await marketplace.catalog(lobbyId, url.searchParams.get('capability') ?? '', url.searchParams.get('runtime') ?? '', offset, limit),
+            ownProfiles: await marketplace.ownProfiles(lobbyId, actor) });
+        }
+        if (req.method === 'GET' && resource === 'audit' && !listingId && manager) {
+          const { audit } = store.readMarketplaceState(lobbyId);
+          return json({ data: audit.reverse().slice(offset, offset + limit), total: audit.length, offset, limit });
+        }
+        if (req.method === 'POST' && resource === 'catalog' && !listingId) {
+          return json({ profile: await marketplace.profile(lobbyId, actor, await readBody(req), manager) });
+        }
+        if (resource === 'listings' && !listingId) {
+          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit), canPublish: manager });
+          if (req.method === 'POST' && manager) return json({ listing: marketplace.listing(lobbyId, actor, await readBody(req)) });
+        }
+        if (resource === 'listings' && action === 'bids') {
+          if (req.method === 'GET') return json(marketplace.bids(lobbyId, actor, listingId, offset, limit));
+          if (req.method === 'POST') return json({ bid: await marketplace.bid(lobbyId, actor, listingId, await readBody(req)) });
+        }
+        if (resource === 'listings' && action === 'hire' && req.method === 'POST' && manager) {
+          return json({ agreement: await marketplace.hire(lobbyId, actor, listingId, await readBody(req),
+            () => isLobbyManager(store, lobbyId, actor)) });
+        }
+        return json({ error: 'Marketplace action forbidden.' }, 403);
+      } catch (error) {
+        if (error instanceof MarketplaceError) return json({ error: error.message }, error.status);
+        return json({ error: 'Marketplace request failed. Refresh before retrying.' }, 500);
       }
     }
 
