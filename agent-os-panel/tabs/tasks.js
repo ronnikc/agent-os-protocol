@@ -164,6 +164,21 @@ function showTaskDetail(taskId) {
         ...[['logs', 'Logs'], ['tests', 'Test results'], ['patch', 'Patch']].filter(([key]) => artifacts[key])
           .map(([key, label]) => `<details><summary>${label}</summary><pre>${escapeHtml(artifacts[key])}</pre></details>`),
       ].join('') : '';
+      if (artifacts?.patch) {
+        const download = document.createElement('button');
+        download.type = 'button';
+        download.className = 'btn btn-secondary btn-sm';
+        download.textContent = 'Download patch';
+        download.addEventListener('click', () => {
+          const href = URL.createObjectURL(new Blob([artifacts.patch], { type: 'text/x-diff' }));
+          const link = document.createElement('a');
+          link.href = href;
+          link.download = 'workspace-' + t.workspace_run.id + '.patch';
+          link.click();
+          setTimeout(() => URL.revokeObjectURL(href), 1000);
+        });
+        output.prepend(download);
+      }
       status.textContent = result?.error || (artifacts ? 'Workspace evidence loaded.' : 'Workspace evidence is unavailable.');
     } finally {
       evidence.disabled = false;
