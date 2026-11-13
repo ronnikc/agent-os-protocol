@@ -159,6 +159,8 @@ function showTaskDetail(taskId) {
       const artifacts = result?.run?.artifacts;
       output.innerHTML = artifacts ? [
         Number.isInteger(artifacts.exitCode) ? `<p>Exit code ${artifacts.exitCode}</p>` : '',
+        artifacts.patchUnavailable === 'size_limit' ? '<p>Patch exceeds the artifact size limit.</p>' : '',
+        artifacts.patchUnavailable === 'credential_redacted' ? '<p>Patch withheld because it contains a provider credential.</p>' : '',
         ...[['logs', 'Logs'], ['tests', 'Test results'], ['patch', 'Patch']].filter(([key]) => artifacts[key])
           .map(([key, label]) => `<details><summary>${label}</summary><pre>${escapeHtml(artifacts[key])}</pre></details>`),
       ].join('') : '';

@@ -388,11 +388,14 @@ export class HostedControls {
         const collected = await adapter.collect(run.id, credential, signal, allocation);
         const textArtifact = (value: string | undefined, limit: number) =>
           value?.replaceAll(credential, '[redacted]').slice(0, limit);
-        const artifacts = {
+        const patchUnavailable = collected.patch?.includes(credential) ? 'credential_redacted'
+          : collected.patch && Buffer.byteLength(collected.patch) > 262_144 ? 'size_limit' : collected.patchUnavailable;
+        const artifacts: NonNullable<HostedRun['artifacts']> = {
           exitCode: Number.isInteger(collected.exitCode) ? collected.exitCode : undefined,
           logs: textArtifact(collected.logs, 65_536),
           tests: textArtifact(collected.tests, 65_536),
-          patch: textArtifact(collected.patch, 262_144),
+          patch: patchUnavailable ? undefined : collected.patch,
+          patchUnavailable,
           files: collected.files?.slice(0, 100).map(file => textArtifact(file, 512)!),
         };
         signal.throwIfAborted();

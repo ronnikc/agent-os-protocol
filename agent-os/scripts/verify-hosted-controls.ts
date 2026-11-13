@@ -248,7 +248,7 @@ export async function verifyHostedControls() {
     async wait(_, __, signal) {
       if (waitForCancel) await delay(30_000, undefined, { signal });
     },
-    async collect() { return { exitCode: 1, tests: 'failed', logs: 'redact ' + credential + 'x'.repeat(70_000) }; },
+    async collect() { return { exitCode: 1, tests: 'failed', patch: 'redact ' + credential, logs: 'redact ' + credential + 'x'.repeat(70_000) }; },
     async destroy(key, _, signal, journal) {
       return new WorkspaceAllocationRecovery(journal, operations(key)).destroy(signal);
     },
@@ -362,6 +362,8 @@ export async function verifyHostedControls() {
     assert.equal(allocations.size, 1);
     const artifacts = store.readHostedState('a').runs[0].artifacts;
     assert.equal(artifacts?.exitCode, 1);
+    assert.equal(artifacts?.patch, undefined);
+    assert.equal(artifacts?.patchUnavailable, 'credential_redacted');
     const review = await call('a', '/tasks');
     assert.deepEqual(review.body.coordination_tasks[0].workspace_run, {
       id: run.id, state: 'failed', sourceRevision: 'a'.repeat(40),

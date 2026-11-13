@@ -46,6 +46,7 @@ export interface WorkspaceArtifacts {
   logs?: string;
   tests?: string;
   patch?: string;
+  patchUnavailable?: 'size_limit' | 'credential_redacted';
   files?: readonly string[];
 }
 

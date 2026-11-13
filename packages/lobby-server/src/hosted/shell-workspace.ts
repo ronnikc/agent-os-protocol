@@ -57,8 +57,9 @@ export function createShellWorkspace(
         '\'git diff --cached --binary --no-ext-diff --no-textconv "$(cat ' + root + '/baseline)" -- | { head -c 262145; cat >/dev/null; }\'',
         { signal, timeoutMs: 10_000 }) as { stdout?: string };
       const patch = diff.stdout;
+      const oversized = patch !== undefined && Buffer.byteLength(patch) > 262_144;
       return { exitCode: Number(status), logs: await guest.read(root + '/logs', signal),
-        patch: patch && Buffer.byteLength(patch) <= 262_144 ? patch : undefined };
+        ...(oversized ? { patchUnavailable: 'size_limit' } : { patch: patch || undefined }) };
     },
     async destroy(key, credential, signal, journal) {
       return allocation(key, credential, journal).destroy(signal);
