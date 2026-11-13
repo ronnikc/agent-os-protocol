@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) 2026 R Digital
+
 import type { WorkspaceAdapter, WorkspaceCapabilities, WorkspaceAttempt, WorkspaceAllocationJournal } from '@agent-os/protocol-core';
 import type { WorkspaceAllocationRecovery } from './workspace-allocation.js';
 
@@ -47,8 +50,9 @@ export function createShellWorkspace(
       const guest = await connect(id, credential, signal);
       const status = (await guest.read(root + '/exit', signal)).trim();
       if (!/^\d{1,3}$/.test(status)) throw new Error('Workspace command exit status is unavailable.');
-      const diff = await guest.run('cd ' + root + '/source && git add --all && git diff --cached --binary --no-ext-diff --no-textconv "$(cat ' + root + '/baseline)" --' +
-        ' | head -c 262145', { signal, timeoutMs: 10_000 }) as { stdout?: string };
+      const diff = await guest.run('cd ' + root + '/source && git add --all && bash -o pipefail -c ' +
+        '\'git diff --cached --binary --no-ext-diff --no-textconv "$(cat ' + root + '/baseline)" -- | { head -c 262145; cat >/dev/null; }\'',
+        { signal, timeoutMs: 10_000 }) as { stdout?: string };
       const patch = diff.stdout;
       return { exitCode: Number(status), logs: await guest.read(root + '/logs', signal),
         patch: patch && Buffer.byteLength(patch) <= 262_144 ? patch : undefined };

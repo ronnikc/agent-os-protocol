@@ -46,7 +46,7 @@ import { signInTestAdmin } from './auth/testAdmin.js';
 import { setProviderKey, listProviderKeys, revokeProviderKey, resolveProviderKey } from './providers/key-custody.js';
 import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adapters';
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
-import { HostedControls, HostedControlError } from './hosted/hosted-controls.js';
+import { HostedControls, HostedControlError, WorkspaceTaskBusyError } from './hosted/hosted-controls.js';
 import { hostedModelBudget } from './hosted/model-budget.js';
 import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
 import { configuredAgent37Workspaces } from './hosted/agent37-workspace.js';
@@ -801,6 +801,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           dispatch(conn, r.out);
         }
       }, taskId).catch(async error => {
+        if (error instanceof WorkspaceTaskBusyError) return;
         const result = error instanceof HostedControlError ? error.message : 'Hosted execution stopped.';
         const reply = await coordinator.handle(conn, {
           type: 'lobby-task-update', task_id: taskId, status: 'failed', result,
