@@ -2,20 +2,20 @@
 id: 2.8.0
 title: Invite Only Beta and Stabilization
 phase: phase-2
-status: planned
+status: awaiting-external-validation
 owner: test
 ---
 
 # Sprint 2.8.0 - Invite Only Beta and Stabilization
 
 ## Tasks
-- [ ] T-280-1 Define cohort scenarios evidence and release criteria (priority:high, assignee:test)
+- [x] T-280-1 Define cohort scenarios evidence and release criteria (priority:high, assignee:test)
 - [ ] T-280-2 Run external zero-price journeys and accessibility review (priority:high, assignee:user-validation)
 - [ ] T-280-3 Qualify six providers and exercise rollback recovery (priority:high, assignee:test)
 - [ ] T-280-4 Record beta fixes retests and release sign-off evidence (priority:high, assignee:documentation)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** repository readiness verified, external beta pending
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -92,3 +92,16 @@ A single pilot may hide provider-specific failure modes. Use the same conformanc
 | --- | --- | --- |
 | Flagship demo and public benchmark publication | Scope boundary | 2.9.0 follows development and stabilization. |
 | Real marketplace escrow | Scope boundary | Conditional 2.10.0. |
+
+## Candidate readiness
+
+The [beta operator runbook](../../../docs/phase-2-beta-runbook.md) records the participant roles, shared scenarios, metrics, evidence matrix and rollback. Repository fixtures cover zero-price terms, revision, disputes, authorized evidence, restart recovery and pending reservations. External cohort results, six live provider rows, live rollback, manual accessibility and release sign-off remain pending. This preparation leaves the public recording and benchmark gate closed.
+
+| Criterion | Repository evidence | External evidence |
+| --- | --- | --- |
+| 1 | Runbook defines fresh-install roles and journey. | Independently operated buyer and specialist pending. |
+| 2 | Lobby fixtures cover zero-price revision, cancellation and dispute; local, hosted and cloud evidence binding. | Participant walkthrough and live artifact comparison pending. |
+| 3 | Hosted fixtures cover admission, cancellation, restart and cleanup. | All six plan, region and billing rows pending. |
+| 4 | Runbook defines owners, release criteria and metrics. | Cohort measurements pending. |
+| 5 | HTTP fixture verifies beta flag rollback, preserved preview records and cross-lobby denial; commerce checks preserve uncertain reservations. | Deployment rollback drill pending. |
+| 6 | UI checks cover labels, status regions, paginated evidence and disabled mutations. | Keyboard and screen-reader walkthrough pending. |
