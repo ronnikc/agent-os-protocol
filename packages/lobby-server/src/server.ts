@@ -646,6 +646,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       const task = (msg as unknown as { task?: LobbyTask }).task;
       if (!task?.task_id || task.assigned_to !== myId) return;
       const taskId = task.task_id;
+      if (task.output_mode === 'workspace') return;
       const entry = hostedAgents.get(myId);
       if (!entry) return;
       await entry.runner.runTask(async (respond) => {
@@ -3404,8 +3405,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           const creatorIsManager = creatorIdentity ? await isLobbyManager(store, lobbyId, creatorIdentity) : false;
           if (!creatorIsManager) return json({ error: 'lobby manager required to assign tasks' }, creatorIdentity ? 403 : 401);
           const outputMode = body.output_mode;
-          if (outputMode !== undefined && outputMode !== 'text' && outputMode !== 'repository') {
-            return json({ error: 'output_mode must be text or repository' }, 400);
+          if (outputMode !== undefined && outputMode !== 'text' && outputMode !== 'repository' && outputMode !== 'workspace') {
+            return json({ error: 'output_mode must be text, repository or workspace' }, 400);
           }
           const seq = await store.nextSeq(lobbyId);
           const task = {
@@ -3426,7 +3427,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           await store.upsertTask(task as Parameters<typeof store.upsertTask>[0]);
           await recordEvent(lobbyId, 'task_created', task.assigned_by, { task_id: task.task_id, assigned_to: assignedTo });
           // Deliver to the assignee (hosted agents act on lobby-task-assigned) + tell the lobby.
-          send(agentConn.get(assignedTo), { type: 'lobby-task-assigned', task } as LobbyToAgentMessage);
+          if (task.output_mode !== 'workspace') {
+            send(agentConn.get(assignedTo), { type: 'lobby-task-assigned', task } as LobbyToAgentMessage);
+          }
           for (const cid of lobbyConns.get(lobbyId) ?? []) {
             send(cid, { type: 'lobby-task-updated', task } as LobbyToAgentMessage);
           }
@@ -3496,7 +3499,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         // Reopen semantics: setting a task back to 'assigned' RE-DELIVERS it to the assignee —
         // hosted agents execute on lobby-task-assigned, so without this a reopened task sat
         // "assigned" forever with nobody told.
-        if (body.status === 'assigned' && updatedTask.assigned_to) {
+        if (body.status === 'assigned' && updatedTask.assigned_to && updatedTask.output_mode !== 'workspace') {
           send(agentConn.get(updatedTask.assigned_to), { type: 'lobby-task-assigned', task: updatedTask } as LobbyToAgentMessage);
         }
         return json({ task: updatedTask });
