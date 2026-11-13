@@ -128,10 +128,19 @@ export class Marketplace {
       if (typeof body.deadline !== 'number' || !Number.isSafeInteger(body.deadline) || body.deadline <= Date.now()) {
         throw new MarketplaceError('Choose a future deadline.', 400);
       }
+      let workspaceSource: MarketplaceListing['workspaceSource'];
+      if (body.workspaceRepository !== undefined || body.workspaceRevision !== undefined) {
+        const repository = field(body.workspaceRepository, 'the approved workspace repository', 200);
+        const revision = field(body.workspaceRevision, 'the approved source commit', 40).toLowerCase();
+        if (!/^[\w.-]+\/[\w.-]+$/.test(repository) || !/^[0-9a-f]{40}$/.test(revision)) {
+          throw new MarketplaceError('Approve a repository and full commit for cloud staging.', 400);
+        }
+        workspaceSource = { repository, revision };
+      }
       const listing: MarketplaceListing = { id, buyer, version: (current?.version ?? 0) + 1,
         status: body.action === 'draft' ? 'draft' : 'open', quote: { amount: '0' }, deadline: body.deadline,
         title: field(body.title, 'a listing title', 200), deliverable: field(body.deliverable, 'the deliverable'),
-        acceptanceChecks: fields(body.acceptanceChecks, 'acceptance checks'), scope: field(body.scope, 'repository or artifact scope') };
+        acceptanceChecks: fields(body.acceptanceChecks, 'acceptance checks'), scope: field(body.scope, 'repository or artifact scope'), workspaceSource };
       if (current) state.listings[index] = listing;
       else state.listings.push(listing);
       log(state, buyer, `listing_${body.action}`, id);

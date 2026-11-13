@@ -124,6 +124,26 @@ async function main(): Promise<void> {
       assert.equal(enabled.status, 200);
       assert.equal((await enabled.json()).legacy[0].id, 'preview');
       assert.equal((await read('other-lobby')).status, 401);
+      const member = 'did:ccd:testnet:unrelated';
+      await store.updateLobby(lobby.lobby_id, { allowlist: [owner, member] });
+      const task = { task_id: 'private-assignment', lobby_id: lobby.lobby_id, org_id: 'default', title: 'Private',
+        description: 'Private scope', assigned_by: 'LobbyOwner', assigned_to: 'agent', assigned_at: now,
+        priority: 'normal', category: 'general', status: 'assigned' } as const;
+      await store.upsertTask(task);
+      store.mutateMarketplaceState(lobby.lobby_id, state => {
+        state.agreements.push({ id: 'agreement', assignmentId: task.task_id,
+          listing: { buyer: owner } as never, bid: { specialist: 'seller' } as never,
+          buyerConsent: { actor: owner, at: Date.now(), digest: 'fixture' }, handoff: { task, status: 'dispatched' } });
+      });
+      const tasksUrl = url.replace('/marketplace/listings', '/tasks');
+      const as = (actor: string) => ({ Authorization: 'Bearer ' + issueSessionToken(actor, lobby.lobby_id) });
+      const privateTasks = await fetch(tasksUrl, { headers: as(member) });
+      assert.equal(privateTasks.status, 200);
+      assert.deepEqual((await privateTasks.json()).coordination_tasks, []);
+      const ownerTasks = await fetch(tasksUrl, { headers: as(owner) });
+      assert.equal((await ownerTasks.json()).coordination_tasks[0].task_id, task.task_id);
+      assert.equal((await fetch(tasksUrl + '/' + task.task_id + '/delete', { method: 'POST', headers: as(member) })).status, 409);
+      assert.ok(await store.getTask(lobby.lobby_id, task.task_id));
       delete process.env.AGENT_OS_MARKETPLACE_BETA;
       assert.equal((await read()).status, 404);
       assert.equal((await store.getMarketplaceTask(lobby.lobby_id, 'preview'))?.title, 'Preview');
@@ -151,7 +171,8 @@ async function main(): Promise<void> {
         skills: ['Testing'], runtimes: ['Local', 'Hosted', 'Cloud'], availability: 'Today', workSamples: ['Example'] }, false);
       for (const execution of ['local', 'hosted', 'cloud']) {
         const listing = marketplace.listing(id, 'buyer', { action: 'publish', title: execution, deliverable: 'Check', scope: 'reports/',
-          acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0' });
+          acceptanceChecks: ['Pass'], deadline: Date.now() + 86_400_000, amount: '0',
+          ...(execution === 'cloud' && { workspaceRepository: 'example/approved', workspaceRevision: 'a'.repeat(40) }) });
         const bid = await marketplace.bid(id, 'seller', listing.id, { action: 'submit', profileId: profile.id, agentId: 'worker',
           listingVersion: listing.version, amount: '0', turnaroundHours: 1, expiresAt: Date.now() + 3_600_000,
           prerequisites: 'None', assumptions: 'Fixture' });
@@ -159,6 +180,23 @@ async function main(): Promise<void> {
         const agreement = await marketplace.hire(id, 'buyer', listing.id, { listingVersion: listing.version, bidVersion: bid.version,
           bidId: bid.id, digest: termsDigest });
         const task = (await store.getTask(id, agreement.assignmentId))!;
+        const request = { taskId: task.task_id, attemptId: 'scope-fixture', connectionId: 'fixture',
+          sourceRevision: 'a'.repeat(40), profileId: 'fixture', region: 'fixture' };
+        const before = store.readHostedState(id).runs.length;
+        if (execution === 'cloud') {
+          const integration = await store.addIntegration({ id: 'fixture-repo', lobby_id: id, provider: 'github', status: 'active',
+            repo_full_name: 'example/approved', scopes: [], installed_by_identity_ref: 'buyer', created_at: now, updated_at: now });
+          const cloudControls = new HostedControls(store, [], async () => assert.fail('Denied staging must not read source'));
+          assert.deepEqual(agreement.listing.workspaceSource, { repository: 'example/approved', revision: request.sourceRevision });
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', { ...request, sourceRevision: 'b'.repeat(40) }),
+            /does not authorize staging/);
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', request), /Set hosted limits/);
+          await store.updateIntegration(id, integration.id, { repo_full_name: 'example/other' });
+          await assert.rejects(cloudControls.requestWorkspace(id, 'buyer', request), /does not authorize staging/);
+        } else {
+          await assert.rejects(hosted.requestWorkspace(id, 'buyer', request), /does not authorize staging/);
+        }
+        assert.equal(store.readHostedState(id).runs.length, before, 'denied staging must not create a reservation');
         await store.upsertTask({ ...task, status: 'completed' });
         const sourceRevision = 'a'.repeat(40);
         const attemptId = `attempt-${execution}`;
@@ -168,9 +206,18 @@ async function main(): Promise<void> {
             cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [] });
           if (execution === 'cloud') state.runs.push({ id: workspaceRunId, kind: 'workspace', taskId: task.task_id,
             state: 'succeeded', cleanup: 'confirmed', started: Date.now(), deadline: Date.now(), usage: [],
-            attempt: { lobbyId: id, taskId: task.task_id, attemptId, connectionId: 'fixture', sourceRevision,
+            attempt: { lobbyId: id, taskId: task.task_id, attemptId, connectionId: 'fixture', sourceRevision, sourceRepository: 'example/other',
               profileId: 'fixture', region: 'fixture', deadline: Date.now() }, artifacts: { patch: 'patch evidence', tests: 'pass' } });
         });
+        if (execution === 'cloud') {
+          await assert.rejects(delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
+            termsDigest, execution, attemptId, sourceRevision, workspaceRunId }), /Choose a successful workspace run/);
+          assert.equal((await delivery.get(id, agreement.id, 'buyer', false, 0, 20)).total, 0);
+          assert.deepEqual((await delivery.get(id, agreement.id, 'buyer', false, 0, 20)).workspaceRuns, []);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/approved';
+          });
+        }
         const submitted = await delivery.change(id, agreement.id, 'seller', false, { action: 'submit', version: 0,
           termsDigest, execution, attemptId, sourceRevision, workspaceRunId, patchDigest: 'b'.repeat(64), testResults: 'pass' });
         const submissionId = submitted.submissions[0].id;
@@ -178,6 +225,22 @@ async function main(): Promise<void> {
         if (execution === 'cloud') {
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'outsider', false, workspaceRunId), /not found/);
           assert.equal((await delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId)).artifacts?.patch, 'patch evidence');
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'modified patch';
+          });
+          await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
+          await assert.rejects(delivery.change(id, agreement.id, 'buyer', false, { action: 'accept', version: 1,
+            termsDigest, submissionId }), /evidence is unavailable or has changed/);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'patch evidence';
+          });
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/other';
+          });
+          await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/approved';
+          });
         }
         if (execution === 'hosted') {
           const results = await Promise.allSettled([

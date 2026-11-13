@@ -89,14 +89,23 @@ export class HostedControls {
       throw new HostedControlError('Check the budget period, ceilings, concurrency and deadline.', 400);
     }
     const policy: HostedPolicy = { workspaceEnabled, periodHours, modelPerRun, modelPerPeriod, computePerRun, computePerPeriod, concurrency, deadlineMs };
-    this.store.mutateHostedState(lobbyId, state => {
+    const cancelled = this.store.mutateHostedState(lobbyId, state => {
       state.policy = policy;
       audit(state, actor, 'hosted_policy_updated');
-    });
-    if (!workspaceEnabled) {
-      for (const run of this.store.readHostedState(lobbyId).runs) {
-        if (run.kind === 'workspace' && !terminal(run)) this.cancel(lobbyId, run.id, actor);
+      const runIds: string[] = [];
+      if (!workspaceEnabled) {
+        for (const run of state.runs) {
+          if (run.kind !== 'workspace' || terminal(run)) continue;
+          run.state = 'cancelled';
+          audit(state, actor, 'hosted_run_cancelled', run.id);
+          runIds.push(run.id);
+        }
       }
+      return runIds;
+    });
+    for (const id of cancelled) {
+      this.active.get(id)?.abort();
+      this.kick(lobbyId, id);
     }
     return policy;
   }
@@ -210,6 +219,16 @@ export class HostedControls {
     return run.usage.length - 1;
   }
 
+  private checkMarketplaceSource(lobbyId: string, taskId: string, repository: string | undefined, revision: string) {
+    const agreement = this.store.readMarketplaceState(lobbyId).agreements.find(entry => entry.assignmentId === taskId);
+    if (!agreement) return;
+    const approved = agreement.listing.workspaceSource;
+    if (!approved || approved.repository.toLowerCase() !== repository?.toLowerCase() || approved.revision !== revision.toLowerCase() ||
+        agreement.listing.deadline <= Date.now() || !['assigned', 'in_progress', 'revision_requested'].includes(agreement.delivery?.status ?? 'assigned')) {
+      throw new HostedControlError('This agreement does not authorize staging that repository and commit.', 403);
+    }
+  }
+
   async requestWorkspace(lobbyId: string, actor: string, input: Record<string, unknown>) {
     const { taskId, attemptId, connectionId, sourceRevision, profileId, region } = input;
     if (typeof taskId !== 'string' || typeof attemptId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(attemptId) ||
@@ -221,6 +240,7 @@ export class HostedControls {
     if (!task) throw new HostedControlError('Lobby task not found.', 404);
     const sourceIntegration = this.readSource ? await this.store.getIntegration(lobbyId, 'github') : undefined;
     const sourceRepository = sourceIntegration?.repo_full_name;
+    this.checkMarketplaceSource(lobbyId, taskId, sourceRepository, sourceRevision);
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
       const duplicate = state.runs.find(r => r.taskId === taskId && r.attempt?.attemptId === attemptId);
       if (duplicate) {
@@ -414,19 +434,35 @@ export class HostedControls {
       try {
         if (run.state === 'requested' || run.state === 'provisioning') {
           advance('provisioning');
+          let sourceAccessDenied = false;
           try {
             const source = this.readSource ? async () => {
-              const task = await this.store.getTask(lobbyId, attempt.taskId);
-              if (!task || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
-                throw new HostedControlError('The task assignment changed before source staging.');
-              }
-              return this.readSource!(attempt, signal);
+              const checkSourceAccess = async () => {
+                const [task, integration] = await Promise.all([
+                  this.store.getTask(lobbyId, attempt.taskId),
+                  this.store.getIntegration(lobbyId, 'github'),
+                ]);
+                signal.throwIfAborted();
+                if (!task || task.status === 'cancelled' || (attempt.assignedAgentId && task.assigned_to !== attempt.assignedAgentId)) {
+                  sourceAccessDenied = true;
+                  throw new HostedControlError('The task assignment changed before source staging.');
+                }
+                if (integration?.id !== attempt.sourceIntegrationId || integration?.repo_full_name !== attempt.sourceRepository) {
+                  sourceAccessDenied = true;
+                  throw new HostedControlError('The workspace source repository changed before staging.');
+                }
+                this.checkMarketplaceSource(lobbyId, attempt.taskId, attempt.sourceRepository, attempt.sourceRevision);
+              };
+              await checkSourceAccess();
+              const archive = await this.readSource!(attempt, signal);
+              await checkSourceAccess();
+              return archive;
             } : undefined;
             await adapter.provision(run.id, attempt, credential, signal, allocation, source);
           } catch (error) {
             // The provider may have allocated before losing its response. Retry
             // with the same attempt key until the deadline, then fence and delete.
-            if (!signal.aborted && Date.now() < run.deadline) return;
+            if (!sourceAccessDenied && !signal.aborted && Date.now() < run.deadline) return;
             throw error;
           }
           advance('running');

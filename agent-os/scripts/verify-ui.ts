@@ -39,9 +39,19 @@ async function main(): Promise<void> {
     assert.match(lobby, /role="status" data-market-status/);
     assert.match(lobby, /<label>Lobby agent <select/);
     assert.match(marketplace, /delivery\.history\.data/);
+    assert.match(marketplace, /button\.isConnected \? button : status/);
+    assert.match(marketplace, /Retry loading marketplace/);
     assert.match(marketplace, /button\.disabled = true/);
     assert.match(apps, /role="status" data-history-status/);
     assert.match(apps, /page\.data\.length/);
+    for (const [name, prefix] of [['vercelTeam', 'team_'], ['vercelProject', 'prj_']]) {
+      const pattern = apps.match(new RegExp('name="' + name + '" pattern="([^"]+)"'))?.[1];
+      assert.ok(pattern);
+      const browserPattern = new RegExp('^(?:' + pattern.replaceAll('\\\\', '\\') + ')$', 'v');
+      assert.ok(browserPattern.test(prefix + 'example-01'));
+      assert.ok(!browserPattern.test(prefix + 'bad/id'));
+      assert.ok(!browserPattern.test(prefix));
+    }
     assert.match(apps, /button\.textContent = 'Saving…'/);
   });
 

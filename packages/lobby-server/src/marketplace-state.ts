@@ -25,6 +25,7 @@ export interface MarketplaceListing {
   deliverable: string;
   acceptanceChecks: string[];
   scope: string;
+  workspaceSource?: { repository: string; revision: string };
   deadline: number;
   quote: { amount: '0' };
 }

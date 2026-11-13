@@ -459,6 +459,7 @@ export async function verifyHostedControls() {
   let agentEdits = 0;
   let modelCalls = 0;
   let failProvision = true;
+  let sourceRejection: unknown;
   const adapter: WorkspaceAdapter = {
     capabilities: {
       provider: 'e2b', deletion: 'confirmed', credentials: 'control-plane-only', usage: 'final-or-pending',
@@ -475,7 +476,14 @@ export async function verifyHostedControls() {
       assert.equal(attempt.sourceRepository, 'example/project-' + attempt.lobbyId);
       assert.equal(attempt.sourceIntegrationId, 'github-' + attempt.lobbyId);
       assert.ok(attempt.assignedAgentId);
-      assert.deepEqual([...await source!()], [1, 2, 3]);
+      if (attempt.attemptId === 'source-revoked') {
+        await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
+      }
+      const archive = await source!().catch(error => {
+        if (attempt.attemptId === 'source-revoked') sourceRejection = error;
+        throw error;
+      });
+      assert.deepEqual([...archive], [1, 2, 3]);
       provisionCalls.push(key);
       await new WorkspaceAllocationRecovery(journal, operations(key)).provision(signal);
     },
@@ -526,7 +534,13 @@ export async function verifyHostedControls() {
   let controls: HostedControls | undefined;
   const openServer = (store: InMemoryLobbyStore) =>
     startLobbyServer({ port: 0, store, autoDefaultLobby: false, workspaceAdapters: [adapter],
-      workspaceSource: async () => new Uint8Array([1, 2, 3]),
+      workspaceSource: async attempt => {
+        if (attempt.attemptId === 'source-revoked') {
+          await store.updateIntegration(attempt.lobbyId, attempt.sourceIntegrationId!, { status: 'revoked' });
+
+        }
+        return new Uint8Array([1, 2, 3]);
+      },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
         modelCalls++;
@@ -727,6 +741,45 @@ export async function verifyHostedControls() {
       r.id === timeoutRun.body.run.id && r.cleanup === 'confirmed'));
     assert.equal(expired.state, 'failed');
     assert.equal(allocations.has(expired.id), false);
+    assert.equal((await call('b', '/hosted-controls', 'PUT', { ...policy, computePerPeriod: 1000 })).status, 200);
+    const revoked = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'source-revoked' });
+    assert.equal(revoked.status, 202);
+    const deniedSource = await until(() => sourceRejection);
+    assert.match(String(deniedSource), /source repository changed before staging/);
+    const cleaned = await until(() => store.readHostedState('b').runs.find(r => r.id === revoked.body.run.id && r.cleanup === 'confirmed'));
+    assert.equal(cleaned.state, 'failed');
+    assert.equal(allocations.has(cleaned.id), false);
+    assert.ok(!provisionCalls.includes(revoked.body.run.id), 'Revocation during download must prevent source delivery');
+    await store.updateIntegration('b', 'github-b', { status: 'active' });
+    const rollback = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'rollback-active' });
+    assert.equal(rollback.status, 202);
+    const rollbackId = rollback.body.run.id;
+    await until(() => allocations.has(rollbackId) ? true : undefined);
+    failCleanup = true;
+    const disabled = { ...policy, computePerPeriod: 1000, workspaceEnabled: false };
+    assert.equal((await call('b', '/hosted-controls', 'PUT', disabled)).status, 200);
+    const persistedRollback = new InMemoryLobbyStore(file).readHostedState('b');
+    assert.equal(persistedRollback.policy?.workspaceEnabled, false);
+    assert.equal(persistedRollback.runs.find(r => r.id === rollbackId)?.state, 'cancelled');
+    assert.ok(persistedRollback.audit.some(event => event.action === 'hosted_run_cancelled' && event.subject === rollbackId));
+    assert.equal(persistedRollback.runs.find(r => r.id === rollbackId)?.cleanup, 'pending');
+    assert.equal(allocations.has(rollbackId), true);
+    const disconnectBeforeRecovery = await call('b', provider, 'POST', { action: 'disconnect' });
+    assert.equal(disconnectBeforeRecovery.status, 409);
+    await server.close();
+    store = new InMemoryLobbyStore(file);
+    failCleanup = false;
+    server = await openServer(store);
+    const rolledBack = await until(() => store.readHostedState('b').runs.find(r => r.id === rollbackId && r.cleanup === 'confirmed'));
+    assert.equal(rolledBack.state, 'cancelled');
+    assert.equal(allocations.has(rollbackId), false);
+    const deniedAfterRollback = await call('b', '/hosted-runs', 'POST', { ...request, taskId: timeoutTask.task_id,
+      connectionId: bSettings.body.connections[0].id, attemptId: 'rollback-denied' });
+    assert.equal(deniedAfterRollback.status, 409);
+    assert.match(deniedAfterRollback.body.error, /Workspace execution is disabled/);
+    assert.ok(!store.readHostedState('b').runs.some(r => r.attempt?.attemptId === 'rollback-denied'));
     await server.close();
     server = undefined;
 

@@ -530,6 +530,12 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     return lobby;
   }
 
+  function privateMarketplaceTasks(lobbyId: string, actor?: string | null, reviewer = false): Set<string> {
+    return new Set(store.readMarketplaceState(lobbyId).agreements
+      .filter(entry => !reviewer && entry.listing.buyer !== actor && entry.bid.specialist !== actor)
+      .map(entry => entry.assignmentId));
+  }
+
   function send(connId: string | undefined, message: LobbyToAgentMessage): void {
     if (!connId) return;
     const sock = sockets.get(connId);
@@ -832,6 +838,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
         // Report back to whoever assigned it; an unconnected assigner (e.g. WebUser) still sees the
         // reply in message history, and the Boss is CC'd so coordination continues.
+        if (marketplaceDelivery.isMarketplaceTask(conn.lobbyId, taskId)) return;
         const lobbyNow = await store.getLobby(conn.lobbyId);
         const recipients = new Set<string>();
         if (task.assigned_by) recipients.add(task.assigned_by);
@@ -917,7 +924,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           } else {
             opsSummary += `\n[WORKING REPO] none connected — repository work is impossible until the LobbyOwner connects the GitHub App in the Lobby tab. Do not assign repository tasks.`;
           }
-          const tasks = await store.listTasks(conn.lobbyId);
+          const hidden = privateMarketplaceTasks(conn.lobbyId);
+          const tasks = (await store.listTasks(conn.lobbyId)).filter(task => !hidden.has(task.task_id));
           const openTasks = tasks.filter(t => !['completed', 'failed', 'cancelled'].includes(t.status));
           if (openTasks.length) {
             const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
@@ -1825,7 +1833,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ profile: await marketplace.profile(lobbyId, actor, await readBody(req), manager) });
         }
         if (resource === 'listings' && !listingId) {
-          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager });
+          if (req.method === 'GET') return json({ ...await marketplace.listings(lobbyId, actor, offset, limit, manager), canPublish: manager, workspaceRepository: manager ? (await store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined });
           if (req.method === 'POST' && manager) return json({ listing: marketplace.listing(lobbyId, actor, await readBody(req)) });
         }
         if (resource === 'listings' && action === 'bids') {
@@ -3608,7 +3616,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const actor = sessionIdentity(lobbyId);
         const canReview = actor && await isLobbyManager(store, lobbyId, actor);
         const workspaces = canReview ? hosted.latestWorkspaceByTask(lobbyId) : undefined;
-        const coordination_tasks = (await store.listTasks(lobbyId)).map(task => {
+        const hidden = privateMarketplaceTasks(lobbyId, actor, Boolean(canReview));
+        const coordination_tasks = (await store.listTasks(lobbyId)).filter(task => !hidden.has(task.task_id)).map(task => {
           const workspace = workspaces?.get(task.task_id);
           return workspace ? { ...task, workspace_run: workspace } : task;
         });
@@ -3663,6 +3672,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     if (taskDeleteMatch && req.method === 'POST') {
       const lobbyId = taskDeleteMatch[1];
       const taskId = taskDeleteMatch[2];
+      if (marketplaceDelivery.isMarketplaceTask(lobbyId, taskId)) {
+        return json({ error: 'Use the engagement delivery controls for this assignment.' }, 409);
+      }
       const deletedCoord = await store.deleteTask(lobbyId, taskId);
       if (!deletedCoord) await store.deleteMarketplaceTask(lobbyId, taskId);
       return json({ ok: true });
@@ -3756,7 +3768,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       }
 
       // Live coordination tasks — real work in flight, independent of the written plan.
-      const liveTasks = await store.listTasks(lobbyId);
+      const hidden = privateMarketplaceTasks(lobbyId, identityRef, await isLobbyManager(store, lobbyId, identityRef));
+      const liveTasks = (await store.listTasks(lobbyId)).filter(task => !hidden.has(task.task_id));
       if (liveTasks.length) {
         const roster = await store.roster(lobbyId);
         const nameOf = (id: string) => roster.find(a => a.agent_id === id)?.display_name || id;
