@@ -31,6 +31,7 @@ export interface WorkspaceAttempt {
   connectionId: string;
   sourceRevision: string;
   sourceRepository?: string;
+  sourceIntegrationId?: string;
   profileId: string;
   region: string;
   deadline: number;

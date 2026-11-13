@@ -400,7 +400,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   const workspaceAdapters = options.workspaceAdapters ?? [...configuredE2bWorkspace(), ...configuredAgent37Workspaces()];
   const hosted = new HostedControls(store, workspaceAdapters, options.workspaceSource ?? (async (attempt, signal) => {
     const integration = await store.getIntegration(attempt.lobbyId, 'github');
-    if (!attempt.sourceRepository || integration?.repo_full_name !== attempt.sourceRepository || !integration.installation_id) {
+    if (!attempt.sourceRepository || integration?.repo_full_name !== attempt.sourceRepository ||
+        (attempt.sourceIntegrationId && integration.id !== attempt.sourceIntegrationId) || !integration.installation_id) {
       throw new Error('The workspace source repository is no longer connected.');
     }
     const { owner, repo } = parseRepoRef(attempt.sourceRepository);
