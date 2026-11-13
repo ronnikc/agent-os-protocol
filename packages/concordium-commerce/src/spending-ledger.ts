@@ -84,6 +84,31 @@ export class SpendingLedger {
     });
   }
 
+  /** Recover a submitted payment using an independent finalized-chain verifier. */
+  async reconcile(
+    id: string,
+    policy: CommercePolicy,
+    transaction: string,
+    verifyFinalized: (evidence: Readonly<PaymentSubmission & {
+      network: CommercePolicy['network']; asset: string; amount: string; transaction: string;
+    }>) => Promise<boolean>,
+  ): Promise<boolean> {
+    if (!/^[a-f0-9]{64}$/i.test(transaction)) throw new Error('Invalid finalized transaction hash');
+    const records: Reservation[] = existsSync(this.path) ? JSON.parse(readFileSync(this.path, 'utf8')) : [];
+    const row = records.find(record => record.id === id);
+    const submission = row?.submission;
+    if (!row || !submission || row.scope !== spendingScope(policy.network, policy.payer, policy.asset) ||
+        submission.payer !== policy.payer || submission.recipient !== policy.recipient || submission.sponsor !== policy.sponsor ||
+        BigInt(row.amount) > policy.maxAmount) throw new Error('Payment reservation does not match the recovery policy');
+    const hash = transaction.toLowerCase();
+    if (row.state === 'settled') return row.transaction === hash;
+    if (row.state !== 'reserved') return false;
+    if (!await verifyFinalized(Object.freeze({ ...submission, network: policy.network, asset: policy.asset,
+      amount: row.amount, transaction: hash }))) return false;
+    this.confirm(id, hash);
+    return true;
+  }
+
   releaseUnsigned(id: string): void {
     this.update(records => {
       const row = records.find(record => record.id === id);

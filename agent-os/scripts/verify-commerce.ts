@@ -229,6 +229,27 @@ async function main() {
       assert.equal(page.data[0].state, 'settled');
       assert.ok(page.data.every(row => !('submission' in row) && !('scope' in row)));
       await assert.rejects(requestWithSpendingLimit(policy, authorization, reopened, 'order-5', 20_000n, merchant), /daily limit/);
+      const pendingId = first.reservationId!;
+      const recoveredHash = 'c'.repeat(64);
+      assert.equal(await reopened.reconcile(pendingId, policy, recoveredHash, async () => false), false);
+      await assert.rejects(reopened.reconcile(pendingId, { ...policy, recipient: account(4).address }, recoveredHash,
+        async () => assert.fail('Wrong recipient must fail before verification')), /recovery policy/);
+      assert.equal(await reopened.reconcile(pendingId, policy, recoveredHash, async evidence => {
+        assert.equal(evidence.network, policy.network);
+        assert.equal(evidence.asset, policy.asset);
+        assert.equal(evidence.amount, '10000');
+        assert.equal(evidence.payer, policy.payer);
+        assert.equal(evidence.recipient, policy.recipient);
+        assert.equal(evidence.sponsor, policy.sponsor);
+        assert.equal(evidence.transaction, recoveredHash);
+        assert.match(evidence.nonce, /^\d+$/);
+        return true;
+      }), true);
+      const recovered = new SpendingLedger(path);
+      assert.equal(await recovered.reconcile(pendingId, policy, recoveredHash,
+        async () => assert.fail('Confirmed recovery must be idempotent')), true);
+      assert.equal(recovered.receipts(spendingScope(policy.network, policy.payer, policy.asset), 0, 10)
+        .data.find(row => row.id === pendingId)?.transaction, recoveredHash);
     } finally {
       rmSync(path, { force: true });
       rmdirSync(directory);

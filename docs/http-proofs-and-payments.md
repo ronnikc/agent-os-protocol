@@ -105,3 +105,7 @@ The commerce suite checks proof gating, quote validation, sponsored transaction 
 ## Sprint 2.6 verification boundary
 
 Run npm run verify-commerce, npm run verify-identity and npm run verify-hosted. The local fixtures exercise finalized wallet adoption and rotation, wrong network and owner rejection, replay and durable reservations, and pagination without exposing signed submissions. Independent hosted x401 and x402 evidence, PLT settlement, and a real-money pilot remain gated. Capture the verifier and merchant operator identities, test network, allowed and denied proof results, and independently finalized payer, recipient, asset, amount and sponsor before enabling a pilot.
+
+## Recover an uncertain payment
+
+On the signing service, reopen the same SpendingLedger after restart and call reconcile with the reservation ID, original payment policy, and candidate transaction hash. Supply an independent finalized-chain verifier that checks the network, asset, amount, payer, recipient, sponsor, nonce and expiry against the persisted submission. An unconfirmed or mismatched transaction leaves the reservation in place. A confirmed transaction updates the receipt without issuing a payment. The operation is idempotent for the same finalized hash.
