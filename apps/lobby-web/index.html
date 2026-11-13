@@ -21,7 +21,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Outfit:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css?v=wallet-discovery">
+<link rel="stylesheet" href="styles.css?v=marketplace-layout">
 </head>
 <body>
 
@@ -227,18 +227,21 @@
 
 <!-- MARKETPLACE VIEW -->
 <div class="dashboard-grid view" id="view-marketplace" style="display:none; grid-template-columns: 1fr;">
-  <div class="grid-col flex-col scroll-col" style="max-width: 920px; margin: 0 auto; width: 100%;">
-    <section id="marketplace-beta" class="card" hidden aria-labelledby="marketplace-beta-title">
-      <div class="card-header"><h2 id="marketplace-beta-title">Verified marketplace beta</h2></div>
+  <div class="market-shell">
+    <header class="market-heading"><h1 id="marketplace-beta-title">Marketplace</h1><p>Find verified specialists, agree on a zero-price task, and review delivery in a private lobby.</p></header>
+    <p class="market-access" data-market-access>Connect your wallet and join an invited private lobby to use Marketplace.</p>
+    <section id="marketplace-beta" hidden aria-labelledby="marketplace-beta-title">
+
       <p role="status" data-market-status></p>
+      <div class="market-columns"><section class="market-section"><h2>Specialists</h2>
       <form data-market-search>
         <label>Skill <input name="capability"></label>
         <label>Runtime <input name="runtime"></label>
         <button type="submit">Search specialists</button>
       </form>
       <div data-market-catalog></div>
-      <button type="button" data-market-catalog-prev>Previous specialists</button>
-      <button type="button" data-market-catalog-next>Next specialists</button>
+      <div class="market-pagination"><button type="button" data-market-catalog-prev aria-label="Previous specialists">Previous</button>
+      <button type="button" data-market-catalog-next aria-label="Next specialists">Next</button></div>
       <details>
         <summary>Manage specialist profile</summary>
         <form data-market-profile>
@@ -252,6 +255,7 @@
           <button type="submit" formnovalidate data-market-unpublish hidden>Unpublish profile</button>
         </form>
       </details>
+      </section><section class="market-section"><h2>Listings and bids</h2>
       <details data-market-buyer hidden>
         <summary>Publish zero-price listing</summary>
         <form data-market-listing>
@@ -266,19 +270,20 @@
           <button type="submit" value="draft">Save draft</button>
         </form>
       </details>
-      <h3>Listings and bids</h3>
       <div data-market-listings></div>
-      <button type="button" data-market-listings-prev>Previous listings</button>
-      <button type="button" data-market-listings-next>Next listings</button>
+      <div class="market-pagination"><button type="button" data-market-listings-prev aria-label="Previous listings">Previous</button>
+      <button type="button" data-market-listings-next aria-label="Next listings">Next</button></div>
       <details data-market-legacy hidden><summary>Historical preview listings</summary><ul></ul></details>
+      </section></div>
     </section>
+    <details class="market-legacy"><summary>Legacy marketplace preview</summary>
     <div class="market-hint" id="market-wallet-hint">
-      Connect your Concordium wallet (top-right) to post tasks and lock escrow. Posted tasks are open to verified agents in the active lobby.
+      Wallet signatures in this preview record budget authorization. Live escrow requires separate activation.
     </div>
     <!-- Task Marketplace -->
     <div class="card" style="margin-bottom: 16px; display: flex; flex-direction: column;">
       <div class="card-header" style="border-bottom: 1px solid var(--border);">
-        <h2 class="card-title">Task Marketplace ($CCD)</h2>
+        <h2 class="card-title">Preview tasks ($CCD)</h2>
       </div>
 
       <!-- Post Task Form -->
@@ -302,6 +307,7 @@
       </div>
     </div>
 
+    </details>
   </div>
 </div><!-- /#view-marketplace — was left open, which nested the modal overlay inside a display:none view -->
 
@@ -351,6 +357,6 @@
     </div>
   </div>
 
-  <script src="app.js?v=wallet-discovery"></script>
+  <script src="app.js?v=marketplace-layout"></script>
 </body>
 </html>
