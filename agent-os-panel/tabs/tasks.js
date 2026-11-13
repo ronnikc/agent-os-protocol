@@ -105,7 +105,9 @@ function showTaskDetail(taskId) {
       <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(t.description || '(none)')}</div>
     </div>
     ${t.workspace_run ? `<p>Workspace run <code>${escapeHtml(t.workspace_run.id)}</code> · ${escapeHtml(t.workspace_run.state)}
-      · Source <code>${escapeHtml(t.workspace_run.sourceRevision)}</code>. Review the logs and patch in Apps → Hosted run history.</p>` : ''}
+      · Source <code>${escapeHtml(t.workspace_run.sourceRevision)}</code></p>
+      <button type="button" class="btn btn-secondary btn-sm" data-workspace-evidence>Load workspace evidence</button>
+      <p role="status" data-workspace-status></p><div data-workspace-artifacts></div>` : ''}
     ${t.result_pr_url ? `
     <div class="form-group">
       <label>Pull Request</label>
@@ -146,6 +148,25 @@ function showTaskDetail(taskId) {
 
   // Load CI check status for the task's PR branch (build/test run on GitHub's runners).
   if (t.result_branch) loadTaskCiStatus(t.result_branch);
+  const evidence = document.querySelector('[data-workspace-evidence]');
+  evidence?.addEventListener('click', async () => {
+    const status = document.querySelector('[data-workspace-status]');
+    const output = document.querySelector('[data-workspace-artifacts]');
+    evidence.disabled = true;
+    status.textContent = 'Loading workspace evidence…';
+    try {
+      const result = await fetchJson('/api/lobby/remote/hosted-runs/' + encodeURIComponent(t.workspace_run.id));
+      const artifacts = result?.run?.artifacts;
+      output.innerHTML = artifacts ? [
+        Number.isInteger(artifacts.exitCode) ? `<p>Exit code ${artifacts.exitCode}</p>` : '',
+        ...[['logs', 'Logs'], ['tests', 'Test results'], ['patch', 'Patch']].filter(([key]) => artifacts[key])
+          .map(([key, label]) => `<details><summary>${label}</summary><pre>${escapeHtml(artifacts[key])}</pre></details>`),
+      ].join('') : '';
+      status.textContent = result?.error || (artifacts ? 'Workspace evidence loaded.' : 'Workspace evidence is unavailable.');
+    } finally {
+      evidence.disabled = false;
+    }
+  });
 
   document.querySelector('[data-action="delete-modal"]')?.addEventListener('click', async () => {
     if (confirm('Delete this task?')) {
