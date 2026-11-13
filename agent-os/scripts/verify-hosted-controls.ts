@@ -406,7 +406,8 @@ export async function verifyHostedControls() {
     const concurrent = await call('a', '/hosted-runs', 'POST', { ...request, attemptId: 'overlap' });
     assert.equal(concurrent.status, 409);
     assert.match(concurrent.body.error, /hosted run in progress/);
-    assert.equal((await call('a', '/hosted-runs/' + second.body.run.id, 'DELETE')).status, 202);
+    assert.equal((await call('a', '/tasks/' + request.taskId, 'PATCH', { status: 'cancelled' }, 'observer')).status, 403);
+    assert.equal((await call('a', '/tasks/' + request.taskId, 'PATCH', { status: 'cancelled' })).status, 200);
     await until(() => store.readHostedState('a').runs[1].cleanup === 'confirmed' ? true : undefined);
     assert.equal(store.readHostedState('a').runs[1].state, 'cancelled');
     assert.ok(store.readHostedState('a').audit.some(e => e.action === 'hosted_run_cancelled' && e.actor === 'owner-a'));
