@@ -16,7 +16,16 @@ const attempts = [
   { ...base, id: '3', group: 'single-agent' },
   { ...base, id: '4', group: 'external' },
 ];
-const report = { revision: 'a'.repeat(40), attempts };
+const configurations = Object.fromEntries(['swarm', 'single-agent', 'external'].map(runner => [runner, {
+  runner, runnerVersion: 'fixture-1', model: 'fixture-model', runtime: 'fixture-runtime',
+  provider: 'fixture-provider', providerVersion: 'fixture-1', region: 'local', plan: 'fixture',
+  tokenBudget: 100, computeBudgetMicros: 0, timeoutMs: 1000,
+}]));
+const report = { revision: 'a'.repeat(40), configurations, attempts };
+assert.deepEqual(summarizeBenchmark(report).configurations, configurations);
+const withExtraFields = { ...configurations, swarm: { ...configurations.swarm, privateNote: 'fixture only' } };
+assert.deepEqual(summarizeBenchmark({ ...report, configurations: withExtraFields }).configurations, configurations);
+assert.throws(() => summarizeBenchmark({ ...report, configurations: {} }), /Missing pinned benchmark configuration/);
 const { swarm } = summarizeBenchmark(report).scenarios[0].results;
 assert.equal(swarm.completionRate, 0.5);
 assert.equal(swarm.cleanupFailures, 1);

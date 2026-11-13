@@ -3,7 +3,9 @@ import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
 const groups = ['swarm', 'single-agent', 'external'];
-const metrics = ['elapsedMs', 'modelTokens', 'computeMicrosEstimated', 'computeMicrosReported', 'interventions'];
+const metrics = ['elapsedMs', 'modelTokens', 'modelCostMicros', 'computeMicrosEstimated', 'computeMicrosReported', 'interventions'];
+const configLabels = ['runner', 'runnerVersion', 'model', 'runtime', 'provider', 'providerVersion', 'region', 'plan'];
+const configLimits = ['tokenBudget', 'computeBudgetMicros', 'timeoutMs'];
 const outcomes = ['completed', 'failed', 'timed-out', 'cancelled'];
 
 function summarize(attempts) {
@@ -32,6 +34,14 @@ export function summarizeBenchmark(report) {
   if (!/^[a-f0-9]{40}$/.test(report?.revision ?? '') || !Array.isArray(report?.attempts)) {
     throw new Error('Expected a pinned revision and an attempts array.');
   }
+  const configurations = Object.fromEntries(groups.map(group => {
+    const config = report.configurations?.[group];
+    if (!config || !configLabels.every(key => typeof config[key] === 'string' && config[key].trim()) ||
+        !configLimits.every(key => Number.isSafeInteger(config[key]) && config[key] >= 0) || config.timeoutMs === 0) {
+      throw new Error('Missing pinned benchmark configuration for ' + group);
+    }
+    return [group, Object.fromEntries([...configLabels, ...configLimits].map(key => [key, config[key]]))];
+  }));
   const ids = new Set();
   const scenarios = new Map();
   for (const row of report.attempts) {
@@ -48,7 +58,7 @@ export function summarizeBenchmark(report) {
     scenarios.get(row.scenario).push(row);
   }
   if (!scenarios.size) throw new Error('No benchmark attempts recorded.');
-  return { revision: report.revision, scenarios: Array.from(scenarios, ([scenario, attempts]) => {
+  return { revision: report.revision, configurations, scenarios: Array.from(scenarios, ([scenario, attempts]) => {
     const results = Object.fromEntries(groups.map(group => {
       const rows = attempts.filter(row => row.group === group);
       if (!rows.length) throw new Error('Missing comparison group ' + group + ' for ' + scenario);
