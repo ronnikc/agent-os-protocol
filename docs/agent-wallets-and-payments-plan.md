@@ -1,5 +1,7 @@
 # Phase 2 — Agent wallets, x401 proof, and x402 payments
 
+The [Phase 2 delivery plan](../agent-os/work-items/phase-2/README.md) sequences the remaining commerce gates alongside cloud workspaces and the marketplace. This document retains the wallet and protocol design and pilot history.
+
 ## Release scope
 
 An owner connects a Concordium wallet, selects a registered agent, and links a separate payment account to that agent. The agent can request a paid HTTP resource from a local or hosted runtime. Policy checks run before signing. The owner can see the charge and receipt, pause spending, and unlink or rotate the signer. A resource can independently require an x401 credential presentation before quoting or settling a payment.
