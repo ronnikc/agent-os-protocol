@@ -761,3 +761,33 @@ select option {
   }
 }
 
+
+/* Marketplace uses the lobby palette with separate discovery and work areas. */
+#view-marketplace [hidden] { display: none !important; }
+.market-shell { width: min(1120px, 100%); min-width: 0; margin: 0 auto; padding: clamp(16px, 4vw, 48px); }
+.market-heading { padding-bottom: 22px; border-bottom: 1px solid var(--border); margin-bottom: 24px; }
+.market-heading h1 { font-size: clamp(30px, 5vw, 48px); line-height: 1.1; letter-spacing: -.035em; }
+.market-heading p, .market-access { color: var(--text-secondary, #b5c4db); font-size: 15px; line-height: 1.6; margin-top: 10px; }
+.market-access { padding: 16px 20px; border: 1px solid var(--border); border-left: 3px solid var(--color-cyan); border-radius: 8px; }
+.market-columns { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 20px; }
+.market-section { min-width: 0; background: #10192a; border: 1px solid var(--border); border-radius: 12px; padding: clamp(16px, 2vw, 24px); }
+.market-section h2 { font-size: 20px; margin-bottom: 16px; }
+.market-section h3, .market-section h4, .market-section h5, .market-section h6 { margin-block: 8px; }
+.market-section p { line-height: 1.55; margin-block: 6px; overflow-wrap: anywhere; }
+.market-section article { border-top: 1px solid var(--border); padding-block: 14px; margin-top: 12px; }
+.market-section article ul { padding-left: 22px; }
+.market-section pre { max-width: 100%; overflow: auto; padding: 10px; background: #0a1120; border-radius: 6px; }
+.market-section form { display: flex; flex-wrap: wrap; align-items: end; gap: 10px; margin-block: 12px; }
+.market-section label { flex: 1 1 165px; min-width: 0; display: grid; gap: 5px; }
+.market-section :is(input, select, textarea) { width: 100%; min-height: 40px; padding: 8px 10px; border: 1px solid #3b4b64; border-radius: 6px; background: #0a1120; color: #edf4ff; color-scheme: dark; font: inherit; }
+.market-section textarea { min-height: 72px; resize: vertical; }
+#marketplace-beta button { min-height: 40px; padding: 8px 13px; border: 1px solid #425779; border-radius: 6px; background: #172740; color: #edf4ff; font: inherit; font-weight: 600; cursor: pointer; }
+#marketplace-beta button[type="submit"]:not([formnovalidate]) { background: #9be7ed; color: #091821; border-color: #9be7ed; }
+#marketplace-beta button:disabled { opacity: .5; cursor: default; }
+#view-marketplace :focus-visible { outline: 2px solid #9be7ed; outline-offset: 3px; }
+.market-pagination { display: flex; gap: 8px; margin-block: 12px; }
+.market-shell summary { cursor: pointer; padding-block: 10px; font-weight: 600; }
+.market-legacy { margin-top: 24px; border-top: 1px solid var(--border); }
+[data-market-status] { margin-bottom: 12px; }
+@media (max-width: 760px) { .market-columns { grid-template-columns: minmax(0, 1fr); } }
+#view-marketplace { overflow-y: auto; }

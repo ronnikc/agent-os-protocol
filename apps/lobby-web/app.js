@@ -511,6 +511,7 @@ function renderTelemetry() {
 window.selectLobby = async function(lobbyId) {
   state.activeLobbyId = lobbyId;
   document.getElementById('marketplace-beta').hidden = true;
+  document.querySelector('[data-market-access]').hidden = false;
   state.agents = [];
   state.messages = [];
   state.events = [];
@@ -1339,7 +1340,7 @@ function updateWalletUI() {
       : 'balance unavailable';
     textEl.innerHTML = `<span style="color:var(--color-green); font-weight:600;">Connected:</span> ${shortAddr} | <span style="color:var(--color-cyan); font-weight:600;">${balanceText}</span>`;
     btnEl.textContent = 'Disconnect';
-    if (postBtnEl) postBtnEl.textContent = 'Post & Lock Escrow';
+    if (postBtnEl) postBtnEl.textContent = 'Sign & Post Preview Task';
 
     // Show/hide owner identity elements
     const ownerDisconnectedView = document.getElementById('owner-disconnected-view');
@@ -1958,7 +1959,7 @@ function init() {
         alert(`Escrow signing failed: ${err.message || err}`);
       } finally {
         btnPostTask.disabled = false;
-        btnPostTask.textContent = 'Post & Lock Escrow';
+        btnPostTask.textContent = 'Sign & Post Preview Task';
       }
     });
   }
@@ -1988,7 +1989,7 @@ async function renderTasks() {
       actionButtons += `<button class="btn btn-primary btn-sm" onclick="bidOnTask('${task.id}')" style="margin-right: 4px;">Bid</button>`;
       actionButtons += `<button class="btn btn-secondary btn-sm" onclick="assignTask('${task.id}')">Assign</button>`;
     } else if (task.status === 'assigned') {
-      actionButtons += `<button class="btn btn-primary btn-sm" onclick="completeTask('${task.id}')">Release Escrow & Pay</button>`;
+      actionButtons += `<button class="btn btn-primary btn-sm" onclick="completeTask('${task.id}')">Sign Release Authorization</button>`;
     }
 
     const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--color-text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
@@ -2065,13 +2066,13 @@ window.assignTask = async function(taskId) {
 window.completeTask = async function(taskId) {
   if (!state.activeLobbyId) return;
   if (!state.wallet.connected) {
-    alert("Please connect your Concordium Wallet to release escrow payments.");
+    alert("Connect your Concordium wallet to sign a release authorization.");
     return;
   }
 
   showStyledConfirm(
-    "Release Escrow Payment",
-    "Are you sure you want to release the escrowed CCD to the agent?",
+    "Sign Release Authorization",
+    "Sign an off-chain authorization for this preview task? This signature does not transfer funds.",
     async () => {
       const btnEl = document.querySelector(`button[onclick="completeTask('${taskId}')"]`);
       if (btnEl) {
@@ -2084,7 +2085,7 @@ window.completeTask = async function(taskId) {
         alert("Concordium Browser Wallet extension not found. Please install it and reconnect.");
         if (btnEl) {
           btnEl.disabled = false;
-          btnEl.textContent = "Release Escrow & Pay";
+          btnEl.textContent = "Sign Release Authorization";
         }
         return;
       }
@@ -2097,7 +2098,7 @@ window.completeTask = async function(taskId) {
         const releasePayload = `Agent OS Escrow Release Authorization\nLobby: ${state.activeLobbyId}\nTask: ${taskId}\nSigned: ${new Date().toISOString()}`;
         const releaseSignature = normalizeSignature(await provider.signMessage(state.wallet.address, releasePayload));
 
-        if (btnEl) btnEl.textContent = "Releasing Escrow...";
+        if (btnEl) btnEl.textContent = "Signing…";
         const res = await postJson(`/api/v1/agent-lobby/lobbies/${state.activeLobbyId}/tasks/${taskId}/complete`, {
           release_signature: releaseSignature
         });
@@ -2114,7 +2115,7 @@ window.completeTask = async function(taskId) {
       } finally {
         if (btnEl) {
           btnEl.disabled = false;
-          btnEl.textContent = "Release Escrow & Pay";
+          btnEl.textContent = "Sign Release Authorization";
         }
       }
     }
@@ -2148,9 +2149,15 @@ const VIEWS = ['lobby', 'marketplace'];
 let marketplaceGeneration = 0;
 async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
   const root = document.getElementById('marketplace-beta');
+  const access = document.querySelector('[data-market-access]');
   const generation = ++marketplaceGeneration;
   const lobbyId = state.activeLobbyId;
-  if (!lobbyId || !isSignedIn()) { root.hidden = true; return; }
+  if (!lobbyId || !isSignedIn()) {
+    root.hidden = true;
+    access.hidden = false;
+    access.textContent = 'Connect your wallet and join an invited private lobby to use Marketplace.';
+    return;
+  }
   if (root.dataset.lobby !== lobbyId || root.dataset.actor !== state.session.identityRef) {
     root.hidden = true;
     root.querySelector('[data-market-search]').reset();
@@ -2218,6 +2225,8 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     if (active()) {
       const unavailable = [401, 403, 404].includes(error.status);
       root.hidden = unavailable;
+      access.hidden = !unavailable;
+      access.textContent = 'Marketplace beta is unavailable for this lobby.';
       status.textContent = error.message;
       for (const button of root.querySelectorAll('button')) button.disabled = true;
       if (!unavailable) {
@@ -2234,6 +2243,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
   }
   if (!active()) return;
   root.hidden = false;
+  access.hidden = true;
   status.tabIndex = -1;
   for (const button of root.querySelectorAll('[data-market-search] button, [data-market-profile] button, [data-market-listing] button')) button.disabled = false;
   root.querySelector('[data-market-buyer]').hidden = !listings.canPublish;
