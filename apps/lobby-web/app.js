@@ -2172,7 +2172,11 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       ...(body && { method: 'POST', body: JSON.stringify(body) }),
     });
     const result = await response.json();
-    if (!response.ok) throw new Error(result.error?.message || result.error || 'Marketplace request failed.');
+    if (!response.ok) {
+      const error = new Error(result.error?.message || result.error || 'Marketplace request failed.');
+      error.status = response.status;
+      throw error;
+    }
     return result;
   }
   function wire(form, action) {
@@ -2181,6 +2185,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       const button = event.submitter || form.querySelector('button[type="submit"]');
       if (!active() || button.disabled) return;
       const label = button.textContent;
+      const hadFocus = document.activeElement === button;
       button.disabled = true;
       button.textContent = 'Saving…';
       try { await action(new FormData(form), button); }
@@ -2188,6 +2193,10 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       finally {
         button.textContent = label;
         button.disabled = false;
+        if (hadFocus && root.isConnected && !root.hidden && document.activeElement === document.body &&
+            state.activeLobbyId === lobbyId && isSignedIn() && state.session.identityRef === actor) {
+          (button.isConnected ? button : status).focus();
+        }
       }
     };
   }
@@ -2206,11 +2215,27 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
   try {
     [catalog, listings] = await Promise.all([request(`catalog?${filters}`), request(`listings?offset=${listingOffset}`)]);
   } catch (error) {
-    if (active()) { root.hidden = true; status.textContent = error.message; }
+    if (active()) {
+      const unavailable = [401, 403, 404].includes(error.status);
+      root.hidden = unavailable;
+      status.textContent = error.message;
+      for (const button of root.querySelectorAll('button')) button.disabled = true;
+      if (!unavailable) {
+        status.tabIndex = -1;
+        const retry = document.createElement('button');
+        retry.type = 'button';
+        retry.textContent = 'Retry loading marketplace';
+        retry.onclick = () => { retry.disabled = true; void loadMarketplaceBeta(catalogOffset, listingOffset); };
+        status.append(' ', retry);
+        retry.focus();
+      }
+    }
     return;
   }
   if (!active()) return;
   root.hidden = false;
+  status.tabIndex = -1;
+  for (const button of root.querySelectorAll('[data-market-search] button, [data-market-profile] button, [data-market-listing] button')) button.disabled = false;
   root.querySelector('[data-market-buyer]').hidden = !listings.canPublish;
   status.textContent = `${catalog.total} specialists and ${listings.total} listings.`;
   search.onsubmit = event => { event.preventDefault(); void loadMarketplaceBeta(0, listingOffset); };

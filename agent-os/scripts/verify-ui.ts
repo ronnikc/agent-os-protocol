@@ -39,6 +39,8 @@ async function main(): Promise<void> {
     assert.match(lobby, /role="status" data-market-status/);
     assert.match(lobby, /<label>Lobby agent <select/);
     assert.match(marketplace, /delivery\.history\.data/);
+    assert.match(marketplace, /button\.isConnected \? button : status/);
+    assert.match(marketplace, /Retry loading marketplace/);
     assert.match(marketplace, /button\.disabled = true/);
     assert.match(apps, /role="status" data-history-status/);
     assert.match(apps, /page\.data\.length/);
