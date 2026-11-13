@@ -48,6 +48,16 @@ export async function mountHostedControls(root) {
         <p data-profile-details></p>
       </div>
     </form>
+    <h3>Launch a workspace</h3>
+    <form data-launch>
+      <label>Lobby task <select name="taskId" required></select></label>
+      <label>Connection <select name="connectionId" required></select></label>
+      <label>Resource profile <select name="profileId" required></select></label>
+      <label>Region <select name="region" required></select></label>
+      <label>Source commit <input name="sourceRevision" required pattern="[0-9a-fA-F]{40}" maxlength="40"></label>
+      <button class="btn btn-secondary btn-sm" type="submit" disabled>Launch workspace</button>
+      <p role="status" data-status></p>
+    </form>
     <h3>Hosted run history</h3>
     <p role="status" data-history-status></p>
     <div data-runs></div>
@@ -65,6 +75,67 @@ export async function mountHostedControls(root) {
   const profile = providerForm.querySelector('[data-profile]');
   let profiles = [];
   let connections = settings.connections;
+  const launch = root.querySelector('[data-launch]');
+  const launchFields = launch.elements;
+  let workspaceEnabled = Boolean(policy.workspaceEnabled);
+  let attemptId;
+  let attemptInput;
+  let launching = false;
+  function syncLaunchOptions() {
+    const available = connections.filter(connection => connection.status === 'active' &&
+      settings.providers.some(entry => entry.id === connection.provider && entry.capabilities?.profiles.length));
+    const selected = launchFields.connectionId.value;
+    launchFields.connectionId.replaceChildren(...available.map(connection => new Option(connection.provider, connection.id)));
+    if (available.some(connection => connection.id === selected)) launchFields.connectionId.value = selected;
+    syncLaunchProfiles();
+  }
+  function syncLaunchProfiles() {
+    const connection = connections.find(entry => entry.id === launchFields.connectionId.value);
+    const available = settings.providers.find(entry => entry.id === connection?.provider)?.capabilities?.profiles ?? [];
+    launchFields.profileId.replaceChildren(...available.map(entry => new Option(entry.id, entry.id)));
+    const updateRegion = () => {
+      const selected = available.find(entry => entry.id === launchFields.profileId.value);
+      launchFields.region.replaceChildren(...(selected?.regions ?? []).map(region => new Option(region, region)));
+    };
+    launchFields.profileId.onchange = updateRegion;
+    updateRegion();
+    launch.querySelector('button').disabled = launching || !workspaceEnabled || !available.length || !launchFields.taskId.value;
+  }
+  launchFields.connectionId.addEventListener('change', syncLaunchProfiles);
+  launch.addEventListener('submit', event => {
+    event.preventDefault();
+    if (launching) return;
+    void submit(launch, async status => {
+      launching = true;
+      const body = Object.fromEntries(new FormData(launch));
+      const input = JSON.stringify(body);
+      if (attemptInput !== input || !attemptId) {
+        attemptInput = input;
+        attemptId = crypto.randomUUID();
+      }
+      body.attemptId = attemptId;
+      const result = await request('/hosted-runs', 'POST', body);
+      if (result?.run) {
+        attemptId = undefined;
+        status.textContent = 'Workspace queued.';
+        await history(0);
+      } else {
+        status.textContent = result?.error || 'Unable to launch workspace. Retry to check the same attempt.';
+      }
+    }).finally(() => {
+      launching = false;
+      syncLaunchProfiles();
+    });
+  });
+  void request('/tasks', 'GET').then(result => {
+    if (!Array.isArray(result?.coordination_tasks)) {
+      launch.querySelector('[data-status]').textContent = result?.error || 'Unable to load lobby tasks.';
+      return;
+    }
+    launchFields.taskId.replaceChildren(...result.coordination_tasks.map(task =>
+      new Option(task.title || task.task_id, task.task_id)));
+    syncLaunchOptions();
+  });
   function showProfile() {
     const selected = profiles.find(entry => entry.id === profile.value);
     providerForm.querySelector('[data-profile-details]').textContent = selected
@@ -112,7 +183,11 @@ export async function mountHostedControls(root) {
       values.workspaceEnabled = policyForm.elements.workspaceEnabled.checked;
       const result = await request('/hosted-controls', 'PUT', values);
       status.textContent = result?.policy ? 'Hosted limits saved.' : result?.error || 'Unable to save hosted limits. Try again.';
-      if (result?.policy) void history(offset);
+      if (result?.policy) {
+        workspaceEnabled = result.policy.workspaceEnabled;
+        syncLaunchProfiles();
+        void history(offset);
+      }
     });
   });
   provider.addEventListener('change', showConnection);
@@ -134,6 +209,7 @@ export async function mountHostedControls(root) {
       status.textContent = 'Provider connection updated.';
       credential.value = '';
       connections = result.connections;
+      syncLaunchOptions();
       showConnection();
     });
   });
