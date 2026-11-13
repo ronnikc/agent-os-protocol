@@ -108,15 +108,24 @@ export class HostedControls {
       const existing = state.connections.find(c => c.integration.provider === provider && c.integration.status !== 'revoked');
       if (action === 'connect' && existing) throw new HostedControlError('Rotate the existing provider connection.');
       if (action !== 'connect' && !existing) throw new HostedControlError('Provider connection not found.', 404);
-      if (action !== 'disable' && existing && state.runs.some(run => run.attempt?.connectionId === existing.integration.id && (run.cleanup === 'pending' || run.usage.some(entry => entry.actual === undefined)))) {
-        throw new HostedControlError('Finish affected runs, confirm cleanup and reconcile usage before changing this credential.');
+      if (action !== 'disable' && existing && state.runs.some(run =>
+        run.attempt?.connectionId === existing.integration.id && run.cleanup === 'pending')) {
+        throw new HostedControlError('Confirm cleanup for affected workspaces before changing this credential.');
       }
       const now = new Date().toISOString();
-      const connection = existing ?? {
+      // Keep prior attempts tied to their original account. Unknown bills still
+      // reserve budget after the account credential is removed.
+      if (action === 'rotate' && existing) {
+        existing.integration.status = 'revoked';
+        existing.integration.updated_at = now;
+        delete existing.secret;
+        delete existing.hint;
+      }
+      const connection = (action === 'rotate' ? undefined : existing) ?? {
         integration: { id: randomUUID(), lobby_id: lobbyId, provider, status: 'pending' as const, scopes: [],
           installed_by_identity_ref: actor, created_at: now, updated_at: now },
       };
-      if (!existing) state.connections.push(connection);
+      if (connection !== existing) state.connections.push(connection);
       connection.integration.status = updating ? 'active' : action === 'disable' ? 'pending' : 'revoked';
       connection.integration.updated_at = now;
       if (updating && typeof credential === 'string') {
