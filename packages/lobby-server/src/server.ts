@@ -48,6 +48,8 @@ import { createApiRuntimeAdapter, type LobbyToolsProvider } from '@agent-os/adap
 import { HostedAgentRunner } from './hosted/hosted-agent-runner.js';
 import { HostedControls, HostedControlError } from './hosted/hosted-controls.js';
 import { hostedModelBudget } from './hosted/model-budget.js';
+import { configuredE2bWorkspace } from './hosted/e2b-workspace.js';
+import { configuredAgent37Workspaces } from './hosted/agent37-workspace.js';
 import { workspaceProviders, type WorkspaceAdapter, type WorkspaceProvider } from '@agent-os/protocol-core';
 import { BOSS_DELEGATION_GUIDE, BOSS_TRIAGE_GUIDE, BOSS_RECOMMEND_GUIDE, BOSS_DECIDABLE_CATEGORIES, parseBossDelegations, parseBossTriage, parseBossRecommendation, resolveRosterAgent } from './hosted/boss-delegation.js';
 import { OBSERVATION_GUIDE, parseHandRaise } from './hosted/agent-observation.js';
@@ -395,7 +397,8 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // Fail-closed: refuse to boot if the dev wallet-signature bridge is enabled in production.
   assertDevBridgeNotInProduction();
   const store = options.store ?? new InMemoryLobbyStore();
-  const hosted = new HostedControls(store, options.workspaceAdapters, options.workspaceSource ?? (async (attempt, signal) => {
+  const workspaceAdapters = options.workspaceAdapters ?? [...configuredE2bWorkspace(), ...configuredAgent37Workspaces()];
+  const hosted = new HostedControls(store, workspaceAdapters, options.workspaceSource ?? (async (attempt, signal) => {
     const integration = await store.getIntegration(attempt.lobbyId, 'github');
     if (!attempt.sourceRepository || integration?.repo_full_name !== attempt.sourceRepository || !integration.installation_id) {
       throw new Error('The workspace source repository is no longer connected.');

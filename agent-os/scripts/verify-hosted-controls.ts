@@ -18,12 +18,159 @@ import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
 import { GitHubRepoClient } from '../../packages/lobby-server/src/hosted/github-repo-client.js';
+import { e2bAllocation } from '../../packages/lobby-server/src/hosted/e2b-allocation.js';
+import { createE2bWorkspace } from '../../packages/lobby-server/src/hosted/e2b-workspace.js';
+import { agent37Allocation } from '../../packages/lobby-server/src/hosted/agent37-allocation.js';
+import { createAgent37Workspace } from '../../packages/lobby-server/src/hosted/agent37-workspace.js';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
   const signal = new AbortController().signal;
+  let allocation: { createRequestedAt?: number; providerId?: string } = {};
+  const journal = {
+    read: () => ({ ...allocation }),
+    beginCreate() {
+      if (allocation.createRequestedAt) return false;
+      allocation = { createRequestedAt: Date.now() };
+      return true;
+    },
+    bind(providerId: string) { allocation.providerId = providerId; },
+  };
+  let creates = 0;
+  const e2bFetch: typeof fetch = async (input, init) => {
+    const url = new URL(String(input));
+    assert.equal(url.origin, 'https://api.e2b.app');
+    assert.equal(new Headers(init?.headers).get('X-API-Key'), 'owner-key');
+    if (init?.method === 'POST') {
+      creates++;
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.allow_internet_access, false);
+      assert.equal(body.autoPause, false);
+      assert.equal(body.metadata.agent_os_attempt, 'attempt');
+      throw new Error('Lost create response');
+    }
+    if (init?.method === 'GET') {
+      assert.equal(url.searchParams.get('metadata'), 'agent_os_attempt=attempt');
+      return Response.json([{ sandboxID: 'sandbox', metadata: { agent_os_attempt: 'attempt' } }]);
+    }
+    assert.equal(url.pathname, '/sandboxes/sandbox');
+    return new Response(null, { status: 204 });
+  };
+  const e2b = () => e2bAllocation('attempt', 'owner-key', journal,
+    { templateId: 'fixture', cpu: 2, deadline: Date.now() + 30_000 }, e2bFetch);
+  await assert.rejects(e2b().provision(signal), /Lost create response/);
+  assert.equal(await e2b().provision(signal), 'sandbox');
+  assert.equal(creates, 1);
+  assert.deepEqual(await e2b().destroy(signal), { confirmed: true });
+  allocation = {};
+  const calls: string[] = [];
+  const e2bWorkspace = createE2bWorkspace({
+    templateId: 'fixture', command: 'npm test', maxMicrosPerSecond: 5,
+    profile: { id: 'fixture', cpu: 2, memoryMiB: 1024, diskMiB: 2048, isolation: 'microvm',
+      egress: 'none', regions: ['fixture'], maxRuntimeMs: 30_000 },
+  }, async (id, token) => {
+    assert.equal(id, 'sandbox');
+    assert.equal(token, 'owner-key');
+    return {
+      async upload(bytes) { assert.deepEqual([...bytes], [1, 2, 3]); calls.push('upload'); },
+      async run(command, options) {
+        assert.equal(options.signal, signal);
+        if (command.includes('git diff --cached')) return { stdout: 'fixture patch' };
+        calls.push(command.includes('tar --') ? 'extract' : 'execute');
+        assert.ok(!command.includes(token));
+      },
+      async read(path) { return path.endsWith('/exit') ? '0' : 'test output'; },
+    };
+  }, async (_, init) => {
+    if (init?.method === 'POST') return Response.json({ sandboxID: 'sandbox' }, { status: 201 });
+    assert.equal(init?.method, 'DELETE');
+    return new Response(null, { status: 204 });
+  });
+  await e2bWorkspace.provision('attempt', {
+    lobbyId: 'fixture', taskId: 'task', attemptId: 'attempt', connectionId: 'e2b', sourceRevision: 'a'.repeat(40),
+    profileId: 'fixture', region: 'fixture', deadline: Date.now() + 30_000,
+  }, 'owner-key', signal, journal, async () => new Uint8Array([1, 2, 3]));
+  await e2bWorkspace.wait('attempt', 'owner-key', signal, journal);
+  assert.deepEqual(calls, ['upload', 'extract', 'execute']);
+  assert.deepEqual(await e2bWorkspace.collect('attempt', 'owner-key', signal, journal), { exitCode: 0, logs: 'test output', patch: 'fixture patch' });
+  assert.deepEqual(await e2bWorkspace.destroy('attempt', 'owner-key', signal, journal), { confirmed: true });
+  allocation = {};
+  let agent37Creates = 0;
+  let deleted = false;
+  const agent37 = () => agent37Allocation('attempt', 'owner-key', journal, {
+    template: 'agent37-base', type: 'default', region: 'us', resources: { cpu: 2, memory: 4, disk: 4 },
+  }, async (input, init) => {
+    assert.equal(new Headers(init?.headers).get('authorization'), 'Bearer owner-key');
+    const path = new URL(String(input)).pathname;
+    if (init?.method === 'POST') {
+      agent37Creates++;
+      const body = JSON.parse(String(init.body));
+      assert.equal(body.network, 'deny-all');
+      assert.deepEqual(body.public_ports, []);
+      assert.equal(body.metadata.agent_os_attempt, 'attempt');
+      throw new Error('Lost create response');
+    }
+    if (path === '/v1/instances') {
+      return Response.json({ data: [{ id: 'instance', metadata: { agent_os_attempt: 'attempt' } }] });
+    }
+    assert.equal(path, '/v1/instances/instance');
+    if (init?.method === 'DELETE') {
+      deleted = true;
+      return new Response(null, { status: 204 });
+    }
+    assert.ok(deleted);
+    return new Response(null, { status: 404 });
+  });
+  await assert.rejects(agent37().provision(signal), /Lost create response/);
+  assert.equal(await agent37().provision(signal), 'instance');
+  assert.equal(agent37Creates, 1);
+  assert.deepEqual(await agent37().destroy(signal), { confirmed: true });
+  allocation = {};
+  const operationsSeen: string[] = [];
+  const agent37Workspace = createAgent37Workspace({
+    template: 'agent37-base', command: 'npm test', maxMicrosPerSecond: 5,
+    profile: { id: 'default', cpu: 2, memoryMiB: 4096, diskMiB: 4096, isolation: 'container',
+      egress: 'none', regions: ['us'], maxRuntimeMs: 30_000 },
+  }, async (input, init) => {
+    const url = new URL(String(input));
+    const headers = new Headers(init?.headers);
+    assert.equal(init?.redirect, 'error');
+    if (url.hostname === 'api.agent37.com') {
+      assert.equal(headers.get('authorization'), 'Bearer owner-key');
+      operationsSeen.push(init!.method!);
+      if (init?.method === 'POST') return Response.json({ id: 'fixture' }, { status: 201 });
+      assert.equal(url.pathname, '/v1/instances/fixture');
+      return new Response(null, { status: init?.method === 'DELETE' ? 204 : 404 });
+    }
+    assert.equal(headers.get('X-Agent37-Key'), 'owner-key');
+    assert.equal(headers.has('authorization'), false);
+    if (url.hostname === 'sandbox.agent37.app') {
+      assert.equal(url.pathname, '/v1/instances/fixture/exec');
+      const { command } = JSON.parse(String(init?.body));
+      assert.ok(!command.includes('owner-key'));
+      operationsSeen.push(command.includes('tar --') ? 'stage' : command.includes('git diff') ? 'patch' : 'run');
+      return Response.json({ exit_code: 0, stdout: command.includes('git diff') ? 'patch' : '' });
+    }
+    assert.equal(url.hostname, 'fixture.agent37.app');
+    const path = url.searchParams.get('path')!;
+    if (init?.method === 'PUT') {
+      assert.equal(path, '/tmp/agent-os-source.tar.gz');
+      assert.deepEqual([...init.body as Uint8Array], [1, 2, 3]);
+      operationsSeen.push('upload');
+      return Response.json({});
+    }
+    return new Response(path.endsWith('/exit') ? '0' : 'logs');
+  });
+  await agent37Workspace.provision('attempt', {
+    lobbyId: 'fixture', taskId: 'task', attemptId: 'attempt', connectionId: 'agent37', sourceRevision: 'a'.repeat(40),
+    profileId: 'default', region: 'us', deadline: Date.now() + 30_000,
+  }, 'owner-key', signal, journal, async () => new Uint8Array([1, 2, 3]));
+  await agent37Workspace.wait('attempt', 'owner-key', signal, journal);
+  assert.deepEqual(await agent37Workspace.collect('attempt', 'owner-key', signal, journal), { exitCode: 0, logs: 'logs', patch: 'patch' });
+  assert.deepEqual(await agent37Workspace.destroy('attempt', 'owner-key', signal, journal), { confirmed: true });
+  assert.deepEqual(operationsSeen, ['POST', 'upload', 'stage', 'run', 'patch', 'DELETE', 'GET']);
   const revision = 'a'.repeat(40);
   const archive = new GitHubRepoClient('example', 'project', 'installation-secret', async (input, init) => {
     assert.equal(init?.signal, signal);
