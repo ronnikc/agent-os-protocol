@@ -104,6 +104,8 @@ function showTaskDetail(taskId) {
       <label>Description</label>
       <div style="font-size:13px;white-space:pre-wrap">${escapeHtml(t.description || '(none)')}</div>
     </div>
+    ${t.workspace_run ? `<p>Workspace run <code>${escapeHtml(t.workspace_run.id)}</code> · ${escapeHtml(t.workspace_run.state)}
+      · Source <code>${escapeHtml(t.workspace_run.sourceRevision)}</code>. Review the logs and patch in Apps → Hosted run history.</p>` : ''}
     ${t.result_pr_url ? `
     <div class="form-group">
       <label>Pull Request</label>

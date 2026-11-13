@@ -56,6 +56,16 @@ export class HostedControls {
     return { data: runs.slice().reverse().slice(offset, offset + limit), total: runs.length, offset, limit };
   }
 
+  latestWorkspaceByTask(lobbyId: string) {
+    const latest = new Map<string, { id: string; state: HostedRun['state']; sourceRevision: string }>();
+    for (const run of this.store.readHostedState(lobbyId).runs) {
+      if (run.kind === 'workspace' && run.attempt) {
+        latest.set(run.attempt.taskId, { id: run.id, state: run.state, sourceRevision: run.attempt.sourceRevision });
+      }
+    }
+    return latest;
+  }
+
   setPolicy(lobbyId: string, actor: string, input: Record<string, unknown>) {
     const { workspaceEnabled, periodHours, modelPerRun, modelPerPeriod, computePerRun, computePerPeriod, concurrency, deadlineMs } = input;
     if (typeof workspaceEnabled !== 'boolean' || !integer(periodHours, 744) || periodHours < 1 ||
@@ -173,7 +183,8 @@ export class HostedControls {
         typeof profileId !== 'string' || typeof region !== 'string') {
       throw new HostedControlError('Select a task, connection, profile, region and pinned commit.', 400);
     }
-    if (!await this.store.getTask(lobbyId, taskId)) throw new HostedControlError('Lobby task not found.', 404);
+    const task = await this.store.getTask(lobbyId, taskId);
+    if (!task) throw new HostedControlError('Lobby task not found.', 404);
     const sourceRepository = this.readSource ? (await this.store.getIntegration(lobbyId, 'github'))?.repo_full_name : undefined;
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
       const duplicate = state.runs.find(r => r.taskId === taskId && r.attempt?.attemptId === attemptId);
@@ -195,7 +206,8 @@ export class HostedControls {
       const started = Date.now();
       const deadline = started + Math.min(policy.deadlineMs, profile.maxRuntimeMs);
       if (this.readSource && !sourceRepository) throw new HostedControlError('Select a GitHub repository in this lobby before launching a workspace.');
-      const attempt: WorkspaceAttempt = { lobbyId, taskId, attemptId, connectionId, sourceRevision, sourceRepository, profileId, region, deadline };
+      const attempt: WorkspaceAttempt = { lobbyId, taskId, assignedAgentId: task.assigned_to, attemptId,
+        connectionId, sourceRevision, sourceRepository, profileId, region, deadline };
       const run: HostedRun = { id: randomUUID(), kind: 'workspace', taskId, attempt, state: 'requested', cleanup: 'pending', started, deadline, usage: [] };
       this.admit(state, run);
       this.reserve(state, run, adapter.estimate(attempt));

@@ -26,6 +26,7 @@ export interface WorkspaceCapabilities {
 export interface WorkspaceAttempt {
   lobbyId: string;
   taskId: string;
+  assignedAgentId?: string;
   attemptId: string;
   connectionId: string;
   sourceRevision: string;
