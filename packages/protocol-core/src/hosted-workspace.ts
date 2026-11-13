@@ -53,6 +53,8 @@ export interface WorkspaceArtifacts {
  */
 export interface WorkspaceAdapter {
   capabilities: WorkspaceCapabilities;
+  /** Check account access without provisioning a billable workspace. */
+  verifyConnection?(credential: string, signal: AbortSignal): Promise<void>;
   estimate(attempt: WorkspaceAttempt): number;
   provision(attemptKey: string, attempt: WorkspaceAttempt, credential: string, signal: AbortSignal): Promise<void>;
   wait(attemptKey: string, credential: string, signal: AbortSignal): Promise<void>;

@@ -15,11 +15,27 @@ import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-server/src/server.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
+import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 
 const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, modelPerPeriod: 5000,
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
+  const signal = new AbortController().signal;
+  for (const [provider, url, header, value] of [
+    ['e2b', 'https://api.e2b.app/v2/sandboxes?limit=1', 'X-API-Key', 'owner-key'],
+    ['agent37', 'https://api.agent37.com/v1/instances', 'Authorization', 'Bearer owner-key'],
+  ] as const) {
+    const verify = workspaceAccountVerifier(provider, async (input, init) => {
+      assert.equal(input, url);
+      assert.equal(init?.method, 'GET');
+      assert.equal(new Headers(init?.headers).get(header), value);
+      assert.equal(init?.redirect, 'error');
+      assert.equal(init?.signal, signal);
+      return new Response(null, { status: 200 });
+    });
+    await verify!('owner-key', signal);
+  }
   const dir = await mkdtemp(join(tmpdir(), 'agent-os-hosted-'));
   const file = join(dir, 'store.json');
   const previousKey = process.env.AGENT_OS_SECRET_ENCRYPTION_KEY;
@@ -36,6 +52,9 @@ export async function verifyHostedControls() {
       provider: 'e2b', deletion: 'confirmed', credentials: 'control-plane-only', usage: 'final-or-pending',
       profiles: [{ id: 'small', cpu: 1, memoryMiB: 256, diskMiB: 256, isolation: 'microvm',
         egress: 'none', regions: ['fake-region'], maxRuntimeMs: 30_000 }],
+    },
+    async verifyConnection(token) {
+      if (token !== credential) throw new Error('Provider rejected ' + token);
     },
     estimate: () => 100,
     async provision(key, attempt, token) {
@@ -104,6 +123,13 @@ export async function verifyHostedControls() {
     assert.equal(connect.body.connections[0].hint, '••••C123');
     assert.equal(connect.body.providers[0].capabilities.profiles[0].egress, 'none');
     assert.ok(!JSON.stringify(connect.body).includes(credential));
+    assert.equal((await call('a', provider, 'POST', { action: 'verify' }, 'observer')).status, 403);
+    assert.deepEqual((await call('a', provider, 'POST', { action: 'verify' })).body, { verified: true });
+    const invalid = 'invalid-owner-credential';
+    assert.equal((await call('b', provider, 'POST', { action: 'connect', credential: invalid })).status, 200);
+    const denied = await call('b', provider, 'POST', { action: 'verify' });
+    assert.equal(denied.status, 422);
+    assert.ok(!JSON.stringify(denied.body).includes(invalid));
     const request = { taskId: 'task-a', attemptId: 'first', connectionId: connect.body.connections[0].id,
       sourceRevision: 'a'.repeat(40), profileId: 'small', region: 'fake-region' };
     assert.equal((await call('b', '/hosted-runs', 'POST', { ...request, taskId: 'task-b' })).status, 404);

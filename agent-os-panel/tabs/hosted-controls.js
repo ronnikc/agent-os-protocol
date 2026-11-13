@@ -81,7 +81,9 @@ export async function mountHostedControls(root) {
     showProfile();
     const connection = connections.find(entry => entry.provider === provider.value);
     action.innerHTML = connection
-      ? '<option value="rotate">Rotate credential and enable</option><option value="disable">Disable</option><option value="disconnect">Disconnect</option>'
+      ? (connection.status === 'active' && settings.providers.some(entry => entry.id === provider.value && entry.canVerify)
+        ? '<option value="verify">Verify connection</option>' : '') +
+        '<option value="rotate">Rotate credential and enable</option><option value="disable">Disable</option><option value="disconnect">Disconnect</option>'
       : '<option value="connect">Connect</option>';
     providerForm.querySelector('[data-connection]').textContent = connection
       ? `${connection.status === 'active' ? 'Enabled' : 'Disabled'} ${connection.hint || ''}`
@@ -121,6 +123,10 @@ export async function mountHostedControls(root) {
       const result = await request('/integrations/cloud-workspaces/' + encodeURIComponent(provider.value), 'POST', {
         action: action.value, ...(credential.disabled ? {} : { credential: credential.value }),
       });
+      if (result?.verified) {
+        status.textContent = 'Provider connection verified.';
+        return;
+      }
       if (!Array.isArray(result?.connections)) {
         status.textContent = result?.error || 'Unable to change the provider connection. Try again.';
         return;
