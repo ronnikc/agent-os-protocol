@@ -132,7 +132,9 @@ export async function mountHostedControls(root) {
       launch.querySelector('[data-status]').textContent = result?.error || 'Unable to load lobby tasks.';
       return;
     }
-    launchFields.taskId.replaceChildren(...result.coordination_tasks.map(task =>
+    const available = result.coordination_tasks.filter(task => task.assigned_to &&
+      !['completed', 'cancelled'].includes(task.status));
+    launchFields.taskId.replaceChildren(...available.map(task =>
       new Option(task.title || task.task_id, task.task_id)));
     syncLaunchOptions();
   });

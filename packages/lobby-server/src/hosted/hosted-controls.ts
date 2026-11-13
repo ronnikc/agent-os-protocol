@@ -193,7 +193,6 @@ export class HostedControls {
     }
     const task = await this.store.getTask(lobbyId, taskId);
     if (!task) throw new HostedControlError('Lobby task not found.', 404);
-    if (!task.assigned_to?.trim()) throw new HostedControlError('Assign this task to an agent before launching a workspace.');
     const sourceIntegration = this.readSource ? await this.store.getIntegration(lobbyId, 'github') : undefined;
     const sourceRepository = sourceIntegration?.repo_full_name;
     const { run, created } = this.store.mutateHostedState(lobbyId, state => {
@@ -204,6 +203,10 @@ export class HostedControls {
           throw new HostedControlError('This task attempt already has a different workspace request.');
         }
         return { run: duplicate, created: false };
+      }
+      if (!task.assigned_to?.trim()) throw new HostedControlError('Assign this task to an agent before launching a workspace.');
+      if (task.status === 'completed' || task.status === 'cancelled') {
+        throw new HostedControlError('Reopen this task before launching a workspace.');
       }
       const policy = this.policy(state);
       if (!policy.workspaceEnabled) throw new HostedControlError('Workspace execution is disabled.');

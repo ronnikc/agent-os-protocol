@@ -341,6 +341,11 @@ export async function verifyHostedControls() {
     assert.equal(unassigned.status, 409);
     assert.match(unassigned.body.error, /Assign this task/);
     await store.upsertTask(assigned);
+    await store.upsertTask({ ...assigned, status: 'completed' });
+    const completed = await call('a', '/hosted-runs', 'POST', request);
+    assert.equal(completed.status, 409);
+    assert.match(completed.body.error, /Reopen this task/);
+    await store.upsertTask(assigned);
     assert.equal((await call('a', '/hosted-runs', 'POST', { ...request, region: 'unapproved' })).status, 400);
     const simultaneous = await Promise.all(['first', 'second'].map(attemptId =>
       call('a', '/hosted-runs', 'POST', { ...request, attemptId })));
