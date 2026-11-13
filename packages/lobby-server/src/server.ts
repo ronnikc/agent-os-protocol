@@ -1743,6 +1743,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           if (req.method === 'POST' && !item) {
             return json({ run: await hosted.requestWorkspace(lobbyId, actor, await readBody(req)) }, 202);
           }
+          if (req.method === 'GET' && item) {
+            return json({ run: hosted.workspaceEvidence(lobbyId, item) });
+          }
           if (req.method === 'POST' && item === 'recover') {
             hosted.recover(lobbyId, actor);
             return json({ accepted: true }, 202);

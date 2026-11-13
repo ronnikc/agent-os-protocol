@@ -58,6 +58,12 @@ export class HostedControls {
     return { data: runs.slice().reverse().slice(offset, offset + limit), total: runs.length, offset, limit };
   }
 
+  workspaceEvidence(lobbyId: string, runId: string) {
+    const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === runId && entry.kind === 'workspace');
+    if (!run?.attempt) throw new HostedControlError('Workspace run not found.', 404);
+    return { id: run.id, state: run.state, sourceRevision: run.attempt.sourceRevision, artifacts: run.artifacts };
+  }
+
   latestWorkspaceByTask(lobbyId: string) {
     const latest = new Map<string, { id: string; state: HostedRun['state']; sourceRevision: string }>();
     for (const run of this.store.readHostedState(lobbyId).runs) {

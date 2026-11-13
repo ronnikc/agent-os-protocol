@@ -366,6 +366,9 @@ export async function verifyHostedControls() {
     });
     const other = await call('b', '/tasks');
     assert.equal(other.body.coordination_tasks[0].workspace_run, undefined);
+    assert.equal((await call('a', '/hosted-runs/' + run.id)).body.run.artifacts.exitCode, 1);
+    assert.equal((await call('a', '/hosted-runs/' + run.id, 'GET', undefined, 'observer')).status, 403);
+    assert.equal((await call('b', '/hosted-runs/' + run.id)).status, 404);
     assert.equal(artifacts?.logs?.length, 65_536);
     assert.ok(artifacts?.logs?.startsWith('redact [redacted]'));
     assert.equal(store.readHostedState('a').runs[0].cleanup, 'pending');
