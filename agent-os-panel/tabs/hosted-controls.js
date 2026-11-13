@@ -173,10 +173,14 @@ export async function mountHostedControls(root) {
     const button = form.querySelector('button[type="submit"]');
     const status = form.querySelector('[data-status]');
     if (button.disabled) return;
+    const restoreFocus = document.activeElement === button;
     button.disabled = true;
     status.textContent = 'Saving…';
     try { await work(status); }
-    finally { button.disabled = false; }
+    finally {
+      button.disabled = false;
+      if (restoreFocus && button.isConnected && document.activeElement === document.body) button.focus();
+    }
   }
   policyForm.addEventListener('submit', event => {
     event.preventDefault();
@@ -261,7 +265,7 @@ export async function mountHostedControls(root) {
   }
   runs.addEventListener('click', async event => {
     const button = event.target.closest('[data-cancel]');
-    if (!button) return;
+    if (!button || button.disabled) return;
     if (!window.confirm('Cancel this hosted run? Any workspace will be queued for cleanup.')) {
       button.focus();
       return;
