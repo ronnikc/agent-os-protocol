@@ -30,6 +30,7 @@ export async function verifyHostedControls() {
   const signal = new AbortController().signal;
   let allocation: { createRequestedAt?: number; providerId?: string } = {};
   const journal = {
+    deadline: Date.now() + 30_000,
     read: () => ({ ...allocation }),
     beginCreate() {
       if (allocation.createRequestedAt) return false;
@@ -78,6 +79,7 @@ export async function verifyHostedControls() {
       async run(command, options) {
         assert.equal(options.signal, signal);
         if (command.includes('git diff --cached')) return { stdout: 'fixture patch' };
+        if (!command.includes('tar --')) assert.match(command, /timeout --kill-after=1s \d+s sh -c/);
         calls.push(command.includes('tar --') ? 'extract' : 'execute');
         assert.ok(!command.includes(token));
       },
