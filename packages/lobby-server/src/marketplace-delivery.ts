@@ -79,15 +79,19 @@ export class MarketplaceDeliveryService {
 
   async workspaceArtifact(lobbyId: string, id: string, actor: string, reviewer: boolean, runId: string) {
     const agreement = this.getAgreement(lobbyId, id, actor, reviewer);
-    const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === runId);
     const submission = agreement.delivery?.submissions.find(entry => entry.workspaceRunId === runId);
-    const patch = run?.artifacts?.patch;
-    if (!run || run.state !== 'succeeded' || !approvedWorkspaceRun(agreement, run) || !submission ||
-        run.attempt?.attemptId !== submission.attemptId || !patch ||
-        createHash('sha256').update(patch).digest('hex') !== submission.patchDigest) {
+    if (!submission || !this.validSubmittedPatch(lobbyId, agreement, submission)) {
       throw new MarketplaceError('Artifact not found.', 404);
     }
     return this.hosted.workspaceEvidence(lobbyId, runId);
+  }
+
+  private validSubmittedPatch(lobbyId: string, agreement: MarketplaceAgreement, submission: MarketplaceSubmission): boolean {
+    const run = this.store.readHostedState(lobbyId).runs.find(entry => entry.id === submission.workspaceRunId);
+    const patch = run?.artifacts?.patch;
+    return Boolean(run && run.state === 'succeeded' && approvedWorkspaceRun(agreement, run) &&
+      run.attempt?.attemptId === submission.attemptId && patch &&
+      createHash('sha256').update(patch).digest('hex') === submission.patchDigest);
   }
 
   async change(lobbyId: string, id: string, actor: string, reviewer: boolean, body: Record<string, unknown>) {
@@ -131,6 +135,9 @@ export class MarketplaceDeliveryService {
           if (!buyer) throw new MarketplaceError('Only the buyer can review delivery.', 403);
           if (delivery.status !== 'submitted' || !latest || body.submissionId !== latest.id) {
             throw new MarketplaceError('Choose the current submission for review.');
+          }
+          if (action === 'accept' && latest.execution === 'cloud' && !this.validSubmittedPatch(lobbyId, current, latest)) {
+            throw new MarketplaceError('Cloud patch evidence is unavailable or has changed. Request a revision before accepting.');
           }
           delivery.status = action === 'accept' ? 'accepted' : 'revision_requested';
           if (action === 'revise') reason = required(body.reason, 'a revision reason');

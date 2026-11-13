@@ -229,6 +229,8 @@ async function main(): Promise<void> {
             state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'modified patch';
           });
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
+          await assert.rejects(delivery.change(id, agreement.id, 'buyer', false, { action: 'accept', version: 1,
+            termsDigest, submissionId }), /evidence is unavailable or has changed/);
           store.mutateHostedState(id, state => {
             state.runs.find(run => run.id === workspaceRunId)!.artifacts!.patch = 'patch evidence';
           });
@@ -236,6 +238,9 @@ async function main(): Promise<void> {
             state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/other';
           });
           await assert.rejects(delivery.workspaceArtifact(id, agreement.id, 'buyer', false, workspaceRunId), /Artifact not found/);
+          store.mutateHostedState(id, state => {
+            state.runs.find(run => run.id === workspaceRunId)!.attempt!.sourceRepository = 'example/approved';
+          });
         }
         if (execution === 'hosted') {
           const results = await Promise.allSettled([
