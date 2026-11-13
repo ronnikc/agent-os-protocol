@@ -1708,6 +1708,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         }
         if (resource === 'integrations/cloud-workspaces' && workspaceProviders.includes(item as WorkspaceProvider) && req.method === 'POST') {
           const body = await readBody(req);
+          if (body.action === 'verify') {
+            await hosted.verifyConnection(lobbyId, actor, item as WorkspaceProvider);
+            return json({ verified: true });
+          }
           hosted.connection(lobbyId, actor, item as WorkspaceProvider, body.action, body.credential);
           return json(hosted.settings(lobbyId));
         }

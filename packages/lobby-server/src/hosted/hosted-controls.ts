@@ -111,6 +111,27 @@ export class HostedControls {
     return state.policy;
   }
 
+  async verifyConnection(lobbyId: string, actor: string, provider: WorkspaceProvider) {
+    const adapter = this.adapters.get(provider);
+    if (!adapter?.verifyConnection) throw new HostedControlError('Connection verification is unavailable for this provider.');
+    const connection = this.store.readHostedState(lobbyId).connections.find(c =>
+      c.integration.provider === provider && c.integration.status === 'active');
+    const secret = connection?.secret;
+    if (!secret) throw new HostedControlError('Active workspace connection not found.', 404);
+    try {
+      await adapter.verifyConnection(open(secret.encrypted_value), AbortSignal.timeout(10_000));
+    } catch {
+      throw new HostedControlError('Provider verification failed. Check the credential and account permissions, then retry.', 422);
+    }
+    this.store.mutateHostedState(lobbyId, state => {
+      if (!state.connections.some(c => c.integration.id === connection.integration.id &&
+          c.integration.status === 'active' && c.secret?.id === secret.id)) {
+        throw new HostedControlError('The connection changed during verification. Retry with the current credential.');
+      }
+      audit(state, actor, 'workspace_provider_verified', connection.integration.id);
+    });
+  }
+
   private admit(state: HostedState, run: HostedRun) {
     const policy = this.policy(state);
     if (this.closed) throw new HostedControlError('Hosted execution is shutting down.');

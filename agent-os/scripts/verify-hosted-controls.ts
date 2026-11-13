@@ -37,6 +37,9 @@ export async function verifyHostedControls() {
       profiles: [{ id: 'small', cpu: 1, memoryMiB: 256, diskMiB: 256, isolation: 'microvm',
         egress: 'none', regions: ['fake-region'], maxRuntimeMs: 30_000 }],
     },
+    async verifyConnection(token) {
+      if (token !== credential) throw new Error('Provider rejected ' + token);
+    },
     estimate: () => 100,
     async provision(key, attempt, token) {
       assert.equal(token, credential);
@@ -104,6 +107,13 @@ export async function verifyHostedControls() {
     assert.equal(connect.body.connections[0].hint, '••••C123');
     assert.equal(connect.body.providers[0].capabilities.profiles[0].egress, 'none');
     assert.ok(!JSON.stringify(connect.body).includes(credential));
+    assert.equal((await call('a', provider, 'POST', { action: 'verify' }, 'observer')).status, 403);
+    assert.deepEqual((await call('a', provider, 'POST', { action: 'verify' })).body, { verified: true });
+    const invalid = 'invalid-owner-credential';
+    assert.equal((await call('b', provider, 'POST', { action: 'connect', credential: invalid })).status, 200);
+    const denied = await call('b', provider, 'POST', { action: 'verify' });
+    assert.equal(denied.status, 422);
+    assert.ok(!JSON.stringify(denied.body).includes(invalid));
     const request = { taskId: 'task-a', attemptId: 'first', connectionId: connect.body.connections[0].id,
       sourceRevision: 'a'.repeat(40), profileId: 'small', region: 'fake-region' };
     assert.equal((await call('b', '/hosted-runs', 'POST', { ...request, taskId: 'task-b' })).status, 404);
