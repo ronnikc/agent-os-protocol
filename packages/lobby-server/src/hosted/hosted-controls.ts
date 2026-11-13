@@ -291,6 +291,12 @@ export class HostedControls {
     }
   }
 
+  cancelTaskExecution(lobbyId: string, taskId: string, actor: string) {
+    for (const run of this.store.readHostedState(lobbyId).runs) {
+      if (run.taskId === taskId && !terminal(run)) this.cancel(lobbyId, run.id, actor);
+    }
+  }
+
   async runModel<T>(lobbyId: string, taskId: string | undefined, work: (id: string, signal: AbortSignal) => Promise<T>,
     workspace?: { id: string; signal: AbortSignal }): Promise<T> {
     workspace?.signal.throwIfAborted();

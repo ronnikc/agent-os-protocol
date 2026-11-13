@@ -54,24 +54,25 @@ export class Marketplace {
       eligible: profile.status === 'published' && await this.verifyOwner(profile.agentDid, actor) })));
   }
 
-  async listings(lobbyId: string, actor: string, offset: number, limit: number) {
+  async listings(lobbyId: string, actor: string, offset: number, limit: number, reviewer = false) {
     const state = this.store.readMarketplaceState(lobbyId);
     const entries = state.listings.map(entry => activeListing(entry))
       .filter(entry => entry.buyer === actor || entry.status === 'open' ||
-        state.agreements.some(agreement => agreement.listing.id === entry.id && agreement.bid.specialist === actor));
+        state.agreements.some(agreement => agreement.listing.id === entry.id &&
+          (agreement.bid.specialist === actor || reviewer && agreement.delivery?.status === 'disputed')));
     return { data: entries.slice(offset, offset + limit), total: entries.length, offset, limit,
       legacy: (await this.store.listMarketplaceTasks(lobbyId)).filter(entry => entry.posted_by_identity_ref === actor)
         .map(entry => ({ id: entry.id, title: entry.title, status: entry.status, legacyAuthorization: Boolean(entry.escrow_signature || entry.release_signature) })) };
   }
 
-  bids(lobbyId: string, actor: string, listingId: string, offset: number, limit: number) {
+  bids(lobbyId: string, actor: string, listingId: string, offset: number, limit: number, reviewer = false) {
     const state = this.store.readMarketplaceState(lobbyId);
     const listing = state.listings.find(entry => entry.id === listingId);
     if (!listing) throw new MarketplaceError('Listing not found.', 404);
     const entries = state.bids.filter(entry => entry.listingId === listingId && (listing.buyer === actor || entry.specialist === actor));
     return { data: entries.slice(offset, offset + limit), total: entries.length, offset, limit,
       agreement: state.agreements.find(entry => entry.listing.id === listingId &&
-        (entry.listing.buyer === actor || entry.bid.specialist === actor)) };
+        (entry.listing.buyer === actor || entry.bid.specialist === actor || reviewer && entry.delivery?.status === 'disputed')) };
   }
 
   async profile(lobbyId: string, actor: string, body: Record<string, unknown>, manager: boolean) {

@@ -602,6 +602,11 @@ export class LobbyCoordinator {
     const lobbyForAuth = await this.store.getLobby(conn.lobbyId);
     const isAssignee = existing.assigned_to === conn.agentId;
     const isBoss = lobbyForAuth?.boss_agent_id === conn.agentId;
+    const engagement = this.store.readMarketplaceState(conn.lobbyId).agreements.find(entry => entry.assignmentId === existing.task_id);
+    if (engagement && (!isAssignee || engagement.listing.deadline <= Date.now() ||
+        !['assigned', 'in_progress', 'revision_requested'].includes(engagement.delivery?.status ?? 'assigned'))) {
+      return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'Marketplace task update is no longer authorized.' } }] };
+    }
     if (!isAssignee && !isBoss && !conn.isHuman) {
       await this.event(conn.lobbyId, 'message_rejected', conn.agentId, { reason: 'unauthorized task update', task_id: msg.task_id });
       return { out: [{ target: { kind: 'self' }, message: { type: 'lobby-error', error: 'only the assignee, the Boss, or a human may update this task' } }] };

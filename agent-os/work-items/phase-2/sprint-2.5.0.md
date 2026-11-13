@@ -2,20 +2,20 @@
 id: 2.5.0
 title: Marketplace Delivery Review and Disputes
 phase: phase-2
-status: planned
+status: implemented
 owner: backend
 ---
 
 # Sprint 2.5.0 - Marketplace Delivery Review and Disputes
 
 ## Tasks
-- [ ] T-250-1 Bind execution and evidence to an agreement and task attempt (priority:high, assignee:backend)
-- [ ] T-250-2 Implement review revisions disputes feedback and cancellation (priority:high, assignee:backend)
-- [ ] T-250-3 Build buyer specialist and reviewer views (priority:high, assignee:frontend)
-- [ ] T-250-4 Run the three execution paths and negative authorization cases (priority:high, assignee:test)
+- [x] T-250-1 Bind execution and evidence to an agreement and task attempt (priority:high, assignee:backend)
+- [x] T-250-2 Implement review revisions disputes feedback and cancellation (priority:high, assignee:backend)
+- [x] T-250-3 Build buyer specialist and reviewer views (priority:high, assignee:frontend)
+- [x] T-250-4 Verify fixture evidence for three execution paths and negative authorization cases (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** implemented, fixture-verified
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -91,6 +91,13 @@ WCAG checks for readable diffs and test status, keyboard review and dispute acti
 ## Verification and Closeout
 
 Run lobby, hosted and UI checks. Exercise a zero-price delivery through each execution path, unauthorized artifact access, concurrent acceptance and dispute, cancellation cleanup and feedback uniqueness.
+
+| Criterion | Verification evidence |
+| --- | --- |
+| 1–2 | Lobby fixtures exercise local completion, hosted model run binding, and cloud run binding with a patch digest computed from stored evidence. An outsider cannot read the agreement or cloud artifact. Local and hosted patch or PR references are supplied by the specialist. |
+| 3–4 | Versioned mutations preserve prior submissions and enforce current review references. Fixtures cover revision, conflicting acceptance/dispute, independent resolution and revoked task state. The recovery sweep retries cancellation and expiry cleanup. |
+| 5 | The zero-price flow supports one feedback entry per participant, moderator hiding, and the existing profile suspension controls. Fixtures reject duplicate feedback. |
+| 6 | The engagement view shows paginated submissions and history and uses the marketplace error and disabled-submit handling. Live execution qualification and an assistive-technology walkthrough remain beta evidence. |
 
 ## Risk Assessment
 
