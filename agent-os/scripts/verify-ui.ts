@@ -43,6 +43,8 @@ async function main(): Promise<void> {
     assert.match(marketplace, /Retry loading marketplace/);
     assert.match(marketplace, /button\.disabled = true/);
     assert.match(apps, /role="status" data-history-status/);
+    assert.match(apps, /Retry loading workspace controls/);
+    assert.match(read('agent-os-panel/tabs/apps.js'), /aria-controls="apps-workspace-controls"/);
     assert.match(apps, /page\.data\.length/);
     for (const [name, prefix] of [['vercelTeam', 'team_'], ['vercelProject', 'prj_']]) {
       const pattern = apps.match(new RegExp('name="' + name + '" pattern="([^"]+)"'))?.[1];

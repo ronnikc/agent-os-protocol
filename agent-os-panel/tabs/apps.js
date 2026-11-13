@@ -189,11 +189,11 @@ async function render() {
   });
 
   el.innerHTML = `
-    <section data-hosted-controls></section>
+    <section id="apps-workspace-controls" data-hosted-controls tabindex="-1"></section>
     ${sectionTitle('Deploy &amp; CI', repo ? repoLabel : 'no repo connected')}
     ${vercel}
     ${card({ accent: 'var(--color-border)', badge: '', title: 'Vercel Sandbox', body: 'Connect a Vercel project to run lobby tasks in disposable workspaces.',
-      actions: '<button class="btn btn-secondary btn-sm" type="button" id="btn-app-vercel-sandbox">Set up Vercel Sandbox</button>' })}
+      actions: '<button class="btn btn-secondary btn-sm" type="button" id="btn-app-vercel-sandbox" aria-controls="apps-workspace-controls">Set up Vercel Sandbox</button>' })}
     ${ci}
     ${sectionTitle('Chat apps', 'reach the swarm where your team is')}
     ${slack}${discord}${telegram}
@@ -204,7 +204,10 @@ async function render() {
   void mountHostedControls(el.querySelector('[data-hosted-controls]'));
   el.querySelector('#btn-app-vercel-sandbox').addEventListener('click', () => {
     const provider = el.querySelector('[data-provider] select[name="provider"]');
-    if (!provider) return;
+    if (!provider?.querySelector('option[value="vercel-sandbox"]')) {
+      el.querySelector('[data-hosted-controls]').focus();
+      return;
+    }
     provider.value = 'vercel-sandbox';
     provider.dispatchEvent(new Event('change'));
     provider.focus();
