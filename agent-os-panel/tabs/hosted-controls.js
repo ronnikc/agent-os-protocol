@@ -50,8 +50,8 @@ export async function mountHostedControls(root) {
       <fieldset data-vercel hidden disabled>
         <legend>Vercel Sandbox project</legend>
         <label data-vercel-target hidden>Project target <select name="vercelTarget"><option value="custom">Enter a project</option><option value="existing">Existing deployment project</option></select></label>
-        <label>Team ID <input name="vercelTeam" pattern="team_[a-zA-Z0-9_-]+" required></label>
-        <label>Project ID <input name="vercelProject" pattern="prj_[a-zA-Z0-9_-]+" required></label>
+        <label>Team ID <input name="vercelTeam" pattern="team_[a-zA-Z0-9_\\x2d]+" required></label>
+        <label>Project ID <input name="vercelProject" pattern="prj_[a-zA-Z0-9_\\x2d]+" required></label>
         <label>Authentication <select name="vercelAuth"><option value="token">Owner access token</option><option value="oidc">Project OIDC</option></select></label>
       </fieldset>
       <label data-credential>Credential <input name="credential" type="password" autocomplete="new-password" maxlength="8192"></label>

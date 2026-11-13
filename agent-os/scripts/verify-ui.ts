@@ -42,6 +42,14 @@ async function main(): Promise<void> {
     assert.match(marketplace, /button\.disabled = true/);
     assert.match(apps, /role="status" data-history-status/);
     assert.match(apps, /page\.data\.length/);
+    for (const [name, prefix] of [['vercelTeam', 'team_'], ['vercelProject', 'prj_']]) {
+      const pattern = apps.match(new RegExp('name="' + name + '" pattern="([^"]+)"'))?.[1];
+      assert.ok(pattern);
+      const browserPattern = new RegExp('^(?:' + pattern.replaceAll('\\\\', '\\') + ')$', 'v');
+      assert.ok(browserPattern.test(prefix + 'example-01'));
+      assert.ok(!browserPattern.test(prefix + 'bad/id'));
+      assert.ok(!browserPattern.test(prefix));
+    }
     assert.match(apps, /button\.textContent = 'Saving…'/);
   });
 
