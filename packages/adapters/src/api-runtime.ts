@@ -41,6 +41,7 @@ export interface ApiRuntimeConfig {
   workSignal?: () => AbortSignal | undefined;
   /** Injected repo client for hosted repository tool-use. */
   repoClient?: any;
+  workspaceFiles?: boolean;
   /** Injected lobby tools for roster queries, messaging, and task management. */
   lobbyTools?: LobbyToolsProvider;
   /** Operator-configured proof exchange. The model supplies neither a URL nor key material. */
@@ -62,7 +63,7 @@ function providerFor(cfg: ApiRuntimeConfig): ModelProviderAdapter {
   return new AnthropicCompatibleProvider({ ...opts, maxTokens: cfg.maxTokens });
 }
 
-function buildToolsForProvider(providerId: string, agentIdAccess: boolean): any[] {
+function buildToolsForProvider(providerId: string, agentIdAccess: boolean, workspaceFiles = false): any[] {
   const definitions = [
     {
       name: 'read_file',
@@ -74,7 +75,7 @@ function buildToolsForProvider(providerId: string, agentIdAccess: boolean): any[
     },
     {
       name: 'write_file',
-      description: 'Create or update a file in the repository and commit it.',
+      description: workspaceFiles ? 'Stage a file change in the workspace for review.' : 'Create or update a file in the repository and commit it.',
       properties: {
         path: { type: 'string', description: 'Relative path of the file to write' },
         content: { type: 'string', description: 'File content to write' },
@@ -123,7 +124,7 @@ function buildToolsForProvider(providerId: string, agentIdAccess: boolean): any[
   ];
 
   // Combine repo tools + lobby tools based on what's available
-  const allDefs = [...definitions, ...lobbyToolDefs];
+  const allDefs = workspaceFiles ? definitions.filter(tool => tool.name !== 'create_pr') : [...definitions, ...lobbyToolDefs];
   if (agentIdAccess) {
     allDefs.push({
       name: 'access_agent_id_resource',
@@ -232,6 +233,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
       }
       case 'write_file': {
         const commitSha = await client.writeFile(args.path, args.content, args.commit_message);
+        if (this.cfg.workspaceFiles) return 'File staged in the workspace for review.';
         return `Successfully wrote file. Commit SHA: ${commitSha}`;
       }
       case 'create_pr': {
@@ -280,7 +282,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
 
     // Repo client tool loop (non-streaming intermediate turns, final turn yields output)
     const tools = this.cfg.repoClient || this.cfg.accessAgentIdResource
-      ? buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource) : undefined;
+      ? buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource, this.cfg.workspaceFiles) : undefined;
     const signal = this.cfg.workSignal?.();
     let assistantText = '';
     let loopCount = 0;

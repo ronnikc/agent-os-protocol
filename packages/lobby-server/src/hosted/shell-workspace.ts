@@ -3,6 +3,7 @@
 
 import type { WorkspaceAdapter, WorkspaceCapabilities, WorkspaceAttempt, WorkspaceAllocationJournal } from '@agent-os/protocol-core';
 import type { WorkspaceAllocationRecovery } from './workspace-allocation.js';
+import { workspaceRepository } from './workspace-repository.js';
 
 export type WorkspaceGuest = {
   upload(data: Uint8Array, signal: AbortSignal): Promise<void>;
@@ -10,6 +11,58 @@ export type WorkspaceGuest = {
   read(path: string, signal: AbortSignal): Promise<string>;
 };
 const root = '/tmp/agent-os-workspace';
+const fileTool = `
+import base64, json, os, stat, sys
+operation, encoded_path, encoded_content = sys.argv[1:]
+path = base64.b64decode(encoded_path).decode()
+parts = path.split("/") if path else []
+directory = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+fd = os.open("/tmp/agent-os-workspace/source", directory)
+try:
+    for part in (parts if operation == "list" else parts[:-1]):
+        if operation == "write":
+            try:
+                os.mkdir(part, dir_fd=fd)
+            except FileExistsError:
+                pass
+        child = os.open(part, directory, dir_fd=fd)
+        os.close(fd)
+        fd = child
+    if operation == "list":
+        with os.scandir(fd) as entries:
+            names = []
+            for entry in entries:
+                if entry.name.lower() != ".git" and not entry.is_symlink():
+                    names.append(entry.name)
+                if len(names) == 500:
+                    break
+        print(json.dumps(sorted(names)))
+    elif operation == "read":
+        file = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
+        with os.fdopen(file, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError("Expected a regular file")
+            print(base64.b64encode(stream.read(65536)).decode())
+    elif operation == "write":
+        import secrets
+        name = ".agent-os-" + secrets.token_hex(16)
+        file = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o644, dir_fd=fd)
+        try:
+            with os.fdopen(file, "wb") as stream:
+                stream.write(base64.b64decode(encoded_content))
+            os.replace(name, parts[-1], src_dir_fd=fd, dst_dir_fd=fd)
+        finally:
+            try:
+                os.unlink(name, dir_fd=fd)
+            except FileNotFoundError:
+                pass
+finally:
+    os.close(fd)
+`;
+
+function shellArgument(value: string) {
+  return "'" + value.replaceAll("'", "'\\''") + "'";
+}
 
 export function createShellWorkspace(
   capabilities: WorkspaceCapabilities,
@@ -19,6 +72,25 @@ export function createShellWorkspace(
 ): WorkspaceAdapter {
   return {
     capabilities,
+    async openFileTools(credential, signal, journal) {
+      const id = journal.read().providerId;
+      if (!id) throw new Error('Workspace allocation is unavailable.');
+      const guest = await connect(id, credential, signal);
+      const invoke = async (operation: string, path: string, content = '') => {
+        const result = await guest.run(['python3', '-I', '-c', shellArgument(fileTool), operation,
+          shellArgument(Buffer.from(path).toString('base64')), shellArgument(content)].join(' '),
+        { signal, timeoutMs: 10_000 });
+        return result?.stdout ?? '';
+      };
+      return workspaceRepository({
+        read: async path => Buffer.from((await invoke('read', path)).trim(), 'base64').toString('utf8'),
+        list: async path => JSON.parse(await invoke('list', path)) as string[],
+        write: async (path, content) => {
+          // Keep each argument under Linux's per-argument limit.
+          await invoke('write', path, Buffer.from(content).toString('base64'));
+        },
+      }, signal);
+    },
     estimate: attempt => Math.ceil((attempt.deadline - Date.now()) / 1000) * config.maxMicrosPerSecond,
     async provision(key, attempt, credential, signal, journal, source) {
       if (!source) throw new Error('Workspace source is unavailable.');
@@ -35,7 +107,7 @@ export function createShellWorkspace(
       const id = journal.read().providerId;
       if (!id) throw new Error('Workspace allocation is unavailable.');
       const guest = await connect(id, credential, signal);
-      const command = "'" + config.command.replaceAll("'", "'\\''") + "'";
+      const command = shellArgument(config.command);
       const remaining = journal.deadline === undefined ? undefined : journal.deadline - Date.now();
       if (remaining !== undefined && remaining < 1000) throw new Error('Workspace deadline has elapsed.');
       const execute = remaining === undefined ? 'sh -c ' : 'timeout --kill-after=1s ' + Math.floor(remaining / 1000) + 's sh -c ';

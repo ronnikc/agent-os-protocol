@@ -7,10 +7,10 @@ import type { HostedAgentOptions } from './hosted-agent-runner.js';
 import { HostedControlError, type HostedControls } from './hosted-controls.js';
 
 /** Count model capacity in input + output tokens, independently of compute charges. */
-export function hostedModelBudget(controls: HostedControls, lobbyId: string) {
+export function hostedModelBudget(controls: HostedControls, lobbyId: string, workspace?: { id: string; taskId: string; signal: AbortSignal }) {
   const context = new AsyncLocalStorage<{ id: string; signal: AbortSignal }>();
   const run: NonNullable<HostedAgentOptions['run']> = (taskId, work) =>
-    controls.runModel(lobbyId, taskId, (id, signal) => context.run({ id, signal }, work));
+    controls.runModel(lobbyId, workspace?.taskId ?? taskId, (id, signal) => context.run({ id, signal }, work), workspace);
   const guardedCompletion: NonNullable<ApiRuntimeConfig['guardedCompletion']> = async (request, complete) => {
     const active = context.getStore();
     if (!active) throw new HostedControlError('Hosted model run is missing its reservation context.');
