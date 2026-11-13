@@ -3485,6 +3485,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
           return json({ error: 'lobby manager required to update tasks' }, 403);
         }
         const STATUSES = new Set(['pending', 'assigned', 'accepted', 'in_progress', 'completed', 'failed', 'cancelled']);
+        if (body.status === 'cancelled') hosted.cancelTaskWorkspaces(lobbyId, taskId, patchIdentity);
         const updatedTask = {
           ...coordTask,
           ...(STATUSES.has(body.status) ? { status: body.status } : {}),

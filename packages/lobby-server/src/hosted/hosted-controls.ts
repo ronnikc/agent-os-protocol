@@ -253,6 +253,12 @@ export class HostedControls {
     this.kick(lobbyId, id);
   }
 
+  cancelTaskWorkspaces(lobbyId: string, taskId: string, actor: string) {
+    for (const run of this.store.readHostedState(lobbyId).runs) {
+      if (run.kind === 'workspace' && run.taskId === taskId && !terminal(run)) this.cancel(lobbyId, run.id, actor);
+    }
+  }
+
   async runModel<T>(lobbyId: string, taskId: string | undefined, work: (id: string, signal: AbortSignal) => Promise<T>): Promise<T> {
     const run = this.store.mutateHostedState(lobbyId, state => {
       const policy = this.policy(state);
