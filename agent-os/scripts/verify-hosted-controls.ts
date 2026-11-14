@@ -954,6 +954,11 @@ export async function verifyHostedControls() {
     assert.equal(deniedAfterRollback.status, 409);
     assert.match(deniedAfterRollback.body.error, /Workspace execution is disabled/);
     assert.ok(!store.readHostedState('b').runs.some(r => r.attempt?.attemptId === 'rollback-denied'));
+    const disconnectedAfterRecovery = await call('b', provider, 'POST', { action: 'disconnect' });
+    assert.equal(disconnectedAfterRecovery.status, 200);
+    assert.deepEqual(disconnectedAfterRecovery.body.connections, []);
+    const persistedAfterDisconnect = new InMemoryLobbyStore(file).readHostedState('b');
+    assert.equal(persistedAfterDisconnect.runs.find(run => run.id === rollbackId)?.cleanup, 'confirmed');
     await server.close();
     server = undefined;
 
