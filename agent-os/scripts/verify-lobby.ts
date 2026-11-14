@@ -178,7 +178,32 @@ async function main(): Promise<void> {
           body: JSON.stringify({ action: 'publish', title: 'Rollback smoke', deliverable: 'Report',
             acceptanceChecks: ['Review report'], scope: 'Artifact only', deadline: Date.now() + 86_400_000, amount: '0' }) });
         assert.equal(reopened.status, 200);
-        assert.equal((await reopened.json()).listing.quote.amount, '0');
+        const { listing } = await reopened.json();
+        assert.equal(listing.quote.amount, '0');
+        const market = new Marketplace(restoredStore, async () => true, async () => {});
+        const delivery = new MarketplaceDeliveryService(restoredStore, new HostedControls(restoredStore), async () => true);
+        const publicId = publicLobby.lobby_id;
+        const did = 'did:ccd:testnet:restored-worker';
+        await restoredStore.addAgent(publicId, { agent_id: 'restored-worker', display_name: 'Worker',
+          role: 'worker', participant_type: 'cli_agent', status: 'idle', current_work: '',
+          registered_at: now, last_seen: now, identity_ref: did });
+        const profile = await market.profile(publicId, 'seller', { action: 'publish', agentDid: did,
+          displayName: 'Worker', skills: ['Testing'], runtimes: ['Local'], availability: 'Today', workSamples: ['Example'] }, false);
+        const bid = await market.bid(publicId, 'seller', listing.id, { action: 'submit', profileId: profile.id,
+          agentId: 'restored-worker', listingVersion: listing.version, amount: '0', turnaroundHours: 1,
+          expiresAt: Date.now() + 3_600_000, prerequisites: 'None', assumptions: 'Fixture' });
+        const termsDigest = bid.consent.digest;
+        const agreement = await market.hire(publicId, owner, listing.id, { listingVersion: listing.version,
+          bidVersion: bid.version, bidId: bid.id, digest: termsDigest });
+        const assignment = await restoredStore.getTask(publicId, agreement.assignmentId);
+        assert.ok(assignment);
+        await restoredStore.upsertTask({ ...assignment, status: 'completed' });
+        const submitted = await delivery.change(publicId, agreement.id, 'seller', false, {
+          action: 'submit', version: 0, termsDigest, execution: 'local', attemptId: 'post-rollback',
+          sourceRevision: 'a'.repeat(40), patchDigest: 'b'.repeat(64), testResults: 'pass' });
+        const accepted = await delivery.change(publicId, agreement.id, owner, false, {
+          action: 'accept', version: 1, termsDigest, submissionId: submitted.submissions[0].id });
+        assert.equal(accepted.status, 'accepted');
         const denied = await fetch(restoredUrl(tasksUrl), { headers: as(member) });
         assert.equal(denied.status, 200);
         assert.deepEqual((await denied.json()).coordination_tasks, []);
