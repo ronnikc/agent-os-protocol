@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>x401 Proof Test · Agent OS Protocol</title>
+  <link rel="stylesheet" href="./styles.css">
+  <script defer src="./x401-test.js"></script>
+</head>
+<body>
+  <main>
+    <section class="proof-pilot" aria-labelledby="test-title">
+      <p><a href="https://agent-os-protocol.com/">← Agent OS Protocol</a> · <a href="./">Open the panel</a></p>
+      <h1 id="test-title">x401 Proof Test</h1>
+      <p>Run an HTTP x401 v0.2.0 exchange using a synthetic Agent ID. This test needs no wallet, account, or payment.</p>
+      <ol>
+        <li>The resource returns HTTP 401 with a <code>PROOF-REQUEST</code> header.</li>
+        <li>The test client responds with a holder-bound OpenID4VP presentation. The verifier checks the issuer, holder key, resource and challenge before returning HTTP 200.</li>
+        <li>The client sends the same presentation again. The consumed challenge must return HTTP 401.</li>
+      </ol>
+      <button class="btn btn-primary" type="button" id="run-test">Run proof test</button>
+      <p id="test-status" role="status"></p>
+      <p><a href="/api/v1/agent-lobby/x401/test-resource">Open the challenge endpoint</a> to inspect its HTTP headers with your client.</p>
+      <p>The fixture issuer is scoped to this demo. Live interoperability with an independent verifier is a separate release check.</p>
+      <p><a href="./mainnet-proof.html">Try the native Concordium wallet proof</a> · <a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/http-proofs-and-payments.md#try-the-x401-proof-test">Read the x401 test guide</a></p>
+    </section>
+  </main>
+</body>
+</html>

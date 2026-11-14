@@ -13,7 +13,12 @@
       <p><a href="https://agent-os-protocol.com/">← Agent OS Protocol</a> · <a href="./">Open the panel</a></p>
       <h1 id="merchant-title">x402 Testnet Merchant</h1>
       <p>Test your x402 client against an Agent OS resource on Concordium Testnet. A successful payment transfers Testnet CCD and returns a finalized receipt with an explorer link.</p>
-      <p>Use a funded Testnet account and copy the endpoint into your x402 v2 client. Check the amount, recipient and fee sponsor before authorizing payment. If settlement is uncertain, retry with the same signed payment.</p>
+      <h2>Test with your own wallet</h2>
+      <ol>
+        <li>Select Concordium Testnet in your wallet and use a funded Testnet account you control.</li>
+        <li>Copy the endpoint into an x402 v2 client that supports Concordium sponsored exact payments. Your client must support signing with your Testnet account.</li>
+        <li>Review the amount, recipient and fee sponsor in your client before authorizing. Save the finalized receipt. If settlement is uncertain, retry with the same signed payment.</li>
+      </ol>
       <label for="merchant-endpoint">Merchant endpoint</label>
       <input id="merchant-endpoint" class="input" type="url" readonly size="48">
       <button type="button" class="btn btn-secondary" id="copy-endpoint">Copy endpoint</button>
@@ -26,7 +31,9 @@
         <dt>Recipient</dt><dd id="quote-recipient"></dd>
         <dt>Fee sponsor</dt><dd id="quote-sponsor"></dd>
       </dl>
-      <p><a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/http-proofs-and-payments.md#public-concordium-testnet-merchant">Read the client setup guide</a></p>
+      <h2>Enable your own merchant</h2>
+      <p>Deploy Agent OS with a Concordium Testnet recipient account and an HTTPS x402 facilitator that supports sponsored exact payments in CCD. In a private JSON file, configure the resource URL, recipient, distinct fee sponsor, amount, facilitator URL and persistent receipt directory. Set <code>AGENT_OS_X402_TESTNET_MERCHANT_FILE</code> to the absolute path of that file and restart the lobby server.</p>
+      <p><a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/http-proofs-and-payments.md#public-concordium-testnet-merchant">See the deployer configuration and client setup</a></p>
     </section>
   </main>
 </body>

@@ -28,6 +28,14 @@ Hosted API agents can use the `access_agent_id_resource` tool when the operator 
 
 The runtime supports the profile’s unsigned OpenID4VP DC API request for its Agent ID credential type. It sends the presentation only to the configured URL, rejects redirects, and reports the access result to the model. This tool performs proof access. Payment authorization remains in the separate x402 workflow.
 
+## Try the x401 Proof Test
+
+Open the [x401 Proof Test](https://lobby.agent-os-protocol.com/panel/x401-test.html) and select **Run proof test**. It uses an ephemeral issuer and a synthetic Agent ID to request a credential, verify a holder-bound OpenID4VP presentation, and reject replay. The result shows HTTP 200 for the accepted proof and HTTP 401 for the replay. No wallet or payment is needed.
+
+To inspect the challenge with your own HTTP client, send an unsigned GET to `/api/v1/agent-lobby/x401/test-resource` and look for HTTP 401 with `PROOF-REQUEST`. The demo issuer is trusted only by this test resource. This exercise does not count toward the independent verifier release check described above.
+
+Deployers can set `AGENT_OS_X401_TEST_ORIGIN` to their public HTTPS origin to bind credential audiences to their own host. For a local walkthrough, run `npm run lobby` and open `http://localhost:4730/panel/x401-test.html`. The local page runs the synthetic exchange through the bundled test harness.
+
 ## Try the Concordium Mainnet Proof Pilot
 
 1. On the device where your Concordium Wallet for Web is installed, open the [Mainnet Proof Pilot](https://agent-os-protocol.com/mainnet-proof).
@@ -63,6 +71,8 @@ Deployers can enable the route by setting `AGENT_OS_X402_TESTNET_MERCHANT_FILE` 
 | `receiptDirectory` | Absolute path to persistent, writable storage. Use a separate directory for each deployment and keep it across restarts. Run one merchant instance per directory. |
 
 An unsigned GET returns HTTP 402 with `PAYMENT-REQUIRED` when the configured facilitator advertises the exact Testnet scheme and sponsor. Submit the signed payment in `PAYMENT-SIGNATURE` and retain that header until you receive the finalized receipt. If a response is lost, replay the same header. The server uses the recorded transaction hash to recheck finality without another settlement call. If the facilitator response was lost before the hash was recorded, the server keeps the attempt reserved. Check the facilitator and chain before signing a new payment. A deployment without configuration returns 503.
+
+After restarting the lobby service with the configuration, run `curl -i https://your-lobby.example/api/v1/agent-lobby/x402/testnet-resource`. Expect HTTP 402 with the quote header. If the endpoint returns 503, check that the facilitator is reachable from the lobby server and that its `/supported` response advertises x402 v2, the Concordium Testnet network and the configured sponsor.
 
 ### Invite-only Mainnet pilot
 
