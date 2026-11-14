@@ -16,6 +16,8 @@ The [mainnet operator workflow](fund-concordium-agent-wallet.md#prepare-a-mainne
 
 Run `npm run verify-commerce` for deterministic proof, payment, and recovery fixtures. For x401, check challenge handling, issuer and holder binding, expiry, revocation and replay. For x402, check the network, asset, recipient, sponsor and amount, then retry the original signed payment after simulating an interrupted response. Record fixture outcomes, independent verifier or facilitator results, and finalized chain evidence as separate results.
 
+Use `node scripts/probe-public-services.mjs x401-proof`, `node scripts/probe-public-services.mjs x402-testnet`, and `node scripts/probe-public-services.mjs x402-mainnet-gate` to record timestamped deployment observations. The x401 command exercises the synthetic proof and replay. The x402 commands inspect unsigned responses. A Testnet quote establishes endpoint availability. Independent interoperability and chain settlement require their own evidence.
+
 ## x401 credential exchange
 
 The commerce client fetches an approved HTTPS resource. If the response includes `PROOF-REQUEST`, the client parses the x401 0.2.0 challenge with the Proof SDK and asks the configured `presentProof` callback to produce a credential presentation. The callback is responsible for verifier trust, permitted attributes, and holder consent. The client retries once with `PROOF-RESPONSE`. It stops before payment if the resource rejects the presentation.
