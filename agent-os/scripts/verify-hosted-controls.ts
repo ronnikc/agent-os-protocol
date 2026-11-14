@@ -15,6 +15,7 @@ import { hostedModelBudget } from '../../packages/lobby-server/src/hosted/model-
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-server/src/server.js';
+import { readRosterImport, recallRosterTraining } from '../../packages/lobby-server/src/hosted/roster-drafts.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
@@ -36,6 +37,14 @@ const policy = { workspaceEnabled: true, periodHours: 1, modelPerRun: 5000, mode
   computePerRun: 100, computePerPeriod: 100, concurrency: 4, deadlineMs: 30_000 };
 
 export async function verifyHostedControls() {
+  const pinned = 'https://github.com/example/agents/blob/' + 'a'.repeat(40) + '/agents/example.md';
+  assert.equal(await readRosterImport(pinned, async (url, init) => {
+    assert.equal(url, pinned.replace('github.com', 'raw.githubusercontent.com').replace('/blob/', '/'));
+    assert.equal(init?.redirect, 'error');
+    return new Response('# Example role');
+  }), '# Example role');
+  await assert.rejects(readRosterImport(pinned.replace('a'.repeat(40), 'main')), /full commit SHA/);
+  await assert.rejects(readRosterImport(pinned, async () => new Response('x'.repeat(16001))), /16 KB/);
   const signal = new AbortController().signal;
   let daytonaExists = false;
   let daytonaPrivate = false;
@@ -554,6 +563,7 @@ export async function verifyHostedControls() {
       },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
+        assert.ok(String(init?.body).includes('Workspace approval marker'));
         modelCalls++;
         return Response.json({ content: modelCalls === 1
           ? [{ type: 'tool_use', id: 'edit', name: 'write_file',
@@ -594,6 +604,31 @@ export async function verifyHostedControls() {
         created_at: now, updated_at: now });
     }
     server = await openServer(store);
+    const draftsPath = '/roster-drafts';
+    const training = { action: 'save', kind: 'train', slug: 'backend', title: 'Fixture training', content: 'Synthetic lesson marker' };
+    assert.equal((await call('a', draftsPath, 'POST', training, 'observer')).status, 403);
+    assert.equal((await call('a', draftsPath, 'POST', training, 'owner-b', 'b')).status, 401);
+    assert.equal((await call('a', draftsPath, 'POST', { ...training, content: 'API_KEY=fixture-key-example' })).status, 400);
+    const savedTraining = await call('a', draftsPath, 'POST', training);
+    assert.equal(savedTraining.status, 201);
+    const trainingId = savedTraining.body.draft.id;
+    assert.equal(recallRosterTraining(store, 'a', 'backend'), '');
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'activate', id: trainingId })).status, 200);
+    const restartedStore = new InMemoryLobbyStore(file);
+    assert.match(recallRosterTraining(restartedStore, 'a', 'backend'), /Synthetic lesson marker/);
+    assert.equal(recallRosterTraining(restartedStore, 'a', 'frontend'), '');
+    assert.equal(recallRosterTraining(restartedStore, 'b', 'backend'), '');
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'retire', id: trainingId })).status, 200);
+    assert.equal(recallRosterTraining(store, 'a', 'backend'), '');
+    const definition = await call('a', draftsPath, 'POST', { ...training, kind: 'create', slug: 'fixture-agent' });
+    assert.equal(definition.status, 201);
+    const definitionId = definition.body.draft.id;
+    assert.ok(!(await call('a', '/agent-definitions')).body.agents.some((agent: { slug: string }) => agent.slug === 'fixture-agent'));
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'activate', id: definitionId })).status, 400);
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'activate', id: definitionId, confirmTools: true })).status, 200);
+    assert.ok((await call('a', '/agent-definitions')).body.agents.some((agent: { slug: string }) => agent.slug === 'fixture-agent'));
+    assert.ok(!(await call('b', '/agent-definitions')).body.agents.some((agent: { slug: string }) => agent.slug === 'fixture-agent'));
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'retire', id: definitionId })).status, 200);
     assert.equal((await call('a', '/hosted-controls', 'PUT', policy, 'observer')).status, 403);
     assert.equal((await call('a', '/hosted-controls', 'PUT', policy, 'owner-b', 'b')).status, 401);
     assert.equal((await call('a', '/hosted-controls', 'PUT', { ...policy, concurrency: 0 })).status, 400);
@@ -712,11 +747,14 @@ export async function verifyHostedControls() {
     assert.equal(store.readHostedState('a').runs[1].usage[0].actual, undefined);
     assert.deepEqual((await call('a', provider, 'POST', { action: 'disconnect' })).body.connections, []);
     assert.equal((await call('b', '/provider-keys', 'POST', { provider: 'anthropic', api_key: 'fixture-model-key' })).status, 201);
-    const agent = await call('b', '/hosted-agents', 'POST', { name: 'Workspace fixture', provider: 'anthropic', model: 'fixture' });
+    const agent = await call('b', '/hosted-agents', 'POST', { name: 'Workspace fixture', agent_role: 'backend', provider: 'anthropic', model: 'fixture' });
     assert.equal(agent.status, 201, JSON.stringify(agent.body));
     const agentTask = await call('b', '/tasks', 'POST', { title: 'Edit README', description: 'Update README.md.',
       assigned_to: agent.body.agent_id, output_mode: 'workspace' });
     assert.equal(agentTask.status, 201);
+    const workspaceLesson = await call('b', draftsPath, 'POST', { ...training, content: 'Workspace approval marker' });
+    assert.equal(workspaceLesson.status, 201);
+    assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: workspaceLesson.body.draft.id })).status, 200);
     assert.equal(modelCalls, 0);
     waitForCancel = false;
     actual = 20;

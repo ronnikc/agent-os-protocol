@@ -309,8 +309,8 @@ export async function fetchJson(url, opts) {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/providers/${provider}/models`;
         } else if (cleanPath === 'agent-nicknames') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-nicknames`;
-        } else if (cleanPath === 'agent-definitions') {
-          lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/agent-definitions`;
+        } else if (cleanPath === 'agent-definitions' || cleanPath === 'roster-drafts') {
+          lobbyPath = `/api/v1/agent-lobby/lobbies/${encodeURIComponent(s.lobbyId)}/${cleanPath}`;
         } else if (cleanPath === 'gantt/phases') {
           lobbyPath = `/api/v1/agent-lobby/lobbies/${s.lobbyId}/gantt/phases`;
         } else if (cleanPath.startsWith('tasks/') && cleanPath.endsWith('/delete')) {
