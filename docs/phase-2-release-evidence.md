@@ -6,7 +6,7 @@ Start capture after the beta coordinator records Sprint 2.8.0 exit and identifie
 
 On November 14, 2026, `scripts/smoke.sh` passed from a fresh Git clone of `003eac0b04a6b2ddc8d9bab60462e89521e05634` on Windows build 19045 with Git Bash, Node 24.14.0, and npm 11.9.0. The working-copy lockfile SHA-256 was `435ca45a1a922c821e92fa03916fb4b3f18ba9736c2f5915344ea8a967574d27`.
 
-The run installed dependencies, passed `verify-all`, booted the local Panel, standalone Lobby, and Relay, and received HTTP 200 from the runtime and agent lists, lobby discovery, and relay health. Use a Git clone for this check because the memory suite inspects tracked hook modes and Git history. Repeat verification from the frozen candidate after beta exit.
+The run installed dependencies, passed `verify-all`, booted the local Panel, standalone Lobby, and Relay, and received HTTP 200 from the runtime and agent lists, lobby discovery, and relay health. The smoke script requires HTTP 200 at each service's readiness route and prints the last response status if a service stays unhealthy. Use a Git clone for this check because the memory suite inspects tracked hook modes and Git history. Repeat verification from the frozen candidate after beta exit.
 
 ## Benchmark protocol
 
