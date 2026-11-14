@@ -4,6 +4,8 @@ The hosted Panel exposes the three actions in **Agents** for lobby management. I
 
 Hosted tasks read up to four active training records for the current lobby and role. Training is fetched at task time, and retirement removes it from future recall. Merge reflection can produce a training draft for approval when the lobby has a model configured and the task has an identifiable agent role.
 
+To start a hosted agent in a private lobby, use **Create ID** or **Set ID** on its roster row before launching it. Use an Agent ID that meets the lobby's admission policy. Saving a draft, requesting review, and activating a role do not require an Agent ID for that role.
+
 The local Panel offers **Train Agent** and **Manage drafts** using the same files as the training CLI. A Windows Chromium walkthrough verified that pasted guidance appears in the preview, activation survives a page reload, and retirement returns the lesson to draft status. The relay reads active local packs at the start of tracked lobby tasks. [Local training guide](training-agents.md)
 
 A live Windows check at revision `1456c71` launched a Codex CLI relay against an isolated localhost lobby and a temporary workspace. A tracked text task asked for a marker that appeared only in the active role-specific skill. The relay completed the task and the stored result contained the marker. This verifies delivery of active training through the local relay and live runtime. Model comparisons and production lobby validation require separate runs.
@@ -27,6 +29,8 @@ The hosted task fixture follows the same role through completed text tasks befor
 On November 14, 2026, the hosted panel at `39e5856` ran against an isolated localhost lobby. The test-admin session used a disposable store. In the browser, Create Agent saved a draft and added the role after read-only tool approval. Import Agent loaded the commit-pinned public Data Pipeline Engineer Markdown and saved it as a draft. Train Agent saved and activated a lesson for the newly created role. Manage Drafts showed all three statuses.
 
 Request agent review displayed the expected setup message because the isolated lobby had no model configured. Model-backed review and task-time recall are covered by hosted fixtures. The signed-in public deployment walkthrough remains open.
+
+A follow-up Chromium run at `ba71859` used a separate local lobby and a fake model provider. The Panel displayed Agent Evaluation Engineer output for all three draft types. Both created and imported roles appeared in the roster after read-only tool approval, and the reviewed lesson was activated. The private lobby denied runtime launch for the created role without a bound Agent ID. The hosted verification suite covers task-time recall with a fake provider, including the change after retirement.
 
 ## Further workflow design
 

@@ -2063,6 +2063,10 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const roleSlug = typeof body.agent_role === 'string' ? body.agent_role : '';
         const defaultName = typeof body.name === 'string' && body.name.trim() ? body.name.slice(0, 120) : 'Hosted Agent';
         const displayName = (roleSlug && nicknames[roleSlug]) || defaultName;
+        const joinToken = agentRef ?? definitionIdentity ?? undefined;
+        if (!joinToken && (await store.getLobby(lobbyId))?.visibility === 'private') {
+          return json({ error: 'To launch this agent in a private lobby, use Create ID or Set ID on its Agents roster row. The Agent ID must meet the lobby’s admission policy.' }, 400);
+        }
 
         try {
           const newId = await spawnHostedAgent({
@@ -2074,7 +2078,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             model,
             baseUrl: resolved.baseUrl,
             systemPrompt,
-            joinToken: agentRef ?? definitionIdentity ?? undefined,
+            joinToken,
           });
           // Remember this agent as desired-running so it's re-launched (on the same model) after a
           // lobby restart/deploy — hosted agents live in-process and otherwise die on restart.
