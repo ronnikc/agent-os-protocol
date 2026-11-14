@@ -47,6 +47,15 @@ export function summarizeBenchmark(report, manifest) {
     if (manifest?.revision !== report.revision || !Array.isArray(manifest.attempts) || !manifest.attempts.length) {
       throw new Error('Expected an attempt manifest for the pinned revision.');
     }
+    for (const group of groups) {
+      const planned = manifest.configurations?.[group];
+      if (!planned) throw new Error('Missing frozen manifest configuration for ' + group);
+      for (const key of [...configLabels, ...configLimits]) {
+        if (planned[key] !== configurations[group][key]) {
+          throw new Error(`Benchmark configuration differs from the manifest for ${group} (${key}).`);
+        }
+      }
+    }
     for (const [index, row] of manifest.attempts.entries()) {
       if (typeof row?.id !== 'string' || !row.id || row.id.trim() !== row.id || expected.has(row.id) ||
           typeof row.scenario !== 'string' || !row.scenario.trim() || !groups.includes(row.group)) {
