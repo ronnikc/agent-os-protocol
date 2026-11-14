@@ -17,7 +17,10 @@ async function checkQuote() {
       redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15_000),
     });
     if (response.status === 503) {
-      status.textContent = 'This deployment has no available Testnet facilitator. Check the setup guide or try again later.';
+      const problem = await response.json().catch(() => null);
+      status.textContent = problem?.error === 'The Testnet merchant is not configured by this deployer.'
+        ? 'This deployment has not enabled Testnet payments. Use a deployment with a configured facilitator. If you operate this deployment, follow the setup guide below.'
+        : 'Testnet quotes are temporarily unavailable. Try again later. If you operate this deployment, check facilitator reachability and its supported network and sponsor.';
       return;
     }
     const header = response.headers.get('PAYMENT-REQUIRED');
