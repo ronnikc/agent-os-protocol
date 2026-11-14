@@ -577,6 +577,11 @@ export async function verifyHostedControls() {
       },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
+        if (String(init?.body).includes('First task smoke')) {
+          assert.ok(!String(init?.body).includes('Workspace approval marker'));
+          return Response.json({ content: [{ type: 'text', text: 'RESULT: First task completed.' }],
+            usage: { input_tokens: 100, output_tokens: 50 } });
+        }
         if (String(init?.body).includes('Act as the Agent Evaluation Engineer')) {
           return Response.json({ content: [{ type: 'text', text: 'Review fixture: verify task evidence.' }],
             usage: { input_tokens: 100, output_tokens: 50 } });
@@ -815,6 +820,17 @@ export async function verifyHostedControls() {
     assert.equal(store.readHostedState('b').runs.find(r => r.id === execution.body.run.id)?.workspaceAgent, 'finished');
     assert.equal((await call('b', draftsPath, 'POST', { action: 'retire', id: lessonId })).status, 200);
     assert.equal(recallRosterTraining(new InMemoryLobbyStore(file), 'b', 'backend'), '');
+    const firstTask = await call('b', '/tasks', 'POST', { title: 'First task smoke',
+      description: 'Return a text result.', assigned_to: agent.body.agent_id, output_mode: 'text' });
+    assert.equal(firstTask.status, 201, JSON.stringify(firstTask.body));
+    let firstResult: LobbyTask | undefined;
+    for (let attempt = 0; attempt < 120; attempt++) {
+      firstResult = await store.getTask('b', firstTask.body.task.task_id);
+      if (firstResult?.status === 'completed' || firstResult?.status === 'failed') break;
+      await new Promise(resolve => setTimeout(resolve, 50));
+    }
+    assert.equal(firstResult?.status, 'completed');
+    assert.equal(firstResult.result, 'First task completed.');
     waitForCancel = true;
     const timeoutTask = { ...agentTask.body.task, task_id: 'timeout-task', output_mode: undefined };
     await store.upsertTask(timeoutTask);
