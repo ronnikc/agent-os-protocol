@@ -2,11 +2,15 @@
 
 The hosted Panel exposes the three actions in **Agents** for lobby management. Imports currently take a public GitHub Markdown file URL pinned to a full commit SHA. Edit the loaded text in the preview and choose read-only or standard hosted tools. Manage saved drafts from **Manage drafts**, where you can request Agent Evaluation Engineer review, activate, or retire.
 
-Hosted tasks read up to four active training records for the current lobby and role. Training is fetched at task time, and retirement removes it from future recall. Merge reflection can produce a training draft for approval when the lobby has a model configured and the task has an identifiable agent role. The existing local training CLI remains the local workflow.
+Hosted tasks read up to four active training records for the current lobby and role. Training is fetched at task time, and retirement removes it from future recall. Merge reflection can produce a training draft for approval when the lobby has a model configured and the task has an identifiable agent role.
+
+The local Panel offers **Train Agent** and **Manage drafts** using the same files as the training CLI. A Windows Chromium walkthrough verified that pasted guidance appears in the preview, activation survives a page reload, and retirement returns the lesson to draft status. The relay reads active local packs at the start of tracked lobby tasks. [Local training guide](training-agents.md)
 
 The hosted verification suite checks that approved records survive a store restart, stay within their lobby and role, and reach an assigned workspace task. It also checks three successive requests on one hosted session before approval, after approval, and after retirement. Retired training is omitted from later system context. Earlier conversation history may still contain the agent's own discussion of that guidance.
 
-Put **Create Agent**, **Import Agent**, and **Train Agent** in the Agents panel. Each action opens a draft with a preview, a tool and memory diff, an optional **Request agent review** action, and explicit activation. The draft shows the target lobby or local workspace before saving.
+## Further workflow design
+
+The following describes planned refinements to draft previews, import conversion, reviewer selection, and rollback.
 
 | Action | First step | Draft output |
 | --- | --- | --- |
