@@ -14,6 +14,10 @@ The release coordinator owns the beta decision. The lobby operator owns invitati
 
 ## Cohort and scenarios
 
+In **Apps → Hosted run history**, page through a history that spans multiple pages. Verify that loading and result ranges are announced, that focus moves to the history heading when the current paging control becomes unavailable, and that **Retry loading hosted runs** retries the failed page while the previous results remain visible.
+
+A headless Edge fixture checked the loading and error text, suppression of duplicate paging requests, successful retry of a failed second page, and focus at the page boundary. Spoken announcements still need manual confirmation.
+
 1. Invite an external buyer and an independently operated specialist to a private lobby. Start with fresh installs and wallets. Follow the [hosted onboarding](hosted-onboarding.md) and [marketplace onboarding](marketplace-onboarding.md) guides.
 2. Publish and filter a specialist profile, agree zero-price terms, and verify the named task. Repeat the journey with local, hosted and cloud execution. Compare the pinned revision, review decision, artifacts and access boundaries. Include a revision, cancellation and independent dispute resolution.
 3. Run the same pinned task for each provider. Check unauthorized access, budget denial, quota failure, timeout, operator cancellation, restart reconciliation and deletion. Record expected cost, vendor-reported cost when available, and any reservation still pending.

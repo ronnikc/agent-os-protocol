@@ -84,7 +84,7 @@ export async function mountHostedControls(root) {
       <button class="btn btn-secondary btn-sm" type="submit" disabled>Launch workspace</button>
       <p role="status" data-status></p>
     </form>
-    <h3>Hosted run history</h3>
+    <h3 data-history-heading tabindex="-1">Hosted run history</h3>
     <p role="status" data-history-status></p>
     <div data-runs></div>
     <button class="btn btn-secondary btn-sm" type="button" data-refresh>Refresh history</button>
@@ -269,6 +269,7 @@ export async function mountHostedControls(root) {
 
   const runs = root.querySelector('[data-runs]');
   const status = root.querySelector('[data-history-status]');
+  const historyHeading = root.querySelector('[data-history-heading]');
   const refresh = root.querySelector('[data-refresh]');
   const recover = root.querySelector('[data-recover]');
   const previous = root.querySelector('[data-prev]');
@@ -276,20 +277,31 @@ export async function mountHostedControls(root) {
   let offset = 0;
   const pageSize = 20;
   let version = 0;
-  async function history(target, message) {
+  let pending = false;
+  let failedTarget;
+  const controls = [previous, next, refresh];
+  async function history(target, message, trigger) {
     const current = ++version;
-    previous.disabled = next.disabled = refresh.disabled = true;
+    pending = true;
+    controls.forEach(control => control.setAttribute('aria-disabled', 'true'));
+    status.textContent = 'Loading hosted runs…';
     const page = await request(`/hosted-runs?limit=${pageSize}&offset=${target}`, 'GET');
     if (current !== version) return;
-    refresh.disabled = false;
+    pending = false;
+    controls.forEach(control => control.removeAttribute('aria-disabled'));
     if (!Array.isArray(page?.data)) {
-      status.textContent = errorMessage(page, 'Unable to load hosted runs. Refresh to retry.');
+      failedTarget = target;
+      refresh.textContent = 'Retry loading hosted runs';
+      status.textContent = errorMessage(page, 'Unable to load hosted runs.');
       return;
     }
+    failedTarget = undefined;
+    refresh.textContent = 'Refresh history';
+    const moveFocus = trigger && document.activeElement === trigger;
     offset = page.offset;
     previous.disabled = offset === 0;
-    next.disabled = offset + page.data.length >= page.total;
-    status.textContent = message || (page.total ? `Showing ${offset + 1}–${offset + page.data.length} of ${page.total} runs.` : 'No hosted runs.');
+    next.disabled = !page.data.length || offset + page.data.length >= page.total;
+    status.textContent = message || (page.data.length ? `Showing ${offset + 1}–${offset + page.data.length} of ${page.total} runs.` : 'No hosted runs on this page.');
     runs.innerHTML = page.data.map(run => {
       const unit = run.kind === 'model' ? 'tokens' : 'millionths of USD';
       const reserved = run.usage.reduce((total, item) => total + item.reserved, 0);
@@ -308,6 +320,7 @@ export async function mountHostedControls(root) {
           `<button class="btn btn-secondary btn-sm" data-cancel="${escapeHtml(run.id)}" type="button">Cancel run</button>`}
       </article>`;
     }).join('');
+    if (moveFocus && trigger.disabled) historyHeading.focus();
   }
   runs.addEventListener('click', async event => {
     const button = event.target.closest('[data-cancel]');
@@ -335,8 +348,8 @@ export async function mountHostedControls(root) {
     else status.textContent = errorMessage(result, 'Unable to request recovery. Try again.');
     recover.focus();
   });
-  refresh.addEventListener('click', () => void history(offset));
-  previous.addEventListener('click', () => void history(Math.max(0, offset - pageSize)));
-  next.addEventListener('click', () => void history(offset + pageSize));
+  refresh.addEventListener('click', () => { if (!pending) void history(failedTarget ?? offset); });
+  previous.addEventListener('click', () => { if (!pending) void history(Math.max(0, offset - pageSize), undefined, previous); });
+  next.addEventListener('click', () => { if (!pending) void history(offset + pageSize, undefined, next); });
   await history(0);
 }
