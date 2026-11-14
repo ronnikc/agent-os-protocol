@@ -17,6 +17,7 @@
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { TaskRepository } from './hosted/task-repository.js';
 import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
+import { createX401TestFacility, X401_TEST_PATH } from './hosted/x401-test.js';
 import type { GitHubRepoClient } from './hosted/github-repo-client.js';
 import { randomUUID } from 'node:crypto';
 import { loadHostedAgentIdAccess } from './hosted/agent-id-access.js';
@@ -1510,10 +1511,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
 
   const testMerchant = loadTestMerchant(process.env.AGENT_OS_X402_TEST_MERCHANT_FILE);
   const testnetMerchant = loadTestMerchant(process.env.AGENT_OS_X402_TESTNET_MERCHANT_FILE, 'testnet');
+  const x401Test = createX401TestFacility(process.env.AGENT_OS_X401_TEST_ORIGIN || 'https://lobby.agent-os-protocol.com');
 
   async function handleHttp(req: IncomingMessage, res: ServerResponse): Promise<void> {
     const url = new URL(req.url ?? '/', `http://${req.headers.host ?? 'localhost'}`);
     let path = url.pathname;
+    if (path === X401_TEST_PATH || path === X401_TEST_PATH + '/check') {
+      await x401Test(req, res, path);
+      return;
+    }
     if (path === TESTNET_MERCHANT_PATH) {
       if (testnetMerchant) await testnetMerchant(req, res);
       else res.writeHead(503, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', 'Access-Control-Allow-Origin': '*' })

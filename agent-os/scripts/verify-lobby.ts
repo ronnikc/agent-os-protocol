@@ -626,6 +626,28 @@ async function main(): Promise<void> {
   };
 
   try {
+    await check('x401 test resource offers a challenge and rejects a replayed synthetic proof', async () => {
+      const endpoint = lobbyUrl + '/api/v1/agent-lobby/x401/test-resource';
+      const page = await fetch(lobbyUrl + '/panel/x401-test.html');
+      assert.equal(page.status, 200);
+      assert.match(await page.text(), /Run proof test/);
+      const challenge = await fetch(endpoint);
+      assert.equal(challenge.status, 401);
+      assert.ok(challenge.headers.get('proof-request'));
+      assert.equal(challenge.headers.get('cache-control'), 'no-store');
+      const invalid = await fetch(endpoint, { headers: { 'PROOF-RESPONSE': 'invalid' } });
+      assert.equal(invalid.status, 401);
+      assert.ok(invalid.headers.get('proof-result'));
+      const denied = await fetch(endpoint + '/check', { method: 'POST' });
+      assert.equal(denied.status, 404);
+      await denied.body?.cancel();
+      const checkResult = await fetch(endpoint + '/check', {
+        method: 'POST', headers: { 'X-Agent-OS-Proof': '1' },
+      });
+      assert.equal(checkResult.status, 200);
+      assert.deepEqual(await checkResult.json(), { proofStatus: 200, replayStatus: 401 });
+    });
+
     await check('two clients register and see a shared roster over the wire', async () => {
       const a = mk('A');
       await a.connect();
