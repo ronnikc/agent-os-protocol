@@ -42,8 +42,6 @@ Open <http://localhost:4800>. You should see the panel discover the agent roster
 3. **Sprint** tab → plan work and dispatch it to the boss.
 4. **Tasks** / **Gantt** → watch it execute.
 
-For a hosted first task, launch a named agent after connecting a model provider and setting hosted model limits in **Apps**. In **Tasks**, assign it a small task that returns a text result. Open the completed task to confirm the result. The hosted smoke fixture runs this dispatch and completion path on Windows and Ubuntu with a fake model provider. It also checks that retired training is omitted from the new task's model request. A real provider run requires your configured account.
-
 Useful variants:
 
 ```bash
@@ -52,6 +50,15 @@ npm run agent-os-panel -- --port 5000    # custom panel port
 npm run relay                            # run just the relay (ws://localhost:4722)
 npm run agent-os-panel-tray              # system-tray launcher
 ```
+
+## Run your first hosted task
+
+1. Open the [hosted panel](https://lobby.agent-os-protocol.com/panel/), sign in with a Concordium wallet, and select a lobby you manage.
+2. Connect your own model account and set a hosted model budget. Follow the [hosted onboarding guide](hosted-onboarding.md) for provider setup and limits.
+3. In **Agents**, start a named hosted agent. In **Tasks**, assign it a small task with a text deliverable, such as summarizing three sample notes.
+4. Open the completed task to confirm the result. If you activated a lesson for the role, check **Apps → Hosted audit history** for the lesson ID attached to the task.
+
+The hosted fixture exercises dispatch, completion, and training recall with a fake model provider on Windows and Ubuntu. The public panel uses the provider account configured by your lobby. For agent drafts and review, see the [roster workflow guide](agent-roster-workflows.md). For hiring and delivery review, see [Marketplace onboarding](marketplace-onboarding.md).
 
 ## Configure with `.env`
 
