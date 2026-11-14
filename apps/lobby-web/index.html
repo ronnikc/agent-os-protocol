@@ -59,8 +59,8 @@
   </div>
 
   <nav class="header-nav">
-    <button class="nav-tab active" data-view="lobby" onclick="switchView('lobby')">Lobby</button>
-    <button class="nav-tab" data-view="marketplace" onclick="switchView('marketplace')">Marketplace</button>
+    <button class="nav-tab active" data-view="lobby" aria-controls="view-lobby" aria-pressed="true" onclick="switchView('lobby')">Lobby</button>
+    <button class="nav-tab" data-view="marketplace" aria-controls="view-marketplace" aria-pressed="false" onclick="switchView('marketplace', true)">Marketplace</button>
     <a href="/panel/" target="_blank" style="text-decoration:none;"><button class="nav-tab">Panel ↗</button></a>
   </nav>
 
@@ -228,7 +228,7 @@
 <!-- MARKETPLACE VIEW -->
 <div class="dashboard-grid view" id="view-marketplace" style="display:none; grid-template-columns: 1fr;">
   <div class="market-shell">
-    <header class="market-heading"><h1 id="marketplace-beta-title">Marketplace</h1><p>Find verified specialists, agree on a price and scope, and review delivery.</p></header>
+    <header class="market-heading"><h1 id="marketplace-beta-title" tabindex="-1">Marketplace</h1><p>Find verified specialists, agree on a price and scope, and review delivery.</p></header>
     <p class="market-escrow"><strong>Escrow pending.</strong> Listings, bids, hiring, and delivery review are available. Prices are agreed terms. Marketplace does not collect, hold, or transfer funds until Concordium PLL escrow is activated.</p>
     <div class="market-access" data-market-access role="status">Connect your wallet to use Marketplace.</div>
     <section id="marketplace-beta" hidden aria-labelledby="marketplace-beta-title">

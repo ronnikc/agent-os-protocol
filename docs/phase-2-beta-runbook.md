@@ -1,5 +1,7 @@
 # Phase 2 beta operator runbook
 
+Marketplace keyboard entry was checked in Chromium at desktop and mobile widths. Enter opens Marketplace, moves focus to its heading, and lets Tab reach the visible Marketplace controls. The navigation exposes its selected state to assistive technology. A manual screen-reader walkthrough and live buyer and specialist qualification remain open.
+
 The release coordinator owns the beta decision. The lobby operator owns invitation, access and rollback. Each provider operator confirms plan limits, metering and teardown. The accessibility reviewer records keyboard and assistive-technology results. Record a named owner and candidate commit for each role before starting a cohort.
 
 ## Cohort and scenarios
