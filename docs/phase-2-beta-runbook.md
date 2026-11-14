@@ -4,6 +4,8 @@ Marketplace keyboard entry was checked in Chromium at desktop and mobile widths.
 
 A signed-in mobile Chromium fixture exercised a two-page listing result. Keyboard activation of **Next listings** moved focus to **Listings and bids** when the button became disabled on the last page. Listing titles sit under that section in the heading hierarchy, and each review button names its listing.
 
+When opening bid details, check that the review button exposes its expanded state and that keyboard focus reaches the heading for the selected listing. Verify that a failed load returns focus to the review button and announces the error.
+
 The release coordinator owns the beta decision. The lobby operator owns invitation, access and rollback. Each provider operator confirms plan limits, metering and teardown. The accessibility reviewer records keyboard and assistive-technology results. Record a named owner and candidate commit for each role before starting a cohort.
 
 ## Cohort and scenarios
