@@ -91,6 +91,12 @@ export async function mountHostedControls(root) {
     <button class="btn btn-secondary btn-sm" type="button" data-recover>Retry recovery</button>
     <button class="btn btn-secondary btn-sm" type="button" data-prev>Previous page</button>
     <button class="btn btn-secondary btn-sm" type="button" data-next>Next page</button>
+    <details data-hosted-audit>
+      <summary>Hosted audit history</summary>
+      <p role="status" data-audit-status></p>
+      <ul data-audit-events></ul>
+      <button class="btn btn-secondary btn-sm" type="button" data-audit-more hidden>Load older events</button>
+    </details>
   `;
   const policyForm = root.querySelector('[data-policy]');
   const providerForm = root.querySelector('[data-provider]');
@@ -351,5 +357,47 @@ export async function mountHostedControls(root) {
   refresh.addEventListener('click', () => { if (!pending) void history(failedTarget ?? offset); });
   previous.addEventListener('click', () => { if (!pending) void history(Math.max(0, offset - pageSize), undefined, previous); });
   next.addEventListener('click', () => { if (!pending) void history(offset + pageSize, undefined, next); });
+  const audit = root.querySelector('[data-hosted-audit]');
+  const auditStatus = audit.querySelector('[data-audit-status]');
+  const auditEvents = audit.querySelector('[data-audit-events]');
+  const auditMore = audit.querySelector('[data-audit-more]');
+  let auditOffset = 0;
+  let auditLoading = false;
+  async function loadAudit() {
+    if (auditLoading) return;
+    auditLoading = true;
+    auditMore.setAttribute('aria-disabled', 'true');
+    auditStatus.textContent = 'Loading audit events…';
+    try {
+      const page = await request(`/hosted-runs/audit?limit=${pageSize}&offset=${auditOffset}`, 'GET');
+      if (!audit.isConnected) return;
+      if (!Array.isArray(page?.data)) {
+        auditStatus.textContent = errorMessage(page, 'Unable to load audit events.');
+        auditMore.textContent = 'Retry loading audit events';
+        auditMore.hidden = false;
+        return;
+      }
+      for (const event of page.data) {
+        const item = document.createElement('li');
+        const label = event.action === 'training_context_prepared' ? 'Training context prepared' : event.action;
+        item.textContent = [new Date(event.at).toLocaleString(), label, event.actor, event.subject,
+          Array.isArray(event.lessonIds) ? 'Lessons ' + event.lessonIds.join(', ') : ''].filter(Boolean).join(' · ');
+        auditEvents.append(item);
+      }
+      auditOffset = page.offset + page.data.length;
+      auditStatus.textContent = auditOffset ? `${auditOffset} of ${page.total} audit events loaded.` : 'No audit events.';
+      auditMore.textContent = 'Load older events';
+      const hadFocus = document.activeElement === auditMore;
+      auditMore.hidden = !page.data.length || auditOffset >= page.total;
+      if (auditMore.hidden && hadFocus) audit.querySelector('summary').focus();
+    } finally {
+      auditLoading = false;
+      auditMore.removeAttribute('aria-disabled');
+    }
+  }
+  audit.addEventListener('toggle', () => {
+    if (audit.open && !auditOffset) void loadAudit();
+  });
+  auditMore.addEventListener('click', () => void loadAudit());
   await history(0);
 }
