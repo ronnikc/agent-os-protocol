@@ -23,6 +23,8 @@ your docs ──▶ dry-run (plan only) ──▶ reviewable draft ──▶ you
 
 ## Quick start
 
+In the local Panel, open **Agents → Train Agent**, choose a role, enter a lesson title and paste the guidance. Save and preview the draft before activating it. Open **Manage drafts** to retire an active lesson. Retirement returns it to draft status so you can activate it again. The hosted Panel offers model-assisted review for drafts in a hosted lobby.
+
 Always **dry-run first** — it writes nothing and shows you the plan:
 
 ```bash

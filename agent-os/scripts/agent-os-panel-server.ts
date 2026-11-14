@@ -20,6 +20,7 @@ import {
 import { join, resolve, extname } from 'node:path';
 import { spawn, execSync, type ChildProcess } from 'node:child_process';
 import { hostname, platform } from 'node:os';
+import { handleLocalTraining } from './panel-local-training.js';
 
 // Node v24 on Windows cannot spawn .cmd files (EINVAL). Use node + tsx CLI module directly.
 const TSX_CLI = join(resolve(import.meta.dirname ?? __dirname, '../..'), 'node_modules/tsx/dist/cli.mjs');
@@ -1443,6 +1444,11 @@ const server = createServer(async (req, res) => {
   const url = new URL(req.url ?? '/', `http://localhost:${PORT}`);
   const path = url.pathname;
   const method = req.method ?? 'GET';
+
+  if (path === '/api/local-training') {
+    await handleLocalTraining(req, res, REPO_ROOT);
+    return;
+  }
 
   // CORS preflight
   if (method === 'OPTIONS') {
