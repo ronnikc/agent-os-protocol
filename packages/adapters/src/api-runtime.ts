@@ -39,6 +39,8 @@ export interface ApiRuntimeConfig {
   maxTokens?: number;
   guardedCompletion?: (request: AgentCompletionRequest, complete: (request: AgentCompletionRequest) => Promise<AgentCompletionResult>) => Promise<AgentCompletionResult>;
   workSignal?: () => AbortSignal | undefined;
+  taskContext?: () => string;
+  readOnlyTools?: boolean;
   /** Injected repo client for hosted repository tool-use. */
   repoClient?: any;
   workspaceFiles?: boolean;
@@ -148,8 +150,11 @@ function buildToolsForProvider(cfg: ApiRuntimeConfig): any[] {
     name: 'read_workspace_evidence', description: 'Read bounded lifecycle and test results for the current assigned task.',
     properties: {}, required: [],
   });
+  const available = cfg.readOnlyTools
+    ? allDefs.filter(tool => !['write_file', 'create_pr', 'send_message', 'access_agent_id_resource'].includes(tool.name))
+    : allDefs;
   if (cfg.provider.id === 'openai-compatible') {
-    return allDefs.map(d => ({
+    return available.map(d => ({
       type: 'function',
       function: {
         name: d.name,
@@ -163,7 +168,7 @@ function buildToolsForProvider(cfg: ApiRuntimeConfig): any[] {
     }));
   } else {
     // Anthropic-compatible
-    return allDefs.map(d => ({
+    return available.map(d => ({
       name: d.name,
       description: d.description,
       input_schema: {
@@ -222,6 +227,9 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private async executeTool(name: string, args: any): Promise<string> {
+    if (this.cfg.readOnlyTools && ['write_file', 'create_pr', 'send_message', 'access_agent_id_resource'].includes(name)) {
+      return 'This agent is configured with read-only tools.';
+    }
     if (name === 'read_ci_evidence') return this.cfg.readCiEvidence?.() ?? 'CI evidence is unavailable.';
     if (name === 'read_workspace_evidence') return this.cfg.readWorkspaceEvidence?.() ?? 'Workspace evidence is unavailable.';
     if (name === 'access_agent_id_resource') {
@@ -274,10 +282,11 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
     s.messages.push({ role: 'user', content: next });
 
     const hasTools = this.cfg.repoClient || this.cfg.accessAgentIdResource || this.cfg.readCiEvidence || this.cfg.readWorkspaceEvidence;
+    const system = [s.system, this.cfg.taskContext?.()].filter(Boolean).join('\n\n');
     if (!this.cfg.guardedCompletion && !hasTools) {
       // Normal streaming path when no repoClient is injected
       const messages: CompletionMessage[] = [
-        ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
+        ...(system ? [{ role: 'system' as const, content: system }] : []),
         ...s.messages,
       ];
       let assistant = '';
@@ -308,7 +317,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
       if (s.aborted) { yield { type: 'error', content: 'aborted' }; return; }
 
       const messages: CompletionMessage[] = [
-        ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
+        ...(system ? [{ role: 'system' as const, content: system }] : []),
         ...s.messages,
       ];
 

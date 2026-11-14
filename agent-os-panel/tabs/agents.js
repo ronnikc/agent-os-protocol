@@ -3,6 +3,7 @@
  * Refactored from original index.html inline JS.
  */
 import { state, fetchJson, postJson, registerTab, escapeHtml, showModal, closeModal, showAlert, showConfirm, showHtmlAlert, signInToLobby, showAgentIdCard, showIdentitySuccessModal, identityPullRequestNotice } from '../app.js';
+import { initRosterDrafts } from './roster-drafts.js';
 
 let selected = new Set();
 let lobbyMode = 'local';
@@ -669,6 +670,7 @@ async function refresh() {
 }
 
 function init() {
+  initRosterDrafts(refresh);
   renderAgents();
   updateStartBtn();
   initProviderKeysLayout();

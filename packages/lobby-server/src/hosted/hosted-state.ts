@@ -44,6 +44,7 @@ export interface HostedRun {
 }
 
 export interface HostedState {
+  rosterDrafts?: import('./roster-drafts.js').RosterDraft[];
   wallets?: AgentWalletRecord[];
   policy?: HostedPolicy;
   runs: HostedRun[];
