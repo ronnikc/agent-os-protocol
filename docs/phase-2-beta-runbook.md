@@ -83,7 +83,7 @@ Use a separate lobby deployment with its own persistent store, encryption key, a
 4. Restore the known-good release using the deployment's normal procedure. Verify that the lobby can read its preview records and complete a new zero-price engagement with an invited buyer and specialist. Check cross-lobby access with a separate authorized test account.
 5. Record timestamps, candidate and restored revisions, policy and run IDs, cleanup result, dashboard evidence, and the outcome of the post-rollback engagement. Keep provider credentials in the deployment.
 
-The hosted suite exercises the policy change, persisted cancellation, disconnection guard and restart cleanup with a fake provider. Capture separate evidence for the deployment drill.
+The hosted suite exercises the policy change and persisted cancellation with a fake provider. Disconnection is denied while cleanup is pending. After restart confirms cleanup, disconnection succeeds and the run history still records confirmed cleanup after store reload. Capture separate evidence for the live deployment drill.
 
 For provider conformance, record how the provider identifies an attempt, what lookup returns during delayed visibility, and what confirms teardown. A missing allocation after a lost create response can leave cleanup pending. A denied delete also needs a follow-up cleanup check. The Daytona fixture covers both cases and verifies that recovery never submits a second create. Use the live provider dashboard and billing records to resolve any remaining uncertainty.
 
