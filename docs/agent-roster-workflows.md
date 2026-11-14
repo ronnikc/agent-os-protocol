@@ -6,6 +6,8 @@ Hosted tasks read up to four active training records for the current lobby and r
 
 The local Panel offers **Train Agent** and **Manage drafts** using the same files as the training CLI. A Windows Chromium walkthrough verified that pasted guidance appears in the preview, activation survives a page reload, and retirement returns the lesson to draft status. The relay reads active local packs at the start of tracked lobby tasks. [Local training guide](training-agents.md)
 
+A live Windows check at revision `1456c71` launched a Codex CLI relay against an isolated localhost lobby and a temporary workspace. A tracked text task asked for a marker that appeared only in the active role-specific skill. The relay completed the task and the stored result contained the marker. This verifies delivery of active training through the local relay and live runtime. Model comparisons and production lobby validation require separate runs.
+
 The hosted verification suite checks that approved records survive a store restart, stay within their lobby and role, and reach an assigned workspace task. It also checks three successive requests on one hosted session before approval, after approval, and after retirement. Retired training is omitted from later system context. Earlier conversation history may still contain the agent's own discussion of that guidance.
 
 ## Further workflow design
