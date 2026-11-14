@@ -74,15 +74,18 @@ export async function probePublicService(service, fetchService = fetch) {
         await response.body?.cancel();
       }
     }
-    return { service, timestamp, status: response.status, revision, diagnostic };
+    const ok = diagnostic !== 'Unexpected HTTP response' && diagnostic !== 'Testnet merchant unavailable';
+    return { service, timestamp, status: response.status, revision, diagnostic, ok };
   } catch {
-    return { service, timestamp, status: null, diagnostic: 'No usable probe response' };
+    return { service, timestamp, status: null, diagnostic: 'No usable probe response', ok: false };
   }
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    console.log(JSON.stringify(await probePublicService(process.argv[2]), null, 2));
+    const result = await probePublicService(process.argv[2]);
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.ok) process.exitCode = 1;
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

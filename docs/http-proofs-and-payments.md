@@ -18,6 +18,8 @@ Run `npm run verify-commerce` for deterministic proof, payment, and recovery fix
 
 Use `node scripts/probe-public-services.mjs x401-proof`, `node scripts/probe-public-services.mjs x402-testnet`, and `node scripts/probe-public-services.mjs x402-mainnet-gate` to record timestamped deployment observations. The x401 command exercises the synthetic proof and replay. The x402 commands inspect unsigned responses. A Testnet quote establishes endpoint availability. Independent interoperability and chain settlement require their own evidence.
 
+The CLI exits nonzero when it cannot verify the response. A recognized unconfigured Testnet response or disabled Mainnet response exits successfully and identifies the gate in the diagnostic. Check that diagnostic before treating a merchant as ready to quote.
+
 ## x401 credential exchange
 
 The commerce client fetches an approved HTTPS resource. If the response includes `PROOF-REQUEST`, the client parses the x401 0.2.0 challenge with the Proof SDK and asks the configured `presentProof` callback to produce a credential presentation. The callback is responsible for verifier trust, permitted attributes, and holder consent. The client retries once with `PROOF-RESPONSE`. It stops before payment if the resource rejects the presentation.
