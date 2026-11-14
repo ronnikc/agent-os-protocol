@@ -106,13 +106,19 @@ async function showAgentWallet(agent, trigger) {
   if (!wallet?.binding) return showAlert('Agent wallet', errorMessage(wallet, 'Unable to verify the finalized wallet.'));
   showModal(`<h2>Agent wallet</h2><p>${escapeHtml(agent.name)}</p><div id="agent-wallet-details"></div>`);
   const root = document.getElementById('agent-wallet-details');
-  const render = async (offset = 0) => {
+  const render = async () => {
     if (!root?.isConnected) return;
     const { saved, binding } = wallet;
     root.innerHTML = `<p>Network Mainnet · ${escapeHtml(saved?.status || 'unlinked')} · Payments disabled</p>
       <p>Finalized wallet <code>${escapeHtml(binding.address || 'None')}</code></p>
       <p>Balance ${escapeHtml(binding.balance ?? 'Unavailable')} microCCD</p>
-      <p role="status" data-wallet-status></p><div data-wallet-actions></div><h3>CCD receipts</h3><div data-wallet-receipts></div>`;
+      <p role="status" data-wallet-status></p><div data-wallet-actions></div>
+      <h3 data-receipt-heading tabindex="-1">CCD receipts</h3>
+      <p role="status" data-receipt-status></p>
+      <div data-wallet-receipts></div>
+      <button type="button" class="btn btn-secondary btn-sm" data-receipt-previous hidden>Previous receipts</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-receipt-next hidden>Next receipts</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-receipt-retry hidden>Retry loading receipts</button>`;
     const status = root.querySelector('[data-wallet-status]');
     const actions = root.querySelector('[data-wallet-actions]');
     const enabled = [];
@@ -145,20 +151,44 @@ async function showAgentWallet(agent, trigger) {
       actions.append(button);
     }
     const receipts = root.querySelector('[data-wallet-receipts]');
-    receipts.textContent = 'Loading receipts…';
-    const page = await fetchJson(`${endpoint}/receipts?asset=CCD&offset=${offset}`);
-    if (!receipts.isConnected) return;
-    if (!Array.isArray(page?.data)) { receipts.textContent = errorMessage(page, 'Unable to load receipts.'); return; }
-    receipts.innerHTML = page.data.length ? `<ul>${page.data.map(row => `<li>${escapeHtml(row.state)} · ${escapeHtml(row.amount)} atomic units${row.transaction ? ` · <code>${escapeHtml(row.transaction)}</code>` : ''}</li>`).join('')}</ul>` : 'No receipts.';
-    for (const [label, target, show] of [['Previous receipts', Math.max(0, offset - page.limit), offset > 0],
-      ['Next receipts', offset + page.limit, offset + page.data.length < page.total]]) {
-      if (!show) continue;
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = label;
-      button.onclick = () => { button.disabled = true; void render(target); };
-      receipts.append(button);
-    }
+    const receiptHeading = root.querySelector('[data-receipt-heading]');
+    const receiptStatus = root.querySelector('[data-receipt-status]');
+    const previous = root.querySelector('[data-receipt-previous]');
+    const next = root.querySelector('[data-receipt-next]');
+    const retry = root.querySelector('[data-receipt-retry]');
+    const controls = [previous, next, retry];
+    let loading = false;
+    const loadReceipts = async (offset, trigger) => {
+      if (loading) return;
+      loading = true;
+      controls.forEach(control => control.setAttribute('aria-disabled', 'true'));
+      receiptStatus.textContent = 'Loading receipts…';
+      try {
+        const page = await fetchJson(`${endpoint}/receipts?asset=CCD&offset=${offset}`);
+        if (!receipts.isConnected) return;
+        if (!Array.isArray(page?.data)) {
+          receiptStatus.textContent = errorMessage(page, 'Unable to load receipts.');
+          retry.hidden = false;
+          retry.onclick = () => void loadReceipts(offset, retry);
+          return;
+        }
+        const moveFocus = document.activeElement === trigger;
+        receipts.innerHTML = page.data.length ? `<ul>${page.data.map(row => `<li>${escapeHtml(row.state)} · ${escapeHtml(row.amount)} atomic units${row.transaction ? ` · <code>${escapeHtml(row.transaction)}</code>` : ''}</li>`).join('')}</ul>` : '';
+        receiptStatus.textContent = page.data.length
+          ? `Receipts ${offset + 1}–${offset + page.data.length} of ${page.total}.`
+          : 'No receipts on this page.';
+        previous.hidden = offset === 0;
+        next.hidden = offset + page.data.length >= page.total || !page.data.length;
+        retry.hidden = true;
+        previous.onclick = () => void loadReceipts(Math.max(0, offset - page.limit), previous);
+        next.onclick = () => void loadReceipts(offset + page.limit, next);
+        if (moveFocus && trigger.hidden) receiptHeading.focus();
+      } finally {
+        loading = false;
+        controls.forEach(control => control.removeAttribute('aria-disabled'));
+      }
+    };
+    await loadReceipts(0);
   };
   await render();
 }

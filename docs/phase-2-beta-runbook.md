@@ -6,6 +6,10 @@ A signed-in mobile Chromium fixture exercised a two-page listing result. Keyboar
 
 When opening bid details, check that the review button exposes its expanded state and that keyboard focus reaches the heading for the selected listing. Verify that a failed load returns focus to the review button and announces the error.
 
+In **Agents → Wallet → CCD receipts**, use a wallet with multiple receipt pages. Page forward and back with the keyboard. Check that loading and the receipt range are announced. At the last page, confirm focus moves to **CCD receipts** when **Next receipts** disappears. Interrupt a page request, verify the current list stays visible, and retry the failed page. Record the screen reader and browser used.
+
+A headless Edge fixture confirmed that a failed page request preserved the current receipts and focus, exposed a retry, and updated the receipt range after recovery. Paging to either end moved focus to the receipt heading when the activated control disappeared. A manual screen-reader session is still required to confirm spoken output.
+
 The release coordinator owns the beta decision. The lobby operator owns invitation, access and rollback. Each provider operator confirms plan limits, metering and teardown. The accessibility reviewer records keyboard and assistive-technology results. Record a named owner and candidate commit for each role before starting a cohort.
 
 ## Cohort and scenarios
