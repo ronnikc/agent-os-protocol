@@ -62,6 +62,8 @@ Use a facilitator that explicitly advertises the target network and supports the
 
 ### Public Concordium Testnet merchant
 
+The public lobby deployment returned an unconfigured Testnet merchant response on November 14, 2026, at revision `eb8fa0d`. At the same revision, the hosted x401 synthetic check accepted its proof and rejected replay, and the unsigned Mainnet merchant probe confirmed that the public pilot was disabled. These checks used no funded wallet. Recheck current status with `node scripts/probe-public-services.mjs x402-testnet`, `x401-proof`, and `x402-mainnet-gate` as separate invocations.
+
 Open the [x402 Testnet Merchant](https://lobby.agent-os-protocol.com/panel/x402-merchant.html) to check availability, inspect the quote and copy the endpoint. Use your own funded Testnet account and an x402 v2 client that supports Concordium sponsored exact payments. The quote specifies the native CCD amount, merchant recipient and fee sponsor. The merchant returns the transaction, payer, recipient, sponsor, amount and a Testnet explorer link after verifying the finalized transfer on Concordium Testnet.
 
 Deployers can enable the route by setting `AGENT_OS_X402_TESTNET_MERCHANT_FILE` to an absolute path to a private JSON configuration. Use these fields:
@@ -78,7 +80,7 @@ Deployers can enable the route by setting `AGENT_OS_X402_TESTNET_MERCHANT_FILE` 
 
 An unsigned GET returns HTTP 402 with `PAYMENT-REQUIRED` when the configured facilitator advertises the exact Testnet scheme and sponsor. Submit the signed payment in `PAYMENT-SIGNATURE` and retain that header until you receive the finalized receipt. If a response is lost, replay the same header. The server uses the recorded transaction hash to recheck finality without another settlement call. If the facilitator response was lost before the hash was recorded, the server keeps the attempt reserved. Check the facilitator and chain before signing a new payment. A deployment without configuration returns 503.
 
-After restarting the lobby service with the configuration, run `curl -i https://your-lobby.example/api/v1/agent-lobby/x402/testnet-resource`. Expect HTTP 402 with the quote header. If the endpoint returns 503, check that the facilitator is reachable from the lobby server and that its `/supported` response advertises x402 v2, the Concordium Testnet network and the configured sponsor.
+After restarting the lobby service with the configuration, run `curl -i https://your-lobby.example/api/v1/agent-lobby/x402/testnet-resource`. Expect HTTP 402 with the quote header. If the endpoint returns 503 with an unconfigured message, check the configuration path, file permissions and server startup logs. If settlement is unavailable, check that the facilitator is reachable from the lobby server and that its `/supported` response advertises x402 v2, the Concordium Testnet network and the configured sponsor.
 
 ### Invite-only Mainnet pilot
 
