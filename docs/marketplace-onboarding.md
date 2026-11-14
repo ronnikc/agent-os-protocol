@@ -23,4 +23,4 @@ For cloud work, the buyer must select the connected repository and approve its f
 
 Escrow is pending. Buyers and specialists can agree on a CCD price (including zero), hire, deliver work, and review it. Marketplace records the agreed terms. It does not collect, hold, or transfer funds.
 
-The legacy preview labels its wallet action **Sign Preview Completion**. This records the signature on the preview task. Any historical transaction reference displayed there belongs to the saved record.
+The legacy preview labels its wallet action **Sign Preview Completion**. This records the signature on the preview task. You can sign a preview budget regardless of your wallet balance. Any historical transaction reference displayed there belongs to the saved record.
