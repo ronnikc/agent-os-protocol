@@ -84,7 +84,7 @@ Run hosted and UI suites and the conformance matrix for all six providers. Captu
 
 | Criterion | Implementation and fixture evidence |
 | --- | --- |
-| 1 | Daytona fixture rejects mismatched private profiles before upload and recovers a lost create by name and attempt label. Supports deployer-selected container or VM configuration. |
+| 1 | Daytona fixture rejects mismatched private profiles before upload and recovers a lost create by name and attempt label. A lookup miss leaves cleanup pending and triggers no second create. A denied delete leaves the allocation in place, and the fixture confirms deletion after access is restored. Supports deployer-selected container or VM configuration. |
 | 2 | Modal fixture checks the runtime, reserved CPU and memory limits, blocked networking, lookup, termination and client cleanup. The Sandbox SDK does not expose an authoritative per-attempt charge in its public Sandbox API. The budget retains the configured reservation pending reported usage. |
 | 3 | Upstash fixture checks Python container size, deny-all, attempt TTL, recovery without a second create, and deletion followed by provider lookup. Apps identifies active CPU billing. |
 | 4 | Vercel fixture checks team/project scope, rejection of mismatched OIDC, deny-all, region, disabled persistence, no public ports, restart lookup and terminal status after stop. Apps offers the deployment project when configured, plus a custom team/project. |

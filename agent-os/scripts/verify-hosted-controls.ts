@@ -51,6 +51,8 @@ export async function verifyHostedControls() {
   let daytonaCreates = 0;
   let daytonaUploads = 0;
   let daytonaLosesCreateResponse = false;
+  let daytonaVisible = true;
+  let daytonaCleanupDenied = false;
   const daytona = createDaytonaWorkspace({ snapshot: 'fixture', command: 'npm test', maxMicrosPerSecond: 1,
     profile: { id: 'container', isolation: 'container', regions: ['us'], cpu: 2, memoryMiB: 4096,
       diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none' },
@@ -72,10 +74,13 @@ export async function verifyHostedControls() {
         return sandbox;
       },
       async get() {
-        if (!daytonaExists) throw new DaytonaNotFoundError('fixture deleted');
+        if (!daytonaExists || !daytonaVisible) throw new DaytonaNotFoundError('fixture sandbox not visible');
         return sandbox;
       },
-      async delete() { daytonaExists = false; },
+      async delete() {
+        if (daytonaCleanupDenied) throw new Error('Daytona cleanup denied');
+        daytonaExists = false;
+      },
     } as unknown as Daytona;
   });
   let daytonaRecord: { createRequestedAt?: number; providerId?: string } = {};
@@ -101,12 +106,21 @@ export async function verifyHostedControls() {
   assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: true });
   daytonaRecord = {};
   daytonaLosesCreateResponse = true;
+  daytonaVisible = false;
   await assert.rejects(provisionDaytona(), /Daytona create response lost/);
+  await assert.rejects(provisionDaytona(), /Workspace creation has not been confirmed/);
+  assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: false });
   assert.equal(daytonaRecord.providerId, undefined);
+  assert.equal(daytonaCreates, 2);
   assert.equal(daytonaUploads, 1);
+  daytonaVisible = true;
   await provisionDaytona();
   assert.equal(daytonaCreates, 2);
   assert.equal(daytonaUploads, 2);
+  daytonaCleanupDenied = true;
+  await assert.rejects(daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), /Daytona cleanup denied/);
+  assert.equal(daytonaExists, true);
+  daytonaCleanupDenied = false;
   assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: true });
   let modalCreated = 0;
   let modalTerminated = false;
