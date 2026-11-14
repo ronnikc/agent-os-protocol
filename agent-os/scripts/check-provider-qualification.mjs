@@ -6,6 +6,25 @@ const scenarios = [
   'timeout', 'cancellation', 'restartRecovery', 'deletion',
 ];
 
+function blankReport() {
+  return {
+    candidate: '',
+    providers: providers.map(provider => ({
+      provider,
+      source: '',
+      operator: '',
+      plan: '',
+      region: '',
+      isolation: '',
+      pinnedRevision: '',
+      scenarios: Object.fromEntries(scenarios.map(scenario => [scenario, { outcome: '', evidence: '' }])),
+      billingEvidence: '',
+      cleanup: '',
+      pendingReservations: null,
+    })),
+  };
+}
+
 function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
@@ -46,10 +65,14 @@ function checkEvidence(report) {
 
 try {
   const [file] = process.argv.slice(2);
-  if (!file) throw new Error('Usage: node agent-os/scripts/check-provider-qualification.mjs <report.json>');
-  const errors = checkEvidence(JSON.parse(readFileSync(file, 'utf8')));
-  if (errors.length) throw new Error(errors.join('\n'));
-  console.log('All six provider rows contain the required evidence. Review the linked records before sign-off.');
+  if (!file) throw new Error('Usage: node agent-os/scripts/check-provider-qualification.mjs <report.json> | --template');
+  if (file === '--template') {
+    console.log(JSON.stringify(blankReport(), null, 2));
+  } else {
+    const errors = checkEvidence(JSON.parse(readFileSync(file, 'utf8')));
+    if (errors.length) throw new Error(errors.join('\n'));
+    console.log('All six provider rows contain the required evidence. Review the linked records before sign-off.');
+  }
 } catch (error) {
   console.error(error.message);
   process.exitCode = 1;

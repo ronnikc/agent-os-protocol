@@ -41,6 +41,15 @@ A headless Edge fixture checked the loading and error text, suppression of dupli
 
 Keep the report with the candidate's redacted evidence. Run `node agent-os/scripts/check-provider-qualification.mjs <report.json>` to check completeness before reviewing the evidence. The command checks presence and recorded outcomes. Reviewers open the references and confirm that they describe genuine runs on the named candidate.
 
+Generate a blank report once for the cohort from a repository checkout. The release coordinator fills in the candidate SHA and assigns each provider row to its operator. Operators complete their rows after running the scenarios on their own deployments. Keep credentials in Apps and share redacted evidence references with the release coordinator.
+
+```sh
+node agent-os/scripts/check-provider-qualification.mjs --template > provider-qualification.json
+node agent-os/scripts/check-provider-qualification.mjs provider-qualification.json
+```
+
+The check will report missing evidence until the report is complete. Leave unknown billing and reservation states open until the operator reconciles them.
+
 The JSON report uses a full commit SHA in `candidate` and a `providers` array. Each row has these fields:
 
 | Field | Value |
