@@ -577,9 +577,17 @@ export async function verifyHostedControls() {
       },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
-        if (String(init?.body).includes('First task smoke')) {
-          assert.ok(!String(init?.body).includes('Workspace approval marker'));
+        const body = JSON.parse(String(init?.body)) as { system?: string; messages?: { role?: string }[] };
+        const latestUser = JSON.stringify(body.messages?.findLast(message => message.role === 'user') ?? '');
+        if (latestUser.includes('First task smoke')) {
+          assert.ok(!body.system?.includes('Workspace approval marker'));
           return Response.json({ content: [{ type: 'text', text: 'RESULT: First task completed.' }],
+            usage: { input_tokens: 100, output_tokens: 50 } });
+        }
+        if (latestUser.includes('Training recall smoke')) {
+          const used = body.system?.includes('Workspace approval marker');
+          return Response.json({ content: [{ type: 'text', text: used
+            ? 'RESULT: Workspace approval marker' : 'RESULT: No approved lesson.' }],
             usage: { input_tokens: 100, output_tokens: 50 } });
         }
         if (String(init?.body).includes('Act as the Agent Evaluation Engineer')) {
@@ -821,6 +829,22 @@ export async function verifyHostedControls() {
     const reviewed = await call('b', draftsPath, 'POST', { action: 'review', id: lessonId });
     assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
     assert.match(reviewed.body.review, /verify task evidence/);
+    async function runRecallTask(expected: string) {
+      const created = await call('b', '/tasks', 'POST', { title: 'Training recall smoke',
+        description: 'Return the current approved lesson marker if supplied.',
+        assigned_to: agent.body.agent_id, output_mode: 'text' });
+      assert.equal(created.status, 201, JSON.stringify(created.body));
+      let result: LobbyTask | undefined;
+      for (let attempt = 0; attempt < 120; attempt++) {
+        result = await store.getTask('b', created.body.task.task_id);
+        if (result?.status === 'completed' || result?.status === 'failed') break;
+        await delay(50);
+      }
+      assert.equal(result?.status, 'completed', result?.result);
+      assert.equal(result.result, expected);
+      return result.task_id;
+    }
+    await runRecallTask('No approved lesson.');
     assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: lessonId })).status, 200);
     assert.match(recallRosterTraining(new InMemoryLobbyStore(file), 'b', 'backend'), /Workspace approval marker/);
     await call('b', provider, 'POST', { action: 'rotate', credential });
@@ -847,8 +871,10 @@ export async function verifyHostedControls() {
     assert.equal(agentEdits, 1);
     assert.equal(modelCalls, 2);
     assert.equal(store.readHostedState('b').runs.find(r => r.id === execution.body.run.id)?.workspaceAgent, 'finished');
+    const trainedTask = await runRecallTask('Workspace approval marker');
     assert.equal((await call('b', draftsPath, 'POST', { action: 'retire', id: lessonId })).status, 200);
     assert.equal(recallRosterTraining(new InMemoryLobbyStore(file), 'b', 'backend'), '');
+    await runRecallTask('No approved lesson.');
     const firstTask = await call('b', '/tasks', 'POST', { title: 'First task smoke',
       description: 'Return a text result.', assigned_to: agent.body.agent_id, output_mode: 'text' });
     assert.equal(firstTask.status, 201, JSON.stringify(firstTask.body));
@@ -862,8 +888,11 @@ export async function verifyHostedControls() {
     assert.equal(firstResult.result, 'First task completed.');
     waitForCancel = true;
     const timeoutTask = { ...agentTask.body.task, task_id: 'timeout-task', output_mode: undefined };
-    const trainingEvent = (await call('b', '/hosted-runs/audit?limit=100')).body.data
-      .find((event: { action: string }) => event.action === 'training_context_prepared');
+    const trainingEvents = (await call('b', '/hosted-runs/audit?limit=100')).body.data
+      .filter((event: { action: string }) => event.action === 'training_context_prepared');
+    assert.equal(trainingEvents.length, 2);
+    assert.deepEqual(trainingEvents.find((event: { subject: string }) => event.subject === trainedTask)?.lessonIds, [lessonId]);
+    const trainingEvent = trainingEvents.find((event: { subject: string }) => event.subject === agentTask.body.task.task_id);
     assert.equal(trainingEvent?.subject, agentTask.body.task.task_id);
     assert.equal(trainingEvent?.actor, agent.body.agent_id);
     assert.deepEqual(trainingEvent?.lessonIds, [lessonId]);
