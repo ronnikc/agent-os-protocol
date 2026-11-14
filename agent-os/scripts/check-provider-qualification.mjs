@@ -29,13 +29,17 @@ function hasText(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function isCommitSha(value) {
+  return typeof value === 'string' && /^[a-f0-9]{40}$/i.test(value);
+}
+
 function checkEvidence(report) {
   const errors = [];
-  if (!/^[a-f0-9]{40}$/i.test(report?.candidate ?? '')) {
+  if (!isCommitSha(report?.candidate)) {
     errors.push('A full candidate commit SHA is required.');
   }
   const rows = Array.isArray(report?.providers) ? report.providers : [];
-  const revisions = new Set(rows.map(row => row?.pinnedRevision).filter(hasText));
+  const revisions = new Set(rows.map(row => row?.pinnedRevision).filter(isCommitSha).map(sha => sha.toLowerCase()));
   if (revisions.size > 1) errors.push('All providers must use the same pinned task revision.');
   for (const row of rows) {
     if (!providers.includes(row?.provider)) errors.push('Unknown provider row.');
@@ -48,7 +52,8 @@ function checkEvidence(report) {
     }
     const [row] = matches;
     if (row.source !== 'live') errors.push(`${provider}: requires live evidence.`);
-    for (const field of ['operator', 'plan', 'region', 'isolation', 'pinnedRevision', 'billingEvidence']) {
+    if (!isCommitSha(row.pinnedRevision)) errors.push(`${provider}: a full pinned task commit SHA is required.`);
+    for (const field of ['operator', 'plan', 'region', 'isolation', 'billingEvidence']) {
       if (!hasText(row[field])) errors.push(`${provider}: missing ${field}.`);
     }
     for (const scenario of scenarios) {
