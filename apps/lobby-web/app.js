@@ -2411,9 +2411,10 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
           const engagement = `engagements/${encodeURIComponent(result.agreement.id)}`;
           const panel = document.createElement('section');
           offers.append(panel);
-          const renderDelivery = async (offset = 0) => {
+          const renderDelivery = async (offset = 0, trigger) => {
             const delivery = await request(`${engagement}/delivery?offset=${offset}`);
-            if (!active()) return;
+            if (!active() || !panel.isConnected) return;
+            const moveFocus = trigger && document.activeElement === trigger;
             panel.innerHTML = `<h5>Delivery</h5><p>${escapeHtml(delivery.status)} · Agent ${escapeHtml(delivery.assignee)} · Task ${escapeHtml(delivery.taskStatus || 'pending')}</p>`;
             const mutation = (action, label, fields, values = {}) => {
               const form = document.createElement('form');
@@ -2439,14 +2440,22 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
                 button.type = 'button';
                 button.textContent = 'Load workspace evidence';
                 button.onclick = async () => {
-                  button.disabled = true;
+                  if (button.getAttribute('aria-disabled') === 'true') return;
+                  button.setAttribute('aria-disabled', 'true');
+                  status.textContent = 'Loading workspace evidence…';
                   try {
                     const evidence = await request(`${engagement}/artifacts/${encodeURIComponent(submission.workspaceRunId)}`);
                     const output = document.createElement('pre');
                     output.textContent = evidence.artifacts?.patch || 'Patch unavailable.';
-                    if (active()) { article.append(output); button.remove(); }
+                    if (active() && button.isConnected) {
+                      output.tabIndex = -1;
+                      article.append(output);
+                      if (document.activeElement === button) output.focus();
+                      button.remove();
+                      status.textContent = 'Workspace evidence loaded.';
+                    }
                   } catch (error) { if (active()) status.textContent = error.message; }
-                  finally { button.disabled = false; }
+                  finally { button.removeAttribute('aria-disabled'); }
                 };
                 article.append(button);
               }
@@ -2492,6 +2501,8 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
               history.append(item);
             }
             panel.append(history);
+            const pagingButtons = [];
+            let pagingEvidence = false;
             for (const [label, target, show] of [['Previous evidence page', Math.max(0, offset - delivery.limit), offset > 0],
               ['Next evidence page', offset + delivery.limit, offset + delivery.limit < Math.max(delivery.total, delivery.history.total)]]) {
               if (!show) continue;
@@ -2499,12 +2510,23 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
               button.type = 'button';
               button.textContent = label;
               button.onclick = async () => {
-                button.disabled = true;
-                try { await renderDelivery(target); panel.querySelector('h5').focus(); }
+                if (pagingEvidence) return;
+                pagingEvidence = true;
+                pagingButtons.forEach(control => control.setAttribute('aria-disabled', 'true'));
+                status.textContent = 'Loading delivery evidence…';
+                try { await renderDelivery(target, button); }
                 catch (error) { if (active()) status.textContent = error.message; }
-                finally { button.disabled = false; }
+                finally {
+                  pagingEvidence = false;
+                  pagingButtons.forEach(control => control.removeAttribute('aria-disabled'));
+                }
               };
+              pagingButtons.push(button);
               panel.append(button);
+            }
+            if (trigger) {
+              status.textContent = `Delivery evidence page ${Math.floor(offset / delivery.limit) + 1} loaded.`;
+              if (moveFocus) panel.querySelector('h5').focus();
             }
           };
           await renderDelivery();
