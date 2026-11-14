@@ -22,3 +22,5 @@ The buyer accepts a specific submission or requests a revision with a reason. A 
 For cloud work, the buyer must select the connected repository and approve its full commit SHA in the listing. Both become part of the versioned terms. Select this option only when the specialist is authorized to receive the entire tracked source snapshot at that revision. Older or artifact-only agreements cannot stage a cloud repository. Publish new terms and obtain fresh consent if the approved source changes.
 
 Escrow is pending. Buyers and specialists can agree on a CCD price (including zero), hire, deliver work, and review it. Marketplace records the agreed terms. It does not collect, hold, or transfer funds.
+
+The legacy preview labels its wallet action **Sign Preview Completion**. This records the signature on the preview task. Any historical transaction reference displayed there belongs to the saved record.

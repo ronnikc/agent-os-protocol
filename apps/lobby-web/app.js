@@ -1950,7 +1950,7 @@ function init() {
           if (budgetEl) budgetEl.value = '';
           if (descEl) descEl.value = '';
           pollLobbyDetails();
-          alert(`Success! Task posted with a wallet-signed escrow authorization for ${budget} CCD.`);
+          alert(`Success! Preview task posted with a signed budget of ${budget} CCD.`);
         } else {
           alert('Failed to post task.');
         }
@@ -1989,22 +1989,22 @@ async function renderTasks() {
       actionButtons += `<button class="btn btn-primary btn-sm" onclick="bidOnTask('${task.id}')" style="margin-right: 4px;">Bid</button>`;
       actionButtons += `<button class="btn btn-secondary btn-sm" onclick="assignTask('${task.id}')">Assign</button>`;
     } else if (task.status === 'assigned') {
-      actionButtons += `<button class="btn btn-primary btn-sm" onclick="completeTask('${task.id}')">Sign Release Authorization</button>`;
+      actionButtons += `<button class="btn btn-primary btn-sm" onclick="completeTask('${task.id}')">Sign Preview Completion</button>`;
     }
 
     const assignedText = task.assigned_agent_id ? `<div style="font-size:11px; color:var(--color-text-muted); margin-top:4px;">Assigned: <code>${escapeHtml(task.assigned_agent_id)}</code></div>` : '';
     let paymentText = '';
     if (task.status === 'completed') {
       if (task.tx_hash) {
-        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Escrow Settled Tx: <code>${escapeHtml(task.tx_hash)}</code></div>`;
+        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Historical transaction reference: <code>${escapeHtml(task.tx_hash)}</code></div>`;
       } else if (task.release_signature) {
-        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Release authorized — wallet signature <code>${escapeHtml(String(task.release_signature).slice(0, 24))}…</code></div>`;
+        paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Preview completion signed · wallet signature <code>${escapeHtml(String(task.release_signature).slice(0, 24))}…</code></div>`;
       } else {
         paymentText = `<div style="font-size:11px; color:var(--color-green); margin-top:4px;">✓ Completed</div>`;
       }
     }
     const escrowText = task.status !== 'completed'
-      ? `<div style="font-size:11px; color:var(--color-yellow); margin-top:4px;">🔒 Escrow authorization: ${task.proposed_budget_ccd} CCD${task.escrow_signature ? ' (wallet-signed)' : ''}</div>`
+      ? `<div style="font-size:11px; color:var(--color-yellow); margin-top:4px;">Preview budget: ${task.proposed_budget_ccd} CCD${task.escrow_signature ? ' (wallet-signed)' : ''}</div>`
       : '';
 
     html += `
@@ -2066,18 +2066,18 @@ window.assignTask = async function(taskId) {
 window.completeTask = async function(taskId) {
   if (!state.activeLobbyId) return;
   if (!state.wallet.connected) {
-    alert("Connect your Concordium wallet to sign a release authorization.");
+    alert("Connect your Concordium wallet to sign preview completion.");
     return;
   }
 
   showStyledConfirm(
-    "Sign Release Authorization",
+    "Sign Preview Completion",
     "Sign an off-chain authorization for this preview task? This signature does not transfer funds.",
     async () => {
       const btnEl = document.querySelector(`button[onclick="completeTask('${taskId}')"]`);
       if (btnEl) {
         btnEl.disabled = true;
-        btnEl.textContent = "Signing Release...";
+        btnEl.textContent = "Signing preview completion…";
       }
 
       const provider = window.concordium;
@@ -2085,7 +2085,7 @@ window.completeTask = async function(taskId) {
         alert("Concordium Browser Wallet extension not found. Please install it and reconnect.");
         if (btnEl) {
           btnEl.disabled = false;
-          btnEl.textContent = "Sign Release Authorization";
+          btnEl.textContent = "Sign Preview Completion";
         }
         return;
       }
@@ -2104,7 +2104,7 @@ window.completeTask = async function(taskId) {
         });
 
         if (res && res.task) {
-          alert(`Escrow release authorization signed and recorded!\nSignature: ${releaseSignature?.slice(0, 32)}...`);
+          alert(`Preview completion signature recorded. No funds were transferred.\nSignature: ${releaseSignature?.slice(0, 32)}...`);
           pollLobbyDetails();
         } else {
           alert("Failed to record completion on the server.");
@@ -2115,7 +2115,7 @@ window.completeTask = async function(taskId) {
       } finally {
         if (btnEl) {
           btnEl.disabled = false;
-          btnEl.textContent = "Sign Release Authorization";
+          btnEl.textContent = "Sign Preview Completion";
         }
       }
     }
