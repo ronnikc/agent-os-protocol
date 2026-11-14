@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { closeModal, escapeHtml, fetchJson, postJson, showModal, state } from '../app.js';
+import { closeModal, escapeHtml, fetchJson, isGuest, postJson, promptGuestUpgrade, showModal, state } from '../app.js';
 
 const labels = { create: 'Create Agent', import: 'Import Agent', train: 'Train Agent' };
 
@@ -15,6 +15,11 @@ export function initRosterDrafts(refresh) {
   toolbar.hidden = false;
   toolbar.addEventListener('click', event => {
     const kind = event.target.closest('[data-draft-kind]')?.dataset.draftKind;
+    if (!kind) return;
+    if (hosted && isGuest()) {
+      promptGuestUpgrade();
+      return;
+    }
     if (kind === 'list') void manage();
     else if (labels[kind]) edit(kind);
   });

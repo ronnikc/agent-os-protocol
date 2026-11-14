@@ -18,6 +18,8 @@ Hosted task training also creates a `training_context_prepared` event in the lob
 
 ## Further workflow design
 
+In the public panel, choosing a roster draft action as a guest opens the wallet sign-in prompt. Sign in and select a lobby you manage to create, import, train, or review drafts.
+
 ### Try a public import
 
 Wait for **GitHub file loaded** before saving. If you change the URL or edit the instructions while a file loads, the panel keeps your edits. Select **Load file** again when you are ready to replace the preview.
