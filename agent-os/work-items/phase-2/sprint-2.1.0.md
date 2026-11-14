@@ -2,7 +2,7 @@
 id: 2.1.0
 title: Hosted Controls and Workspace Contract
 phase: phase-2
-status: review
+status: implemented
 owner: backend
 ---
 
@@ -15,7 +15,7 @@ owner: backend
 - [x] T-210-4 Verify concurrency restart and authorization with a fake provider (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** implementation review
+**Status:** Merged and verified with a fake provider.
 **Created:** 2026-11-13
 **Priority:** High
 

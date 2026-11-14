@@ -2,7 +2,7 @@
 id: 2.2.0
 title: Cloud Workspaces with E2B and Agent37
 phase: phase-2
-status: review
+status: implemented
 owner: backend
 ---
 
@@ -15,7 +15,7 @@ owner: backend
 - [x] T-220-4 Run fixture conformance and document live opt-in checks (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** implementation review. See the [acceptance evidence](sprint-2.2.0-workfile.md).
+**Status:** Merged and fixture-verified. Live provider qualification is tracked in Sprint 2.8.0. See the [acceptance evidence](sprint-2.2.0-workfile.md).
 **Created:** 2026-11-13
 **Priority:** High
 
