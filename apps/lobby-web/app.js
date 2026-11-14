@@ -2554,7 +2554,7 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     };
   });
 }
-window.switchView = function(view) {
+window.switchView = function(view, moveFocus = false) {
   if (!VIEWS.includes(view)) return;
   VIEWS.forEach(v => {
     const el = document.getElementById('view-' + v);
@@ -2564,7 +2564,9 @@ window.switchView = function(view) {
   });
   document.querySelectorAll('.nav-tab').forEach(btn => {
     btn.classList.toggle('active', btn.dataset.view === view);
+    if (VIEWS.includes(btn.dataset.view)) btn.setAttribute('aria-pressed', String(btn.dataset.view === view));
   });
+  if (view === 'marketplace' && moveFocus) document.getElementById('marketplace-beta-title').focus();
   if (view === 'marketplace') void pollLobbyDetails().then(() => loadMarketplaceBeta());
 };
 
