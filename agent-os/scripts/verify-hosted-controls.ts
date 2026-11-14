@@ -855,6 +855,14 @@ export async function verifyHostedControls() {
     assert.equal(firstResult.result, 'First task completed.');
     waitForCancel = true;
     const timeoutTask = { ...agentTask.body.task, task_id: 'timeout-task', output_mode: undefined };
+    const trainingEvent = (await call('b', '/hosted-runs/audit?limit=100')).body.data
+      .find((event: { action: string }) => event.action === 'training_context_prepared');
+    assert.equal(trainingEvent?.subject, agentTask.body.task.task_id);
+    assert.equal(trainingEvent?.actor, agent.body.agent_id);
+    assert.deepEqual(trainingEvent?.lessonIds, [lessonId]);
+    assert.ok(!JSON.stringify(trainingEvent).includes('Workspace approval marker'));
+    assert.ok(!(await call('a', '/hosted-runs/audit?limit=100')).body.data
+      .some((event: { action: string }) => event.action === 'training_context_prepared'));
     await store.upsertTask(timeoutTask);
     assert.equal((await call('b', '/hosted-controls', 'PUT', {
       ...policy, computePerPeriod: 200, deadlineMs: 500,

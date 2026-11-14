@@ -49,7 +49,7 @@ export interface HostedState {
   policy?: HostedPolicy;
   runs: HostedRun[];
   connections: HostedConnection[];
-  audit: { at: number; actor: string; action: string; subject?: string }[];
+  audit: { at: number; actor: string; action: string; subject?: string; lessonIds?: string[] }[];
 }
 
 export function emptyHostedState(): HostedState {
