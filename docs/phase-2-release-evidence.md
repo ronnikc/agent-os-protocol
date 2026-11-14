@@ -24,6 +24,8 @@ The Visual Tour uses example lobby captures and separate captions for the curren
 
 The current Apps screenshot was captured in an isolated local lobby with an example lesson in the hosted audit feed. It illustrates where operators can inspect training evidence. Refresh the capture after beta exit using the frozen candidate.
 
+On November 14, 2026, the public deployment at `5067e6210b8e308269f42b48e95f338f5d3c0ebf` returned HTTP 200 for the website, Lobby, Panel, x401 test page, x402 merchant page and beta runbook. The website exposed the Marketplace tour and the Lobby page contained the escrow-pending notice. Repeat these checks on the frozen candidate after beta exit.
+
 Status: awaiting beta exit. No public benchmark results or recording yet.
 
 ### Measurement tooling
