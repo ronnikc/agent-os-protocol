@@ -70,3 +70,7 @@ Confirmed against the live Concordium Agent Registry before implementation (see
   which Phase 8 defers; read-only verification + card hashing need no SDK.
 - **Verification primitives** — DID resolution = `registry_verified`; VCK (Verified by Concordium
   Keys) = `human_linked`; VCDC (Verified by Concordium Domain Control) = `org_linked`.
+
+## Verification Evidence
+
+Use the conformance workflow in docs/http-proofs-and-payments.md. Confirm issuer, audience, nonce, holder consent, and revocation. Keep fixture and independent verifier evidence distinct.

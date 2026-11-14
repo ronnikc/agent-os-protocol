@@ -70,6 +70,16 @@ export class HostedControls {
     return { id: run.id, state: run.state, sourceRevision: run.attempt.sourceRevision, artifacts: run.artifacts };
   }
 
+  workspaceTaskEvidence(lobbyId: string, taskId: string, agentId: string) {
+    const run = this.store.readHostedState(lobbyId).runs.slice().reverse().find(entry =>
+      entry.kind === 'workspace' && entry.taskId === taskId && entry.attempt?.assignedAgentId === agentId);
+    if (!run?.attempt) return { status: 'unavailable' };
+    return {
+      id: run.id, state: run.state, cleanup: run.cleanup, sourceRevision: run.attempt.sourceRevision,
+      exitCode: run.artifacts?.exitCode ?? null,
+    };
+  }
+
   latestWorkspaceByTask(lobbyId: string) {
     const latest = new Map<string, { id: string; state: HostedRun['state']; sourceRevision: string }>();
     for (const run of this.store.readHostedState(lobbyId).runs) {

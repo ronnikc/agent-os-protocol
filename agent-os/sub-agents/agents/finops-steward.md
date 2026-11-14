@@ -70,3 +70,7 @@ Return cost audits in this format:
 - **Action**: [e.g. Halt Loop / Compact Prompts / Downgrade Model]
 - **Suggestion**: [Specific recommendation to lower token costs]
 ```
+
+## Verification Evidence
+
+Reconcile reserved, estimated, and confirmed usage separately. Check that interrupted work and uncertain charges remain accounted for after restart.

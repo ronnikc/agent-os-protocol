@@ -793,6 +793,62 @@ async function main(): Promise<void> {
     ]);
   });
 
+  await check('CI evidence reads only the task branch or latest recorded commit', async () => {
+    const paths: string[] = [];
+    const fetchFn = (async (url: string) => {
+      paths.push(new URL(url).pathname);
+      return Response.json({ check_runs: [{ name: 'verify', status: 'completed', conclusion: 'failure', html_url: 'private' }] });
+    }) as typeof fetch;
+    const tools = new TaskRepository(new GitHubRepoClient('owner', 'repo', 'token', fetchFn));
+    assert.match(await tools.readCiEvidence(), /requires an assigned/);
+    assert.deepEqual(paths, []);
+    const branch = 'agent-os/session/eval';
+    const commits: string[] = [];
+    await tools.run({ branch, commits }, async () => {
+      assert.equal(JSON.parse(await tools.readCiEvidence()).ref, branch);
+      commits.push('a'.repeat(40));
+      const result = JSON.parse(await tools.readCiEvidence());
+      assert.equal(result.ref, commits[0]);
+      assert.deepEqual(result.checks, [{ name: 'verify', status: 'completed', conclusion: 'failure' }]);
+    });
+    assert.deepEqual(paths, [
+      '/repos/owner/repo/commits/' + encodeURIComponent(branch) + '/check-runs',
+      '/repos/owner/repo/commits/' + commits[0] + '/check-runs',
+    ]);
+  });
+
+  await check('hosted model can request configured evidence without choosing its scope', async () => {
+    let turns = 0;
+    let calls = 0;
+    const adapter = createApiRuntimeAdapter({
+      provider: { id: 'openai-compatible', model: 'fixture' }, apiKey: 'fixture',
+      readWorkspaceEvidence: async () => { calls++; return '{"state":"succeeded","exitCode":0}'; },
+      fetchFn: async (_url, options) => {
+        const body = JSON.parse(String(options?.body));
+        const names = body.tools.map((tool: { function: { name: string } }) => tool.function.name);
+        assert.deepEqual(names, ['read_workspace_evidence']);
+        if (++turns === 1) {
+          assert.deepEqual(body.tools[0].function.parameters.properties, {});
+          return Response.json({ choices: [{ message: { tool_calls: [{
+            id: 'evidence', type: 'function', function: { name: 'read_workspace_evidence', arguments: '{"lobbyId":"other"}' },
+          }] } }] });
+        }
+        assert.equal(body.messages.at(-1).content, '{"state":"succeeded","exitCode":0}');
+        return Response.json({ choices: [{ message: { content: 'Workspace succeeded.' } }] });
+      },
+    });
+    const handle = await adapter.startAgent({ cwd: '/hosted' });
+    try {
+      await adapter.sendInput(handle, { type: 'user', content: 'Check the assigned workspace.' });
+      const outputs = [];
+      for await (const event of adapter.readOutput(handle)) outputs.push(event);
+      assert.equal(outputs.at(-1)?.content, 'Workspace succeeded.');
+      assert.equal(calls, 1);
+    } finally {
+      await adapter.stopAgent(handle);
+    }
+  });
+
   await check('TOKEN PROVIDER: repo client mints a fresh token per call and refreshes once on 401', async () => {
     let minted = 0;
     const provider = async () => { minted++; return `tok-${minted}`; };

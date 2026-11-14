@@ -639,6 +639,12 @@ export async function verifyHostedControls() {
     assert.equal(artifacts?.exitCode, 1);
     assert.equal(artifacts?.patch, undefined);
     assert.equal(artifacts?.patchUnavailable, 'credential_redacted');
+    const evidence = new HostedControls(store);
+    assert.deepEqual(evidence.workspaceTaskEvidence('a', 'task-a', 'fake'), {
+      id: run.id, state: 'failed', cleanup: 'pending', sourceRevision: 'a'.repeat(40), exitCode: 1,
+    });
+    assert.deepEqual(evidence.workspaceTaskEvidence('a', 'task-a', 'other-agent'), { status: 'unavailable' });
+    assert.deepEqual(evidence.workspaceTaskEvidence('b', 'task-a', 'fake'), { status: 'unavailable' });
     const review = await call('a', '/tasks');
     assert.deepEqual(review.body.coordination_tasks[0].workspace_run, {
       id: run.id, state: 'failed', sourceRevision: 'a'.repeat(40),

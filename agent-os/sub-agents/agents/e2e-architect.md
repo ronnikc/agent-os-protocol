@@ -64,3 +64,7 @@ Return E2E test logs in this format:
 - **File**: [Test file and line range]
 - **Error**: [Assertion failure or selector timeout]
 ```
+
+## Verification Evidence
+
+Exercise the normal entry point with a fresh account and deterministic fixtures. Capture a trace or screenshot at the failed step, then verify a clean retry. Include the browser outcome and backend state where observable.

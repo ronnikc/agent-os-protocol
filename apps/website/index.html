@@ -321,21 +321,29 @@
 
     <!-- Dedicated Agent Swarm Roster Section -->
     <section id="swarm-roster" aria-labelledby="swarm-roster-title" class="glass-panel" style="margin: 40px auto; padding: 40px; max-width: 1200px; border-radius: 16px;">
-      <h2 id="swarm-roster-title" class="section-title">The 60-Role Agent Catalog</h2>
+      <h2 id="swarm-roster-title" class="section-title">The 62-Role Agent Catalog</h2>
       <p class="section-subtitle">Browse the specialist roles included in the project. The public swarm shows the agents currently connected.</p>
 
       <!-- Cohorts Filter Controls -->
       <div class="roster-filters">
-        <button class="roster-filter-btn active" data-cohort="all">All Cohorts (60 Agents)</button>
-        <button class="roster-filter-btn" data-cohort="engineering">Engineering & Coordination (17)</button>
-        <button class="roster-filter-btn" data-cohort="auditing">Auditing & Resilience (12)</button>
+        <button class="roster-filter-btn active" data-cohort="all">All Cohorts (62 Agents)</button>
+        <button class="roster-filter-btn" data-cohort="engineering">Engineering & Coordination (18)</button>
+        <button class="roster-filter-btn" data-cohort="auditing">Auditing & Resilience (13)</button>
         <button class="roster-filter-btn" data-cohort="cms">CMS & Platform (16)</button>
         <button class="roster-filter-btn" data-cohort="growth">Growth & Sales (15)</button>
       </div>
 
       <!-- Agent Showcase Grid -->
       <div class="roster-grid">
-        <!-- Engineering & Coordination (17 Agents) -->
+        <!-- Engineering & Coordination (18 Agents) -->
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Data Pipeline Engineer</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Designs ingestion contracts and verifies schema changes, deduplication, and replay-safe backfills.</p>
+          <div class="skills-tags"><span>data contracts</span><span>replay verification</span></div>
+        </div>
         <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Planning Specialist</h4>
@@ -523,7 +531,15 @@
           </div>
         </div>
 
-        <!-- Auditing & Resilience (12 Agents) -->
+        <!-- Auditing & Resilience (13 Agents) -->
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Agent Evaluation Engineer</h4>
+            <span class="badge-cohort auditing">Evaluation</span>
+          </div>
+          <p>Uses repeatable fixtures to measure agent task completion, tool use, permission boundaries, and recovery.</p>
+          <div class="skills-tags"><span>agent evaluation</span><span>runtime comparison</span></div>
+        </div>
         <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>Security Specialist</h4>

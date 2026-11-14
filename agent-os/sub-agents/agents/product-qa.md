@@ -347,3 +347,7 @@ The orchestrator MUST invoke this agent at Gate E12 — after all implementation
 ---
 
 *Created from lessons learned across 61 sprints, 9 rounds of QA on Sprint 26.7.0, production-readiness reviews for Sprints 26.8.0, 27.0.0, 27.2.0, 27.3.0, 27.4.0, and Phase 22 QA finalization (628 findings, 246 pages).*
+
+## Verification Evidence
+
+Walk the deployed user journey with a fresh account. Cover empty states, denied actions, expired sessions, failed requests and retries. Record the tested revision and observed result. Hand automation to E2E Architect and keyboard findings to Accessibility.

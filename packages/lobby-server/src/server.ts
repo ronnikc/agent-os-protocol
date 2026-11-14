@@ -15,6 +15,7 @@
  */
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { TaskRepository } from './hosted/task-repository.js';
 import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
 import { createX401TestFacility, X401_TEST_PATH } from './hosted/x401-test.js';
@@ -557,6 +558,24 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
   const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string;
     runWorkspace: (id: string, task: LobbyTask, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void> }>();
+  const evidenceTask = new AsyncLocalStorage<{ lobbyId: string; taskId: string; agentId: string; active: boolean }>();
+  async function withEvidenceTask<T>(task: LobbyTask, agentId: string, run: () => Promise<T>): Promise<T> {
+    const scope = { lobbyId: task.lobby_id, taskId: task.task_id, agentId, active: true };
+    try { return await evidenceTask.run(scope, run); }
+    finally { scope.active = false; }
+  }
+  async function authorizedEvidenceTask(lobbyId: string, agentId: string | undefined) {
+    const scope = evidenceTask.getStore();
+    if (!scope?.active || scope.lobbyId !== lobbyId || scope.agentId !== agentId) return;
+    const task = await store.getTask(lobbyId, scope.taskId);
+    if (scope.active && task?.assigned_to === agentId && task.status !== 'cancelled' &&
+        marketplaceDelivery.canExecute(lobbyId, scope.taskId)) return scope;
+  }
+  async function readWorkspaceEvidence(lobbyId: string, agentId: string | undefined): Promise<string> {
+    const scope = await authorizedEvidenceTask(lobbyId, agentId);
+    return scope ? JSON.stringify(hosted.workspaceTaskEvidence(lobbyId, scope.taskId, scope.agentId))
+      : 'Workspace evidence requires an active assigned task.';
+  }
   hosted.workspaceAgentAvailable = (lobbyId, agentId) => hostedAgents.get(agentId)?.conn.lobbyId === lobbyId;
   hosted.workspaceAgent = async (id: string, attempt: WorkspaceAttempt, tools, signal) => {
     const task = await store.getTask(attempt.lobbyId, attempt.taskId);
@@ -728,11 +747,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
               sessionBranch = session.branch;
               if (sessionBranch === workingBranch) throw new Error('The work-session branch must differ from the working branch.');
             }
-            result = await entry.taskRepository.run({ branch: sessionBranch, commits }, () => respond(
+            result = await withEvidenceTask(task, myId, () => entry.taskRepository!.run({ branch: sessionBranch, commits }, () => respond(
               prompt + `Use the repository tools to deliver the requested files on ${sessionBranch}. Report the files and tool-confirmed commit SHAs. If blocked, start your reply with BLOCKED: and explain why. The lobby manages pull requests.`,
-            ));
+            )));
           } else {
-            result = await respond(prompt + 'Deliver the requested work in this reply. Begin with RESULT: followed by the actual deliverable, or BLOCKED: followed by the reason. Repository writes are disabled for this task.');
+            result = await withEvidenceTask(task, myId, () => respond(prompt + 'Deliver the requested work in this reply. Begin with RESULT: followed by the actual deliverable, or BLOCKED: followed by the reason. Repository writes are disabled for this task.'));
           }
         } catch (e) {
           console.warn('[Lobby Server] Hosted task could not run:', (e as Error)?.message ?? e);
@@ -1277,6 +1296,11 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
       repoClient: taskRepository,
       lobbyTools,
       accessAgentIdResource,
+      readCiEvidence: taskRepository ? async () => {
+        if (!await authorizedEvidenceTask(params.lobbyId, connRef.conn?.agentId)) return 'CI evidence requires an active assigned repository task.';
+        return taskRepository.readCiEvidence();
+      } : undefined,
+      readWorkspaceEvidence: () => readWorkspaceEvidence(params.lobbyId, connRef.conn?.agentId),
     });
     // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
     // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
@@ -1292,7 +1316,9 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     const agentIdCapability = accessAgentIdResource
       ? '\nUse access_agent_id_resource to check access to the operator-configured resource with your Agent ID.'
       : '';
-    const groundedSystemPrompt = [params.systemPrompt, capabilities + agentIdCapability].filter(Boolean).join('\n\n');
+    const groundedSystemPrompt = [params.systemPrompt, capabilities + agentIdCapability,
+      'Use read_workspace_evidence for the assigned task and read_ci_evidence when available for assigned repository work. Report returned states as evidence and distinguish them from tests you executed personally.',
+    ].filter(Boolean).join('\n\n');
     const runner = new HostedAgentRunner(adapter, { systemPrompt: groundedSystemPrompt, run: budget.run, workSignal: budget.workSignal });
     await runner.start();
 
@@ -1368,13 +1394,16 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         const workspaceRunner = new HostedAgentRunner(createApiRuntimeAdapter({
           provider: { id: params.providerId, model: params.model, baseUrl: params.baseUrl },
           apiKey: params.apiKey, fetchFn: options.apiRuntimeFetch, repoClient: tools, workspaceFiles: true,
+          readWorkspaceEvidence: () => readWorkspaceEvidence(task.lobby_id, agentId),
           guardedCompletion: workspaceBudget.guardedCompletion, workSignal: workspaceBudget.workSignal,
         }), {
           run: workspaceBudget.run,
-          systemPrompt: 'Use the file tools to edit the staged workspace for the assigned task. Writes stay in the workspace for human review. The lobby runs the approved build and test command after your turn.',
+          systemPrompt: [params.systemPrompt,
+            'Use the file tools to edit the staged workspace for the assigned task. Writes stay in the workspace for human review. The lobby runs the approved build and test command after your turn. Use read_workspace_evidence to inspect the current task lifecycle. Report test results only when the tool returns an exit code.',
+          ].filter(Boolean).join('\n\n'),
         });
         try {
-          const result = await workspaceRunner.respondTo(task.title + '\n\n' + task.description);
+          const result = await withEvidenceTask(task, agentId, () => workspaceRunner.respondTo(task.title + '\n\n' + task.description));
           if (!result || result.startsWith('⚠') || /^BLOCKED:/i.test(result)) throw new HostedControlError('The assigned agent could not complete the workspace turn.');
         } finally {
           await workspaceRunner.stop();

@@ -46,6 +46,8 @@ export interface ApiRuntimeConfig {
   lobbyTools?: LobbyToolsProvider;
   /** Operator-configured proof exchange. The model supplies neither a URL nor key material. */
   accessAgentIdResource?: () => Promise<string>;
+  readCiEvidence?: () => Promise<string>;
+  readWorkspaceEvidence?: () => Promise<string>;
 }
 
 interface Session {
@@ -63,7 +65,8 @@ function providerFor(cfg: ApiRuntimeConfig): ModelProviderAdapter {
   return new AnthropicCompatibleProvider({ ...opts, maxTokens: cfg.maxTokens });
 }
 
-function buildToolsForProvider(providerId: string, agentIdAccess: boolean, workspaceFiles = false): any[] {
+function buildToolsForProvider(cfg: ApiRuntimeConfig): any[] {
+  const { workspaceFiles } = cfg;
   const definitions = [
     {
       name: 'read_file',
@@ -124,8 +127,11 @@ function buildToolsForProvider(providerId: string, agentIdAccess: boolean, works
   ];
 
   // Combine repo tools + lobby tools based on what's available
-  const allDefs = workspaceFiles ? definitions.filter(tool => tool.name !== 'create_pr') : [...definitions, ...lobbyToolDefs];
-  if (agentIdAccess) {
+  const allDefs: { name: string; description: string; properties: object; required: string[] }[] = cfg.repoClient
+    ? definitions.filter(tool => !workspaceFiles || tool.name !== 'create_pr')
+    : [];
+  if (cfg.lobbyTools && !workspaceFiles) allDefs.push(...lobbyToolDefs);
+  if (cfg.accessAgentIdResource) {
     allDefs.push({
       name: 'access_agent_id_resource',
       description: 'Use this agent’s delegated Agent ID to request access to its configured resource.',
@@ -134,7 +140,15 @@ function buildToolsForProvider(providerId: string, agentIdAccess: boolean, works
     });
   }
 
-  if (providerId === 'openai-compatible') {
+  if (cfg.readCiEvidence) allDefs.push({
+    name: 'read_ci_evidence', description: 'Read check statuses for the current assigned repository task branch.',
+    properties: {}, required: [],
+  });
+  if (cfg.readWorkspaceEvidence) allDefs.push({
+    name: 'read_workspace_evidence', description: 'Read bounded lifecycle and test results for the current assigned task.',
+    properties: {}, required: [],
+  });
+  if (cfg.provider.id === 'openai-compatible') {
     return allDefs.map(d => ({
       type: 'function',
       function: {
@@ -208,6 +222,8 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
   }
 
   private async executeTool(name: string, args: any): Promise<string> {
+    if (name === 'read_ci_evidence') return this.cfg.readCiEvidence?.() ?? 'CI evidence is unavailable.';
+    if (name === 'read_workspace_evidence') return this.cfg.readWorkspaceEvidence?.() ?? 'Workspace evidence is unavailable.';
     if (name === 'access_agent_id_resource') {
       return this.cfg.accessAgentIdResource?.() ?? 'Agent ID proof access is not configured.';
     }
@@ -257,7 +273,8 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
 
     s.messages.push({ role: 'user', content: next });
 
-    if (!this.cfg.guardedCompletion && !this.cfg.repoClient && !this.cfg.accessAgentIdResource) {
+    const hasTools = this.cfg.repoClient || this.cfg.accessAgentIdResource || this.cfg.readCiEvidence || this.cfg.readWorkspaceEvidence;
+    if (!this.cfg.guardedCompletion && !hasTools) {
       // Normal streaming path when no repoClient is injected
       const messages: CompletionMessage[] = [
         ...(s.system ? [{ role: 'system' as const, content: s.system }] : []),
@@ -281,8 +298,7 @@ export class ApiRuntimeAdapter implements AgentRuntimeAdapter {
     }
 
     // Repo client tool loop (non-streaming intermediate turns, final turn yields output)
-    const tools = this.cfg.repoClient || this.cfg.accessAgentIdResource
-      ? buildToolsForProvider(this.cfg.provider.id, !!this.cfg.accessAgentIdResource, this.cfg.workspaceFiles) : undefined;
+    const tools = hasTools ? buildToolsForProvider(this.cfg) : undefined;
     const signal = this.cfg.workSignal?.();
     let assistantText = '';
     let loopCount = 0;

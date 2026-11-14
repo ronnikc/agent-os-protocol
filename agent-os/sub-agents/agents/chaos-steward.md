@@ -66,3 +66,7 @@ Return chaos test results in this format:
 - **Exception Leak**: [Details of uncaught error or resource leak]
 - **Suggested Fix**: [How to wrap in standard AppError/try-catch]
 ```
+
+## Verification Evidence
+
+Run interruptions on fixtures or approved isolated environments. Verify final resource state after restart and cancellation. Record cleanup confirmation and who owns unresolved resources.
