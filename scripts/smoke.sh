@@ -36,16 +36,17 @@ cleanup() {
 }
 trap cleanup EXIT
 
-# Wait until an HTTP GET to $1 returns a real status (server is listening). $2 = max attempts.
+# Wait until an HTTP GET to $1 returns 200. $2 = max attempts.
 # curl's -w already emits "000" when the connection is refused; --retry-connrefused gives the
 # server a moment between attempts, so each loop genuinely waits rather than busy-spinning.
 wait_http() {
-  local url="$1" tries="${2:-50}" i code
+  local url="$1" tries="${2:-50}" i code=000
   for ((i=0; i<tries; i++)); do
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 --retry 1 --retry-connrefused "$url" 2>/dev/null)"
-    [ -n "$code" ] && [ "$code" != "000" ] && { echo "$code"; return 0; }
+    [ "$code" = "200" ] && { echo "$code"; return 0; }
+    [ "$code" != "000" ] && sleep 1
   done
-  echo 000; return 1
+  echo "${code:-000}"; return 1
 }
 
 # Boot a server: $1=label $2=logfile $3=readyURL  + remaining args = command.
@@ -55,8 +56,8 @@ boot() {
   local pid=$!
   PIDS+=("$pid")
   local code; code="$(wait_http "$url" 60)"
-  if [ "$code" = "000" ]; then
-    bad "$label did not come up (see $logf)"; tail -5 "$logf" | sed 's/^/      /'
+  if [ "$code" != "200" ]; then
+    bad "$label did not become ready (last HTTP status: $code)"; tail -5 "$logf" | sed 's/^/      /'
     return 1
   fi
   ok "$label is up (HTTP $code at $url)"
