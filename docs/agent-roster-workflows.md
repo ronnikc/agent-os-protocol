@@ -32,6 +32,8 @@ Request agent review displayed the expected setup message because the isolated l
 
 A follow-up Chromium run at `ba71859` used a separate local lobby and a fake model provider. The Panel displayed Agent Evaluation Engineer output for all three draft types. Both created and imported roles appeared in the roster after read-only tool approval, and the reviewed lesson was activated. The private lobby denied runtime launch for the created role without a bound Agent ID. The hosted verification suite covers task-time recall with a fake provider, including the change after retirement.
 
+At `b516e7e`, a separate Chromium rehearsal used a disposable localhost lobby whose policy allowed the unbound fixture worker. Train Agent activated a lesson for the Agent Evaluation Engineer. A task submitted from the Panel completed with the marker from that lesson. After retiring the lesson through Manage drafts, a second task on the same running worker completed without the marker. The fake model derived each result from the current task's system context. This verifies the browser-to-task recall path and the effect of retirement.
+
 ## Further workflow design
 
 In the public panel, choosing a roster draft action as a guest opens the wallet sign-in prompt. Sign in and select a lobby you manage to create, import, train, or review drafts.
