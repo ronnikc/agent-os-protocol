@@ -42,6 +42,8 @@ Open <http://localhost:4800>. You should see the panel discover the agent roster
 3. **Sprint** tab → plan work and dispatch it to the boss.
 4. **Tasks** / **Gantt** → watch it execute.
 
+For a hosted first task, launch a named agent after connecting a model provider and setting hosted model limits in **Apps**. In **Tasks**, assign it a small task that returns a text result. Open the completed task to confirm the result. The hosted smoke fixture runs this dispatch and completion path on Windows and Ubuntu with a fake model provider. It also checks that retired training is omitted from the new task's model request. A real provider run requires your configured account.
+
 Useful variants:
 
 ```bash
