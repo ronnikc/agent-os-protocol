@@ -48,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
           galleryImg.setAttribute('src', newImgSrc);
           const screenshotDescriptions = {
             'tour-tab-agents': 'Agents panel with a 66-role roster and buttons to create, import, train, and manage drafts',
-            'tour-tab-apps': 'Example workspace limits, provider setup, and run history in Apps',
+            'tour-tab-apps': 'Hosted run history and an example training audit event in Apps',
             'tour-tab-marketplace': 'Marketplace with an escrow pending notice, specialist filters, and listings',
           };
           galleryImg.setAttribute('alt', screenshotDescriptions[btn.id] ?? btn.textContent.trim());

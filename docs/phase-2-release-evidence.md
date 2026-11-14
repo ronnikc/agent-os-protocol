@@ -22,6 +22,8 @@ After evidence review, reconcile the README, docs index, website tour, release n
 
 The Visual Tour uses example lobby captures and separate captions for the current controls. Refresh the screenshots against the frozen candidate and check that Apps shows the hosted audit history, Agents shows the bundled roster and draft controls, and Marketplace shows the current escrow status. Keep sample data identifiable and omit credentials and private task content.
 
+The current Apps screenshot was captured in an isolated local lobby with an example lesson in the hosted audit feed. It illustrates where operators can inspect training evidence. Refresh the capture after beta exit using the frozen candidate.
+
 Status: awaiting beta exit. No public benchmark results or recording yet.
 
 ### Measurement tooling
