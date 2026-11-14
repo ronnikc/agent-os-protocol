@@ -12,6 +12,8 @@ On November 14, 2026, a clean Windows checkout with the x402 2.31.0 and transiti
 
 The Slack relay lockfile resolves Express 4.22.3 and qs 6.16.2. A scoped override keeps Vercel Sandbox at 4.0.0 and resolves its OIDC dependency to 4.0.9. A clean install, TypeScript build and hosted suite passed with that override. The install audit reported three moderate entries and zero high entries. Live Vercel qualification and remaining Concordium dependency maintenance are open.
 
+The Concordium Web SDK retains its existing version with a scoped UUID override to 11.1.1. A clean Windows install passed the TypeScript build and full verification suite, including identity and commerce fixtures. The production dependency audit reported zero findings. Independent hosted x401 verification and live x402 Testnet settlement remain release evidence items.
+
 ## Benchmark protocol
 
 Use the same pinned task revision, acceptance checks, model, per-run token and compute budgets, and time limits for Agent OS Swarm, a single-agent baseline, and one external orchestrator. Record the orchestrator and provider versions, region, plan and runtime profile. Start each run from the same clean input and alternate run order. Save raw results and disclose unavailable metrics and any differences in configuration.
