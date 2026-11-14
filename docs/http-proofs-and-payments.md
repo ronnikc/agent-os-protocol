@@ -82,6 +82,8 @@ An unsigned GET returns HTTP 402 with `PAYMENT-REQUIRED` when the configured fac
 
 After restarting the lobby service with the configuration, run `curl -i https://your-lobby.example/api/v1/agent-lobby/x402/testnet-resource`. Expect HTTP 402 with the quote header. If the endpoint returns 503 with an unconfigured message, check the configuration path, file permissions and server startup logs. If settlement is unavailable, check that the facilitator is reachable from the lobby server and that its `/supported` response advertises x402 v2, the Concordium Testnet network and the configured sponsor.
 
+The merchant returns HTTP 409 if a duplicate arrives while the original payment is processing. Wait for the original result or retry with the original signed payment. The commerce fixture holds settlement open, submits an overlapping retry, and verifies that only one facilitator settlement call occurs. It then checks that a retry after merchant restart returns the original finalized receipt when the chain confirms the transaction.
+
 ### Invite-only Mainnet pilot
 
 The lobby server can host a demo resource at `/api/v1/agent-lobby/x402/test-resource`. An enabled merchant quotes a real Mainnet CCD payment and returns a receipt and explorer link after checking the finalized transfer. The resource costs 1 CCD during the first pilot. Operators can select 10 CCD for a later demo. CCD goes to the configured merchant account, and the facilitator sponsor pays the network fee.

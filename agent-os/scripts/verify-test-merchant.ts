@@ -24,6 +24,8 @@ async function verifyMerchant(testnet: boolean) {
   const resource = 'https://merchant.example' + route;
   const inviteToken = 'a'.repeat(32);
   let settlements = 0;
+  let holdSettlement: Promise<void> | undefined;
+  let signalSettlement: (() => void) | undefined;
   let confirmed = false;
   const receipts = new Set<string>();
   const directory = mkdtempSync(join(tmpdir(), 'x402-merchant-'));
@@ -40,6 +42,8 @@ async function verifyMerchant(testnet: boolean) {
       async verify() { return { isValid: true, payer }; },
       async settle() {
         settlements++;
+        signalSettlement?.();
+        await holdSettlement;
         if (loseResponse) throw new Error('Facilitator response lost after submission');
         return { success: true, network, payer, transaction: 'b'.repeat(64) };
       },
@@ -79,7 +83,7 @@ async function verifyMerchant(testnet: boolean) {
     assert.equal(requirement.accepts[0].extra.feePayer, sponsor);
     assert.equal(requirement.accepts[0].network, network);
     await quote.body?.cancel();
-    const pay = (amount: string, payload: Record<string, unknown> = { fixture: true }, offeredNetwork = network) => fetch(endpoint, { headers: {
+    const pay = (amount: string, payload: Record<string, unknown> = { fixture: true }, offeredNetwork = network) => fetch(endpoint, { signal: AbortSignal.timeout(5_000), headers: {
       ...auth,
       'PAYMENT-SIGNATURE': encodePaymentSignatureHeader({
         x402Version: 2, resource: requirement.resource,
@@ -95,7 +99,31 @@ async function verifyMerchant(testnet: boolean) {
       await wrongNetwork.body?.cancel();
     }
     assert.equal(settlements, 0);
-    const unconfirmed = await pay('1000000');
+    let firstPayment: Promise<Response>;
+    if (testnet) {
+      const entered = Promise.withResolvers<void>();
+      const release = Promise.withResolvers<void>();
+      signalSettlement = entered.resolve;
+      holdSettlement = release.promise;
+      firstPayment = pay('1000000');
+      try {
+        await Promise.race([entered.promise, firstPayment.then(response => {
+          throw new Error(`Payment returned ${response.status} before reaching settlement`);
+        })]);
+        const duplicate = await pay('1000000');
+        assert.equal(duplicate.status, 409);
+        assert.equal(duplicate.headers.has('PAYMENT-RESPONSE'), false);
+        await duplicate.body?.cancel();
+        assert.equal(settlements, 1);
+      } finally {
+        release.resolve();
+        signalSettlement = undefined;
+        holdSettlement = undefined;
+      }
+    } else {
+      firstPayment = pay('1000000');
+    }
+    const unconfirmed = await firstPayment;
     assert.equal(unconfirmed.status, 502);
     assert.equal(unconfirmed.headers.has('PAYMENT-RESPONSE'), false);
     await unconfirmed.body?.cancel();

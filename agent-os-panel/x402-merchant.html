@@ -17,7 +17,7 @@
       <ol>
         <li>Select Concordium Testnet in your wallet and use a funded Testnet account you control.</li>
         <li>Copy the endpoint into an x402 v2 client that supports Concordium sponsored exact payments. Your client must support signing with your Testnet account.</li>
-        <li>Review the amount, recipient and fee sponsor in your client before authorizing. Save the finalized receipt. If settlement is uncertain, retry with the same signed payment.</li>
+        <li>Review the amount, recipient and fee sponsor in your client before authorizing. Save the finalized receipt. If your client reports HTTP 409, the same payment is already processing or recorded. Retry with the original signed payment.</li>
       </ol>
       <label for="merchant-endpoint">Merchant endpoint</label>
       <input id="merchant-endpoint" class="input" type="url" readonly size="48">
