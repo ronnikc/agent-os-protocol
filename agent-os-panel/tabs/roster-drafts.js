@@ -28,8 +28,10 @@ export function initRosterDrafts(refresh) {
       <label class="form-label">${kind === 'train' ? 'Lesson title' : 'Agent name'}<input class="form-input" name="title" required maxlength="120"></label>
       <label class="form-label">${kind === 'train' ? 'Training guidance' : 'Agent instructions'}<textarea class="form-input" name="content" required maxlength="16000" rows="10"></textarea></label>
       ${kind !== 'train' ? '<label class="form-label">Hosted tool access<select name="tools" class="form-input"><option value="read-only">Read only</option><option value="standard">Standard hosted tools</option></select></label>' : ''}
-      <p role="status" data-status></p><button class="btn btn-primary" type="submit">Save draft</button></form>`, { wide: true });
+      <p role="status" data-status></p><button class="btn btn-primary" type="submit">Save draft</button>
+      <button class="btn btn-secondary" type="button" data-close>Close</button></form>`, { wide: true, keyboardDialog: true });
     const form = document.querySelector('#roster-draft-form');
+    form.querySelector('[data-close]').addEventListener('click', closeModal);
     const preview = form.querySelector('[data-preview]');
     let pinnedSource;
     form.elements.source?.addEventListener('input', () => { pinnedSource = undefined; });
@@ -55,7 +57,8 @@ export function initRosterDrafts(refresh) {
   }
 
   async function manage() {
-    showModal('<h2>Agent drafts and training</h2><p role="status" id="roster-draft-list">Loading…</p>');
+    showModal('<h2>Agent drafts and training</h2><p role="status" id="roster-draft-list">Loading…</p><button class="btn btn-secondary" type="button" id="close-roster-drafts">Close</button>', { keyboardDialog: true });
+    document.querySelector('#close-roster-drafts').addEventListener('click', closeModal);
     const root = document.querySelector('#roster-draft-list');
     const data = await fetchJson(endpoint);
     if (!root.isConnected) return;
@@ -91,7 +94,7 @@ export function initRosterDrafts(refresh) {
         ${draft.status === 'active' ? '<button class="btn btn-secondary" data-action="retire">Retire</button>' : ''}
       <button class="btn btn-secondary" data-action="back">Back to drafts</button>
       <button class="btn btn-secondary" data-action="close">Close</button>
-      </div>`, { wide: true });
+      </div>`, { wide: true, keyboardDialog: true });
     const root = document.querySelector('#roster-draft-detail');
     const reviewOutput = document.querySelector('#roster-draft-review');
     let pendingAction = false;

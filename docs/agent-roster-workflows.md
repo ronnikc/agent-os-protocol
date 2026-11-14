@@ -12,6 +12,8 @@ The hosted verification suite checks that approved records survive a store resta
 
 The hosted Import Agent fixture checks that a repository branch URL is rejected, the pinned source and edited instructions survive store reload, and the role appears in the owner’s roster only after tool approval. Another lobby cannot activate or see the role. Retirement removes it from the roster. The fixture uses synthetic Markdown and does not require GitHub credentials.
 
+Roster dialogs move keyboard focus to their heading on entry, keep Tab inside the dialog, and return focus to the opening control when closed. Use **Close** or Escape to exit.
+
 ## Further workflow design
 
 The following describes planned refinements to draft previews, import conversion, reviewer selection, and rollback.

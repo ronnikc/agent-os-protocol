@@ -630,7 +630,8 @@ async function updateStatusBar() {
 }
 
 // ── Modal System ──
-export function showModal(html, { wide = false, agentIdCard = false } = {}) {
+let dialogOpener;
+export function showModal(html, { wide = false, agentIdCard = false, keyboardDialog = false } = {}) {
   let overlay = document.getElementById('modal-overlay');
   if (!overlay) {
     overlay = document.createElement('div');
@@ -638,14 +639,49 @@ export function showModal(html, { wide = false, agentIdCard = false } = {}) {
     overlay.className = 'modal-overlay';
     document.body.appendChild(overlay);
   }
+  const continuing = overlay.style.display === 'flex' && overlay.firstElementChild?.getAttribute('role') === 'dialog';
+  dialogOpener = keyboardDialog ? (continuing ? dialogOpener : document.activeElement) : undefined;
   overlay.innerHTML = `<div class="modal${wide ? ' modal-wide' : ''}${agentIdCard ? ' agent-id-card-modal' : ''}">${html}</div>`;
   overlay.style.display = 'flex';
   overlay.onclick = (e) => { if (e.target === overlay) closeModal(); };
+  overlay.onkeydown = null;
+  if (!keyboardDialog) return;
+  const dialog = overlay.firstElementChild;
+  const heading = dialog.querySelector('h2');
+  heading.id = 'panel-dialog-heading';
+  heading.tabIndex = -1;
+  dialog.setAttribute('role', 'dialog');
+  dialog.setAttribute('aria-modal', 'true');
+  dialog.setAttribute('aria-labelledby', heading.id);
+  heading.focus();
+  overlay.onkeydown = event => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeModal();
+    } else if (event.key === 'Tab') {
+      const controls = [...dialog.querySelectorAll('a[href], button, input, select, textarea, [tabindex]')]
+        .filter(control => !control.matches(':disabled') && control.tabIndex >= 0 && control.getClientRects().length);
+      const edge = event.shiftKey ? controls.at(-1) : controls[0];
+      const boundary = event.shiftKey ? controls[0] : controls.at(-1);
+      if (!edge || event.target === boundary || !controls.includes(event.target)) {
+        event.preventDefault();
+        (edge || heading).focus();
+      }
+    }
+  };
 }
 
 export function closeModal() {
   const overlay = document.getElementById('modal-overlay');
-  if (overlay) overlay.style.display = 'none';
+  if (overlay) {
+    overlay.style.display = 'none';
+    if (overlay.firstElementChild?.getAttribute('role') === 'dialog') {
+      overlay.replaceChildren();
+      overlay.onkeydown = null;
+    }
+  }
+  if (dialogOpener?.isConnected) dialogOpener.focus();
+  dialogOpener = undefined;
 }
 if (typeof window !== 'undefined') {
   window.closeModal = closeModal;
