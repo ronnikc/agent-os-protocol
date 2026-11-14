@@ -1515,7 +1515,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
     handleHttp(req, res).catch((err) => {
       console.error('[lobby-server] HTTP handler error:', err);
       if (!res.headersSent) {
-        res.writeHead(500, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
+        res.writeHead(500, { 'content-type': 'application/json', 'access-control-allow-origin': '*', 'cache-control': 'no-store' });
         res.end(JSON.stringify({ error: 'internal server error' }));
       } else {
         res.end();

@@ -8,7 +8,7 @@ button.addEventListener('click', async () => {
   try {
     const response = await fetch('/api/v1/agent-lobby/x401/test-resource/check', {
       method: 'POST', headers: { 'X-Agent-OS-Proof': '1' },
-      cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15_000),
+      credentials: 'omit', cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(15_000),
     });
     const result = await response.json();
     if (!response.ok || result.proofStatus !== 200 || result.replayStatus !== 401) {

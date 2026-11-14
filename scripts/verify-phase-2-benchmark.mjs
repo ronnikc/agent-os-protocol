@@ -26,6 +26,7 @@ assert.deepEqual(summarizeBenchmark(report).configurations, configurations);
 const withExtraFields = { ...configurations, swarm: { ...configurations.swarm, privateNote: 'fixture only' } };
 assert.deepEqual(summarizeBenchmark({ ...report, configurations: withExtraFields }).configurations, configurations);
 assert.throws(() => summarizeBenchmark({ ...report, configurations: {} }), /Missing pinned benchmark configuration/);
+assert.throws(() => summarizeBenchmark({ ...report, revision: [report.revision] }), /pinned revision/);
 const { swarm } = summarizeBenchmark(report).scenarios[0].results;
 assert.equal(swarm.completionRate, 0.5);
 assert.equal(swarm.cleanupFailures, 1);

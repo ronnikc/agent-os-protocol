@@ -31,7 +31,7 @@ function summarize(attempts) {
 }
 
 export function summarizeBenchmark(report) {
-  if (!/^[a-f0-9]{40}$/.test(report?.revision ?? '') || !Array.isArray(report?.attempts)) {
+  if (typeof report?.revision !== 'string' || !/^[a-f0-9]{40}$/.test(report.revision) || !Array.isArray(report.attempts)) {
     throw new Error('Expected a pinned revision and an attempts array.');
   }
   const configurations = Object.fromEntries(groups.map(group => {
