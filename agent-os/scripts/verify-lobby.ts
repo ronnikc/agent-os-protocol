@@ -105,7 +105,8 @@ async function main(): Promise<void> {
   await check('Marketplace beta flag rollback preserves preview history and blocks cross-lobby reads', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'marketplace-rollback-'));
     const previous = process.env.AGENT_OS_MARKETPLACE_BETA;
-    const store = new InMemoryLobbyStore(join(directory, 'store.json'));
+    const storeFile = join(directory, 'store.json');
+    const store = new InMemoryLobbyStore(storeFile);
     const owner = 'did:ccd:testnet:fixture-owner';
     const lobby = { ...makeLobby('private', [owner]), created_by: owner };
     await store.createLobby(lobby);
@@ -158,7 +159,32 @@ async function main(): Promise<void> {
       assert.ok(await store.getTask(lobby.lobby_id, task.task_id));
       process.env.AGENT_OS_MARKETPLACE_BETA = 'false';
       assert.equal((await read()).status, 404);
+      assert.equal((await publish('0')).status, 404);
+      assert.equal((await fetch(tasksUrl, { headers: as(owner) })).status, 200);
+      assert.deepEqual((await (await fetch(tasksUrl, { headers: as(member) })).json()).coordination_tasks, []);
       assert.equal((await store.getMarketplaceTask(lobby.lobby_id, 'preview'))?.title, 'Preview');
+      const restoredStore = new InMemoryLobbyStore(storeFile);
+      const restored = await startLobbyServer({ port: 0, store: restoredStore, autoDefaultLobby: false });
+      try {
+        const port = (restored.httpServer.address() as import('node:net').AddressInfo).port;
+        const restoredUrl = (target: string) => target.replace(new URL(target).origin, 'http://127.0.0.1:' + port);
+        assert.equal((await fetch(restoredUrl(url), { headers: as(owner) })).status, 404);
+        delete process.env.AGENT_OS_MARKETPLACE_BETA;
+        const history = await fetch(restoredUrl(url), { headers: as(owner) });
+        assert.equal(history.status, 200);
+        assert.equal((await history.json()).legacy[0].id, 'preview');
+        const reopened = await fetch(restoredUrl(publicUrl), { method: 'POST',
+          headers: { Authorization: 'Bearer ' + issueSessionToken(owner, publicLobby.lobby_id), 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'publish', title: 'Rollback smoke', deliverable: 'Report',
+            acceptanceChecks: ['Review report'], scope: 'Artifact only', deadline: Date.now() + 86_400_000, amount: '0' }) });
+        assert.equal(reopened.status, 200);
+        assert.equal((await reopened.json()).listing.quote.amount, '0');
+        const denied = await fetch(restoredUrl(tasksUrl), { headers: as(member) });
+        assert.equal(denied.status, 200);
+        assert.deepEqual((await denied.json()).coordination_tasks, []);
+      } finally {
+        await restored.close();
+      }
     } finally {
       if (previous === undefined) delete process.env.AGENT_OS_MARKETPLACE_BETA;
       else process.env.AGENT_OS_MARKETPLACE_BETA = previous;
