@@ -25,6 +25,21 @@ The release coordinator owns the beta decision. The lobby operator owns invitati
 | Upstash Box | Pending live run | Pending |
 | Vercel Sandbox | Pending live run | Pending |
 
+### Provider qualification report
+
+Keep the report with the candidate's redacted evidence. Run `node agent-os/scripts/check-provider-qualification.mjs <report.json>` to check completeness before reviewing the evidence. The command checks presence and recorded outcomes. Reviewers open the references and confirm that they describe genuine runs on the named candidate.
+
+The JSON report uses a full commit SHA in `candidate` and a `providers` array. Each row has these fields:
+
+| Field | Value |
+| --- | --- |
+| `provider` | One of `e2b`, `agent37`, `daytona`, `modal`, `upstash-box`, `vercel-sandbox` |
+| `source` | `live` |
+| `operator`, `plan`, `region`, `isolation`, `pinnedRevision` | Operator and deployment details. Use the same pinned task revision across all providers. |
+| `scenarios` | Object keyed by `delivery`, `crossLobbyDenial`, `budgetDenial`, `quotaFailure`, `timeout`, `cancellation`, `restartRecovery`, and `deletion`. Each entry records `outcome` and an `evidence` reference. A passing denial scenario means the expected denial was observed. |
+| `billingEvidence` | Reference to expected cost, reported cost, and any limitations of the provider's billing data |
+| `cleanup`, `pendingReservations` | `confirmed` and `0` after teardown and reconciliation |
+
 For each scenario record outcome, elapsed time from hire to verified delivery, count and reasons for intervention, model and compute cost per accepted task, failed and retried attempts, cleanup failures and review decisions. Derive completion rate from completed scenarios divided by started scenarios. Redact tokens, source links, wallet signatures and private artifacts from shared evidence.
 
 ## Rollback and recovery
