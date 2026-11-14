@@ -235,7 +235,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const cohort = btn.getAttribute('data-cohort');
 
       // Update active tab style
-      rosterButtons.forEach(b => b.classList.toggle('active', b === btn));
+      rosterButtons.forEach(button => {
+        button.classList.toggle('active', button === btn);
+        button.setAttribute('aria-pressed', String(button === btn));
+      });
 
       // Show or hide agent cards matching selected cohort
       rosterCards.forEach(card => {
