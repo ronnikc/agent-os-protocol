@@ -18,6 +18,8 @@ Roster dialogs move keyboard focus to their heading on entry, keep Tab inside th
 
 ### Try a public import
 
+Wait for **GitHub file loaded** before saving. If you change the URL or edit the instructions while a file loads, the panel keeps your edits. Select **Load file** again when you are ready to replace the preview.
+
 In **Agents → Import Agent**, paste the URL of the [commit-pinned Data Pipeline Engineer definition](https://github.com/ronnikc/agent-os-protocol/blob/a3f3d48b52f03976ea38f5bd04b178b6923cc52d/agent-os/sub-agents/agents/data-pipeline-engineer.md) and select **Load file**. Use an unused slug such as `data-pipeline-sample`, review the instructions, choose **Read only**, and save. You can request a review when the lobby has a model configured. Approve the tool scope to activate the draft, then retire the sample from **Manage drafts** when finished.
 
 On November 14, 2026, the import reader at revision `13f3ea9` fetched the pinned definition from public GitHub and verified its title without a token. The hosted fixture separately covers saving edited instructions, approving tools, lobby isolation, and retirement. A signed-in production walkthrough remains open.

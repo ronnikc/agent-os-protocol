@@ -33,24 +33,42 @@ export function initRosterDrafts(refresh) {
     const form = document.querySelector('#roster-draft-form');
     form.querySelector('[data-close]').addEventListener('click', closeModal);
     const preview = form.querySelector('[data-preview]');
+    const save = form.querySelector('button[type="submit"]');
+    const status = form.querySelector('[data-status]');
     let pinnedSource;
     form.elements.source?.addEventListener('input', () => { pinnedSource = undefined; });
     preview?.addEventListener('click', async () => {
+      if (preview.disabled || save.disabled || !form.elements.source.reportValidity()) return;
       const source = form.elements.source.value.trim();
-      await submit(form, preview, { action: 'import-preview', source }, result => {
-        if (source !== form.elements.source.value.trim()) return;
-        form.elements.content.value = result.content;
-        pinnedSource = source;
-      });
+      const originalContent = form.elements.content.value;
+      save.disabled = true;
+      try {
+        await submit(form, preview, { action: 'import-preview', source }, result => {
+          if (source !== form.elements.source.value.trim() || originalContent !== form.elements.content.value) {
+            status.textContent = 'The URL or instructions changed while loading. Select Load file again to replace the preview.';
+            return;
+          }
+          if (typeof result.content !== 'string' || !result.content.trim()) {
+            status.textContent = 'The GitHub file has no importable text.';
+            return;
+          }
+          form.elements.content.value = result.content;
+          pinnedSource = source;
+          status.textContent = 'GitHub file loaded. Review its instructions before saving.';
+        });
+      } finally {
+        save.disabled = false;
+      }
     });
     form.addEventListener('submit', async event => {
       event.preventDefault();
+      if (save.disabled) return;
       const values = Object.fromEntries(new FormData(form));
       if (kind === 'import' && pinnedSource !== values.source.trim()) {
         form.querySelector('[data-status]').textContent = 'Load this GitHub file before saving the draft.';
         return;
       }
-      await submit(form, event.submitter, {
+      await submit(form, save, {
         ...values, source: pinnedSource, action: 'save', kind,
       }, result => showDraft(result.draft));
     });
@@ -134,7 +152,8 @@ async function act(endpoint, root, button, payload, success) {
   try {
     const result = await postJson(endpoint, payload);
     if (!result || result.error) {
-      status.textContent = result?.error || 'The roster action could not be completed.';
+      status.textContent = result?.error?.message || (typeof result?.error === 'string' && result.error) ||
+        'The roster action could not be completed.';
       return;
     }
     status.textContent = '';
