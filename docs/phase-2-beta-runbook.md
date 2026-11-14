@@ -44,6 +44,8 @@ Use a separate lobby deployment with its own persistent store, encryption key, a
 
 The hosted suite exercises the policy change, persisted cancellation, disconnection guard and restart cleanup with a fake provider. Capture separate evidence for the deployment drill.
 
+For provider conformance, record how the provider identifies an attempt, what lookup returns during delayed visibility, and what confirms teardown. A missing allocation after a lost create response can leave cleanup pending. A denied delete also needs a follow-up cleanup check. The Daytona fixture covers both cases and verifies that recovery never submits a second create. Use the live provider dashboard and billing records to resolve any remaining uncertainty.
+
 ## Release decision
 
 Require a complete external journey, all six live rows, clean rollback, no unresolved billable workspaces, and passing accessibility and regression checks. Retain the candidate commit, evidence links, deviations and explicit decision. Fixture success supports development readiness. The external cohort, live provider qualification and assistive-technology walkthrough are pending.
