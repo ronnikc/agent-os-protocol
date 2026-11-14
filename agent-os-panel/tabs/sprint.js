@@ -315,8 +315,10 @@ function render() {
       content: sprintDescription,
     });
 
-    if (result?.ok) {
+    if (result?.ok && result.sentToStaging !== false) {
       executionLog.push({ ts: new Date().toISOString(), content: `Sprint plan sent to lobby. Boss Agent will orchestrate planning and execution across the agent swarm.` });
+    } else if (result?.sentToStaging === false) {
+      executionLog.push({ ts: new Date().toISOString(), content: 'Sprint plan was saved locally but did not reach the lobby. Check the lobby connection and Boss Agent before retrying.', error: true });
     } else {
       executionLog.push({ ts: new Date().toISOString(), content: `Failed to send sprint plan: ${result?.error || 'unknown'}`, error: true });
     }

@@ -1,0 +1,14 @@
+# Agent role evaluation
+
+Four read-only Codex CLI runs used the native role definitions at revision `7ddb7bd1fb38543c89246c7571cb5a5ecad2edcf`, model `gpt-6.1-sol`, and Windows with Node 24.14.0. Each role received one task from the repository. The evaluation scored factual accuracy, evidence, scope, and actionability. There was one attempt per role, with no control arm or measured cost. The results identify gaps for follow-up. Hosted-runtime parity and comparative performance remain unmeasured.
+
+| Role and task | Evaluation | Tool or workflow refinement |
+| --- | --- | --- |
+| Privacy Engineer · Trace the x401 proof demo | Strong source and loopback evidence for caching, nonce expiry, response contents and replay. Edge and log retention remain unknown. Found unnecessary browser credential forwarding and a missing no-store directive on unexpected HTTP errors. | Give the role a scrubbed data inventory and operator-approved retention evidence. Require a verdict per storage surface. |
+| Incident Responder · Triage the hosted x402 Testnet 503 | Good scope, operator handoff, rollback and recovery checks. The role could not reach the public endpoint in its runtime. A separate unsigned GET confirmed missing facilitator configuration. No production changes or transactions occurred. | Provide a read-only probe for approved service endpoints with timestamp, status, revision and a sanitized diagnostic. |
+| Developer Experience Engineer · Walk the Windows first-task instructions | Found the incorrect Node minimum and reproduced Sprint's false delivery message. An in-memory fixture verified the handler. Fresh installation, relay startup and first-task completion were outside this run's scope. | Add a Windows first-task smoke fixture with a fake runtime and a disconnected Boss case. |
+| Data Pipeline Engineer · Audit benchmark ingestion | Ran the benchmark fixtures and reconciled seven records. Found revision type coercion and showed that the tool rejects duplicates but cannot confirm an entire expected scenario is present. | Add an expected-attempt manifest and row-specific validation before publishing benchmark results. |
+
+The strongest new role candidate is **Integration Reliability Engineer**. Connector teams implement individual integrations and Incident Response coordinates outages. A specialist could own repeatable conformance across providers, with an initial task covering lost responses, credential rotation, restart, cleanup, and eventual reconciliation. Run that task against Runtime Adapter and Infrastructure before adding the role.
+
+Release evidence belongs with Release and Agent Evaluation. Add a release evidence workflow there first. API, Identity, and Test already share protocol conformance. Give them an independent x401/x402 interoperability harness before adding a separate role.

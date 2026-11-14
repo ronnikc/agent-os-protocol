@@ -9,7 +9,7 @@ how to connect to a **lobby** (Swarm Mode), and know how to confirm your install
 
 ## Prerequisites
 
-- **Node.js ≥ 20** and **npm**. (Check with `node -v`.)
+- **Node.js 22.19.0 or later** and **npm**. (Check with `node -v`.)
 - **At least one agent runtime** to actually drive agents — the first-class one is the
   **Claude Code CLI**. The panel itself, the lobby, and all the verification suites run with no
   runtime and no API key; you only need a runtime when you start an agent that does real work.

@@ -288,7 +288,7 @@ is built — including that the boss is actually engaged and dispatches to a nam
 
 ## Installation
 
-**Prerequisites:** Node.js 20+ and npm. To drive real agents you also need at least one agent
+**Prerequisites:** Node.js 22.19.0 or later and npm. To drive real agents you also need at least one agent
 runtime (e.g. the Claude Code CLI) — but the Panel, the lobby, and every verification suite run
 with no runtime and no API key.
 
