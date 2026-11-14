@@ -563,6 +563,10 @@ export async function verifyHostedControls() {
       },
       apiRuntimeFetch: async (_, init) => {
         assert.ok(!String(init?.body).includes(credential));
+        if (String(init?.body).includes('Act as the Agent Evaluation Engineer')) {
+          return Response.json({ content: [{ type: 'text', text: 'Review fixture: verify task evidence.' }],
+            usage: { input_tokens: 100, output_tokens: 50 } });
+        }
         assert.ok(String(init?.body).includes('Workspace approval marker'));
         modelCalls++;
         return Response.json({ content: modelCalls === 1
@@ -754,11 +758,14 @@ export async function verifyHostedControls() {
     assert.equal(agentTask.status, 201);
     const workspaceLesson = await call('b', draftsPath, 'POST', { ...training, content: 'Workspace approval marker' });
     assert.equal(workspaceLesson.status, 201);
-    assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: workspaceLesson.body.draft.id })).status, 200);
     assert.equal(modelCalls, 0);
     waitForCancel = false;
     actual = 20;
     await call('b', '/hosted-controls', 'PUT', { ...policy, modelPerRun: 30_000, modelPerPeriod: 30_000, concurrency: 1 });
+    const reviewed = await call('b', draftsPath, 'POST', { action: 'review', id: workspaceLesson.body.draft.id });
+    assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
+    assert.match(reviewed.body.review, /verify task evidence/);
+    assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: workspaceLesson.body.draft.id })).status, 200);
     await call('b', provider, 'POST', { action: 'rotate', credential });
     const bSettings = await call('b', '/hosted-controls');
     const openFileTools = adapter.openFileTools;
@@ -767,14 +774,14 @@ export async function verifyHostedControls() {
       connectionId: bSettings.body.connections[0].id, attemptId: 'unsupported' });
     assert.equal(unsupported.status, 409);
     assert.match(unsupported.body.error, /cannot run assigned agents/);
-    assert.equal(store.readHostedState('b').runs.length, 0);
+    assert.equal(store.readHostedState('b').runs.filter(run => run.kind === 'workspace').length, 0);
     adapter.openFileTools = openFileTools;
     await store.upsertTask({ ...agentTask.body.task, assigned_to: 'offline-agent' });
     const offline = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
       connectionId: bSettings.body.connections[0].id, attemptId: 'offline' });
     assert.equal(offline.status, 409);
     assert.match(offline.body.error, /Start the assigned hosted agent/);
-    assert.equal(store.readHostedState('b').runs.length, 0);
+    assert.equal(store.readHostedState('b').runs.filter(run => run.kind === 'workspace').length, 0);
     await store.upsertTask(agentTask.body.task);
     const execution = await call('b', '/hosted-runs', 'POST', { ...request, taskId: agentTask.body.task.task_id,
       connectionId: bSettings.body.connections[0].id, attemptId: 'agent-workspace' });

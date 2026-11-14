@@ -186,7 +186,7 @@ async function main(): Promise<void> {
     const website = read('apps/website/index.html');
     const tabs = [...panel.matchAll(/<button data-tab="([^"]+)"/g)].map(match => match[1]);
     const tour = [...website.matchAll(/id="tour-tab-([^"]+)"[^>]*data-img="([^"]+)"/g)];
-    assert.deepEqual(tour.map(match => match[1]), tabs);
+    assert.deepEqual(tour.map(match => match[1]), [...tabs, 'marketplace']);
     for (const [, , image] of tour) {
       assert.ok(existsSync(R(join('apps/website', image))), `Missing tour screenshot: ${image}`);
     }

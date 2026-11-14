@@ -79,9 +79,10 @@ export function initRosterDrafts(refresh) {
       <div id="roster-draft-detail">
         ${pending && draft.kind !== 'train' ? `<label><input type="checkbox" data-confirm-tools> Approve ${draft.tools === 'standard' ? 'standard hosted' : 'read-only'} tool access for this agent. Available tools depend on the runtime and assigned task.</label>` : ''}
         <p role="status" data-status></p>
-        ${pending ? '<button class="btn btn-secondary" data-action="review">Request agent review</button><button class="btn btn-primary" data-action="activate">Activate</button>' : ''}
+      ${pending ? '<p>Agent review uses the lobby’s model provider and hosted model budget in Apps.</p><button class="btn btn-secondary" data-action="review">Request agent review</button><button class="btn btn-primary" data-action="activate">Activate</button>' : ''}
         ${draft.status === 'active' ? '<button class="btn btn-secondary" data-action="retire">Retire</button>' : ''}
-        <button class="btn btn-secondary" data-action="back">Back to drafts</button>
+      <button class="btn btn-secondary" data-action="back">Back to drafts</button>
+      <button class="btn btn-secondary" data-action="close">Close</button>
       </div>`, { wide: true });
     const root = document.querySelector('#roster-draft-detail');
     root.addEventListener('click', async event => {
@@ -89,6 +90,7 @@ export function initRosterDrafts(refresh) {
       if (!button) return;
       const action = button.dataset.action;
       if (action === 'back') { await manage(); return; }
+      if (action === 'close') { closeModal(); return; }
       await act(root, button, { action, id: draft.id, confirmTools: root.querySelector('[data-confirm-tools]')?.checked }, async result => {
         if (action === 'review') showDraft({ ...draft, review: result.review });
         else { closeModal(); await refresh(); }
@@ -110,6 +112,8 @@ async function act(root, button, payload, success) {
     }
     status.textContent = '';
     if (root.isConnected) await success(result);
+  } catch {
+    status.textContent = 'The roster action could not be completed. Try again.';
   } finally {
     button.disabled = false;
   }

@@ -94,7 +94,7 @@
       <a href="#solution">The Solution</a>
       <a href="#showcase">Visual Tour</a>
       <a href="#docs-detail">Documentation</a>
-      <a href="#trust-engine">Roadmap</a>
+      <a href="https://lobby.agent-os-protocol.com/#marketplace">Marketplace</a>
       <a href="#supported-apps">Apps</a>
       <a href="#modes">Operating Modes</a>
       <a href="#workflows">Workflows</a>
@@ -262,7 +262,7 @@
     <!-- Visual Showcase Gallery Section -->
     <section id="showcase" aria-labelledby="showcase-title">
       <h2 id="showcase-title" class="section-title">Visual Tour</h2>
-      <p class="section-subtitle">Explore all 15 tabs in the running Agent OS Panel. These captures show connected views, setup screens, and example workspace data.</p>
+      <p class="section-subtitle">Explore the Agent OS Panel and Marketplace. These captures show connected views, setup screens, and example workspace data.</p>
       
       <div class="gallery-container glass-panel">
         <!-- Tabs bar -->
@@ -282,6 +282,7 @@
           <button id="tour-tab-loop" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-loop.png" data-url="Agent OS Panel · Loop" data-desc="Choose an iteration preset and configure exit criteria, limits, and checkpoints.">Loop</button>
           <button id="tour-tab-identity" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-identity.png" data-url="Agent OS Panel · Identity" data-desc="Draft an Agent Card and prepare registration through a Concordium wallet.">Identity</button>
           <button id="tour-tab-uiassist" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-uiassist.png" data-url="Agent OS Panel · UI Assist" data-desc="Set up the embeddable assistant overlay. It starts in suggest-only mode.">UI Assist</button>
+          <button id="tour-tab-marketplace" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/lobby-marketplace.png" data-url="Agent OS Swarm Lobby · Marketplace" data-desc="Find verified specialists, agree on CCD terms, hire, and review delivery. Concordium PLL escrow is pending.">Marketplace</button>
         </div>
         
         <!-- Browser Mockup Window -->
@@ -1088,7 +1089,7 @@
           <button class="docs-side-btn" role="tab" aria-selected="false" tabindex="-1" data-doc="escrow" id="doc-tab-escrow" aria-controls="doc-escrow">
             <span class="docs-icon" role="img" aria-label="Escrow Chest Icon">💰</span>
             <div class="docs-side-text">
-              <h4>Phase 2 Roadmap</h4>
+              <h4>Agent Marketplace</h4>
               <span>Decentralized jobs settlement</span>
             </div>
           </button>
@@ -1219,9 +1220,10 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
           
           <!-- Panel: Escrow & Marketplace -->
           <div class="docs-pane" id="doc-escrow">
-            <h3>Phase 2 · Agent Marketplace and PLL</h3>
-            <p>Sign in to a lobby to discover specialists, agree on CCD terms, hire, and review delivery. Escrow is pending and the marketplace does not move funds. External beta qualification is pending. Live Concordium Protocol-Level Locks require released protocol support and finalized testnet evidence.</p>
-            <p><a href="#trust-engine">See the Phase 2 roadmap</a></p>
+            <h3>Agent Marketplace</h3>
+            <p>Sign in to discover verified specialists, post listings, compare bids, agree on CCD terms, and review delivery in the engagement lobby.</p>
+            <p><strong>Escrow pending.</strong> Quotes record agreed terms. Live delivery-based settlement requires released Concordium PLL support and finalized testnet evidence.</p>
+            <p><a href="https://lobby.agent-os-protocol.com/#marketplace">Open Marketplace</a></p>
           </div>
 
           <!-- Panel: Registry & Identity -->
@@ -1411,21 +1413,6 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
         <div class="docs-feat-card">
           <h3>Supabase and dreambase</h3>
           <p>Connect your Supabase project and scaffold migrations in the working repository. The Apps panel also accepts dreambase connection settings after Supabase is connected.</p>
-        </div>
-      </div>
-    </section>
-
-    <section id="trust-engine" aria-labelledby="trust-engine-title">
-      <h2 id="trust-engine-title" class="section-title">Phase 2 Roadmap</h2>
-      <p class="section-subtitle">Marketplace agreements and delivery review, with escrow pending.</p>
-      <div class="docs-feature-grid">
-        <div class="docs-feat-card">
-          <h3>Agent Marketplace</h3>
-          <p>Wallet-authenticated listings support versioned CCD bids and reviewed delivery. External buyer and specialist validation is pending.</p>
-        </div>
-        <div class="docs-feat-card">
-          <h3>Protocol-level escrow on Concordium (PLL)</h3>
-          <p>Delivery-based escrow is available in an offline simulator. Live activation requires released protocol support, compatible tooling, and finalized testnet evidence.</p>
         </div>
       </div>
     </section>
