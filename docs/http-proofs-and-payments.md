@@ -38,7 +38,7 @@ The runtime supports the profile’s unsigned OpenID4VP DC API request for its A
 
 Open the [x401 Proof Test](https://lobby.agent-os-protocol.com/panel/x401-test.html) and select **Run proof test**. It uses an ephemeral issuer and a synthetic Agent ID to request a credential, verify a holder-bound OpenID4VP presentation, and reject replay. The result shows HTTP 200 for the accepted proof and HTTP 401 for the replay. No wallet or payment is needed.
 
-To inspect the challenge with your own HTTP client, send an unsigned GET to `/api/v1/agent-lobby/x401/test-resource` and look for HTTP 401 with `PROOF-REQUEST`. The demo issuer is trusted only by this test resource. This exercise does not count toward the independent verifier release check described above.
+To inspect the challenge with your own HTTP client, send an unsigned GET to `/api/v1/agent-lobby/x401/test-resource` and look for HTTP 401 with `PROOF-REQUEST`. Run `node scripts/probe-public-services.mjs x401-challenge` to check the public route separately from the synthetic exchange. The challenge advertises x401 v0.2.0, an OpenID4VP presentation, and an Agent ID SD-JWT query. The probe omits the challenge nonce and tests no credential exchange. The independent verifier release check requires a hosted agent presentation accepted by an independently operated verifier.
 
 Deployers can set `AGENT_OS_X401_TEST_ORIGIN` to their public HTTPS origin to bind credential audiences to their own host. For a local walkthrough, run `npm run lobby` and open `http://localhost:4730/panel/x401-test.html`. The local page runs the synthetic exchange through the bundled test harness.
 

@@ -20,7 +20,7 @@
       </ol>
       <button class="btn btn-primary" type="button" id="run-test">Run proof test</button>
       <p id="test-status" role="status"></p>
-      <p><a href="/api/v1/agent-lobby/x401/test-resource">Open the challenge endpoint</a> to inspect its HTTP headers with your client.</p>
+      <p>For HTTP clients, send an unsigned GET to <code>/api/v1/agent-lobby/x401/test-resource</code>. Expect HTTP 401 with a <code>PROOF-REQUEST</code> header describing the required Agent ID presentation.</p>
       <p>The fixture issuer is scoped to this demo. Live interoperability with an independent verifier is a separate release check.</p>
       <p><a href="./mainnet-proof.html">Try the native Concordium wallet proof</a> · <a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/http-proofs-and-payments.md#try-the-x401-proof-test">Read the x401 test guide</a></p>
     </section>
