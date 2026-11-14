@@ -46,9 +46,25 @@ The website opens the pilot on the hosted panel's domain, where your browser wal
 
 Use a facilitator that explicitly advertises the target network and supports the quoted asset. A local merchant fixture and the official facilitator SDK settled a 1 CCD mainnet payment from the rotated QA agent wallet. An independent chain query verified the payer, recipient, amount, and fee sponsor. A hosted merchant interoperability test remains open. See the [Concordium x402 exact scheme](https://github.com/x402-foundation/x402/blob/main/specs/schemes/exact/scheme_exact_concordium.md).
 
-### Hosted x402 test merchant
+### Public Concordium Testnet merchant
 
-Open the [x402 Test Merchant](https://lobby.agent-os-protocol.com/panel/x402-merchant.html) to see whether the service is available, check the current Mainnet quote, and copy the endpoint into your client.
+Open the [x402 Testnet Merchant](https://lobby.agent-os-protocol.com/panel/x402-merchant.html) to check availability, inspect the quote and copy the endpoint. Use your own funded Testnet account and an x402 v2 client that supports Concordium sponsored exact payments. The quote specifies the native CCD amount, merchant recipient and fee sponsor. The merchant returns the transaction, payer, recipient, sponsor, amount and a Testnet explorer link after verifying the finalized transfer on Concordium Testnet.
+
+Deployers can enable the route by setting `AGENT_OS_X402_TESTNET_MERCHANT_FILE` to an absolute path to a private JSON configuration. Use these fields:
+
+| Field | Value |
+| --- | --- |
+| `resource` | Canonical public HTTPS URL ending in `/api/v1/agent-lobby/x402/testnet-resource`. |
+| `recipient` | The deployer's Testnet merchant account. Use a dedicated account for this resource. |
+| `sponsor` | The distinct Testnet fee payer advertised by the facilitator. |
+| `amountMicroCcd` | String `"1000000"` for 1 CCD or `"10000000"` for 10 CCD. |
+| `facilitatorUrl` | Deployer-operated HTTPS x402 facilitator supporting Concordium Testnet exact v2 and native CCD. |
+| `facilitatorToken` | Optional service bearer token. Keep it in the server configuration. |
+| `receiptDirectory` | Absolute path to persistent, writable storage. Use a separate directory for each deployment and keep it across restarts. Run one merchant instance per directory. |
+
+An unsigned GET returns HTTP 402 with `PAYMENT-REQUIRED` when the configured facilitator advertises the exact Testnet scheme and sponsor. Submit the signed payment in `PAYMENT-SIGNATURE` and retain that header until you receive the finalized receipt. If a response is lost, replay the same header. The server uses the recorded transaction hash to recheck finality without another settlement call. If the facilitator response was lost before the hash was recorded, the server keeps the attempt reserved. Check the facilitator and chain before signing a new payment. A deployment without configuration returns 503.
+
+### Invite-only Mainnet pilot
 
 The lobby server can host a demo resource at `/api/v1/agent-lobby/x402/test-resource`. An enabled merchant quotes a real Mainnet CCD payment and returns a receipt and explorer link after checking the finalized transfer. The resource costs 1 CCD during the first pilot. Operators can select 10 CCD for a later demo. CCD goes to the configured merchant account, and the facilitator sponsor pays the network fee.
 
@@ -64,11 +80,11 @@ Set `AGENT_OS_X402_TEST_MERCHANT_FILE` to the absolute path of an operator-only 
 | `facilitatorToken` | An optional bearer token for the facilitator. |
 | `receiptDirectory` | An absolute persistent directory where the merchant records redeemed transaction hashes. Preserve this directory across deployments. |
 | `inviteToken` | A random token of at least 32 characters for the invite-only pilot. |
-| `publicAccess` | Set to `true` to open the demo after the invite-only settlement and replay checks pass. |
+| `publicAccess` | Omit this setting. Mainnet requires an invitation. |
 
 Use a separate funded payer account. To inspect the quote, send a GET with the invite token in the `Authorization: Bearer` header. The response is HTTP 402 with `PAYMENT-REQUIRED`. Confirm the amount, merchant address, and sponsor before authorizing the payment. Agent OS clients can use `requestWithSpendingLimit` with the exact resource and those approved values. For an invite, pass a fetch wrapper that adds the bearer token to each request to this resource. Check the final transaction and `PAYMENT-RESPONSE` before treating access as paid. If settlement is unconfirmed, reconcile the payer nonce on-chain before authorizing another attempt.
 
-The hosted code remains disabled until an operator provisions the merchant and facilitator. The local HTTP fixture covers invitation checks, modified quotes, unconfirmed settlement and duplicate receipts. A real hosted Mainnet settlement is still required before opening public access.
+The Mainnet endpoint remains disabled until an operator provisions and approves the separate pilot. The local HTTP fixture covers invitation checks, modified quotes, unconfirmed settlement and duplicate receipts.
 
 For the invite-only 1 CCD pilot, the lobby can also run the official Concordium facilitator SDK in process. Omit `facilitatorUrl` and set `pilotPayer` to the one approved Mainnet payer address. Set `pilotSponsorKeyFile` to an absolute, operator-only file containing the dedicated sponsor’s 32-byte hexadecimal account signing key. The file must be readable by the lobby process. Keep the merchant, payer and sponsor accounts distinct. The merchant checks that the sponsor key matches its current account credentials and that the account has a positive available balance before quoting. Fund the sponsor for network fees and the payer with 1 CCD once the hosted quote has been checked.
 

@@ -1,31 +1,66 @@
 // SPDX-License-Identifier: Apache-2.0
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import { isAbsolute, join } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { AccountAddress, TransactionHash, buildAccountSigner, signMessage, verifyMessageSignature } from '@concordium/web-sdk';
 import { ConcordiumGRPCNodeClient } from '@concordium/web-sdk/nodejs';
 import { credentials } from '@grpc/grpc-js';
-import { CONCORDIUM_MAINNET_CAIP2, toConcordiumFacilitatorSigner } from '@x402/concordium';
+import { CONCORDIUM_MAINNET_CAIP2, CONCORDIUM_TESTNET_CAIP2, toConcordiumFacilitatorSigner } from '@x402/concordium';
 import { ExactConcordiumScheme } from '@x402/concordium/exact/facilitator';
 import { decodePaymentSignatureHeader, encodePaymentRequiredHeader, encodePaymentResponseHeader } from '@x402/core/http';
 import { HTTPFacilitatorClient, type FacilitatorClient } from '@x402/core/server';
 import type { PaymentRequirements, SettleResponse } from '@x402/core/types';
 
 export const TEST_MERCHANT_PATH = '/api/v1/agent-lobby/x402/test-resource';
+export const TESTNET_MERCHANT_PATH = '/api/v1/agent-lobby/x402/testnet-resource';
 const network = CONCORDIUM_MAINNET_CAIP2;
 const mainnetHost = 'grpc.mainnet.concordium.software';
 const mainnetPort = 20000;
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
 interface MerchantConfig {
+  network?: 'mainnet' | 'testnet';
   resource: string;
   recipient: string;
   sponsor: string;
   amountMicroCcd: string;
   inviteToken?: string;
   publicAccess?: boolean;
+}
+
+type Attempt = { payer: string; receipt?: SettleResponse };
+
+export function merchantAttempts(directory: string) {
+  const path = (key: string) => join(directory, 'attempt-' + key + '.json');
+  return {
+    read(key: string): Attempt | undefined {
+      try { return JSON.parse(readFileSync(path(key), 'utf8')) as Attempt; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+    },
+    reserve(key: string, value: Attempt) {
+      try { writeFileSync(path(key), JSON.stringify(value), { flag: 'wx', mode: 0o600, flush: true }); return true; }
+      catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
+        throw error;
+      }
+    },
+    save(key: string, value: Attempt) {
+      const temp = path(key) + '.tmp';
+      writeFileSync(temp, JSON.stringify(value), { mode: 0o600, flush: true });
+      renameSync(temp, path(key));
+    },
+  };
+}
+
+function stableJson(value: unknown): string {
+  return JSON.stringify(value, (_key, item) =>
+    item && typeof item === 'object' && !Array.isArray(item)
+      ? Object.fromEntries(Object.keys(item).sort().map(key => [key, item[key]]))
+      : item);
 }
 
 function json(res: ServerResponse, status: number, body: object, headers: Record<string, string> = {}) {
@@ -45,18 +80,23 @@ export function createTestMerchant(config: MerchantConfig, services: {
   facilitator: Pick<FacilitatorClient, 'getSupported' | 'verify' | 'settle'>;
   verifyFinalized: (receipt: SettleResponse, payer: string, quote: PaymentRequirements) => Promise<boolean>;
   recordReceipt: (receipt: SettleResponse) => boolean;
+  attempts?: ReturnType<typeof merchantAttempts>;
 }) {
   const url = httpsUrl(config.resource);
-  if (url.pathname !== TEST_MERCHANT_PATH ||
+  const testnet = config.network === 'testnet';
+  const label = testnet ? 'Testnet' : 'Mainnet';
+  const network = testnet ? CONCORDIUM_TESTNET_CAIP2 : CONCORDIUM_MAINNET_CAIP2;
+  const route = testnet ? TESTNET_MERCHANT_PATH : TEST_MERCHANT_PATH;
+  if (url.pathname !== route ||
       !['1000000', '10000000'].includes(config.amountMicroCcd) ||
-      config.publicAccess !== true && (!config.inviteToken || config.inviteToken.length < 32)) {
+      (testnet ? !services.attempts : config.publicAccess === true || !config.inviteToken || config.inviteToken.length < 32)) {
     throw new Error('Invalid x402 test merchant configuration');
   }
   const recipient = AccountAddress.fromBase58(config.recipient);
   const sponsor = AccountAddress.fromBase58(config.sponsor);
   if (AccountAddress.isAlias(recipient, sponsor)) throw new Error('Use distinct merchant and sponsor accounts');
-  const invite = config.publicAccess === true ? undefined : digest('Bearer ' + config.inviteToken);
-  const resource = { url: url.href, description: 'Agent OS x402 Mainnet demo receipt', mimeType: 'application/json' };
+  const invite = testnet ? undefined : digest('Bearer ' + config.inviteToken);
+  const resource = { url: url.href, description: `Agent OS x402 ${label} demo receipt`, mimeType: 'application/json' };
   const quote: PaymentRequirements = {
     scheme: 'exact', network, asset: 'CCD', payTo: recipient.address,
     amount: config.amountMicroCcd, maxTimeoutSeconds: 120, extra: { feePayer: sponsor.address },
@@ -79,7 +119,15 @@ export function createTestMerchant(config: MerchantConfig, services: {
   }
 
   return async (req: IncomingMessage, res: ServerResponse) => {
-    if (req.method !== 'GET' || req.url !== TEST_MERCHANT_PATH) return json(res, 404, { error: 'Resource not found' });
+    if (testnet) {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'PAYMENT-REQUIRED, PAYMENT-RESPONSE');
+      if (req.method === 'OPTIONS' && req.url === route) {
+        res.writeHead(204, { 'Access-Control-Allow-Methods': 'GET, OPTIONS', 'Access-Control-Allow-Headers': 'PAYMENT-SIGNATURE' });
+        return void res.end();
+      }
+    }
+    if (req.method !== 'GET' || req.url !== route) return json(res, 404, { error: 'Resource not found' });
     if (invite && !timingSafeEqual(invite, digest(req.headers.authorization ?? ''))) {
       return json(res, 401, { error: 'An invitation is required for this Mainnet pilot' });
     }
@@ -92,51 +140,69 @@ export function createTestMerchant(config: MerchantConfig, services: {
         if (payment.x402Version !== 2 || payment.resource?.url !== resource.url ||
             !isDeepStrictEqual(payment.accepted, quote)) throw new Error('Quote mismatch');
       } catch {
-        return json(res, 400, { error: 'Payment does not match the current Mainnet quote' });
+        return json(res, 400, { error: `Payment does not match the current ${label} quote` });
       }
     }
-    try {
-      await ensureSupported();
-    } catch {
-      return json(res, 503, { error: 'Mainnet settlement is currently unavailable' });
+    const unavailable = () => json(res, 503, { error: `${label} settlement is currently unavailable` });
+    if (!payment) {
+      try { await ensureSupported(); } catch { return unavailable(); }
+      return json(res, 402, {
+        message: `This demo transfers ${label} CCD to the merchant.`,
+        amountMicroCcd: quote.amount, recipient: quote.payTo, sponsor: sponsor.address,
+      }, { 'PAYMENT-REQUIRED': required });
     }
-    if (!payment) return json(res, 402, {
-      message: 'This demo transfers real Mainnet CCD to the merchant.',
-      amountMicroCcd: quote.amount, recipient: quote.payTo, sponsor: sponsor.address,
-    }, { 'PAYMENT-REQUIRED': required });
 
     // Concordium's account nonce prevents duplicate debits on-chain. Bound work in this process
     // and reject simultaneous retries before sending them to the facilitator.
-    const fingerprint = digest(JSON.stringify(payment.payload)).toString('hex');
+    const fingerprint = digest(stableJson([resource.url, quote, payment.payload])).toString('hex');
     if (inFlight.has(fingerprint)) return json(res, 409, { error: 'This payment is already being processed' });
     if (inFlight.size >= 4) return json(res, 429, { error: 'The demo is busy' });
     inFlight.add(fingerprint);
     let submitted = false;
     try {
-      const verification = await services.facilitator.verify(payment, quote);
-      if (!verification.isValid || !verification.payer) {
-        return json(res, 402, { error: 'The facilitator rejected the payment' }, { 'PAYMENT-REQUIRED': required });
+      const previous = testnet ? services.attempts?.read(fingerprint) : undefined;
+      let payerAddress: string;
+      let receipt: SettleResponse;
+      if (previous) {
+        submitted = true;
+        if (!previous.receipt) throw new Error('Prior settlement has no known transaction hash');
+        payerAddress = previous.payer;
+        receipt = previous.receipt;
+      } else {
+        try { await ensureSupported(); } catch { return unavailable(); }
+        const verification = await services.facilitator.verify(payment, quote);
+        if (!verification.isValid || !verification.payer) {
+          return json(res, 402, { error: 'The facilitator rejected the payment' }, { 'PAYMENT-REQUIRED': required });
+        }
+        const payer = AccountAddress.fromBase58(verification.payer);
+        if (AccountAddress.isAlias(payer, recipient) || AccountAddress.isAlias(payer, sponsor)) {
+          return json(res, 402, { error: 'The demo requires a separate payer account' });
+        }
+        payerAddress = payer.address;
+        if (testnet && !services.attempts!.reserve(fingerprint, { payer: payerAddress })) {
+          return json(res, 409, { error: 'This payment was already submitted. Retry with the same signed payment.' });
+        }
+        submitted = true;
+        receipt = await services.facilitator.settle(payment, quote);
+        if (testnet && receipt.success && receipt.network === network && /^[a-f0-9]{64}$/i.test(receipt.transaction)) {
+          services.attempts!.save(fingerprint, { payer: payerAddress, receipt });
+        }
       }
-      const payer = AccountAddress.fromBase58(verification.payer);
-      if (AccountAddress.isAlias(payer, recipient) || AccountAddress.isAlias(payer, sponsor)) {
-        return json(res, 402, { error: 'The demo requires a separate payer account' });
-      }
-      submitted = true;
-      const receipt = await services.facilitator.settle(payment, quote);
       if (!receipt.success || receipt.network !== network || !/^[a-f0-9]{64}$/i.test(receipt.transaction) ||
-          !await services.verifyFinalized(receipt, payer.address, quote)) {
+          !await services.verifyFinalized(receipt, payerAddress, quote)) {
         throw new Error('Settlement could not be verified');
       }
-      if (!services.recordReceipt(receipt)) return json(res, 409, { error: 'This finalized payment was already redeemed' });
-      const publicReceipt = { success: true, transaction: receipt.transaction, network, payer: payer.address };
+      if (!services.recordReceipt(receipt) && !testnet) return json(res, 409, { error: 'This finalized payment was already redeemed' });
+      const publicReceipt = { success: true, transaction: receipt.transaction, network, payer: payerAddress };
       return json(res, 200, {
-        message: 'Agent OS Mainnet test payment finalized',
-        amountMicroCcd: quote.amount, transaction: receipt.transaction,
-        explorer: 'https://ccdexplorer.io/mainnet/transaction/' + receipt.transaction,
+        message: `Agent OS ${label} test payment finalized`,
+        amountMicroCcd: quote.amount, transaction: receipt.transaction, network,
+        payer: payerAddress, recipient: quote.payTo, sponsor: sponsor.address,
+        explorer: `https://ccdexplorer.io/${testnet ? 'testnet' : 'mainnet'}/transaction/` + receipt.transaction,
       }, { 'PAYMENT-RESPONSE': encodePaymentResponseHeader(publicReceipt) });
     } catch {
       return json(res, 502, {
-        error: submitted ? 'Settlement unconfirmed. Check the chain before creating another payment.' : 'Payment verification is unavailable.',
+        error: submitted ? 'Settlement unconfirmed. Retry with the same signed payment and check the chain before signing another.' : 'Payment verification is unavailable.',
       });
     } finally {
       inFlight.delete(fingerprint);
@@ -214,12 +280,17 @@ export function createPilotFacilitator(
   };
 }
 
-export function loadTestMerchant(file: string | undefined) {
+export function loadTestMerchant(file: string | undefined, mode: 'mainnet' | 'testnet' = 'mainnet') {
   if (!file) return;
   if (!isAbsolute(file)) throw new Error('Expected an absolute merchant configuration path');
-  const config = JSON.parse(readFileSync(file, 'utf8')) as HostedMerchantConfig;
+  const config = { ...JSON.parse(readFileSync(file, 'utf8')), network: mode } as HostedMerchantConfig;
   if (!isAbsolute(config.receiptDirectory)) throw new Error('Expected an absolute merchant receipt directory');
-  const node = new ConcordiumGRPCNodeClient(mainnetHost, mainnetPort, credentials.createSsl(), { timeout: 12_000 });
+  if (mode === 'testnet' && (config.pilotSponsorKeyFile || config.facilitatorOverSsh)) {
+    throw new Error('Testnet requires a separately configured HTTPS facilitator');
+  }
+  const nodeHost = mode === 'testnet' ? 'grpc.testnet.concordium.com' : mainnetHost;
+  const receiptNetwork = mode === 'testnet' ? CONCORDIUM_TESTNET_CAIP2 : network;
+  const node = new ConcordiumGRPCNodeClient(nodeHost, mainnetPort, credentials.createSsl(), { timeout: 12_000 });
   mkdirSync(config.receiptDirectory, { recursive: true, mode: 0o700 });
   if (config.pilotSponsorKeyFile && !isAbsolute(config.pilotSponsorKeyFile)) throw new Error('Expected an absolute sponsor key path');
   if (config.facilitatorOverSsh && (config.facilitatorUrl !== 'http://127.0.0.1:4739' ||
@@ -239,6 +310,7 @@ export function loadTestMerchant(file: string | undefined) {
   });
   return createTestMerchant(config, {
     facilitator,
+    attempts: mode === 'testnet' ? merchantAttempts(config.receiptDirectory) : undefined,
     async verifyFinalized(receipt, payer, quote) {
       const { summary } = await node.waitForTransactionFinalization(TransactionHash.fromHexString(receipt.transaction), 45_000);
       return !!summary && 'transactionType' in summary && summary.transactionType === 'transfer' && summary.sender.address === payer &&
@@ -248,8 +320,8 @@ export function loadTestMerchant(file: string | undefined) {
     recordReceipt(receipt) {
       try {
         const transaction = receipt.transaction.toLowerCase();
-        writeFileSync(join(config.receiptDirectory, transaction + '.json'),
-          JSON.stringify({ transaction, network, recordedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
+        writeFileSync(join(config.receiptDirectory, (mode === 'testnet' ? 'testnet-' : '') + transaction + '.json'),
+          JSON.stringify({ transaction, network: receiptNetwork, recordedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 });
         return true;
       } catch (error) {
         if ((error as NodeJS.ErrnoException).code === 'EEXIST') return false;
