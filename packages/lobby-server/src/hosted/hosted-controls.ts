@@ -530,9 +530,11 @@ export class HostedControls {
     });
   }
 
-  auditHistory(lobbyId: string, offset: number, limit: number) {
+  auditHistory(lobbyId: string, offset: number, limit: number, snapshot?: number) {
     const events = this.store.readHostedState(lobbyId).audit;
-    return { data: events.slice().reverse().slice(offset, offset + limit), total: events.length, offset, limit };
+    const total = Math.min(snapshot ?? events.length, events.length);
+    const end = Math.max(0, total - offset);
+    return { data: events.slice(Math.max(0, end - limit), end).reverse(), total, offset, limit, snapshot: total };
   }
 
   recover(onlyLobby?: string, actor?: string) {

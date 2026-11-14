@@ -1976,7 +1976,15 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
             if (!Number.isSafeInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 100) {
               return json({ error: 'Choose a valid history page.' }, 400);
             }
-            return json(item === 'audit' ? hosted.auditHistory(lobbyId, offset, limit) : hosted.history(lobbyId, offset, limit));
+            if (item === 'audit') {
+              const value = url.searchParams.get('snapshot');
+              const snapshot = value === null ? undefined : Number(value);
+              if (snapshot !== undefined && (!/^\d+$/.test(value!) || !Number.isSafeInteger(snapshot))) {
+                return json({ error: 'Choose a valid audit snapshot.' }, 400);
+              }
+              return json(hosted.auditHistory(lobbyId, offset, limit, snapshot));
+            }
+            return json(hosted.history(lobbyId, offset, limit));
           }
           if (req.method === 'POST' && !item) {
             const body = await readBody(req);

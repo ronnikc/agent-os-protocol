@@ -362,6 +362,7 @@ export async function mountHostedControls(root) {
   const auditEvents = audit.querySelector('[data-audit-events]');
   const auditMore = audit.querySelector('[data-audit-more]');
   let auditOffset = 0;
+  let auditSnapshot;
   let auditLoading = false;
   async function loadAudit() {
     if (auditLoading) return;
@@ -369,7 +370,8 @@ export async function mountHostedControls(root) {
     auditMore.setAttribute('aria-disabled', 'true');
     auditStatus.textContent = 'Loading audit events…';
     try {
-      const page = await request(`/hosted-runs/audit?limit=${pageSize}&offset=${auditOffset}`, 'GET');
+      const snapshot = auditSnapshot === undefined ? '' : `&snapshot=${auditSnapshot}`;
+      const page = await request(`/hosted-runs/audit?limit=${pageSize}&offset=${auditOffset}${snapshot}`, 'GET');
       if (!audit.isConnected) return;
       if (!Array.isArray(page?.data)) {
         auditStatus.textContent = errorMessage(page, 'Unable to load audit events.');
@@ -384,6 +386,7 @@ export async function mountHostedControls(root) {
           Array.isArray(event.lessonIds) ? 'Lessons ' + event.lessonIds.join(', ') : ''].filter(Boolean).join(' · ');
         auditEvents.append(item);
       }
+      auditSnapshot = page.snapshot;
       auditOffset = page.offset + page.data.length;
       auditStatus.textContent = auditOffset ? `${auditOffset} of ${page.total} audit events loaded.` : 'No audit events.';
       auditMore.textContent = 'Load older events';
@@ -396,7 +399,12 @@ export async function mountHostedControls(root) {
     }
   }
   audit.addEventListener('toggle', () => {
-    if (audit.open && !auditOffset) void loadAudit();
+    if (audit.open && !auditLoading) {
+      auditOffset = 0;
+      auditSnapshot = undefined;
+      auditEvents.replaceChildren();
+      void loadAudit();
+    }
   });
   auditMore.addEventListener('click', () => void loadAudit());
   await history(0);

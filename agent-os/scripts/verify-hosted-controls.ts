@@ -782,6 +782,13 @@ export async function verifyHostedControls() {
     assert.equal((await call('a', '/hosted-runs/audit', 'GET', undefined, 'observer')).status, 403);
     const audit = await call('a', '/hosted-runs/audit?limit=100');
     assert.ok(audit.body.data.some((e: { action: string }) => e.action === 'hosted_run_cancelled'));
+    const firstAuditPage = await call('a', '/hosted-runs/audit?limit=1');
+    const snapshot = firstAuditPage.body.snapshot;
+    store.mutateHostedState('a', state => state.audit.push({ at: Date.now(), actor: 'owner-a', action: 'new_fixture_event' }));
+    const olderAuditPage = await call('a', `/hosted-runs/audit?limit=1&offset=1&snapshot=${snapshot}`);
+    assert.equal(olderAuditPage.body.total, snapshot);
+    assert.deepEqual(olderAuditPage.body.data, audit.body.data.slice(1, 2));
+    assert.equal((await call('a', '/hosted-runs/audit?snapshot=-1')).status, 400);
     const page = await call('a', '/hosted-runs?offset=1&limit=1');
     assert.equal(page.body.total, 2);
     assert.equal(page.body.data[0].id, run.id);
