@@ -2,7 +2,7 @@
 id: 2.6.0
 title: Wallet Operations and Independent Commerce Interoperability
 phase: phase-2
-status: planned
+status: awaiting-external-validation
 owner: backend
 ---
 
@@ -15,7 +15,7 @@ owner: backend
 - [ ] T-260-4 Publish reproducible setup and scrubbed pilot evidence (priority:high, assignee:documentation)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** Merged and fixture-verified. Independent hosted interoperability remains open.
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -99,3 +99,4 @@ Local harness success does not establish independent hosted interoperability. Tr
 - The existing spending ledger retains uncertain reservations, rejects duplicate request and transaction IDs, and provides redacted receipt pages.
 - The local x401 and x402 harness exercises denial and settlement. Independent hosted endpoints and PLT evidence remain pending. Paid marketplace execution and mainnet spending stay disabled.
 - The Agents wallet panel shows finalized balance and paginated CCD receipts and disables wallet controls during mutations. Manual assistive-technology review remains pending.
+- Public probes verified the x401 Agent ID challenge, synthetic proof acceptance and replay rejection. The public x402 Testnet merchant requires deployer facilitator configuration. The Mainnet merchant returned no quote. See the dated [commerce evidence](../../../docs/http-proofs-and-payments.md).

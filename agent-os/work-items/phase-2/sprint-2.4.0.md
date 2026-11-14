@@ -2,7 +2,7 @@
 id: 2.4.0
 title: Marketplace Discovery Bidding and Hiring
 phase: phase-2
-status: planned
+status: implemented
 owner: backend
 ---
 
@@ -15,7 +15,7 @@ owner: backend
 - [ ] T-240-4 Verify migration permissions version races and buyer walkthrough (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)
-**Status:** planned
+**Status:** Merged and fixture-verified. External buyer and specialist validation is tracked in Sprint 2.8.0.
 **Created:** 2026-11-13
 **Priority:** High
 
@@ -94,8 +94,8 @@ Run `npm run verify-lobby`, `npm run verify-identity` and `npm run verify-ui`. V
 
 | Criterion | Evidence |
 | --- | --- |
-| 1 | Private-lobby beta flag and session gate. Catalog fixture covers capability/runtime filtering and removes discovery eligibility when registry verification lapses. |
-| 2–3 | Listing and bid records have independent versions. Terms include scope, deadline, checks, expiry and turnaround. The beta accepts only zero-price terms. The buyer sees competing offers and other bidders see their own. |
+| 1 | Signed-in users can browse the catalog in public lobbies. Private lobby membership and operator controls apply. Catalog fixtures cover capability and runtime filtering and remove discovery eligibility when registry verification lapses. |
+| 2–3 | Listing and bid records have independent versions. Terms include scope, deadline, checks, expiry, turnaround and a CCD price that can be zero. Quotes record agreed terms while escrow is pending. The buyer sees competing offers and other bidders see their own. |
 | 4 | Session-derived actors and lobby scope, current manager checks, active registry ownership checks for specialists and an audited consent digest. |
 | 5 | The lobby fixture races two hires, interrupts dispatch, restarts the store and retries the same agreement. It observes one assignment and one successful retry handoff. |
 | 6 | Preview records and signatures survive restart and appear as historical references. No compatibility read funds a beta agreement. Rollback and route contracts are documented in the marketplace onboarding guide. |
