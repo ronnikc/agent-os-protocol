@@ -102,7 +102,7 @@ export async function fetchJson(url, opts) {
     if (url === '/api/overview-stats') {
       const onlineCount = (state.agents || []).filter(a => a.status === 'running' || a.status === 'online' || a.status === 'idle' || a.status === 'active').length;
       return {
-        agents: { online: onlineCount, total: (state.agents || []).length || 62 },
+        agents: { online: onlineCount, total: (state.agents || []).length || 65 },
         tasks: { in_progress: 0 },
         sprint: { active: false, progress_percent: 0 },
         throughput: { tasks_per_day: 0 },

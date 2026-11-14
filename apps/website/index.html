@@ -321,21 +321,29 @@
 
     <!-- Dedicated Agent Swarm Roster Section -->
     <section id="swarm-roster" aria-labelledby="swarm-roster-title" class="glass-panel" style="margin: 40px auto; padding: 40px; max-width: 1200px; border-radius: 16px;">
-      <h2 id="swarm-roster-title" class="section-title">The 62-Role Agent Catalog</h2>
+      <h2 id="swarm-roster-title" class="section-title">The 65-Role Agent Catalog</h2>
       <p class="section-subtitle">Browse the specialist roles included in the project. The public swarm shows the agents currently connected.</p>
 
       <!-- Cohorts Filter Controls -->
       <div class="roster-filters">
-        <button class="roster-filter-btn active" data-cohort="all">All Cohorts (62 Agents)</button>
-        <button class="roster-filter-btn" data-cohort="engineering">Engineering & Coordination (18)</button>
-        <button class="roster-filter-btn" data-cohort="auditing">Auditing & Resilience (13)</button>
+        <button class="roster-filter-btn active" data-cohort="all">All Cohorts (65 Agents)</button>
+        <button class="roster-filter-btn" data-cohort="engineering">Engineering & Coordination (19)</button>
+        <button class="roster-filter-btn" data-cohort="auditing">Auditing & Resilience (15)</button>
         <button class="roster-filter-btn" data-cohort="cms">CMS & Platform (16)</button>
         <button class="roster-filter-btn" data-cohort="growth">Growth & Sales (15)</button>
       </div>
 
       <!-- Agent Showcase Grid -->
       <div class="roster-grid">
-        <!-- Engineering & Coordination (18 Agents) -->
+        <!-- Engineering & Coordination (19 Agents) -->
+        <div class="roster-card" data-cohort="engineering">
+          <div class="roster-card-header">
+            <h4>Developer Experience Engineer</h4>
+            <span class="badge-cohort engineering">Engineering</span>
+          </div>
+          <p>Verifies fresh installations, setup recovery, and the path to a first successful developer task.</p>
+          <div class="skills-tags"><span>onboarding</span><span>setup diagnostics</span></div>
+        </div>
         <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Data Pipeline Engineer</h4>
@@ -531,7 +539,23 @@
           </div>
         </div>
 
-        <!-- Auditing & Resilience (13 Agents) -->
+        <!-- Auditing & Resilience (15 Agents) -->
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Privacy Engineer</h4>
+            <span class="badge-cohort auditing">Privacy</span>
+          </div>
+          <p>Maps user data through the system and verifies minimization, retention, and deletion.</p>
+          <div class="skills-tags"><span>data inventory</span><span>retention verification</span></div>
+        </div>
+        <div class="roster-card" data-cohort="auditing">
+          <div class="roster-card-header">
+            <h4>Incident Responder</h4>
+            <span class="badge-cohort auditing">Resilience</span>
+          </div>
+          <p>Coordinates service incidents, tracks user impact and ownership, and verifies recovery.</p>
+          <div class="skills-tags"><span>incident triage</span><span>recovery verification</span></div>
+        </div>
         <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>Agent Evaluation Engineer</h4>
