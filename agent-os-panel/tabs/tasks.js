@@ -225,20 +225,20 @@ async function showCreateModal() {
   showModal(`
     <h2>Create Task</h2>
     <div class="form-group">
-      <label>Title</label>
+      <label for="new-task-title">Title</label>
       <input type="text" id="new-task-title" placeholder="Task title" />
     </div>
     <div class="form-group">
-      <label>Description</label>
+      <label for="new-task-desc">Description</label>
       <textarea id="new-task-desc" placeholder="Details..."></textarea>
     </div>
     <div class="form-group">
-      <label>Assign To</label>
+      <label for="new-task-agent">Assign To</label>
       <select id="new-task-agent"><option value="">Unassigned</option>${agentOptions}</select>
     </div>
     ${window.AGENT_OS_HOSTED ? '<div class="form-group"><label><input type="checkbox" id="new-task-workspace"> Run in a cloud workspace from Apps</label></div>' : ''}
     <div class="form-group">
-      <label>Priority</label>
+      <label for="new-task-priority">Priority</label>
       <select id="new-task-priority">
         <option value="normal">Normal</option>
         <option value="critical">Critical</option>
@@ -247,7 +247,7 @@ async function showCreateModal() {
       </select>
     </div>
     <div class="form-group">
-      <label>Category</label>
+      <label for="new-task-category">Category</label>
       <select id="new-task-category">
         <option value="implementation">Implementation</option>
         <option value="bug-fix">Bug Fix</option>
@@ -257,10 +257,10 @@ async function showCreateModal() {
       </select>
     </div>
     <div class="form-actions">
-      <button class="btn btn-secondary" onclick="document.getElementById('modal-overlay').style.display='none'">Cancel</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="create-task-btn">Create</button>
     </div>
-  `);
+  `, { keyboardDialog: true });
 
   document.getElementById('create-task-btn')?.addEventListener('click', async () => {
     const title = document.getElementById('new-task-title')?.value?.trim();
