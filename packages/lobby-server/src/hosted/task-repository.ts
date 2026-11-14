@@ -27,6 +27,19 @@ export class TaskRepository {
     return this.client.listFiles(path, this.scope.getStore()?.branch);
   }
 
+  async readCiEvidence(): Promise<string> {
+    const scope = this.scope.getStore();
+    if (!scope) return 'CI evidence requires an assigned repository task.';
+    const ref = scope.commits.at(-1) ?? scope.branch;
+    const result = await this.client.getCheckRunsForRef(ref);
+    return JSON.stringify({
+      ref, status: result.status, conclusion: result.conclusion, returnedChecks: result.total,
+      checks: result.runs.slice(0, 20).map(run => ({
+        name: String(run.name).slice(0, 120), status: run.status, conclusion: run.conclusion,
+      })),
+    });
+  }
+
   async writeFile(path: string, content: string, message: string): Promise<string> {
     const scope = this.scope.getStore();
     if (!scope) throw new Error('Repository writes require an assigned repository task.');

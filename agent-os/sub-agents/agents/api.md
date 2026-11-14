@@ -96,3 +96,7 @@ Return results in this format:
 - [ ] Shared types are the source of truth for payload shapes
 - [ ] Query parameters are consistently supported
 ```
+
+## Verification Evidence
+
+Use the conformance workflow in docs/http-proofs-and-payments.md. Verify challenge headers, denial states, and retry behavior.

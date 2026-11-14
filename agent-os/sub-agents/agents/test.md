@@ -192,3 +192,7 @@ npx vitest run --config the frontendvitest.config.ts src/pages/admin/localizatio
 # npx vitest run --config vite.config.ts             # Wrong config (build, not test)
 # npx vitest run the frontend...                    # Missing frontend config
 ```
+
+## Verification Evidence
+
+Use the workflow in docs/http-proofs-and-payments.md. Cover malformed and expired challenges, replay, wrong network, uncertain settlement, and retries with the same payment identity.

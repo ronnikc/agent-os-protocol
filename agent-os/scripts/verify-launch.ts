@@ -189,6 +189,17 @@ async function main(): Promise<void> {
     assert.equal(dangling.length, 0, `dangling skill refs:\n      ${dangling.join('\n      ')}`);
   });
 
+  await check('website roster cards and cohort counts match the shipped catalog', () => {
+    const agentCount = readdirSync(R('agent-os/sub-agents/agents')).filter(name => name.endsWith('.md')).length;
+    const website = read('apps/website/index.html');
+    const cards = [...website.matchAll(/class="roster-card" data-cohort="([^"]+)"/g)];
+    assert.equal(cards.length, agentCount);
+    assert.ok(website.includes(`All Cohorts (${agentCount} Agents)`));
+    for (const [, cohort, count] of website.matchAll(/class="roster-filter-btn" data-cohort="([^"]+)">[^<]+\((\d+)\)<\/button>/g)) {
+      assert.equal(cards.filter(card => card[1] === cohort).length, Number(count), cohort);
+    }
+  });
+
   // ── H. License ──
   await check('LICENSE is the Apache-2.0 text', () => {
     const lic = read('LICENSE');

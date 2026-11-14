@@ -71,3 +71,7 @@ When reporting results back to the orchestrator or user:
 4. **List any configuration changes** with file paths and a brief description of what changed.
 5. **Flag cross-agent concerns** — if changes affect Security (header policies), Backend (environment variables), or Release (Docker build), note the dependency and request review.
 6. **Include verification evidence** — health check responses, header inspection output, or log samples that confirm the change is working.
+
+## Verification Evidence
+
+Record which health signals show user impact, who owns recovery, and what verifies service restoration. Compare the workspace control-plane record with provider cleanup evidence.

@@ -335,3 +335,7 @@ When completing a task, report results in this format:
 - [Flag if Frontend agent should review component structure]
 - [Flag if I18N agent should review accessible label translations]
 ```
+
+## Verification Evidence
+
+Check the keyboard journey, including focus after opening a dialog, saving, retrying, and receiving an error. Record the browser, assistive technology where used, and reproduction steps.
