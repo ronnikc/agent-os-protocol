@@ -30,7 +30,7 @@ function summarize(attempts) {
   };
 }
 
-export function summarizeBenchmark(report) {
+export function summarizeBenchmark(report, manifest) {
   if (typeof report?.revision !== 'string' || !/^[a-f0-9]{40}$/.test(report.revision) || !Array.isArray(report.attempts)) {
     throw new Error('Expected a pinned revision and an attempts array.');
   }
@@ -42,21 +42,42 @@ export function summarizeBenchmark(report) {
     }
     return [group, Object.fromEntries([...configLabels, ...configLimits].map(key => [key, config[key]]))];
   }));
+  const expected = new Map();
+  if (manifest !== undefined) {
+    if (manifest?.revision !== report.revision || !Array.isArray(manifest.attempts) || !manifest.attempts.length) {
+      throw new Error('Expected an attempt manifest for the pinned revision.');
+    }
+    for (const [index, row] of manifest.attempts.entries()) {
+      if (typeof row?.id !== 'string' || !row.id || row.id.trim() !== row.id || expected.has(row.id) ||
+          typeof row.scenario !== 'string' || !row.scenario.trim() || !groups.includes(row.group)) {
+        throw new Error(`Invalid or duplicate manifest attempt at row ${index + 1}.`);
+      }
+      expected.set(row.id, row);
+    }
+  }
   const ids = new Set();
   const scenarios = new Map();
-  for (const row of report.attempts) {
-    if (!row || typeof row.id !== 'string' || !row.id.trim() || ids.has(row.id) ||
+  for (const [index, row] of report.attempts.entries()) {
+    if (!row || typeof row.id !== 'string' || !row.id || row.id.trim() !== row.id || ids.has(row.id) ||
         typeof row.scenario !== 'string' || !row.scenario.trim() || !groups.includes(row.group) ||
         !outcomes.includes(row.outcome) || !Number.isSafeInteger(row.elapsedMs) ||
         typeof row.regression !== 'boolean' || !['confirmed', 'failed', 'not-applicable'].includes(row.cleanup) ||
         !['succeeded', 'failed', 'not-attempted'].includes(row.recovery) ||
         metrics.some(key => row[key] != null && (!Number.isSafeInteger(row[key]) || row[key] < 0))) {
-      throw new Error('Invalid or duplicate benchmark attempt.');
+      throw new Error(`Invalid or duplicate benchmark attempt at row ${index + 1}.`);
+    }
+    if (manifest !== undefined) {
+      const planned = expected.get(row.id);
+      if (planned?.scenario !== row.scenario || planned?.group !== row.group) {
+        throw new Error(`Unexpected benchmark attempt at row ${index + 1}.`);
+      }
+      expected.delete(row.id);
     }
     ids.add(row.id);
     if (!scenarios.has(row.scenario)) scenarios.set(row.scenario, []);
     scenarios.get(row.scenario).push(row);
   }
+  if (expected.size) throw new Error(`Missing ${expected.size} expected benchmark attempt(s).`);
   if (!scenarios.size) throw new Error('No benchmark attempts recorded.');
   return { revision: report.revision, configurations, scenarios: Array.from(scenarios, ([scenario, attempts]) => {
     const results = Object.fromEntries(groups.map(group => {
@@ -70,8 +91,9 @@ export function summarizeBenchmark(report) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
-    if (process.argv.length !== 3) throw new Error('Usage: node scripts/summarize-phase-2-benchmark.mjs <attempts.json>');
-    console.log(JSON.stringify(summarizeBenchmark(JSON.parse(readFileSync(process.argv[2], 'utf8'))), null, 2));
+    if (![3, 4].includes(process.argv.length)) throw new Error('Usage: node scripts/summarize-phase-2-benchmark.mjs <attempts.json> [manifest.json]');
+    const manifest = process.argv[3] === undefined ? undefined : JSON.parse(readFileSync(process.argv[3], 'utf8'));
+    console.log(JSON.stringify(summarizeBenchmark(JSON.parse(readFileSync(process.argv[2], 'utf8')), manifest), null, 2));
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;
