@@ -16,7 +16,7 @@
 
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { hasRosterSecret, readRosterImport, recallRosterTraining, rosterImportPath, type RosterDraft } from './hosted/roster-drafts.js';
+import { hasRosterSecret, readRosterImport, recallRosterTraining, recordMergedTrainingDraft, rosterImportPath, type RosterDraft } from './hosted/roster-drafts.js';
 import { TaskRepository } from './hosted/task-repository.js';
 import { handleMainnetProof, MAINNET_PROOF_PATH } from './mainnet-proof.js';
 import { createX401TestFacility, X401_TEST_PATH } from './hosted/x401-test.js';
@@ -4394,16 +4394,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
                 await recordEvent(lobby.lobby_id, 'self_learning_memory', 'system', {
                   task_id: task.task_id, pr: url, merge_commit_sha: pr.merge_commit_sha, lessons,
                 });
-                const role = (await store.getAgent(lobby.lobby_id, task.assigned_to))?.agent_role;
-                if (lessons && role && /^[a-z][a-z0-9-]{1,63}$/.test(role) && !hasRosterSecret(task.title + '\n' + lessons)) {
-                  store.mutateHostedState(lobby.lobby_id, state => {
-                    const drafts = state.rosterDrafts ??= [];
-                    const id = 'merge-' + task.task_id;
-                    if (drafts.length >= 100 || drafts.some(draft => draft.id === id)) return;
-                    drafts.push({ id, kind: 'train', slug: role, title: ('Lesson from ' + task.title).slice(0, 120),
-                      content: lessons.slice(0, 5000), source: url, status: 'draft' });
-                  });
-                }
+                await recordMergedTrainingDraft(store, task, url, lessons);
               }
             }
           }
