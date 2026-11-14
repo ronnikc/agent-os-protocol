@@ -10,6 +10,8 @@ A live Windows check at revision `1456c71` launched a Codex CLI relay against an
 
 The hosted verification suite checks that approved records survive a store restart, stay within their lobby and role, and reach an assigned workspace task. It also checks three successive requests on one hosted session before approval, after approval, and after retirement. Retired training is omitted from later system context. Earlier conversation history may still contain the agent's own discussion of that guidance.
 
+The hosted Import Agent fixture checks that a repository branch URL is rejected, the pinned source and edited instructions survive store reload, and the role appears in the owner’s roster only after tool approval. Another lobby cannot activate or see the role. Retirement removes it from the roster. The fixture uses synthetic Markdown and does not require GitHub credentials.
+
 ## Further workflow design
 
 The following describes planned refinements to draft previews, import conversion, reviewer selection, and rollback.
