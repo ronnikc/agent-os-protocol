@@ -7,7 +7,7 @@
  */
 
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { runInNewContext } from 'node:vm';
 
@@ -89,6 +89,14 @@ async function main(): Promise<void> {
       assert.ok(!browserPattern.test(prefix));
     }
     assert.match(apps, /button\.textContent = 'Saving…'/);
+  });
+
+  await check('Static roster fallback includes every bundled role', () => {
+    const directory = 'agent-os/sub-agents/agents';
+    const slugs = readdirSync(R(directory)).filter(file => file.endsWith('.md')).map(file =>
+      read(`${directory}/${file}`).match(/^Slug:[^\S\r\n]*(.+)$/m)?.[1].trim() ?? file.slice(0, -3));
+    const fallback = JSON.parse(read('agent-os-panel/agents-list.json')).agents as { slug: string }[];
+    assert.deepEqual(fallback.map(agent => agent.slug).sort(), slugs.sort());
   });
 
   // 1. Verify CSS design tokens
