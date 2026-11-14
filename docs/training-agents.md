@@ -17,8 +17,7 @@ your docs ──▶ dry-run (plan only) ──▶ reviewable draft ──▶ you
 ```
 
 - **Drafts** land in `agent-os/training/inbox/` and `agent-os/sub-agents/skills/trained/<agent>/`.
-- **Active** trained skills live under the agent's trained skill directory and are picked up at
-  runtime alongside the agent's built-in skills.
+- **Active** trained skills live under the agent's trained skill directory. A role launched by the local relay reads up to four active packs from its workspace at the start of each tracked lobby task. Deactivation removes the pack from future task context. Previous conversation history may still contain guidance from earlier tasks.
 - **User-local by default** — `training/inbox`, `training/reviewed`, `skills/trained/`, and
   `memories/trained/` are gitignored; you opt in explicitly to commit a reviewed pack.
 

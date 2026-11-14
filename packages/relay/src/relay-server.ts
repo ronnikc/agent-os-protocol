@@ -30,6 +30,7 @@ import { hostname as osHostname } from 'node:os';
 import { query, type Options, type SDKAssistantMessage } from '@anthropic-ai/claude-agent-sdk';
 import { loadEnv, type LobbyToAgentMessage, type HandRaiseCategory, type RuntimeId } from '@agent-os/protocol-core';
 import { runtimeRegistry } from '@agent-os/adapters';
+import { localTrainingContext } from './local-training.js';
 import {
   type UiAssistContext as AgentContext,
   type UiAssistClientMessage as BrowserToRelayMessage,
@@ -840,6 +841,8 @@ if (lobbyBaseUrl) {
                 }
                 if (agentRoleTag) prompt += `${agentRoleTag}\n\n`;
 
+                const training = await localTrainingContext(cwd ?? process.cwd(), agentRole);
+                if (training) prompt += training + '\n\n';
                 prompt += `## TASK ASSIGNMENT\n`;
                 prompt += `**Task ID:** ${task.task_id}\n`;
                 prompt += `**Title:** ${task.title}\n`;

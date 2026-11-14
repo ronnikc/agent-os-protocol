@@ -17,12 +17,13 @@
  */
 
 import assert from 'node:assert/strict';
-import { existsSync, statSync, readFileSync, readdirSync, mkdtempSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, statSync, readFileSync, readdirSync, mkdtempSync, mkdirSync, writeFileSync, rmSync, rmdirSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync, execSync } from 'node:child_process';
 import { fileToAgents, protoOwners } from './process-spawn-requests.mjs';
 import { run as runSelfLearning } from './self-learning-review.mjs';
+import { localTrainingContext } from '../../packages/relay/src/local-training.js';
 
 const ROOT = process.cwd();
 let passed = 0;
@@ -41,6 +42,33 @@ const agentDefExists = (slug: string) => existsSync(join(ROOT, `agent-os/sub-age
 
 async function main(): Promise<void> {
   console.log('verify-memory — self-learning system wiring\n');
+
+  await check('local task context recalls only active training for the assigned role', async () => {
+    const workspace = mkdtempSync(join(tmpdir(), 'agent-os-local-recall-'));
+    const pack = join(workspace, 'agent-os', 'sub-agents', 'skills', 'trained', 'backend', 'fixture');
+    try {
+      mkdirSync(pack, { recursive: true });
+      writeFileSync(join(pack, 'SKILL.md'), 'Local fixture guidance');
+      const setStatus = (status: string) => writeFileSync(join(pack, 'metadata.json'),
+        JSON.stringify({ status, agent: 'backend', skill: 'fixture' }));
+      setStatus('review');
+      assert.equal(await localTrainingContext(workspace, 'backend'), '');
+      setStatus('active');
+      assert.match(await localTrainingContext(workspace, 'backend'), /Local fixture guidance/);
+      assert.equal(await localTrainingContext(workspace, 'frontend'), '');
+      setStatus('retired');
+      assert.equal(await localTrainingContext(workspace, 'backend'), '');
+    } finally {
+      rmSync(join(pack, 'metadata.json'), { force: true });
+      rmSync(join(pack, 'SKILL.md'), { force: true });
+      let directory = pack;
+      while (directory !== workspace) {
+        rmdirSync(directory);
+        directory = dirname(directory);
+      }
+      rmdirSync(workspace);
+    }
+  });
 
   // ── A. Scripts present ──
   await check('memory + graph + self-learning scripts are present', () => {
