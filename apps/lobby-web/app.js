@@ -2230,8 +2230,16 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     const next = root.querySelector(`[data-market-${name}-next]`);
     prev.disabled = page.offset === 0;
     next.disabled = page.offset + page.data.length >= page.total;
-    prev.onclick = () => { prev.disabled = next.disabled = true; void reload(Math.max(0, page.offset - pageSize)); };
-    next.onclick = () => { prev.disabled = next.disabled = true; void reload(page.offset + pageSize); };
+    const changePage = async (button, offset) => {
+      const hadFocus = document.activeElement === button;
+      prev.disabled = next.disabled = true;
+      await reload(offset);
+      if (hadFocus && !root.hidden && root.getClientRects().length && document.activeElement === document.body) {
+        (button.disabled ? root.querySelector(`[data-market-${name}-heading]`) : button).focus();
+      }
+    };
+    prev.onclick = () => void changePage(prev, Math.max(0, page.offset - pageSize));
+    next.onclick = () => void changePage(next, page.offset + pageSize);
   };
   let catalog, listings;
   try {
@@ -2337,12 +2345,12 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     return row;
   }));
   list.innerHTML = listings.data.map(entry => `<article>
-    <h4>${escapeHtml(entry.title)}</h4><p>${escapeHtml(entry.status)} · Budget ${escapeHtml(entry.quote.amount)} CCD · Version ${entry.version}</p>
+    <h3>${escapeHtml(entry.title)}</h3><p>${escapeHtml(entry.status)} · Budget ${escapeHtml(entry.quote.amount)} CCD · Version ${entry.version}</p>
     <p>${escapeHtml(entry.deliverable)}</p><p>Scope ${escapeHtml(entry.scope)}</p>
     <p>Deadline ${escapeHtml(new Date(entry.deadline).toLocaleString())}</p>
     <ul>${entry.acceptanceChecks.map(check => `<li>${escapeHtml(check)}</li>`).join('')}</ul>
     ${entry.workspaceSource ? '<p>Cloud source <code>' + escapeHtml(entry.workspaceSource.repository + '@' + entry.workspaceSource.revision) + '</code></p>' : ''}
-    <button type="button" data-review>Review bids and agreement</button><div data-market-offers></div>
+    <button type="button" data-review aria-label="Review bids and agreement for ${escapeHtml(entry.title)}">Review bids and agreement</button><div data-market-offers></div>
   </article>`).join('');
   [...list.children].forEach((article, index) => {
     const entry = listings.data[index];
