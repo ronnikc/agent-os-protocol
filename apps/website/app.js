@@ -46,7 +46,12 @@ document.addEventListener('DOMContentLoaded', () => {
         galleryImg.classList.add('fade-out');
         setTimeout(() => {
           galleryImg.setAttribute('src', newImgSrc);
-          galleryImg.setAttribute('alt', btn.textContent);
+          const screenshotDescriptions = {
+            'tour-tab-agents': 'Agents panel with a 66-role roster and buttons to create, import, train, and manage drafts',
+            'tour-tab-apps': 'Example workspace limits, provider setup, and run history in Apps',
+            'tour-tab-marketplace': 'Marketplace with an escrow pending notice, specialist filters, and listings',
+          };
+          galleryImg.setAttribute('alt', screenshotDescriptions[btn.id] ?? btn.textContent.trim());
           galleryImg.classList.remove('fade-out');
         }, 150);
       }

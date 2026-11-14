@@ -20,6 +20,8 @@ Record a verified lobby across two machines and runtimes. Show the owner connect
 
 After evidence review, reconcile the README, docs index, website tour, release notes and operator guides against the candidate. Verify all claims against recorded results. External proof and payment qualifications and PLL require their own evidence. Record the release decision before publication.
 
+The Visual Tour uses example lobby captures and separate captions for the current controls. Refresh the screenshots against the frozen candidate and check that Apps shows the hosted audit history, Agents shows the bundled roster and draft controls, and Marketplace shows the current escrow status. Keep sample data identifiable and omit credentials and private task content.
+
 Status: awaiting beta exit. No public benchmark results or recording yet.
 
 ### Measurement tooling
