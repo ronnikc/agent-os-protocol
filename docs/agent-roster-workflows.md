@@ -1,6 +1,6 @@
 # Agent roster workflows
 
-The hosted Panel exposes the three actions in **Agents** for lobby management. Imports currently take a public GitHub Markdown file URL pinned to a full commit SHA. Edit the loaded text in the preview and choose read-only or standard hosted tools. Manage saved drafts from **Manage drafts**, where you can request Agent Evaluation Engineer review, activate, or retire.
+The hosted Panel exposes the three actions in **Agents** for lobby management. Imports currently take a public GitHub Markdown file URL pinned to a full commit SHA. Edit the loaded text in the preview and choose read-only or standard hosted tools. Manage saved drafts from **Manage drafts**, where you can request Agent Evaluation Engineer review, activate, or retire. Review appears in the open draft, preserves the current tool selection, and pauses activation until the request finishes. Activation still requires explicit tool approval for Create and Import drafts.
 
 Hosted tasks read up to four active training records for the current lobby and role. Training is fetched at task time, and retirement removes it from future recall. Merge reflection can produce a training draft for approval when the lobby has a model configured and the task has an identifiable agent role.
 

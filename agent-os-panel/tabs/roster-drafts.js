@@ -80,7 +80,9 @@ export function initRosterDrafts(refresh) {
       <p>${escapeHtml(draft.slug)} · ${escapeHtml(draft.status)}</p>
       ${draft.source ? `<p>Source <code>${escapeHtml(draft.source)}</code></p>` : ''}
       <label class="form-label">Draft preview<textarea class="form-input" readonly rows="10">${escapeHtml(draft.content)}</textarea></label>
-      ${draft.review ? `<label class="form-label">Agent Evaluation Engineer review<textarea class="form-input" readonly rows="6">${escapeHtml(draft.review)}</textarea></label>` : ''}
+      <div id="roster-draft-review">
+        ${draft.review ? `<label class="form-label">Agent Evaluation Engineer review<textarea class="form-input" readonly rows="6">${escapeHtml(draft.review)}</textarea></label>` : ''}
+      </div>
       <div id="roster-draft-detail">
         ${pending && draft.kind !== 'train' ? `<label><input type="checkbox" data-confirm-tools> Approve ${draft.tools === 'standard' ? 'standard hosted' : 'read-only'} tool access for this agent. Available tools depend on the runtime and assigned task.</label>` : ''}
         <p role="status" data-status></p>
@@ -91,16 +93,32 @@ export function initRosterDrafts(refresh) {
       <button class="btn btn-secondary" data-action="close">Close</button>
       </div>`, { wide: true });
     const root = document.querySelector('#roster-draft-detail');
+    const reviewOutput = document.querySelector('#roster-draft-review');
+    let pendingAction = false;
     root.addEventListener('click', async event => {
       const button = event.target.closest('[data-action]');
       if (!button) return;
       const action = button.dataset.action;
       if (action === 'back') { await manage(); return; }
       if (action === 'close') { closeModal(); return; }
-      await submit(root, button, { action, id: draft.id, confirmTools: root.querySelector('[data-confirm-tools]')?.checked }, async result => {
-        if (action === 'review') showDraft({ ...draft, review: result.review });
-        else { closeModal(); await refresh(); }
-      });
+      if (pendingAction) return;
+      const hadFocus = document.activeElement === button;
+      pendingAction = true;
+      const controls = root.querySelectorAll('[data-action="review"], [data-action="activate"], [data-action="retire"]');
+      controls.forEach(control => control.setAttribute('aria-disabled', 'true'));
+      try {
+        await submit(root, button, { action, id: draft.id, confirmTools: root.querySelector('[data-confirm-tools]')?.checked }, async result => {
+          if (action === 'review') {
+            reviewOutput.innerHTML = '<label class="form-label">Agent Evaluation Engineer review<textarea class="form-input" readonly rows="6"></textarea></label>';
+            reviewOutput.querySelector('textarea').value = result.review;
+            root.querySelector('[data-status]').textContent = 'Agent review ready.';
+          } else { closeModal(); await refresh(); }
+        });
+      } finally {
+        pendingAction = false;
+        controls.forEach(control => control.removeAttribute('aria-disabled'));
+        if (hadFocus && root.isConnected && document.activeElement === document.body) button.focus();
+      }
     });
   }
 }
