@@ -82,6 +82,8 @@ An unsigned GET returns HTTP 402 with `PAYMENT-REQUIRED` when the configured fac
 
 After restarting the lobby service with the configuration, run `curl -i https://your-lobby.example/api/v1/agent-lobby/x402/testnet-resource`. Expect HTTP 402 with the quote header. If the endpoint returns 503 with an unconfigured message, check the configuration path, file permissions and server startup logs. If settlement is unavailable, check that the facilitator is reachable from the lobby server and that its `/supported` response advertises x402 v2, the Concordium Testnet network and the configured sponsor.
 
+On November 14, 2026, the public lobby at `356d3ed315d8942356103ff3a7f3db8c5a9c2dd0` served the x401 Agent ID challenge and accepted the synthetic proof while rejecting replay. The Testnet merchant reported HTTP 503 because its deployer had not configured a facilitator. The separate Mainnet merchant returned HTTP 503 with no quote. Live Testnet settlement and independent x401 verification still require their own evidence.
+
 The merchant returns HTTP 409 if a duplicate arrives while the original payment is processing. Wait for the original result or retry with the original signed payment. The commerce fixture holds settlement open, submits an overlapping retry, and verifies that only one facilitator settlement call occurs. It then checks that a retry after merchant restart returns the original finalized receipt when the chain confirms the transaction.
 
 ### Invite-only Mainnet pilot
