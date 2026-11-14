@@ -1,12 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import { closeModal, escapeHtml, fetchJson, postJson, showModal, state } from '../app.js';
 
-const endpoint = '/api/lobby/remote/roster-drafts';
 const labels = { create: 'Create Agent', import: 'Import Agent', train: 'Train Agent' };
 
 export function initRosterDrafts(refresh) {
   const toolbar = document.querySelector('#agent-draft-actions');
-  if (!toolbar || !window.AGENT_OS_HOSTED) return;
+  if (!toolbar) return;
+  const hosted = Boolean(window.AGENT_OS_HOSTED);
+  const endpoint = hosted ? '/api/lobby/remote/roster-drafts' : '/api/local-training';
+  const submit = (root, button, payload, success) => act(endpoint, root, button, payload, success);
+  if (!hosted) {
+    for (const button of toolbar.querySelectorAll('[data-draft-kind="create"], [data-draft-kind="import"]')) button.hidden = true;
+  }
   toolbar.hidden = false;
   toolbar.addEventListener('click', event => {
     const kind = event.target.closest('[data-draft-kind]')?.dataset.draftKind;
@@ -30,7 +35,7 @@ export function initRosterDrafts(refresh) {
     form.elements.source?.addEventListener('input', () => { pinnedSource = undefined; });
     preview?.addEventListener('click', async () => {
       const source = form.elements.source.value.trim();
-      await act(form, preview, { action: 'import-preview', source }, result => {
+      await submit(form, preview, { action: 'import-preview', source }, result => {
         if (source !== form.elements.source.value.trim()) return;
         form.elements.content.value = result.content;
         pinnedSource = source;
@@ -43,7 +48,7 @@ export function initRosterDrafts(refresh) {
         form.querySelector('[data-status]').textContent = 'Load this GitHub file before saving the draft.';
         return;
       }
-      await act(form, event.submitter, {
+      await submit(form, event.submitter, {
         ...values, source: pinnedSource, action: 'save', kind,
       }, result => showDraft(result.draft));
     });
@@ -79,7 +84,8 @@ export function initRosterDrafts(refresh) {
       <div id="roster-draft-detail">
         ${pending && draft.kind !== 'train' ? `<label><input type="checkbox" data-confirm-tools> Approve ${draft.tools === 'standard' ? 'standard hosted' : 'read-only'} tool access for this agent. Available tools depend on the runtime and assigned task.</label>` : ''}
         <p role="status" data-status></p>
-      ${pending ? '<p>Agent review uses the lobby’s model provider and hosted model budget in Apps.</p><button class="btn btn-secondary" data-action="review">Request agent review</button><button class="btn btn-primary" data-action="activate">Activate</button>' : ''}
+      ${pending && hosted ? '<p>Agent review uses the lobby’s model provider and hosted model budget in Apps.</p><button class="btn btn-secondary" data-action="review">Request agent review</button>' : ''}
+      ${pending ? '<button class="btn btn-primary" data-action="activate">Activate</button>' : ''}
         ${draft.status === 'active' ? '<button class="btn btn-secondary" data-action="retire">Retire</button>' : ''}
       <button class="btn btn-secondary" data-action="back">Back to drafts</button>
       <button class="btn btn-secondary" data-action="close">Close</button>
@@ -91,7 +97,7 @@ export function initRosterDrafts(refresh) {
       const action = button.dataset.action;
       if (action === 'back') { await manage(); return; }
       if (action === 'close') { closeModal(); return; }
-      await act(root, button, { action, id: draft.id, confirmTools: root.querySelector('[data-confirm-tools]')?.checked }, async result => {
+      await submit(root, button, { action, id: draft.id, confirmTools: root.querySelector('[data-confirm-tools]')?.checked }, async result => {
         if (action === 'review') showDraft({ ...draft, review: result.review });
         else { closeModal(); await refresh(); }
       });
@@ -99,7 +105,7 @@ export function initRosterDrafts(refresh) {
   }
 }
 
-async function act(root, button, payload, success) {
+async function act(endpoint, root, button, payload, success) {
   if (!button || button.disabled) return;
   button.disabled = true;
   const status = root.querySelector('[data-status]');

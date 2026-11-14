@@ -20,7 +20,7 @@
  */
 
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync, rmSync, cpSync } from 'node:fs';
-import { join, basename, resolve, extname, relative } from 'node:path';
+import { join, basename, resolve, extname, relative, sep } from 'node:path';
 import { createHash } from 'node:crypto';
 
 const ROOT = resolve(import.meta.dirname, '../..');
@@ -33,7 +33,7 @@ const TRAINED_SKILLS = join(ROOT, 'agent-os/sub-agents/skills/trained');
 const WRITE_ROOTS = [INBOX, REJECTED, TRAINED_SKILLS, join(ROOT, 'agent-os/memories/trained')];
 const assertSafe = (p) => {
   const r = resolve(p);
-  if (!WRITE_ROOTS.some((root) => r === root || r.startsWith(root + '/'))) {
+  if (!WRITE_ROOTS.some((root) => r === root || r.startsWith(root + sep))) {
     throw new Error(`refusing to write outside training roots: ${r}`);
   }
   return r;
