@@ -27,8 +27,11 @@ const withExtraFields = { ...configurations, swarm: { ...configurations.swarm, p
 assert.deepEqual(summarizeBenchmark({ ...report, configurations: withExtraFields }).configurations, configurations);
 assert.throws(() => summarizeBenchmark({ ...report, configurations: {} }), /Missing pinned benchmark configuration/);
 assert.throws(() => summarizeBenchmark({ ...report, revision: [report.revision] }), /pinned revision/);
-const manifest = { revision: report.revision, attempts: attempts.map(({ id, scenario, group }) => ({ id, scenario, group })) };
+const manifest = { revision: report.revision, configurations, attempts: attempts.map(({ id, scenario, group }) => ({ id, scenario, group })) };
 assert.deepEqual(summarizeBenchmark(report, manifest), summarizeBenchmark(report));
+assert.throws(() => summarizeBenchmark(report, { ...manifest, configurations: {} }), /Missing frozen manifest configuration/);
+const changed = { ...configurations, swarm: { ...configurations.swarm, tokenBudget: 101 } };
+assert.throws(() => summarizeBenchmark({ ...report, configurations: changed }, manifest), /differs.*swarm \(tokenBudget\)/);
 assert.throws(() => summarizeBenchmark({ ...report, attempts: attempts.slice(1) }, manifest), /Missing 1 expected/);
 assert.throws(() => summarizeBenchmark({ ...report, attempts: [...attempts, attempts[0]] }, manifest), /at row 5/);
 assert.throws(() => summarizeBenchmark({ ...report, attempts: [{ ...attempts[0], scenario: 'other' }, ...attempts.slice(1)] }, manifest), /Unexpected.*row 1/);
@@ -47,8 +50,10 @@ const directory = mkdtempSync(join(tmpdir(), 'phase-2-benchmark-'));
 try {
   const script = fileURLToPath(new URL('./summarize-phase-2-benchmark.mjs', import.meta.url));
   const fixture = join(directory, 'attempts.json');
+  const frozenPlan = join(directory, 'manifest.json');
   writeFileSync(fixture, JSON.stringify(report));
-  const run = () => spawnSync(process.execPath, [script, fixture], { encoding: 'utf8' });
+  writeFileSync(frozenPlan, JSON.stringify(manifest));
+  const run = () => spawnSync(process.execPath, [script, fixture, frozenPlan], { encoding: 'utf8' });
   const valid = run();
   assert.equal(valid.status, 0, valid.stderr);
   assert.deepEqual(JSON.parse(valid.stdout), summarizeBenchmark(report));
@@ -59,6 +64,7 @@ try {
   assert.match(invalid.stderr, /pinned revision/);
 } finally {
   rmSync(join(directory, 'attempts.json'), { force: true });
+  rmSync(join(directory, 'manifest.json'), { force: true });
   rmdirSync(directory);
 }
 console.log('Phase 2 benchmark measurement fixtures passed.');
