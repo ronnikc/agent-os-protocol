@@ -18,6 +18,8 @@ Hosted task training also creates a `training_context_prepared` event in the lob
 
 ## Hosted browser rehearsal
 
+If hosted definitions are temporarily unavailable, the panel loads a static catalog of the 66 bundled roles. Lobby-specific drafts and installed custom roles are loaded from the lobby service. UI verification compares fallback role IDs with the bundled definitions.
+
 The hosted task fixture follows the same role through completed text tasks before activation, after activation, and after retirement. The stub provider puts the marker into the deliverable only when the current system context supplies it. The approved text and workspace tasks also have matching lesson IDs in the audit history. This checks recall and delivery wiring with deterministic outputs. Measuring live model improvement requires a separate comparison.
 
 On November 14, 2026, the hosted panel at `39e5856` ran against an isolated localhost lobby. The test-admin session used a disposable store. In the browser, Create Agent saved a draft and added the role after read-only tool approval. Import Agent loaded the commit-pinned public Data Pipeline Engineer Markdown and saved it as a draft. Train Agent saved and activated a lesson for the newly created role. Manage Drafts showed all three statuses.
