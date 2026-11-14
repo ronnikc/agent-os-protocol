@@ -2350,12 +2350,14 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
     <p>Deadline ${escapeHtml(new Date(entry.deadline).toLocaleString())}</p>
     <ul>${entry.acceptanceChecks.map(check => `<li>${escapeHtml(check)}</li>`).join('')}</ul>
     ${entry.workspaceSource ? '<p>Cloud source <code>' + escapeHtml(entry.workspaceSource.repository + '@' + entry.workspaceSource.revision) + '</code></p>' : ''}
-    <button type="button" data-review aria-label="Review bids and agreement for ${escapeHtml(entry.title)}">Review bids and agreement</button><div data-market-offers></div>
+    <button type="button" data-review aria-expanded="false" aria-label="Review bids and agreement for ${escapeHtml(entry.title)}">Review bids and agreement</button><div data-market-offers></div>
   </article>`).join('');
   [...list.children].forEach((article, index) => {
     const entry = listings.data[index];
     const review = article.querySelector('[data-review]');
     const offers = article.querySelector('[data-market-offers]');
+    offers.id = `market-offers-${generation}-${index}`;
+    review.setAttribute('aria-controls', offers.id);
     if (listings.canPublish && entry.buyer === actor && ['open', 'draft'].includes(entry.status)) {
       const form = document.createElement('form');
       form.innerHTML = '<button type="button">Edit listing</button><button type="submit">Cancel listing</button>';
@@ -2380,13 +2382,21 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
       article.insertBefore(form, review);
     }
     review.onclick = async () => {
+      const hadFocus = document.activeElement === review;
       review.disabled = true;
       try {
         const result = await request(`listings/${encodeURIComponent(entry.id)}/bids?offset=${Number(offers.dataset.offset || 0)}`);
         if (!active()) return;
         offers.replaceChildren();
+        const heading = document.createElement('h4');
+        heading.textContent = `Bids and agreement for ${entry.title}`;
+        heading.tabIndex = -1;
+        offers.append(heading);
+        review.setAttribute('aria-expanded', 'true');
         if (result.agreement) {
-          offers.textContent = `Agreement ${result.agreement.id}. Assignment ${result.agreement.assignmentId}. Handoff ${result.agreement.handoff.status}. Agreed price ${result.agreement.bid.quote.amount} CCD. Escrow pending.`;
+          const summary = document.createElement('p');
+          summary.textContent = `Agreement ${result.agreement.id}. Assignment ${result.agreement.assignmentId}. Handoff ${result.agreement.handoff.status}. Agreed price ${result.agreement.bid.quote.amount} CCD. Escrow pending.`;
+          offers.append(summary);
           if (result.agreement.handoff.status === 'pending' && entry.buyer === actor) {
             const retry = document.createElement('form');
             retry.innerHTML = '<button type="submit">Retry assignment handoff</button>';
@@ -2553,12 +2563,21 @@ async function loadMarketplaceBeta(catalogOffset = 0, listingOffset = 0) {
             button.disabled = true;
             offers.dataset.offset = String(target);
             await review.onclick();
-            review.focus();
+            if (active() && document.activeElement === document.body) offers.querySelector('h4')?.focus();
           };
           offers.append(button);
         }
       } catch (error) { if (active()) status.textContent = error.message; }
-      finally { review.disabled = false; }
+      finally {
+        review.disabled = false;
+        if (active()) {
+          const heading = offers.querySelector('h4');
+          review.setAttribute('aria-expanded', String(Boolean(heading)));
+          if (hadFocus && document.activeElement === document.body && root.getClientRects().length) {
+            (heading || review).focus();
+          }
+        }
+      }
     };
   });
 }
