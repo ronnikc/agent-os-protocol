@@ -18,6 +18,8 @@ Hosted task training also creates a `training_context_prepared` event in the lob
 
 ## Hosted browser rehearsal
 
+The public catalog groups the bundled roles by specialty. The cohort filters expose their selected state to assistive technology, and UI verification compares the displayed counts with the cards in each cohort.
+
 If hosted definitions are temporarily unavailable, the panel loads a static catalog of the 66 bundled roles. Lobby-specific drafts and installed custom roles are loaded from the lobby service. UI verification compares fallback role IDs with the bundled definitions and checks the public catalog’s role names and count.
 
 The hosted task fixture follows the same role through completed text tasks before activation, after activation, and after retirement. The stub provider puts the marker into the deliverable only when the current system context supplies it. The approved text and workspace tasks also have matching lesson IDs in the audit history. This checks recall and delivery wiring with deterministic outputs. Measuring live model improvement requires a separate comparison.

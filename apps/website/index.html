@@ -329,16 +329,15 @@
 
       <!-- Cohorts Filter Controls -->
       <div class="roster-filters">
-        <button class="roster-filter-btn active" data-cohort="all">All Cohorts (66 Agents)</button>
-        <button class="roster-filter-btn" data-cohort="engineering">Engineering & Coordination (19)</button>
-        <button class="roster-filter-btn" data-cohort="auditing">Auditing & Resilience (16)</button>
-        <button class="roster-filter-btn" data-cohort="cms">CMS & Platform (16)</button>
-        <button class="roster-filter-btn" data-cohort="growth">Growth & Sales (15)</button>
+        <button class="roster-filter-btn active" data-cohort="all" aria-pressed="true">All Cohorts (66 Agents)</button>
+        <button class="roster-filter-btn" data-cohort="engineering" aria-pressed="false">Engineering & Coordination (23)</button>
+        <button class="roster-filter-btn" data-cohort="auditing" aria-pressed="false">Auditing & Resilience (19)</button>
+        <button class="roster-filter-btn" data-cohort="cms" aria-pressed="false">CMS & Platform (14)</button>
+        <button class="roster-filter-btn" data-cohort="growth" aria-pressed="false">Growth & Sales (10)</button>
       </div>
 
       <!-- Agent Showcase Grid -->
       <div class="roster-grid">
-        <!-- Engineering & Coordination (19 Agents) -->
         <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Developer Experience Engineer</h4>
@@ -542,7 +541,6 @@
           </div>
         </div>
 
-        <!-- Auditing & Resilience (16 Agents) -->
         <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>Integration Reliability Engineer</h4>
@@ -707,7 +705,6 @@
           </div>
         </div>
 
-        <!-- CMS & Platform (16 Agents) -->
         <div class="roster-card" data-cohort="cms">
           <div class="roster-card-header">
             <h4>WordPress Specialist</h4>
@@ -862,23 +859,22 @@
           </div>
         </div>
 
-        <div class="roster-card" data-cohort="cms">
+        <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>Reality Checker</h4>
-            <span class="badge-cohort cms">Platform</span>
+            <span class="badge-cohort auditing">Resilience</span>
           </div>
           <p>Critical code critique, assumption testing, edge-case auditing, and project risk evaluation</p>
         </div>
 
-        <div class="roster-card" data-cohort="cms">
+        <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Runtime Adapter Specialist</h4>
-            <span class="badge-cohort cms">Platform</span>
+            <span class="badge-cohort engineering">Engineering</span>
           </div>
           <p>Owns the adapter contracts that let the relay and lobby drive multiple agent runtimes (CLIs and API providers)</p>
         </div>
 
-        <!-- Growth & Sales (15 Agents) -->
         <div class="roster-card" data-cohort="growth">
           <div class="roster-card-header">
             <h4>Demo Architect</h4>
@@ -986,42 +982,42 @@
           <p>Project scoping, business requirements analysis, and initial sprint/task queue drafting</p>
         </div>
 
-        <div class="roster-card" data-cohort="growth">
+        <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Product Specialist</h4>
-            <span class="badge-cohort growth">Growth</span>
+            <span class="badge-cohort engineering">Engineering</span>
           </div>
           <p>Roadmap management, feature specifications, phase gate reviews, sprint spec authoring, and acceptance criteria definition.</p>
         </div>
 
-        <div class="roster-card" data-cohort="growth">
+        <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>FinOps Steward</h4>
-            <span class="badge-cohort growth">Growth</span>
+            <span class="badge-cohort auditing">Resilience</span>
           </div>
           <p>LLM token auditing, API execution cost tracking, and loop budget monitoring</p>
         </div>
 
-        <div class="roster-card" data-cohort="growth">
+        <div class="roster-card" data-cohort="auditing">
           <div class="roster-card-header">
             <h4>Support Triage Specialist</h4>
-            <span class="badge-cohort growth">Growth</span>
+            <span class="badge-cohort auditing">Resilience</span>
           </div>
           <p>User issue triaging, crash/log analysis, bug isolation, and hotfix task scoping</p>
         </div>
 
-        <div class="roster-card" data-cohort="growth">
+        <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Developer Relations Advocate</h4>
-            <span class="badge-cohort growth">Growth</span>
+            <span class="badge-cohort engineering">Engineering</span>
           </div>
           <p>Writing tutorials, editing contribution guidelines, and triaging developer issues</p>
         </div>
 
-        <div class="roster-card" data-cohort="growth">
+        <div class="roster-card" data-cohort="engineering">
           <div class="roster-card-header">
             <h4>Documentation Specialist</h4>
-            <span class="badge-cohort growth">Growth</span>
+            <span class="badge-cohort engineering">Engineering</span>
           </div>
           <p>Authoring, maintaining, and verifying all project documentation — release notes, user guides, API reference, training materials, and post-sprint doc hygiene.</p>
         </div>

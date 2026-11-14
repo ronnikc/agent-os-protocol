@@ -104,6 +104,13 @@ async function main(): Promise<void> {
       agent.name.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
     assert.deepEqual(headings.sort(), names.sort());
     assert.match(roster, new RegExp(`The ${names.length}-Role Agent Catalog`));
+    const cohorts = Array.from(roster.matchAll(/class="roster-card" data-cohort="([^"]+)"/g), match => match[1]);
+    const filters = [...roster.matchAll(/class="roster-filter-btn(?: active)?" data-cohort="([^"]+)" aria-pressed="(true|false)">[^<]+?\((\d+)(?: Agents)?\)<\/button>/g)];
+    assert.deepEqual(filters.map(match => match[1]).sort(), ['all', ...new Set(cohorts)].sort());
+    for (const [, cohort, pressed, count] of filters) {
+      assert.equal(pressed, String(cohort === 'all'));
+      assert.equal(Number(count), cohort === 'all' ? cohorts.length : cohorts.filter(group => group === cohort).length);
+    }
   });
 
   // 1. Verify CSS design tokens
