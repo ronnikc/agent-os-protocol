@@ -2571,3 +2571,8 @@ window.switchView = function(view) {
 
 
 document.addEventListener('DOMContentLoaded', init);
+function openLinkedView() {
+  if (location.hash === '#marketplace') window.switchView('marketplace');
+}
+document.addEventListener('DOMContentLoaded', openLinkedView);
+window.addEventListener('hashchange', openLinkedView);
