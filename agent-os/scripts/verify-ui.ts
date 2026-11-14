@@ -97,6 +97,13 @@ async function main(): Promise<void> {
       read(`${directory}/${file}`).match(/^Slug:[^\S\r\n]*(.+)$/m)?.[1].trim() ?? file.slice(0, -3));
     const fallback = JSON.parse(read('agent-os-panel/agents-list.json')).agents as { slug: string }[];
     assert.deepEqual(fallback.map(agent => agent.slug).sort(), slugs.sort());
+    const roster = read('apps/website/index.html').match(/<section id="swarm-roster"[\s\S]*?<\/section>/)?.[0];
+    assert.ok(roster);
+    const headings = Array.from(roster.matchAll(/<h4>(.*?)<\/h4>/g), match => match[1]);
+    const names = (fallback as { slug: string; name: string }[]).map(agent =>
+      agent.name.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;'));
+    assert.deepEqual(headings.sort(), names.sort());
+    assert.match(roster, new RegExp(`The ${names.length}-Role Agent Catalog`));
   });
 
   // 1. Verify CSS design tokens
