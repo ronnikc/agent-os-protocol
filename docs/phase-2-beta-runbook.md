@@ -56,7 +56,8 @@ The JSON report uses a full commit SHA in `candidate` and a `providers` array. E
 | --- | --- |
 | `provider` | One of `e2b`, `agent37`, `daytona`, `modal`, `upstash-box`, `vercel-sandbox` |
 | `source` | `live` |
-| `operator`, `plan`, `region`, `isolation`, `pinnedRevision` | Operator and deployment details. Use the same pinned task revision across all providers. |
+| `operator`, `plan`, `region`, `isolation` | Operator and deployment details. |
+| `pinnedRevision` | Full 40-character task commit SHA. Use the same commit across all providers. |
 | `scenarios` | Object keyed by `delivery`, `crossLobbyDenial`, `budgetDenial`, `quotaFailure`, `timeout`, `cancellation`, `restartRecovery`, and `deletion`. Each entry records `outcome` and an `evidence` reference. A passing denial scenario means the expected denial was observed. |
 | `billingEvidence` | Reference to expected cost, reported cost, and any limitations of the provider's billing data |
 | `cleanup`, `pendingReservations` | `confirmed` and `0` after teardown and reconciliation |
