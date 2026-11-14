@@ -807,6 +807,11 @@ export async function verifyHostedControls() {
     assert.equal(store.readHostedState('a').runs[1].usage[0].actual, undefined);
     assert.deepEqual((await call('a', provider, 'POST', { action: 'disconnect' })).body.connections, []);
     assert.equal((await call('b', '/provider-keys', 'POST', { provider: 'anthropic', api_key: 'fixture-model-key' })).status, 201);
+    assert.equal((await call('a', '/provider-keys', 'POST', { provider: 'anthropic', api_key: 'fixture-model-key' })).status, 201);
+    const privateLaunch = await call('a', '/hosted-agents', 'POST', { name: 'Private fixture', agent_role: 'backend', provider: 'anthropic', model: 'fixture' });
+    assert.equal(privateLaunch.status, 400);
+    assert.match(privateLaunch.body.error, /Create ID or Set ID/);
+    assert.deepEqual((await call('a', '/hosted-agents')).body.hosted_agents, []);
     const agent = await call('b', '/hosted-agents', 'POST', { name: 'Workspace fixture', agent_role: 'backend', provider: 'anthropic', model: 'fixture' });
     assert.equal(agent.status, 201, JSON.stringify(agent.body));
     const agentTask = await call('b', '/tasks', 'POST', { title: 'Edit README', description: 'Update README.md.',
