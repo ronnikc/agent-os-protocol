@@ -652,6 +652,28 @@ export async function verifyHostedControls() {
     assert.ok((await call('a', '/agent-definitions')).body.agents.some((agent: { slug: string }) => agent.slug === 'fixture-agent'));
     assert.ok(!(await call('b', '/agent-definitions')).body.agents.some((agent: { slug: string }) => agent.slug === 'fixture-agent'));
     assert.equal((await call('a', draftsPath, 'POST', { action: 'retire', id: definitionId })).status, 200);
+    const importSource = 'https://github.com/example/agents/blob/' + 'a'.repeat(40) + '/fixture.md';
+    const importedDraft = { action: 'save', kind: 'import', slug: 'imported-fixture',
+      title: 'Imported fixture', content: 'Edited fixture instructions', source: importSource, tools: 'read-only' };
+    assert.equal((await call('a', draftsPath, 'POST', { ...importedDraft, source: importSource.replace('a'.repeat(40), 'main') })).status, 400);
+    const imported = await call('a', draftsPath, 'POST', importedDraft);
+    assert.equal(imported.status, 201);
+    const importId = imported.body.draft.id;
+    const persistedImport = new InMemoryLobbyStore(file).readHostedState('a').rosterDrafts?.find(draft => draft.id === importId);
+    assert.equal(persistedImport?.source, importSource);
+    assert.equal(persistedImport?.content, importedDraft.content);
+    assert.equal(persistedImport?.tools, 'read-only');
+    const hasImportedRole = async (lobby: string) => (await call(lobby, '/agent-definitions')).body.agents
+      .some((entry: { slug: string }) => entry.slug === importedDraft.slug);
+    const activateImport = { action: 'activate', id: importId, confirmTools: true };
+    assert.equal(await hasImportedRole('a'), false);
+    assert.equal((await call('b', draftsPath, 'POST', activateImport)).status, 404);
+    assert.equal((await call('a', draftsPath, 'POST', { ...activateImport, confirmTools: false })).status, 400);
+    assert.equal((await call('a', draftsPath, 'POST', activateImport)).status, 200);
+    assert.equal(await hasImportedRole('a'), true);
+    assert.equal(await hasImportedRole('b'), false);
+    assert.equal((await call('a', draftsPath, 'POST', { action: 'retire', id: importId })).status, 200);
+    assert.equal(await hasImportedRole('a'), false);
     assert.equal((await call('a', '/hosted-controls', 'PUT', policy, 'observer')).status, 403);
     assert.equal((await call('a', '/hosted-controls', 'PUT', policy, 'owner-b', 'b')).status, 401);
     assert.equal((await call('a', '/hosted-controls', 'PUT', { ...policy, concurrency: 0 })).status, 400);
