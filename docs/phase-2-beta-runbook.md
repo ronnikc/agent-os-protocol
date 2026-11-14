@@ -59,7 +59,7 @@ For each scenario record outcome, elapsed time from hire to verified delivery, c
 - Preserve the lobby store and spending ledger. Keep unresolved payment reservations in place until an independent finality check resolves them. Zero-price engagements require neither a signer nor a funded lock.
 - Restore the known-good release and retry the documented zero-price scenario. Confirm that private data and artifacts remain inaccessible from another lobby.
 
-The lobby fixture disables Marketplace reads and new listings, checks continued task access under the existing permissions, reopens the persisted store, and restores Marketplace. After restoration it checks preview history, a new zero-price listing, and private task isolation. The live rollback drill also requires a completed engagement and a provider cleanup check.
+The lobby fixture disables Marketplace reads and new listings, checks continued task access under the existing permissions, reopens the persisted store, and restores Marketplace. After restoration it reads preview history, publishes a zero-price listing, and exercises bidding, hiring, submission, and acceptance with a synthetic specialist. It also checks private task isolation. The live rollback drill still requires independent participants and provider cleanup evidence.
 
 ### Candidate deployment rollback drill
 
