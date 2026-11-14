@@ -274,6 +274,9 @@ body {
   justify-content: center;
   gap: 6px;
 }
+.btn[hidden] {
+  display: none;
+}
 .btn-primary {
   background: linear-gradient(90deg, var(--color-cyan), var(--color-blue));
   color: #050B18;
