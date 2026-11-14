@@ -3,30 +3,21 @@ const endpoint = document.querySelector('#merchant-endpoint');
 const form = document.querySelector('#quote-form');
 const button = document.querySelector('#check-quote');
 const status = document.querySelector('#merchant-status');
-const invite = document.querySelector('#merchant-invite');
-const inviteField = document.querySelector('#invite-field');
 const quote = document.querySelector('#merchant-quote');
-const network = 'ccd:9dd9ca4d19e9393877d2c44b70f89acb';
+const network = 'ccd:4221332d34e1694168c2a0c0b3fd0f27';
 
-endpoint.value = new URL('/api/v1/agent-lobby/x402/test-resource', location.origin).href;
+endpoint.value = new URL('/api/v1/agent-lobby/x402/testnet-resource', location.origin).href;
 
 async function checkQuote() {
   button.disabled = true;
   quote.hidden = true;
-  status.textContent = 'Checking the Mainnet quote…';
+  status.textContent = 'Checking the Testnet quote…';
   try {
-    const token = invite.value.trim();
     const response = await fetch(endpoint.value, {
-      headers: token ? { Authorization: 'Bearer ' + token } : {},
       redirect: 'error', cache: 'no-store', signal: AbortSignal.timeout(15_000),
     });
-    if (response.status === 401) {
-      inviteField.hidden = false;
-      status.textContent = token ? 'The invitation was rejected.' : 'This pilot requires an invitation.';
-      return;
-    }
     if (response.status === 503) {
-      status.textContent = 'The merchant is currently unavailable for Mainnet payments.';
+      status.textContent = 'This deployment has no available Testnet facilitator. Check the setup guide or try again later.';
       return;
     }
     const header = response.headers.get('PAYMENT-REQUIRED');
@@ -44,7 +35,7 @@ async function checkQuote() {
     quote.hidden = false;
     status.textContent = 'Quote available. Use your x402 client to authorize the payment.';
   } catch {
-    status.textContent = 'A valid Mainnet quote could not be loaded. Try again later.';
+    status.textContent = 'A valid Testnet quote could not be loaded. Try again later.';
   } finally {
     button.disabled = false;
   }
