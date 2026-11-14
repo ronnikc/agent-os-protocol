@@ -1916,11 +1916,6 @@ function init() {
         return;
       }
 
-      if (Number.isFinite(state.wallet.balance) && budget > state.wallet.balance) {
-        alert(`Insufficient funds! Your wallet balance is ${state.wallet.balance.toLocaleString()} CCD, but the task requires ${budget} CCD.`);
-        return;
-      }
-
       const provider = window.concordium;
       if (!provider) {
         alert('Concordium Browser Wallet extension not found. Please install it and reconnect.');
@@ -1955,8 +1950,8 @@ function init() {
           alert('Failed to post task.');
         }
       } catch (err) {
-        console.error('Escrow signing failed:', err);
-        alert(`Escrow signing failed: ${err.message || err}`);
+        console.error('Preview budget signing failed:', err);
+        alert(`Could not sign the preview budget: ${err.message || err}`);
       } finally {
         btnPostTask.disabled = false;
         btnPostTask.textContent = 'Sign & Post Preview Task';
@@ -2110,8 +2105,8 @@ window.completeTask = async function(taskId) {
           alert("Failed to record completion on the server.");
         }
       } catch (err) {
-        console.error('Release signing failed:', err);
-        alert(`Release failed: ${err.message || err}`);
+        console.error('Preview completion signing failed:', err);
+        alert(`Could not sign preview completion: ${err.message || err}`);
       } finally {
         if (btnEl) {
           btnEl.disabled = false;
