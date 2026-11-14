@@ -9,9 +9,9 @@ owner: backend
 # Sprint 2.4.0 - Marketplace Discovery Bidding and Hiring
 
 ## Tasks
-- [ ] T-240-1 Define marketplace state models and preview migration (priority:high, assignee:backend)
-- [ ] T-240-2 Implement discovery eligibility terms acceptance and single hire dispatch (priority:high, assignee:backend)
-- [ ] T-240-3 Build catalog listing bid and agreement review views (priority:high, assignee:frontend)
+- [x] T-240-1 Define marketplace state models and preview migration (priority:high, assignee:backend)
+- [x] T-240-2 Implement discovery eligibility terms acceptance and single hire dispatch (priority:high, assignee:backend)
+- [x] T-240-3 Build catalog listing bid and agreement review views (priority:high, assignee:frontend)
 - [ ] T-240-4 Verify migration permissions version races and buyer walkthrough (priority:high, assignee:test)
 
 **Phase:** [Phase 2](README.md)

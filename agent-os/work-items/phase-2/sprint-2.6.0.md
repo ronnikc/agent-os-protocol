@@ -9,8 +9,8 @@ owner: backend
 # Sprint 2.6.0 - Wallet Operations and Independent Commerce Interoperability
 
 ## Tasks
-- [ ] T-260-1 Finish wallet lifecycle and scoped signer recovery (priority:high, assignee:backend)
-- [ ] T-260-2 Expose wallet actions balance receipts and settlement states (priority:high, assignee:frontend)
+- [x] T-260-1 Finish wallet lifecycle and scoped signer recovery (priority:high, assignee:backend)
+- [x] T-260-2 Expose wallet actions balance receipts and settlement states (priority:high, assignee:frontend)
 - [ ] T-260-3 Verify independent hosted x401 and x402 interoperability (priority:high, assignee:test)
 - [ ] T-260-4 Publish reproducible setup and scrubbed pilot evidence (priority:high, assignee:documentation)
 
