@@ -24,7 +24,7 @@ Send the draft and its proposed permissions to Agent Evaluation Engineer for a f
 
 Local memory has facts, diaries, an index builder, and a panel endpoint that renders a diary prompt. The endpoint invokes Bash. Exposing the rendered prompt in the panel does not establish that every launcher attaches it to later turns, especially on Windows.
 
-The training CLI creates drafts and activates them into the target agent's trained skill directory. The runtime search did not establish that hosted agents read that directory. The hosted merge sweep records a lesson event when reflection succeeds. In direct-write mode it can also append repository memory. The hosted task prompt does not retrieve those recorded events. The loop reflection hook is best-effort, and the CLI's optional reflection runs the review in dry-run mode.
+The local training CLI activates skills in the target agent's trained skill directory. Hosted recall reads approved lobby drafts. The hosted merge sweep records a lesson event and can save a draft linked to the merged PR. The hosted fixture exercises that draft writer, checks duplicate suppression and persistence across store reloads, and verifies review, approval, recall in a later workspace task, and retirement. GitHub merge polling and model generation are outside that fixture. The loop reflection hook is best-effort, and the CLI's optional reflection runs the review in dry-run mode.
 
 The current memory verification checks file and hook wiring, routing and dry-run review. It does not prove that a lesson recorded in one task changes a later task. A graph check on this Windows environment used its structural fallback because jq was unavailable.
 

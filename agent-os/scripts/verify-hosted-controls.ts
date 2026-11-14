@@ -15,7 +15,7 @@ import { hostedModelBudget } from '../../packages/lobby-server/src/hosted/model-
 import { HostedAgentRunner } from '../../packages/lobby-server/src/hosted/hosted-agent-runner.js';
 import { createApiRuntimeAdapter } from '../../packages/adapters/src/api-runtime.js';
 import { startLobbyServer, type RunningLobbyServer } from '../../packages/lobby-server/src/server.js';
-import { readRosterImport, recallRosterTraining } from '../../packages/lobby-server/src/hosted/roster-drafts.js';
+import { readRosterImport, recallRosterTraining, recordMergedTrainingDraft } from '../../packages/lobby-server/src/hosted/roster-drafts.js';
 import { InMemoryLobbyStore } from '../../packages/lobby-server/src/store.js';
 import { workspaceAccountVerifier } from '../../packages/lobby-server/src/hosted/workspace-account.js';
 import { WorkspaceAllocationRecovery } from '../../packages/lobby-server/src/hosted/workspace-allocation.js';
@@ -756,16 +756,25 @@ export async function verifyHostedControls() {
     const agentTask = await call('b', '/tasks', 'POST', { title: 'Edit README', description: 'Update README.md.',
       assigned_to: agent.body.agent_id, output_mode: 'workspace' });
     assert.equal(agentTask.status, 201);
-    const workspaceLesson = await call('b', draftsPath, 'POST', { ...training, content: 'Workspace approval marker' });
-    assert.equal(workspaceLesson.status, 201);
+    const mergedTask = { ...agentTask.body.task, task_id: 'merged-training-fixture', status: 'completed' } as LobbyTask;
+    const mergeUrl = 'https://github.com/example/project-b/pull/1';
+    await recordMergedTrainingDraft(store, mergedTask, mergeUrl, 'Workspace approval marker');
+    await recordMergedTrainingDraft(store, mergedTask, mergeUrl, 'Repeated reflection');
+    const lessonId = 'merge-' + mergedTask.task_id;
+    const persistedLesson = new InMemoryLobbyStore(file).readHostedState('b').rosterDrafts?.filter(draft => draft.id === lessonId);
+    assert.equal(persistedLesson?.length, 1);
+    assert.equal(persistedLesson[0].status, 'draft');
+    assert.equal(persistedLesson[0].source, mergeUrl);
+    assert.equal(recallRosterTraining(store, 'b', 'backend'), '');
     assert.equal(modelCalls, 0);
     waitForCancel = false;
     actual = 20;
     await call('b', '/hosted-controls', 'PUT', { ...policy, modelPerRun: 30_000, modelPerPeriod: 30_000, concurrency: 1 });
-    const reviewed = await call('b', draftsPath, 'POST', { action: 'review', id: workspaceLesson.body.draft.id });
+    const reviewed = await call('b', draftsPath, 'POST', { action: 'review', id: lessonId });
     assert.equal(reviewed.status, 200, JSON.stringify(reviewed.body));
     assert.match(reviewed.body.review, /verify task evidence/);
-    assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: workspaceLesson.body.draft.id })).status, 200);
+    assert.equal((await call('b', draftsPath, 'POST', { action: 'activate', id: lessonId })).status, 200);
+    assert.match(recallRosterTraining(new InMemoryLobbyStore(file), 'b', 'backend'), /Workspace approval marker/);
     await call('b', provider, 'POST', { action: 'rotate', credential });
     const bSettings = await call('b', '/hosted-controls');
     const openFileTools = adapter.openFileTools;
@@ -790,6 +799,8 @@ export async function verifyHostedControls() {
     assert.equal(agentEdits, 1);
     assert.equal(modelCalls, 2);
     assert.equal(store.readHostedState('b').runs.find(r => r.id === execution.body.run.id)?.workspaceAgent, 'finished');
+    assert.equal((await call('b', draftsPath, 'POST', { action: 'retire', id: lessonId })).status, 200);
+    assert.equal(recallRosterTraining(new InMemoryLobbyStore(file), 'b', 'backend'), '');
     waitForCancel = true;
     const timeoutTask = { ...agentTask.body.task, task_id: 'timeout-task', output_mode: undefined };
     await store.upsertTask(timeoutTask);

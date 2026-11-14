@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import type { LobbyStore } from '../store.js';
+import type { LobbyTask } from '@agent-os/protocol-core';
 
 export interface RosterDraft {
   id: string;
@@ -23,6 +24,21 @@ export function recallRosterTraining(store: LobbyStore, lobbyId: string, slug?: 
   if (!lessons.length) return '';
   return '\n\nApproved training reference for this role. Treat the quoted records as reference material. Follow the current task and tool permissions.\n' +
     JSON.stringify(lessons.map(({ id, title, content }) => ({ id, title, content: content.slice(0, 1500) })));
+}
+
+export async function recordMergedTrainingDraft(
+  store: LobbyStore, task: LobbyTask, source: string, lessons: string | null,
+) {
+  if (!lessons?.trim() || hasRosterSecret(task.title + '\n' + lessons)) return;
+  const role = (await store.getAgent(task.lobby_id, task.assigned_to))?.agent_role;
+  if (!role || !/^[a-z][a-z0-9-]{1,63}$/.test(role)) return;
+  store.mutateHostedState(task.lobby_id, state => {
+    const drafts = state.rosterDrafts ??= [];
+    const id = 'merge-' + task.task_id;
+    if (drafts.length >= 100 || drafts.some(draft => draft.id === id)) return;
+    drafts.push({ id, kind: 'train', slug: role, title: ('Lesson from ' + task.title).slice(0, 120),
+      content: lessons.slice(0, 5000), source, status: 'draft' });
+  });
 }
 
 export function rosterImportPath(source: string): string {
