@@ -566,11 +566,24 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
   // ── Hosted (server-side) agents — run on the lobby host via the API runtime, no relay/CLI ──
   const hostedAgents = new Map<string, { runner: HostedAgentRunner; connId: string; conn: Connection; role?: string; heartbeatInterval?: NodeJS.Timeout; repoClient?: GitHubRepoClient; taskRepository?: TaskRepository; workingBranch?: string;
     runWorkspace: (id: string, task: LobbyTask, tools: WorkspaceFileTools, signal: AbortSignal) => Promise<void> }>();
-  const evidenceTask = new AsyncLocalStorage<{ lobbyId: string; taskId: string; agentId: string; active: boolean }>();
+  const evidenceTask = new AsyncLocalStorage<{ lobbyId: string; taskId: string; agentId: string; active: boolean; lessonIds?: string }>();
   async function withEvidenceTask<T>(task: LobbyTask, agentId: string, run: () => Promise<T>): Promise<T> {
     const scope = { lobbyId: task.lobby_id, taskId: task.task_id, agentId, active: true };
     try { return await evidenceTask.run(scope, run); }
     finally { scope.active = false; }
+  }
+  function taskTraining(lobbyId: string, agentId: string | undefined, role?: string) {
+    const scope = evidenceTask.getStore();
+    if (!scope?.active || scope.lobbyId !== lobbyId || scope.agentId !== agentId) return '';
+    return recallRosterTraining(store, lobbyId, role, lessonIds => {
+      const signature = JSON.stringify(lessonIds);
+      if (scope.lessonIds === signature) return;
+      store.mutateHostedState(lobbyId, state => {
+        state.audit.push({ at: Date.now(), actor: scope.agentId, action: 'training_context_prepared',
+          subject: scope.taskId, lessonIds });
+      });
+      scope.lessonIds = signature;
+    });
   }
   async function authorizedEvidenceTask(lobbyId: string, agentId: string | undefined) {
     const scope = evidenceTask.getStore();
@@ -1313,11 +1326,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         return taskRepository.readCiEvidence();
       } : undefined,
       readWorkspaceEvidence: () => readWorkspaceEvidence(params.lobbyId, connRef.conn?.agentId),
-      taskContext: () => {
-        const scope = evidenceTask.getStore();
-        return scope?.active && scope.lobbyId === params.lobbyId && scope.agentId === connRef.conn?.agentId
-          ? recallRosterTraining(store, params.lobbyId, params.role) : '';
-      },
+      taskContext: () => taskTraining(params.lobbyId, connRef.conn?.agentId, params.role),
     });
     // Ground the agent in its REAL runtime capabilities. Without this, hosted agents hallucinated
     // local-workspace work ("created package.json, TypeScript compiled without errors") or denied
@@ -1422,7 +1431,7 @@ export async function startLobbyServer(options: LobbyServerOptions = {}): Promis
         });
         try {
           const result = await withEvidenceTask(task, agentId, () => workspaceRunner.respondTo(
-            task.title + '\n\n' + task.description + recallRosterTraining(store, task.lobby_id, params.role)));
+            task.title + '\n\n' + task.description + taskTraining(task.lobby_id, agentId, params.role)));
           if (!result || result.startsWith('⚠') || /^BLOCKED:/i.test(result)) throw new HostedControlError('The assigned agent could not complete the workspace turn.');
         } finally {
           await workspaceRunner.stop();

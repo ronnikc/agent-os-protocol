@@ -14,6 +14,8 @@ The hosted Import Agent fixture checks that a repository branch URL is rejected,
 
 Roster dialogs move keyboard focus to their heading on entry, keep Tab inside the dialog, and return focus to the opening control when closed. Use **Close** or Escape to exit.
 
+Hosted task training also creates a `training_context_prepared` event in the lobby’s manager-only audit history. Query `GET /api/v1/agent-lobby/lobbies/{lobbyId}/hosted-runs/audit` for the task ID, agent ID, and selected lesson IDs. The event records context preparation. Compare task outcomes separately to evaluate whether the guidance improved the result.
+
 ## Further workflow design
 
 ### Try a public import
