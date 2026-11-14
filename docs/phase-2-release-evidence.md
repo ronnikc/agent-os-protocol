@@ -10,6 +10,8 @@ The run installed dependencies, passed `verify-all`, booted the local Panel, sta
 
 On November 14, 2026, a clean Windows checkout with the x402 2.31.0 and transitive HTTP parser updates passed `npm ci`, `npx tsc -b`, and `npm run verify-all`. The production dependency audit reported four high and five moderate entries after the update, compared with seven high and three moderate before it. Remaining entries involve the Vercel SDK dependency chain, Concordium SDK dependencies, and the Express query parser. Keep the audit distinct from the functional verification and live commerce evidence.
 
+The subsequent Slack relay lockfile update resolves Express 4.22.3 and qs 6.16.2. The Vercel and Concordium dependency chains still require separate compatibility work.
+
 ## Benchmark protocol
 
 Use the same pinned task revision, acceptance checks, model, per-run token and compute budgets, and time limits for Agent OS Swarm, a single-agent baseline, and one external orchestrator. Record the orchestrator and provider versions, region, plan and runtime profile. Start each run from the same clean input and alternate run order. Save raw results and disclose unavailable metrics and any differences in configuration.
