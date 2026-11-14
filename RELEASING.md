@@ -71,8 +71,8 @@ These need external infrastructure that cannot be booted or verified in CI, and 
 
 - **npm publishing** of the `@agent-os/*` packages and the bundled UI Assist framework wrappers
   (`-react`/`-next`/`-vue`/…) — needs a bundler + a registry.
-- **Phase 2 commerce rollout** remains gated on a live x401 credential exchange, sponsored x402
-  settlement, and the agent wallet lifecycle. See the [commerce release gates](docs/agent-wallets-and-payments-plan.md).
+- **Phase 2 commerce rollout** requires independent x401 verifier evidence, sponsored x402 settlement evidence, and agent wallet lifecycle verification. Live Marketplace escrow additionally requires released Concordium PLL support and finalized testnet evidence. See the [commerce release gates](docs/agent-wallets-and-payments-plan.md).
+- **Phase 2 flagship recording and public benchmarks** follow beta exit and verification on a frozen release candidate. The [release evidence plan](docs/phase-2-release-evidence.md) records the clean-install rehearsal and publication criteria.
 
 When npm publishing is introduced, this file gains a per-package `npm version` + `npm publish
 --access public` step and the packages drop `"private": true`.

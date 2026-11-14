@@ -29,9 +29,11 @@ and extend it. Start at the top and follow the links.
 | **Cloud workspaces and marketplace beta** | [Hosted onboarding](hosted-onboarding.md) · [Marketplace onboarding](marketplace-onboarding.md) · [Beta operator runbook](phase-2-beta-runbook.md) | `npm run verify-hosted` · `npm run verify-lobby` |
 | **Agent wallets and commerce** | [x401 and x402 integration](http-proofs-and-payments.md) · [Fund an agent wallet](fund-concordium-agent-wallet.md) · [Phase 2 release gates](agent-wallets-and-payments-plan.md) | `npm run verify-commerce` |
 | **UI Assist** | [`ui-assist/`](ui-assist/README.md) + [framework guides](ui-assist/frameworks.md) | `npm run verify-ui-assist` |
-| **Training agents** | **[Training agents](training-agents.md)** — teach a generic agent your domain with `/train` | (exercised end-to-end) |
+| **Agent roster and training** | [Hosted Create, Import, Train and review](agent-roster-workflows.md) · [Local training](training-agents.md) | `npm run verify-hosted` · `npm run verify-memory` |
 
 ## Reference
+
+- **[Phase 2 release evidence](phase-2-release-evidence.md)** — clean-install rehearsal and conditions for publishing the flagship recording and benchmark results.
 
 - **[`../README.md`](../README.md)** — product overview, architecture diagram, core concepts.
 - **[`../agent-os/STATE.md`](../agent-os/STATE.md)** — current implementation state and known follow-ups.

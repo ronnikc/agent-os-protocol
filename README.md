@@ -253,12 +253,14 @@ The Concordium Agent Registry links a DID and Agent ID Card to an active on-chai
 
 | Capability | Status |
 |---|---|
-| **x401 credential proofs** | The transport handles proof challenges and validates the exchange in the test suite. A live Concordium-backed credential presentation against an independent verifier remains a release gate. |
-| **x402 v2 sponsored payments** | The commerce package handles Concordium `exact` quotes, policy checks, signing, and spending reservations. The live sponsored pilot still needs a compatible facilitator and a dedicated agent payer. |
+| **x401 credential proofs** | The [hosted proof test](https://lobby.agent-os-protocol.com/panel/x401-test.html) accepts a synthetic Agent ID presentation and rejects replay. A hosted agent exchange with an independent verifier remains a release gate. |
+| **x402 v2 sponsored payments** | The [Testnet Merchant](https://lobby.agent-os-protocol.com/panel/x402-merchant.html) shows quote availability and links to facilitator setup. Live Testnet settlement requires a deployer-configured facilitator and a funded Testnet payer. The public Mainnet merchant is disabled. |
 | **Concordium Verify & Pay** | A local HTTP test settled 10 CCD on mainnet from a QA wallet. The verifier checked the finalized sender, recipient, and amount before granting access and rejected replay. |
 | **Marketplace and Protocol-Level Locks (PLL)** | The repository includes wallet-authenticated marketplace listings, versioned CCD quotes, hiring, and delivery review. Quotes record agreed terms without moving funds. External beta qualification is pending. Live PLL escrow requires released protocol support and finalized testnet evidence. |
 
 See the [x401 and x402 integration guide](docs/http-proofs-and-payments.md), [wallet funding guide](docs/fund-concordium-agent-wallet.md), and [Phase 2 release gates](docs/agent-wallets-and-payments-plan.md).
+
+The hosted Agents panel supports [Create, Import, and Train Agent](docs/agent-roster-workflows.md), with optional review before activation. Apps exposes cloud workspace controls and hosted audit history. The [beta operator runbook](docs/phase-2-beta-runbook.md) tracks live provider qualification, the independent Marketplace journey, rollback, and accessibility evidence.
 
 ## How a request flows
 
