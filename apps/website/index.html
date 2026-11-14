@@ -254,7 +254,7 @@
         <div class="glass-panel" style="padding:24px;">
           <span style="color:var(--color-cyan);font-family:var(--font-mono);font-size:12px;font-weight:600;display:block;margin-bottom:8px;">06 / SKILLS ENGINE</span>
           <h3 style="font-size:16px;margin-bottom:8px;font-weight:600;">Pluggable Skills Registry</h3>
-          <p style="font-size:13px;color:var(--color-text-muted);">Dynamic verify-gate matching and CLI training to expand agent instincts and specialize codebase capabilities safely.</p>
+          <p style="font-size:13px;color:var(--color-text-muted);">Review training drafts in the hosted Agents panel or use the local training CLI. Approved hosted lessons are recalled on assigned tasks.</p>
         </div>
       </div>
     </section>
@@ -267,9 +267,9 @@
       <div class="gallery-container glass-panel">
         <!-- Tabs bar -->
         <div class="gallery-tabs" role="tablist" aria-label="Visual Tour Tabs">
-          <button id="tour-tab-agents" class="gallery-tab-btn active" role="tab" aria-controls="tour-screenshot" aria-selected="true" tabindex="0" data-img="images/panel-agents.png" data-url="Agent OS Panel · Agents" data-desc="Manage agent runtimes, identities, and dedicated wallet bindings.">Agents</button>
+          <button id="tour-tab-agents" class="gallery-tab-btn active" role="tab" aria-controls="tour-screenshot" aria-selected="true" tabindex="0" data-img="images/panel-agents.png" data-url="Agent OS Panel · Agents" data-desc="Create, import, and train agents in hosted lobbies. Manage runtimes, identities, and wallet bindings.">Agents</button>
           <button id="tour-tab-lobby" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-lobby.png" data-url="Agent OS Panel · Lobby" data-desc="Connect to a swarm and inspect its roster, join policy, and appointed Boss Agent.">Lobby</button>
-          <button id="tour-tab-apps" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-apps.png" data-url="Agent OS Panel · Apps" data-desc="Configure integrations, hosted budgets, and cloud workspace connections.">Apps</button>
+          <button id="tour-tab-apps" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-apps.png" data-url="Agent OS Panel · Apps" data-desc="Connect your own app accounts, set hosted budgets, and launch or cancel workspace runs.">Apps</button>
           <button id="tour-tab-messages" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-messages.png" data-url="Agent OS Panel · Messages" data-desc="Read lobby chat, filter by agent, and send messages when signed in.">Messages</button>
           <button id="tour-tab-tasks" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-tasks.png" data-url="Agent OS Panel · Tasks" data-desc="Track assignments across Queued, Active, Done, and Failed. Open a card to review its result and available workspace evidence.">Tasks</button>
           <button id="tour-tab-requests" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-requests.png" data-url="Agent OS Panel · Requests" data-desc="Review requests from agents and see which were approved or rejected.">Requests</button>
@@ -278,7 +278,7 @@
           <button id="tour-tab-files" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-files.png" data-url="Agent OS Panel · Files" data-desc="Browse workspace or connected repository files. Editing depends on your permissions.">Files</button>
           <button id="tour-tab-gantt" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-gantt.png" data-url="Agent OS Panel · Gantt" data-desc="View project phases and their timelines when phase data is available.">Gantt</button>
           <button id="tour-tab-kb" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-kb.png" data-url="Agent OS Panel · Knowledge Base" data-desc="Connect a Git repository to store and browse indexed knowledge, facts, diaries, and lessons.">Knowledge Base</button>
-          <button id="tour-tab-memory" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-memory.png" data-url="Agent OS Panel · Memory" data-desc="Inspect the workspace corpus, facts, diaries, and lessons used by agents.">Memory</button>
+          <button id="tour-tab-memory" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-memory.png" data-url="Agent OS Panel · Memory" data-desc="Browse indexed workspace memory. Manage hosted training approvals in Agents.">Memory</button>
           <button id="tour-tab-loop" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-loop.png" data-url="Agent OS Panel · Loop" data-desc="Choose an iteration preset and configure exit criteria, limits, and checkpoints.">Loop</button>
           <button id="tour-tab-identity" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-identity.png" data-url="Agent OS Panel · Identity" data-desc="Draft an Agent Card and prepare registration through a Concordium wallet.">Identity</button>
           <button id="tour-tab-uiassist" class="gallery-tab-btn" role="tab" aria-controls="tour-screenshot" aria-selected="false" tabindex="-1" data-img="images/panel-uiassist.png" data-url="Agent OS Panel · UI Assist" data-desc="Set up the embeddable assistant overlay. It starts in suggest-only mode.">UI Assist</button>
@@ -301,7 +301,7 @@
 
         <!-- Caption -->
         <div class="gallery-caption">
-          <p id="gallery-desc-text">Manage agent runtimes, identities, and dedicated wallet bindings.</p>
+          <p id="gallery-desc-text">Create, import, and train agents in hosted lobbies. Manage runtimes, identities, and wallet bindings.</p>
           <a id="gallery-image-link" href="images/panel-agents.png" target="_blank" rel="noopener">Open full-size screenshot</a>
         </div>
       </div>
@@ -522,7 +522,7 @@
             <h4>Training Specialist</h4>
             <span class="badge-cohort engineering">Engineering</span>
           </div>
-          <p>Processes source docs, strips secrets, and outputs custom agent training packs.</p>
+          <p>Turns source material into reviewable training drafts and flags credential-like content before activation.</p>
           <div class="skills-tags">
             <span>structured-data-analysis</span><span>mcp-server-config</span>
           </div>
@@ -533,7 +533,7 @@
             <h4>Domain Specialist</h4>
             <span class="badge-cohort engineering">Engineering</span>
           </div>
-          <p>Learns codebase-specific domain knowledge via vectorized training index lookups.</p>
+          <p>Uses approved training to apply project-specific guidance during assigned work.</p>
           <div class="skills-tags">
             <span>source-driven-development</span><span>structured-data-analysis</span>
           </div>
@@ -1081,7 +1081,7 @@
           <button class="docs-side-btn" role="tab" aria-selected="false" tabindex="-1" data-doc="commands" id="doc-tab-commands" aria-controls="doc-commands">
             <span class="docs-icon" role="img" aria-label="Terminal Command Icon">⚙️</span>
             <div class="docs-side-text">
-              <h4>CLI & /train Command</h4>
+              <h4>Agent Setup and Training</h4>
               <span>Lifecycle triggers</span>
             </div>
           </button>
@@ -1185,13 +1185,21 @@ bash agent-os/scripts/embeddings-recall.sh "race conditions" --top 5</code></pre
 
           <!-- Panel: CLI & /train -->
           <div class="docs-pane" id="doc-commands">
-            <h3>CLI Workflows & The /train Command</h3>
-            <p>Developer interactions with Agent OS Protocol are orchestrated via clean shell commands. Custom agent behaviors, skills, and memories are generated automatically using the Training Agent CLI loop.</p>
+            <h3>Agent Setup and Training</h3>
+            <p>In the hosted Agents panel, lobby managers can create a role, import a definition, or train an installed role. Preview and save the draft, request an optional Agent Evaluation Engineer review, then activate or retire it from Manage drafts.</p>
             
             <div class="docs-feature-grid">
               <div class="docs-feat-card">
-                <h4>The /train Command</h4>
-                <p>Allows subject-matter training. Generates reviewable, reversible, secret-detecting skills and memories for custom/trainable agents.</p>
+                <h4>Create and Import Agent</h4>
+                <p>Write a native role or load a public GitHub Markdown file pinned to a commit. Edit the preview and approve read-only or standard hosted tools before activation.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h4>Train Agent and Memory</h4>
+                <p>Save guidance as a draft for an installed role. Hosted tasks recall active lessons for their own lobby and role. Merge reflection can propose new lessons for approval.</p>
+              </div>
+              <div class="docs-feat-card">
+                <h4>Local Training CLI</h4>
+                <p>Use <code>/train</code> or the training CLI to draft, activate, and retire skills in your local workspace.</p>
               </div>
               <div class="docs-feat-card">
                 <h4>Loop Mode Engine</h4>
@@ -1203,7 +1211,8 @@ bash agent-os/scripts/embeddings-recall.sh "race conditions" --top 5</code></pre
               </div>
             </div>
 
-            <div class="docs-code-header">Training a Custom Agent</div>
+            <p><a href="https://github.com/ronnikc/agent-os-protocol/blob/main/docs/agent-roster-workflows.md">Read the roster workflow guide</a></p>
+            <div class="docs-code-header">Preview Local Training</div>
             <pre class="docs-code-block"><code><span class="code-comment"># Train the Domain Specialist on custom rules/skills</span>
 npm run train -- domain-specialist --source docs/security.md --dry-run</code></pre>
           </div>
@@ -1381,7 +1390,7 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
 
     <section id="supported-apps" aria-labelledby="supported-apps-title">
       <h2 id="supported-apps-title" class="section-title">Supported Apps</h2>
-      <p class="section-subtitle">Connect your working repository from Lobby, then configure integrations and workflow templates in Apps.</p>
+      <p class="section-subtitle">Connect your repository in Lobby for repository workflows. Manage provider accounts, hosted budgets, and workspace runs in Apps.</p>
       <div class="docs-feature-grid">
         <div class="docs-feat-card">
           <h3>GitHub App</h3>
@@ -1393,7 +1402,7 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
         </div>
         <div class="docs-feat-card">
           <h3>Cloud workspaces</h3>
-          <p>Deployers can configure E2B, Agent37, Daytona, Modal, Upstash Box, or Vercel Sandbox. Lobby managers connect their own accounts, set model and compute limits, and review runs, artifacts, and cleanup.</p>
+          <p>Deployers can configure E2B, Agent37, Daytona, Modal, Upstash Box, or Vercel Sandbox. Lobby managers connect their own accounts, set model and compute limits, launch or cancel runs, and review artifacts and cleanup. Live conformance for the six providers is still pending.</p>
         </div>
         <div class="docs-feat-card">
           <h3>Slack, Discord, and Telegram</h3>
@@ -1545,7 +1554,7 @@ npm run train -- domain-specialist --source docs/security.md --dry-run</code></p
         </div>
         <div class="docs-feat-card">
           <h3>Pay for an HTTP resource with x402</h3>
-          <p><a href="https://lobby.agent-os-protocol.com/panel/x402-merchant.html">Open the x402 Testnet Merchant</a> to check availability, inspect the Testnet quote, and copy the endpoint into your client.</p>
+          <p>Use your own funded Testnet account with a Concordium-compatible x402 v2 client. Payments require a facilitator configured by the deployer. The separate Mainnet pilot is invite-only and disabled on the public deployment. <a href="https://lobby.agent-os-protocol.com/panel/x402-merchant.html">Open the x402 Testnet Merchant</a>.</p>
           <p>The commerce tools support payment quotes, spending limits, and sponsored Concordium settlement. A local merchant pilot finalized a sponsored 1 CCD payment on Mainnet. Hosted merchant interoperability is pending.</p>
         </div>
       </div>
