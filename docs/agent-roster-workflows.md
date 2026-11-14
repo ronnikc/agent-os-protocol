@@ -16,6 +16,12 @@ Roster dialogs move keyboard focus to their heading on entry, keep Tab inside th
 
 Hosted task training also creates a `training_context_prepared` event in the lobby’s manager-only audit history. Open **Apps → Hosted audit history** to inspect the selected lessons. Reopen the history to see new events. Paging keeps the event list fixed as new records arrive. Query `GET /api/v1/agent-lobby/lobbies/{lobbyId}/hosted-runs/audit` for the task ID, agent ID, and selected lesson IDs. The event records context preparation. Compare task outcomes separately to evaluate whether the guidance improved the result.
 
+## Hosted browser rehearsal
+
+On November 14, 2026, the hosted panel at `39e5856` ran against an isolated localhost lobby. The test-admin session used a disposable store. In the browser, Create Agent saved a draft and added the role after read-only tool approval. Import Agent loaded the commit-pinned public Data Pipeline Engineer Markdown and saved it as a draft. Train Agent saved and activated a lesson for the newly created role. Manage Drafts showed all three statuses.
+
+Request agent review displayed the expected setup message because the isolated lobby had no model configured. Model-backed review and task-time recall are covered by hosted fixtures. The signed-in public deployment walkthrough remains open.
+
 ## Further workflow design
 
 In the public panel, choosing a roster draft action as a guest opens the wallet sign-in prompt. Sign in and select a lobby you manage to create, import, train, or review drafts.
