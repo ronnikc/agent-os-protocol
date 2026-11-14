@@ -817,6 +817,35 @@ async function main(): Promise<void> {
     ]);
   });
 
+  await check('retired training disappears from provider context on an existing hosted session', async () => {
+    const requests: Array<{ messages: Array<{ role: string; content: string }> }> = [];
+    let approved = '';
+    const adapter = createApiRuntimeAdapter({
+      provider: { id: 'openai-compatible', model: 'fixture' }, apiKey: 'fixture',
+      taskContext: () => approved,
+      guardedCompletion: (request, complete) => complete(request),
+      fetchFn: async (_url, options) => {
+        requests.push(JSON.parse(String(options?.body)));
+        return Response.json({ choices: [{ message: { content: 'RESULT: verified' } }] });
+      },
+    });
+    const session = await adapter.startAgent({ cwd: '/hosted', systemPrompt: 'Base role instructions' });
+    try {
+      for (const [task, context] of [['Before activation', ''], ['After approval', 'approved-lesson-fixture'], ['After retirement', '']]) {
+        approved = context;
+        await adapter.sendInput(session, { type: 'user', content: task });
+        for await (const event of adapter.readOutput(session)) assert.notEqual(event.type, 'error');
+      }
+      assert.equal(requests.length, 3);
+      assert.ok(!JSON.stringify(requests[0]).includes('approved-lesson-fixture'));
+      assert.match(requests[1].messages[0].content, /approved-lesson-fixture/);
+      assert.ok(!JSON.stringify(requests[2]).includes('approved-lesson-fixture'));
+      assert.ok(requests[2].messages.some(message => message.content === 'After approval'));
+    } finally {
+      await adapter.stopAgent(session);
+    }
+  });
+
   await check('hosted model can request configured evidence without choosing its scope', async () => {
     let turns = 0;
     let calls = 0;
