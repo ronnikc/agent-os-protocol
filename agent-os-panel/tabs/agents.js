@@ -292,7 +292,7 @@ async function startOne(slug) {
         Choose the LLM provider and model to run this agent:
       </p>
       <div class="form-group" style="margin-bottom:12px;">
-        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider</label>
+        <label for="start-provider" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Provider</label>
         <select id="start-provider" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px; appearance:auto;">
           <option value="anthropic" ${defaultProvider === 'anthropic' ? 'selected' : ''}>Anthropic ${hasAnthropic ? '(Configured)' : '(Not Configured)'}</option>
           <option value="openai" ${defaultProvider === 'openai' ? 'selected' : ''}>OpenAI ${hasOpenAi ? '(Configured)' : '(Not Configured)'}</option>
@@ -301,24 +301,24 @@ async function startOne(slug) {
         <div id="provider-status-note" style="font-size:11px; margin-top:6px; font-weight:500;"></div>
       </div>
       <div id="start-api-key-group" style="margin-bottom:12px; display:none;">
-        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">API Key Override (Optional)</label>
+        <label for="start-api-key" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">API Key Override (Optional)</label>
         <input type="password" id="start-api-key" placeholder="sk-..." style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
         <span style="font-size:10px; color:var(--text-muted); display:block; margin-top:2px;">Unique key for this specific agent. Overrides the default lobby key.</span>
       </div>
       <div class="form-group" style="margin-bottom:12px;">
-        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Model</label>
+        <label for="start-model-select" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Model</label>
         <select id="start-model-select" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px; appearance:auto;">
         </select>
       </div>
       <div id="start-model-custom-group" class="form-group" style="margin-bottom:16px; display:none;">
-        <label style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Custom Model ID</label>
+        <label for="start-model-custom" style="display:block; font-size:11px; color:var(--text-muted); margin-bottom:4px;">Custom Model ID</label>
         <input type="text" id="start-model-custom" placeholder="e.g. gpt-4o-mini" style="width:100%; padding:8px 12px; background:var(--bg-elevated); border:1px solid var(--border); color:var(--text-primary); border-radius:4px; font-size:13px;" />
       </div>
       <div class="form-actions" style="margin:0; display:flex; gap:8px; justify-content:flex-end;">
         <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
         <button class="btn btn-primary" id="btn-confirm-start">Launch</button>
       </div>
-    `);
+    `, { keyboardDialog: true });
 
     const updateProviderStatus = async () => {
       const p = document.getElementById('start-provider')?.value;

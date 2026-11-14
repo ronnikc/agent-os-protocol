@@ -12,6 +12,8 @@ In **Agents → Wallet → CCD receipts**, use a wallet with multiple receipt pa
 
 A headless Edge fixture confirmed that a failed page request preserved the current receipts and focus, exposed a retry, and updated the receipt range after recovery. Paging to either end moved focus to the receipt heading when the activated control disappeared. A manual screen-reader session is still required to confirm spoken output.
 
+Open **Agents → Start** and **Tasks → New Task** with the keyboard. In each dialog, verify focus starts on its heading, the fields expose their visible names, Tab stays in the dialog, and Escape returns focus to the opening button.
+
 The release coordinator owns the beta decision. The lobby operator owns invitation, access and rollback. Each provider operator confirms plan limits, metering and teardown. The accessibility reviewer records keyboard and assistive-technology results. Record a named owner and candidate commit for each role before starting a cohort.
 
 ## Cohort and scenarios
