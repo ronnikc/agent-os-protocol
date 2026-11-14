@@ -41,12 +41,13 @@ export async function verifyHostedControls() {
   let daytonaPrivate = false;
   let daytonaCreates = 0;
   let daytonaUploads = 0;
+  let daytonaLosesCreateResponse = false;
   const daytona = createDaytonaWorkspace({ snapshot: 'fixture', command: 'npm test', maxMicrosPerSecond: 1,
     profile: { id: 'container', isolation: 'container', regions: ['us'], cpu: 2, memoryMiB: 4096,
       diskMiB: 4096, maxRuntimeMs: 120_000, egress: 'none' },
   }, key => {
     assert.equal(key, 'owner-key');
-    const sandbox = { id: 'daytona-id', public: false, sandboxClass: 'container', target: 'us', cpu: 2,
+    const sandbox = { id: 'daytona-id', labels: { agent_os_attempt: 'attempt' }, public: false, sandboxClass: 'container', target: 'us', cpu: 2,
       memory: 4, disk: 4, get networkBlockAll() { return daytonaPrivate; },
       fs: { async uploadFile() { daytonaUploads++; } },
       process: { async executeCommand() { return { exitCode: 0, result: '' }; } },
@@ -58,6 +59,7 @@ export async function verifyHostedControls() {
         assert.equal(input.ephemeral, true);
         daytonaExists = true;
         daytonaCreates++;
+        if (daytonaLosesCreateResponse) throw new Error('Daytona create response lost');
         return sandbox;
       },
       async get() {
@@ -87,6 +89,15 @@ export async function verifyHostedControls() {
   await provisionDaytona();
   assert.equal(daytonaCreates, 1);
   assert.equal(daytonaUploads, 1);
+  assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: true });
+  daytonaRecord = {};
+  daytonaLosesCreateResponse = true;
+  await assert.rejects(provisionDaytona(), /Daytona create response lost/);
+  assert.equal(daytonaRecord.providerId, undefined);
+  assert.equal(daytonaUploads, 1);
+  await provisionDaytona();
+  assert.equal(daytonaCreates, 2);
+  assert.equal(daytonaUploads, 2);
   assert.deepEqual(await daytona.destroy('attempt', 'owner-key', signal, daytonaJournal), { confirmed: true });
   let modalCreated = 0;
   let modalTerminated = false;

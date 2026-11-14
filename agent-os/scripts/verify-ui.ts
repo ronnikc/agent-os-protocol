@@ -9,6 +9,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { runInNewContext } from 'node:vm';
 
 const REPO_ROOT = resolve(import.meta.dirname ?? __dirname, '../..');
 const R = (p: string) => join(REPO_ROOT, p);
@@ -29,6 +30,39 @@ async function check(name: string, fn: () => void | Promise<void>): Promise<void
 const read = (p: string) => readFileSync(R(p), 'utf8');
 
 async function main(): Promise<void> {
+  await check('Sprint reports an undelivered first task and accepts a successful delivery', async () => {
+    const handlers = new Map<string, () => Promise<void>>();
+    const log = { innerHTML: '' };
+    const requests: string[] = [];
+    let delivered = false;
+    const sandbox = {
+      registerTab() {},
+      escapeHtml: String,
+      postJson: async (path: string) => {
+        requests.push(path);
+        return path === '/api/messages' ? { ok: true, sentToStaging: delivered } : { ok: true };
+      },
+      document: {
+        getElementById(id: string) {
+          if (id === 'sprint-exec-log') return log;
+          return {
+            querySelectorAll: () => [],
+            addEventListener: (_event: string, callback: () => Promise<void>) => handlers.set(id, callback),
+          };
+        },
+      },
+    };
+    runInNewContext(read('agent-os-panel/tabs/sprint.js').replace(/^import .+;$/m, '') +
+      '\nsprintTasks = [{ title: "First task", priority: "normal" }]; render();', sandbox);
+    const send = handlers.get('sprint-execute');
+    assert.ok(send);
+    await send();
+    assert.deepEqual(requests, ['/api/tasks', '/api/messages']);
+    assert.match(log.innerHTML, /did not reach the lobby/);
+    delivered = true;
+    await send();
+    assert.match(log.innerHTML, /Sprint plan sent to lobby/);
+  });
   console.log('verify-ui — UI layout, design tokens, and regressions\n');
 
   await check('Phase 2 panels expose labelled controls, status regions and paginated evidence', () => {

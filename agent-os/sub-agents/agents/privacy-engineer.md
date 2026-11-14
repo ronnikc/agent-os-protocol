@@ -13,3 +13,4 @@ Trace how user data enters, moves through, and leaves the product. Coordinate ac
 2. Propose the smallest data set that serves the workflow. Define what is deleted, what is retained, and what an operator can verify at each boundary.
 3. Exercise retention and deletion with synthetic identifiers. Check retries, tenant isolation, redaction, and any documented backup retention window.
 4. Deliver a data inventory, observed results by storage surface, and specific gaps with owners. Record backend or provider behavior only when evidence is available.
+   Use the scrubbed inventory fields in `docs/agent-role-evaluation.md` to request retention evidence from operators.

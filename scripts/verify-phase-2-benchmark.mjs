@@ -27,6 +27,11 @@ const withExtraFields = { ...configurations, swarm: { ...configurations.swarm, p
 assert.deepEqual(summarizeBenchmark({ ...report, configurations: withExtraFields }).configurations, configurations);
 assert.throws(() => summarizeBenchmark({ ...report, configurations: {} }), /Missing pinned benchmark configuration/);
 assert.throws(() => summarizeBenchmark({ ...report, revision: [report.revision] }), /pinned revision/);
+const manifest = { revision: report.revision, attempts: attempts.map(({ id, scenario, group }) => ({ id, scenario, group })) };
+assert.deepEqual(summarizeBenchmark(report, manifest), summarizeBenchmark(report));
+assert.throws(() => summarizeBenchmark({ ...report, attempts: attempts.slice(1) }, manifest), /Missing 1 expected/);
+assert.throws(() => summarizeBenchmark({ ...report, attempts: [...attempts, attempts[0]] }, manifest), /at row 5/);
+assert.throws(() => summarizeBenchmark({ ...report, attempts: [{ ...attempts[0], scenario: 'other' }, ...attempts.slice(1)] }, manifest), /Unexpected.*row 1/);
 const { swarm } = summarizeBenchmark(report).scenarios[0].results;
 assert.equal(swarm.completionRate, 0.5);
 assert.equal(swarm.cleanupFailures, 1);

@@ -12,3 +12,13 @@ Four read-only Codex CLI runs used the native role definitions at revision `7ddb
 The strongest new role candidate is **Integration Reliability Engineer**. Connector teams implement individual integrations and Incident Response coordinates outages. A specialist could own repeatable conformance across providers, with an initial task covering lost responses, credential rotation, restart, cleanup, and eventual reconciliation. Run that task against Runtime Adapter and Infrastructure before adding the role.
 
 Release evidence belongs with Release and Agent Evaluation. Add a release evidence workflow there first. API, Identity, and Test already share protocol conformance. Give them an independent x401/x402 interoperability harness before adding a separate role.
+
+For incident triage, run `node scripts/probe-public-services.mjs health` or `node scripts/probe-public-services.mjs x402-testnet`. The probe returns a timestamp, HTTP status and bounded diagnostic. The health probe also returns the deployed revision when available.
+
+For privacy reviews, request a scrubbed inventory with one row per data surface. Record the data category, purpose, owner, retention period, deletion method and verification date. Include the application store, logs, backups, exports and provider artifacts. Use synthetic record identifiers in shared results. Mark a surface unverified when the operator has no evidence for it.
+
+## Integration Reliability comparison
+
+Three read-only Codex CLI runs used `gpt-6.1-sol` and the same two source-review tasks against main at `9e4821d`. The tasks traced x402 settlement when a facilitator response is lost and workspace recovery after a lost create response, restart, and credential rotation. Each role produced a safe retry rule, fixture evidence, and a provider test matrix. Runtime Adapter added payer nonce and request ID details. Infrastructure tied recovery to user-visible health and operational evidence. The candidate alone identified that Daytona's fixture checked recovery after profile rejection but did not lose the create response. Its proposed case is now in hosted verification and checks that recovery discovers the existing sandbox, avoids a second create, and confirms cleanup.
+
+Add the role to own cross-provider conformance and fixture gaps. This was one review per role on the same tasks. Live provider behavior and comparative model performance remain unmeasured.
