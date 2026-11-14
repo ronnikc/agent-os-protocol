@@ -10,7 +10,7 @@ The run installed dependencies, passed `verify-all`, booted the local Panel, sta
 
 On November 14, 2026, a clean Windows checkout with the x402 2.31.0 and transitive HTTP parser updates passed `npm ci`, `npx tsc -b`, and `npm run verify-all`. The production dependency audit reported four high and five moderate entries after the update, compared with seven high and three moderate before it. Remaining entries involve the Vercel SDK dependency chain, Concordium SDK dependencies, and the Express query parser. Keep the audit distinct from the functional verification and live commerce evidence.
 
-The subsequent Slack relay lockfile update resolves Express 4.22.3 and qs 6.16.2. The Vercel and Concordium dependency chains still require separate compatibility work.
+The Slack relay lockfile resolves Express 4.22.3 and qs 6.16.2. A scoped override keeps Vercel Sandbox at 4.0.0 and resolves its OIDC dependency to 4.0.9. A clean install, TypeScript build and hosted suite passed with that override. The install audit reported three moderate entries and zero high entries. Live Vercel qualification and remaining Concordium dependency maintenance are open.
 
 ## Benchmark protocol
 

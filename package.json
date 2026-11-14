@@ -85,5 +85,10 @@
     "packages/slack-relay",
     "packages/registry-identity",
     "packages/concordium-commerce"
-  ]
+  ],
+  "overrides": {
+    "@vercel/sandbox": {
+      "@vercel/oidc": "4.0.9"
+    }
+  }
 }
