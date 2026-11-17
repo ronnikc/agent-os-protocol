@@ -1,0 +1,100 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# Phase 3 product flows and contracts
+
+These flows are implementation targets for [Phase 3](README.md). The [pilot contract](pilot-contract.md) defines the shared trust and execution rules for issuer handoff, signer custody, chain binding, subject authority and signed x401. Freeze its exact format and test fixtures in AO-1 before implementing dependent PRs. Keep portable interfaces in Agent OS and AesirX product behavior in the opt-in App and CMP repositories.
+
+## Native account issuance and Concordium-derived credentials
+
+| | Existing wallet to native Concordium ID | Existing wallet to a Concordium-derived credential |
+| --- | --- | --- |
+| User goal | Create a Concordium account from an existing EUDI, Google Wallet or Apple Wallet credential. Then register or link an agent. | Explore a reusable scoped proof under Concordium's credential model when the use case only needs a verified claim. |
+| User action | Select **Create Concordium ID**, review the DTS disclosure, approve the existing wallet presentation and return to the result. Aim for one identity approval on supported profiles. Identify any signer setup, issuer step-up, Agent ID registration or consent delegation as distinct actions. | For the prototype, approve a supported external wallet presentation and bind the resulting credential to a fresh holder key. A one-time CMP check can finish without issuing a derived credential. |
+| Output | DTS accepts the evidence and issues a standard Concordium identity object. A user-controlled signer deploys its account credential. Read the finalized account, then offer explicit owner approval to register the CIS-8004 token. | Evaluate a Concordium Web3 ID credential issued under an explicit policy and registered for status through CIS-4. Its issuer, assurance and intended purpose must be verifiable. |
+| Availability | Standard Concordium account and registry interfaces after finality. Use authorized standalone or embedded signing to avoid requiring a Concordium ID App install on the happy path. Keep the existing Concordium path for profiles that need it. | Prototype with a local issuer and registry. Production requires a participating issuer and approved wallet and presentation support. CIS-8004 continues to require the native account owner under the current registry. |
+| Exit gate | A new user completes a real wallet handoff through DTS to a finalized account. Record approval count, repeat capture and each time-to-use stage. An explicit owner authorization registers or links a verifiable agent. | A test issuer creates a credential from independently verified wallet evidence. A separate verifier checks holder control, supported disclosures, status, expiry and revocation. Record whether the actual wallet can present it without a second app and which identifiers become visible. |
+
+### Wallet profiles and the one-click target
+
+| Wallet | Native issuance candidate | Narrow eligibility evidence |
+| --- | --- | --- |
+| EUDI Wallet | Begin with one Member State PID issuer, wallet and accepted presentation profile. Obtain relying-party setup and a DTS mapping of mandatory claims and assurance. | Support the EU age-wallet reference path and a real national profile. PID and age-only presentations are separate policies. |
+| Google Wallet | Test a DTS-approved mDL or ID Pass profile with the correct issuer roots and actual fields. Confirm that AesirX's relying-party setup covers the deployment or register the required production origin. | Reuse the CMP handoff and verify its actual backend format. Support a documented Longfellow predicate where the credential and verifier support it. Other profiles can provide a narrower issuer-attested field. |
+| Apple Wallet | Test an accepted Apple Wallet mdoc and issuer mapping with Verify with Wallet on the Web and the required reader certificate. Check exact fields and holder guarantees with DTS. | Verify the minimum selectively disclosed fields over the documented mdoc flow. Advertise a zero-knowledge profile only after testing documented support for that credential and predicate. |
+
+Use separate release flags per wallet, credential profile and purpose. Test on real devices. Record relying-party onboarding, required issuer attributes and signer UX. Distinguish **tested for eligibility**, **eligible for native issuance**, and **live on the selected deployment**. Measure one-click as one explicit wallet presentation approval with neither a forced Concordium app install nor repeat identity capture on the supported happy path. Report other prompts and manual cases. A sandbox result is evidence for that sandbox only. [Concordium identity creation](https://docs.concordium.com/en/mainnet/how-to/integrations/wallet-sdk/wallet-sdk-identity-creation.html) · [OpenID4VP](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) · [Google Wallet](https://developers.google.com/wallet/identity/verify/accepting-ids-from-wallet-online) · [Apple Wallet](https://developer.apple.com/videos/play/wwdc2025/232/)
+
+The first-time CMP visitor journey must demonstrate an install-free user-controlled signer through [3.1.3](sprint-3.1.3.md). AX-WebSigner reuses a compatible reviewed implementation or the standard Concordium SDK inside a dedicated signer origin. Its tests start with a fresh supported browser and no local signer. Pin origin authorization, key/identity-material persistence, human approval and recovery behavior before claiming this journey in production.
+
+### Concordium-derived credential prototype
+
+- **Issue from verified evidence.** In the test fixture an issuer verifies one wallet profile and a fresh holder-key proof, chooses the claims and assurance it is willing to sign, and issues a Concordium Web3 ID credential. Use the existing issuer and credential registration tools. Keep identity and wallet payloads off-chain. Explicitly map which claims are supported by the original proof and retained in the new credential.
+- **Present and revoke.** Demonstrate the proof with a fresh challenge and an independent verifier that checks the issuer, registry, requested claims, expiry and revocation. Prototype a minimal predicate and test reissue after rotation. Inspect public holder identifiers, timing and repeated use before promising privacy or same-site continuity. Derive no key or stable identifier from a proof hash, identity field or public credential handle.
+- **Define authority for the Agent ID use case.** A derived credential can be evidence for an agreed issuance or CMP access policy, subject to issuer acceptance. Use standard DTS issuance and finalized account ownership when the user wants a CIS-8004 Agent ID. Record a distinct upstream design question if Concordium wants a derived credential to authorize native account deployment or registry transactions directly. Evaluate the relevant protocol or registry interface under Concordium review. [Web3 ID issuer guide](https://docs.concordium.com/en/mainnet/how-to/web3-id/issuer.html) · [CIS-4](https://proposals.concordium.com/CIS/cis-4.html) · [CIS-8004](https://proposals.concordium.com/CIS/cis-8004.html)
+
+## rCuK recovery contract
+
+The [origin-ID lifecycle contract](origin-id-lifecycle.md) governs 3.1.2 device addition and total-loss recovery. It includes private same-person discovery, account authorization, identity-proof readiness and the candidate native recovery-only role. Its product acceptance requires both journeys with original account and Agent ID continuity. The retained-factor restoration contract below is independently deliverable.
+
+Sprint [3.1.1](sprint-3.1.1.md) implements a seed-phrase-free restoration prototype with the Phase 3 local Concordium signer. It restores compatible wallet material from a clean installation after loss of the primary device. **The user must retain a separately enrolled user-held factor.** A policy-approved independent factor or quorum must also authorize recovery. A healthy backup and a usable way to locate it without the original device are part of enrollment. Restoration, identity-credential recovery and replacement of signing authority each have separate evidence.
+
+The [reference recovery design](rcuk-design.md) selects an independently stored user recovery kit plus one trustee using nested authenticated encryption. Use that model in the local fixture. Alternate quorums and factor storage can be reviewed separately.
+
+| Artifact | Authority and location |
+| --- | --- |
+| Recovery policy and ID | Random scoped ID, validated genesis, account binding, policy version, factor roles, lifecycle and approved evidence. The policy and account binding are protected off-chain. A test-chain commitment identifies the authorized policy version and backup. Avoid public owner, agent, locator or trustee mappings. |
+| Recovery package | Compatible root secret or signer backup and permitted metadata required for restoration, encrypted and integrity-protected in the local signer. The independent recovery encryption key is randomly generated. Keep ciphertext and its discovery path retrievable under user or customer control. No backup data or individual shares are published. |
+| Factor protections | Require the user-held factor cryptographically in addition to secondary authorization. Under the approved threshold composition, trustee-only holdings are insufficient even if combined. Avoid mandatory cloud-synced credentials. Chosen factors and custodians require an independent review of compromise and collusion. |
+| Scope-bound evidence | A supported verified claim, with Concordium Web3 ID or CIS-4 status if supported, can satisfy an eligibility requirement. Match evidence to the original enrollment and exact recovery attempt. An issuer's general identity claim, a public commitment or a CIS-8004 Agent ID carries no decryption authority. |
+
+**Enroll, restore and reconcile.** The current account signer approves enrollment and policy changes. Freeze the authority for updates and factor rotation before testing loss. The target device proves control of its new key and redeems a short-lived challenge bound to the expected account, verified genesis and latest authorized policy revision. Validate factors, any required recovery claim and ciphertext integrity before local decryption. On success, match original keys and account through independent finalized readback. Rebind only after current owner and agent-key verification. Supersede the recovery session and rotate applicable protection. Evaluate old-key exposure and use supported rotation or migration if required. A restored key does not invalidate copies on the lost device. An anchor is evidence of the committed policy and package, and does not authorize changing signing credentials. [Concordium identity recovery](https://docs.concordium.com/en/mainnet/how-to/integrations/wallet-sdk/wallet-sdk-identity-recovery.html) · [Account credential management](https://docs.concordium.com/en/mainnet/technical-reference/wallets/guides/multi-credentials.html) · [CIS-4](https://proposals.concordium.com/CIS/cis-4.html)
+
+**Routine verification.** Test the self-hosted supported profile with no per-presentation callback to origin issuers or an AesirX central service. Use locally verifiable proofs and cached signed status where the profile permits, under explicit freshness rules. Record which operations still require the chain node, trustee or backup connectivity, original issuer recovery, credential reissuance or a supported wallet import. The test covers components we operate and does not establish what a third-party wallet reports. Treat any profile requiring a live upstream callback as a separate capability with a disclosed dependency. [Bitstring Status List](https://www.w3.org/TR/vc-bitstring-status-list/)
+
+## Agent ID in AesirX CMP
+
+1. Add **Agents** to CMP with **Register Agent ID** and **Link existing Agent ID**. The operator chooses an existing Concordium account or starts native enrollment. Reuse registry builders, the user's signer, finalized owner readback and Agent Card integrity checks. To link, verify the registry, the current owner's fresh signature and control of the agent's operational key. Use optional CIS-8 for a supported external key.
+2. Keep a tenant-scoped CMP agent record with a local identifier, canonical registry coordinates, current owner, approved agent key, allowed site connections and status. Link a derived credential as supporting evidence only where the policy and issuer explicitly allow it. A CMP signing or funding account cannot substitute for the user's claimed registry ownership.
+3. Issue the scoped presentation credential to the agent key from a trusted signer or service. Preserve the Phase 2 resource-bound x401 profile and version any delegated-authority extensions. Check current native token ownership on issue and use. Keep owner, holder, spend and service keys out of agent prompts, generated PRs and skills. Replace the pilot's file-based holder credential setup on the new production path with a policy-bound signer.
+4. Show verification evidence, grant history, expiry and available actions. Distinguish unlinking a site, revoking a grant, transferring a token and rotating the key. Transfer, revocation and rotation invalidate dependent grants or require reapproval. Each site decides what an identified agent may do.
+
+## Agentic consent on behalf of the user
+
+The user authorizes which decision the agent may relay and where. A project or financial operator granting resource access gains no authority over another person's privacy choices.
+
+| Record | Minimum binding and use |
+| --- | --- |
+| Human CMP decision | Authenticated user or scoped subject, controller, purpose, displayed notice version, choice, timestamp, withdrawal state and applicable proof reference. The human explicitly makes any new privacy opt-in for that controller and purpose. |
+| Delegation to agent | Unique grant, principal and separate agent actor, holder key, site/tenant/controller, actions, purpose, decision and policy version, validity, revocation and renewal. The new profile binds the finalized account-authority fingerprint and requires reauthorization when it changes. Authority to relay a refusal or withdrawal is explicit. Payment limits stay in spending policy. |
+| Agent execution | Request ID, verified grant reference and actor, exact action, resource and request fingerprint, policy version and outcome. Record that the agent conveyed a recorded instruction. Keep a minimal tenant-scoped receipt and return a safe response code. |
+
+A user approves purpose X for controller Y and authorizes agent A to communicate that choice to the site's CMP. Agent A verifies over x401 or uses the same verifier at a CMP action endpoint. CMP checks the live decision, grant, agent proof, purpose, controller and terms version. It atomically redeems the challenge and applies the recorded choice, or returns the previous result for an identical retry. The receipt identifies the actor and references the user's authorization. If the site changes purpose or notice, the grant expires, or the choice is withdrawn, return a reapproval-required or revoked result and involve the human as needed.
+
+The controller establishes the consent subject through its authenticated account or protected site session and issues a scoped, one-time approval reference. The site checks that binding at execution. A remote Agent ID, lobby membership or project grant cannot select another person's consent record. For a shared lobby with three users, removing one user's access stops their dependent grants and preserves the other two users' authority. See the [authority and race rules](pilot-contract.md#authority-and-the-controllers-subject).
+
+Deliver **relay recorded choice**, **request human decision**, and **relay refusal or withdrawal where specifically authorized**. Let the human inspect and withdraw directly. Invalidate dependent grants or unredeemed authority on revocation or withdrawal and propagate withdrawal to configured downstream integrations. Define ordering for concurrent execution and withdrawal. Access, accepting service terms, payment and silence do not create a privacy decision. Obtain site-operator and counsel review for the intended consent and withdrawal deployment. [EDPB consent guidelines](https://www.edpb.europa.eu/documents/guideline/guidelines-052020-on-consent-under-regulation-2016679_en)
+
+### Proposed transport contracts
+
+| Surface | Implementation contract |
+| --- | --- |
+| Wallet verifier and issuance bridge | Authenticated create/status and profile-specific callback. Return redacted verdict and operation ID, pending or stable denial class, evidence assurance and expiry. The authorized issuer component receives only the permitted issuance attributes. Store versioned request state before invoking the wallet. |
+| CMP agent and consent API | Tenant-authorized register/link/status/revoke for agents and grants, plus human inspection and withdrawal. Draft or apply a consent action using an opaque action ID, current decision/version, idempotency key and authenticated proof. Validate the request digest. The browser and agent cannot directly set a trusted approval state. |
+| x401 and x402 | Use the pinned x401 exchange and bind the challenge to the method, origin, resource, action and immutable request digest for a mutation. Handle payment only after required proof. Apply Phase 2 spend and reconciliation controls. |
+| Agent OS App | Owner connects the CMP project, fetches capabilities and allowed site IDs, previews and applies setup, validates the result, and disconnects. Bind origin and tenant and enforce outbound destination checks. Return masked status. Disconnect revokes the connection and disables runtime authority that depends on it. |
+
+## Agent OS App, integration agent and skills
+
+Ship the AesirX CMP App as an opt-in project integration with **Connect**, **Install/Preview**, **Verify**, **Manage**, and **Disconnect**. Support hosted setup and a local operator configuration. Keep credentials in the sealed integration store or an approved local secret store.
+
+- **Site setup.** Detect JS and WordPress. Produce an owner-reviewable diff or explicit admin steps to pin CMP/verifier versions, configure approved origins, and enforce verification on a protected reference resource. Verify repeat installation and rollback. Preserve existing CMP behavior on other routes.
+- **Operations.** Show profile health, native issuance availability, linked agents, grants and pending human approvals. Use the same APIs as CMP. Expose constrained runtime actions for requesting, presenting, relaying and revoking. Enforce permissions in the services outside the model.
+- **Agent and skills.** Ship an optional AesirX CMP integration agent and task-specific skills for site setup and verification, wallet profile configuration, Agent ID linking and delegated-consent testing. Use existing opt-in training and agent-definition conventions. Keep credentials and identity evidence in the relevant service.
+
+## Minimum release demonstrations
+
+1. **Native.** A new user starts with a supported external wallet, approves the issuer presentation, deploys an ordinary Concordium account, and separately authorizes a finalized Agent ID from CMP.
+2. **Derived credential prototype.** An external wallet provides evidence for a Concordium Web3 ID credential in a test environment. An independent verifier checks the holder and its active or revoked status. Record whether the proof provides enough evidence for any native issuer, what wallet UI is needed, and whether the proposed interface warrants an upstream change.
+3. **Agentic consent.** Install CMP from Agent OS. An agent relays a recorded decision and gets a separate execution receipt. A changed purpose or withdrawn choice stops the agent and an identical retry has no duplicate effect. Exercise free x401 access and one separately authorized x402 test settlement.
+
+See the [cross-repo PR delivery plan](delivery.md) for how to ship and reproduce these flows.

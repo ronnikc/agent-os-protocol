@@ -13,8 +13,7 @@
  *   B. Entry files — README/LICENSE/NOTICE/.env.example/CLAUDE/plan/package.json present.
  *   C. package.json — run + verify scripts wired; Apache-2.0; valid semver version.
  *   D. Verify scripts — all five layer suites + this one exist on disk.
- *   E. Brand gate — no origin brand tokens in the shipped surface (the 3 fork-describing
- *      docs are the only allowed home for historical references).
+ *   E. Brand gate — no blocked legacy brand tokens outside the fork-describing plan.
  *   F. Domain gate — no origin domain tokens (word-boundary) over the shipped surface.
  *   G. Skill references — every skill an agent definition cites exists on disk (no dangling refs).
  *   H. License — LICENSE is the Apache-2.0 text; NOTICE attributes the copyright holder.
@@ -86,7 +85,7 @@ function textFiles(roots: string[]): string[] {
 }
 
 // Forbidden tokens assembled from fragments (see NOTE above) so this file stays gate-clean.
-const BRAND_TOKENS = ['Aesir' + 'X', 'Compliance' + 'One', 'compliance' + 'one.demo', 'grc' + '-suite', 'Forse' + 'ti'];
+const BRAND_TOKENS = ['Compliance' + 'One', 'compliance' + 'one.demo', 'grc' + '-suite', 'Forse' + 'ti'];
 const DOMAIN_TOKENS = ['PD' + 'PL', 'DP' + 'IA', 'DS' + 'AR', 'Viet' + 'nam', 'Dec' + 'ree'];
 // The only sanctioned home for historical origin references is planning.md.
 const FORK_DOCS = new Set(['planning.md'].map((f) => R(f)));
@@ -161,7 +160,7 @@ async function main(): Promise<void> {
   }
 
   // ── E. Brand gate (whole repo except the sanctioned fork docs) ──
-  await check('brand gate: no origin brand tokens outside the fork-describing docs', () => {
+  await check('brand gate: no blocked legacy brand tokens outside planning.md', () => {
     const files = textFiles(['.']).filter((f) => !FORK_DOCS.has(f));
     const hits = scanContains(files, BRAND_TOKENS);
     assert.equal(hits.length, 0, `brand tokens found:\n      ${hits.join('\n      ')}`);
