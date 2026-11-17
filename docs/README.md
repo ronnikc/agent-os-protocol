@@ -28,6 +28,7 @@ and extend it. Start at the top and follow the links.
 | **Agent identity** | [`identity/`](identity/README.md) — read-only Concordium verification, no keys | `npm run verify-identity` |
 | **Cloud workspaces and marketplace beta** | [Hosted onboarding](hosted-onboarding.md) · [Marketplace onboarding](marketplace-onboarding.md) · [Beta operator runbook](phase-2-beta-runbook.md) | `npm run verify-hosted` · `npm run verify-lobby` |
 | **Agent wallets and commerce** | [x401 and x402 integration](http-proofs-and-payments.md) · [Fund an agent wallet](fund-concordium-agent-wallet.md) · [Phase 2 release gates](agent-wallets-and-payments-plan.md) | `npm run verify-commerce` |
+| **Wallet onboarding and delegated access** | [Phase 3 plan and sprint specs](phase-3/README.md) · [Draft Concordium and DTS proposal](phase-3/partner-proposal.md) | Planned |
 | **UI Assist** | [`ui-assist/`](ui-assist/README.md) + [framework guides](ui-assist/frameworks.md) | `npm run verify-ui-assist` |
 | **Agent roster and training** | [Hosted Create, Import, Train and review](agent-roster-workflows.md) · [Local training](training-agents.md) | `npm run verify-hosted` · `npm run verify-memory` |
 

@@ -1,0 +1,33 @@
+<!-- SPDX-License-Identifier: Apache-2.0 -->
+
+# DTS decision and integration brief
+
+[Phase 3 plan](README.md) · [Partner proposal](partner-proposal.md)
+
+## Decision requested
+
+Approve one existing-wallet evidence profile for standard Concordium identity issuance with our user-controlled signer. The reference build uses the EUDI Android reference wallet, EUDI reference PID issuer and verifier, ISO mdoc PID over OpenID4VP, and a Concordium Local Stack test provider. Pin compatible commits and confirm this exact combination at 3.0.0 with a real reference wallet round trip. The fixture issuer and test provider establish interoperability. DTS chooses or approves the first actual national issuer, wallet profile and registration for real use. [EUDI Android reference wallet](https://github.com/eu-digital-identity-wallet/eudi-app-android-wallet-ui) · [Reference PID issuer](https://github.com/eu-digital-identity-wallet/eudi-srv-pid-issuer) · [EUDI verifier](https://github.com/eu-digital-identity-wallet/eudi-srv-verifier-endpoint)
+
+| Decision to record | What we bring | What we need from DTS |
+| --- | --- | --- |
+| Accepted ID evidence | Field mapping template, provenance checks, holder and intended signer binding and negative fixtures | Named issuer, credential/profile, allowed relying party and purpose, mandatory claims, status/freshness, permitted step-up, assurance and fallback. Confirm which accepted cases skip repeat capture. |
+| Evidence handoff | Redacted signed envelope example, canonical request binding, key rotation/replay tests and protected attribute handoff | Test API/issuer integration contact, endpoints or adapter review, trusted verifier registration, key exchange, callback behavior, what DTS needs to receive and when it issues, rejects or returns step-up. |
+| Account deployment | Standard identity request and credential deployment on the local chain, wallet approval trace and independent finalized readback | Confirmation that this exact issuance path fits DTS's current integration. Identify any adjustments, mobile user journey constraints and supported recovery of the identity object. |
+| Origin-ID continuity | Synthetic reissuance with a new holder key, private enrollment discovery, action-bound authorization and separate account/proof-readiness results | Issuer-approved same-person reference and permitted purpose, enrollment opt-in, authorized discovery, replacement/renewal status, dispute/disable behavior and issuer-exit or approved alternate path. Name the real continuity and recovery authorizers, key custody and compromise response. |
+| Data and rollout | Data flow and retention table, fault drill, no live PII in fixture package | Relying-party and data responsibilities, lawful disclosure path, retention and incident contacts, test credentials/environment, named reviewer and pilot sign-off. |
+
+## Handoff and pilot gate
+
+Use the [trusted signer pairing and issuer contract](pilot-contract.md#native-issuer-handoff-and-signer). DTS receives a short-lived verifier assertion or agrees to verify directly. Issue against the exact pre-identity request, intended signer, genesis, nonce and profile. Verify the wallet holder and use a trusted local signer pairing for the intended target. Use signed and protected channels for attributes DTS explicitly needs. Keep shared fixtures and the CMP/Agent OS workflow result redacted. Rejection or step-up can fall back to ordinary enrollment or a separately satisfied eligibility check.
+
+For the synthetic handoff, use an Ed25519-signed JWT with an allowlisted signing key, issuer, exact issuer-service audience, issued/expiry times and unique assertion ID. Its versioned payload carries the relying-party and evidence profile, verified-at time, outcome and assurance, enrolled genesis and intended signer key identifier, enrollment challenge ID and pre-identity request digest. Pin the digest wire bytes in AO-1A. The recipient validates every binding against the stored request and consumes the assertion atomically with the issuance decision. A retry returns the existing decision without issuing twice. Separate this reference format from any production contract selected by DTS. [JWT specification](https://www.rfc-editor.org/rfc/rfc7519.html) · [EdDSA for JOSE](https://www.rfc-editor.org/rfc/rfc8037.html)
+
+**Evidence to approve:** one authorized real-profile wallet-to-account walkthrough showing wallet approval count, real signer consent, finalized account, first authorized use and no forced install or repeat capture on the supported happy path. Exercise wrong signer/relying party, replay and missing-claim decisions. Compare stage timings, fallbacks and recovery to agreed pilot bounds before enabling the profile. The same device trace reports any additional prompts. Google and Apple review follows independently using the same evidence template.
+
+**Device enrollment and recovery:** confirm whether DTS or an approved origin issuer can verify that a fresh credential on an additional or replacement Wallet Unit belongs to the same enrolled person, using a private reference scoped to these purposes. Agree the opt-in at initial onboarding, what changes on reissuance, required step-up, discovery without the old device and blocking revocation or dispute states. The pilot begins with EUDI and evaluates Google and Apple separately. [Origin-ID recovery target](rcuk-design.md#origin-id-recovery-target)
+
+Use the [lifecycle contract](origin-id-lifecycle.md) for AX-1C and CC-7. Distinguish a revoked lost credential from disabled recovery enrollment. Confirm how the fresh device obtains usable Concordium identity-proof material after account authority changes, and which original secrets current recovery APIs require. Agree a versioned same-person assertion with exact account, genesis, purpose, policy/attempt and target-key bindings. Keep private continuity mapping and personal evidence outside the public transaction. Production trust, service availability and issuer transition remain explicit decisions.
+
+Review the [3.1.3 install-free signer](sprint-3.1.3.md) for the first-time CMP visitor deployment. The local separate-process example and browser candidate use the same approved issuance contract. Confirm which signer, key storage, identity-material protection and recovery behavior the live DTS profile accepts. Record every additional signer prompt in the one-wallet-approval measurements.
+
+The local implementation, independent verification, issuer example and CMP pilot using existing accounts can proceed while these decisions are open. Production issuance remains gated per profile.
